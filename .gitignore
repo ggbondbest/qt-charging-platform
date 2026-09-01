@@ -1,0 +1,44 @@
+# CMake and build products
+/build/
+/build-*/
+/out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+*.cmake.user
+
+# Qt Creator and Qt-generated local state
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.user
+*.user.*
+.qt/
+
+# Runtime data and logs
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config/config.ini
+config/*.local.ini
+*.pem
+*.key
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*~
+*.swp

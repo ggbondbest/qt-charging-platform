@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu-qt-6-2-4:
+    name: Ubuntu 22.04 / Qt 6.2.4
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential \
+            cmake \
+            libgl1-mesa-dev \
+            libqt6sql6-sqlite \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            ninja-build \
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            sqlite3
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify database schema and seed data
+        run: bash scripts/verify_database.sh

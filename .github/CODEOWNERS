@@ -1,0 +1,12 @@
+# Member GitHub accounts are not guessed. Add client/server module owners after
+# all four accounts are confirmed; ordinary PRs still require a non-author
+# review through branch rules and the workflow document.
+
+# Cross-module contracts and repository policy always require the team lead.
+/CMakeLists.txt @ggbondbest
+/.github/ @ggbondbest
+/common/ @ggbondbest
+/database/ @ggbondbest
+/server/network/ @ggbondbest
+/docs/api/ @ggbondbest
+/docs/development/ @ggbondbest
