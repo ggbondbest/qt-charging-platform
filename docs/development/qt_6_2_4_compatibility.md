@@ -2,11 +2,10 @@
 
 ## 1. 兼容目标
 
-本项目的唯一 Qt Framework 兼容基线是 **Qt 6.2.4**，语言标准是 **C++17**，最终验收环境是 **Ubuntu 22.04**。macOS 仅作为日常开发平台，不能因为本机安装了更新 Qt 就使用 Qt 6.3 及以上新增功能。
+本项目的唯一 Qt Framework 兼容基线是 **Qt 6.2.4**，语言标准是 **C++17**，最终验收环境是 **Ubuntu 22.04**。不得使用 Qt 6.3 及以上才新增的 API 或 CMake 功能。
 
-Qt Creator 是 IDE，不决定程序兼容版本。成员可以使用不同版本的 Qt Creator。
-有 Qt 6.2.4 Kit 时优先使用它；macOS 也可用较新 Qt 做日常构建，但不得使用新 API，
-且合并前必须通过 Ubuntu 22.04 + Qt 6.2.4 的严格 CI。
+Qt Creator 是 IDE，不决定程序兼容版本。成员可以使用不同版本的 Qt Creator，
+但必须选择 Qt 6.2.4 Kit，且合并前必须通过 Ubuntu 22.04 + Qt 6.2.4 的严格 CI。
 
 查询 Qt API 时使用 [Qt 6.2 文档](https://doc.qt.io/qt-6.2/)，不要默认使用搜索引擎打开的最新 Qt 文档。
 
@@ -84,22 +83,19 @@ set(CMAKE_AUTORCC ON)
 
 新增 Qt 模块前必须说明用途、Qt 6.2.4 可用性、Ubuntu 安装方式和许可证/部署影响。不得仅为一个简单工具函数引入大型第三方依赖。
 
-## 5. macOS 与 Ubuntu 跨平台规则
+## 5. Ubuntu 22.04 目标环境规则
 
-Qt 6.2 已正式支持 Apple Silicon。项目不得强制设置 `CMAKE_OSX_ARCHITECTURES=x86_64`，也不得引入只有 Intel macOS 二进制的第三方库。
-
-跨平台代码必须遵守：
+目标环境代码必须遵守：
 
 - 使用 `QDir`、`QFileInfo`、`QStandardPaths` 处理路径。
 - 运行时数据库使用 `QStandardPaths::AppDataLocation` 等可写位置。
-- 不硬编码 `/Users/...`、`/home/...`、Windows 盘符或平台路径分隔符。
+- 不硬编码个人主目录、开发者机器路径或启动时工作目录。
 - 只读资源优先放入 `.qrc` 并使用 `:/` 别名访问。
 - 源码和文本资源使用 UTF-8 与 LF。
-- 不在 QSS 中依赖只在 macOS 存在的字体。
-- 不假设 macOS 与 Ubuntu 的窗口尺寸、DPI、字体度量或文件选择器行为完全一致。
-- 平台差异代码集中在很小的适配层，并使用 `Q_OS_MACOS`、`Q_OS_LINUX` 等 Qt 平台宏明确隔离。
+- QSS 使用验收环境可用字体或系统默认字体。
+- UI 必须在 Ubuntu 22.04 的不同 DPI、字体度量和窗口尺寸下正常布局。
 
-开发完成后至少在 Ubuntu 22.04 做一次全新 clone 和从零构建。Mac 上已有 build 目录成功不能替代 Ubuntu 验收。
+开发完成后至少在 Ubuntu 22.04 做一次全新 clone 和从零构建；其他环境的构建成功不能替代 Ubuntu 验收。
 
 ## 6. Socket 与数据库兼容注意事项
 
@@ -131,5 +127,5 @@ Qt 版本兼容不只指“能编译”，还包括相同业务行为：
 - 新使用的 Qt API 在 Qt 6.2 文档中存在。
 - 没有 `qt_standard_project_setup()` 或其他 Qt 6.3+ CMake helper。
 - 没有私有 Qt 头文件、机器绝对路径或平台专属二进制依赖。
-- 与路径、数据库、Socket、编码和 UI 布局相关的变更考虑了 macOS 与 Ubuntu 差异。
+- 与路径、数据库、Socket、编码和 UI 布局相关的变更已在 Ubuntu 22.04 验证。
 - 测试在 Qt 6.2.4 上通过；最终判断以精确版本构建结果为准。
