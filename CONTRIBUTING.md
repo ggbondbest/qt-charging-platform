@@ -19,9 +19,9 @@
 - 语言标准：C++17。
 - 构建工具：CMake。
 - 数据库驱动：QSQLITE。
-- 本地可使用 macOS 开发，但提交必须保持 Ubuntu 与 macOS 可编译，不得写机器相关路径。
-- Qt Creator 的版本可以不同；优先使用 Qt 6.2.4 Kit。本地可用较新 Qt
-  做向前构建，但 Ubuntu 严格 CI 必须精确使用 6.2.4。
+- 提交必须保持 Ubuntu 22.04 可编译，不得写个人机器路径。
+- Qt Creator 的版本可以不同，但 Qt Framework Kit 必须为 6.2.4；
+  Ubuntu 严格 CI 必须精确使用 6.2.4。
 
 首次构建前，检查 CMake 输出的 Qt 版本。使用 Qt 6.2.4 时建议开启严格检查：
 
@@ -31,8 +31,6 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
-
-如果 macOS 本地暂时只有较新 Qt，不传严格开关即可构建；这不能替代 Qt 6.2.4 CI。
 
 不得提交 `build/`、Qt Creator 用户配置、运行时数据库、日志、缓存或本地密钥。
 

@@ -23,7 +23,7 @@ SQLite
 ## 已建立的基线
 
 - CMake + C++17 的 `charging_client`、`charging_server`、`charging_common` target。
-- Qt 6.2.4 最低兼容线；macOS 可用较新 Qt 做向前构建，Ubuntu CI 严格限定 6.2.4。
+- Qt 6.2.4 兼容基线；Ubuntu CI 严格限定 Framework 版本为 6.2.4。
 - 公共 User/Station/Charger/Reservation/Order 等候选模型、状态和 JSON 转换。
 - TCP 4 字节大端长度帧、JSON v1 envelope、稳定动作名与错误码。
 - SQLite schema v1：8 张表、外键、CHECK、索引、活动业务唯一约束和可重复 seed。
@@ -63,25 +63,8 @@ bash scripts/verify_database.sh
 ```
 
 开发到图表和地图功能时，再按对应 target 安装并接入 Qt Charts / Qt WebEngine，不要在未使用前
-就将它们变成全员的强制依赖。
-
-## macOS / Apple Silicon 开发
-
-Qt Online Installer 安装 Qt 6.2.4 macOS Kit 后，用 Qt Creator 选择该 Kit，或在命令行指定本机 Qt 路径：
-
-```bash
-cmake -S . -B build-macos \
-  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.2.4/macos \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DBUILD_TESTING=ON \
-  -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON
-cmake --build build-macos --parallel
-ctest --test-dir build-macos --output-on-failure
-```
-
-如本机暂时只有较新 Qt，可不传严格开关进行日常构建；代码仍必须只使用 Qt 6.2.4
-已有 API，最终以严格 CI 为准。不得提交本机 `CMAKE_PREFIX_PATH`、Qt Creator `.user`
-文件或 `/Users/...` 绝对路径。
+就将它们变成全员的强制依赖。不得提交个人 `CMAKE_PREFIX_PATH`、Qt Creator
+`.user` 文件或任何本机绝对路径。
 
 ## 启动骨架应用
 
@@ -92,8 +75,7 @@ Ubuntu 普通 CMake 构建下：
 ./build/client/charging-client
 ```
 
-macOS 可直接在 Qt Creator 中运行 `charging_server` / `charging_client` target。当前窗口用于验证
-项目装配与模块边界，尚未接入真实登录业务。
+当前窗口用于验证项目装配与模块边界，尚未接入真实登录业务。
 
 ## 目录和依赖方向
 
