@@ -275,7 +275,7 @@ review 后再改公共接口。
 - CMake 显式开启 `AUTOMOC`、`AUTOUIC`、`AUTORCC`，不依赖较新 Qt 的项目辅助命令；
 - `find_package(Qt6 6.2.4 ...)` 表示最低兼容版本；最终必须在 6.2.4 构建；
 - Socket 长度头手动按大端编码，不使用可能受 `QDataStream::Version` 影响的对象序列化；
-- macOS 开发不得提交 `.DS_Store`、构建目录、用户 Kit 文件或本机绝对路径。
+- 不得提交操作系统元数据、构建目录、用户 Kit 文件或本机绝对路径。
 
 ## 12. 真实接口并行放行门槛（阶段 1/2）
 
