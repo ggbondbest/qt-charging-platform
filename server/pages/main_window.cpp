@@ -92,7 +92,8 @@ MainWindow::MainWindow(ChargingServer* server, QWidget* parent) : QMainWindow(pa
     contentLayout->addLayout(cardLayout);
 
     auto* noticeLabel = new QLabel(
-        tr("阶段 0/1 骨架已就绪。后续 Dashboard、服务层和 Repository 请按架构文档分模块接入。"),
+        tr("手机号登录的 Socket、Service 和 Repository 已接通。后续 Dashboard 与其他业务"
+           "请按架构文档分模块接入。"),
         contentWidget);
     noticeLabel->setWordWrap(true);
     contentLayout->addWidget(noticeLabel);

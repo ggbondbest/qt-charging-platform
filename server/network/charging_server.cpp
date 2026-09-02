@@ -1,5 +1,8 @@
 #include "charging_server.h"
 
+#include "client_session.h"
+#include "request_dispatcher.h"
+
 #include <QHostAddress>
 #include <QTcpSocket>
 
@@ -8,6 +11,15 @@ namespace charging::server {
 ChargingServer::ChargingServer(QObject* parent) : QObject(parent)
 {
     connect(&tcpServer_, &QTcpServer::newConnection, this, &ChargingServer::handleNewConnections);
+}
+
+void ChargingServer::setRequestDispatcher(RequestDispatcher* dispatcher)
+{
+    Q_ASSERT(!tcpServer_.isListening());
+    if (tcpServer_.isListening()) {
+        return;
+    }
+    dispatcher_ = dispatcher;
 }
 
 bool ChargingServer::listen(const QHostAddress& address, quint16 port)
@@ -50,6 +62,9 @@ void ChargingServer::handleNewConnections()
 
         connection->setParent(this);
         clients_.insert(connection);
+        if (dispatcher_ != nullptr) {
+            new ClientSession(connection, dispatcher_, connection);
+        }
         connect(connection, &QTcpSocket::disconnected, this,
                 &ChargingServer::handleClientDisconnected);
         connect(connection, &QTcpSocket::disconnected, connection, &QObject::deleteLater);
