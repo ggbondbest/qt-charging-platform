@@ -74,11 +74,29 @@ class LoginIntegrationTest final : public QObject
     Q_OBJECT
 
 private slots:
+    void clientRejectsInvalidPhoneBeforeNetwork();
     void firstLoginCreatesUser();
     void repeatedLoginReturnsSameUser();
     void invalidPhoneIsRejectedByServer();
     void frozenUserIsRejected();
 };
+
+void LoginIntegrationTest::clientRejectsInvalidPhoneBeforeNetwork()
+{
+    charging::client::network::ClientConnection connection(
+        QStringLiteral("127.0.0.1"), 1);
+    charging::client::services::station::AuthService authService(&connection);
+
+    QString failureMessage;
+    connect(&authService, &charging::client::services::station::AuthService::loginFailed,
+            this, [&](const QString& message) { failureMessage = message; });
+
+    authService.login(QStringLiteral("23800138000"));
+
+    QVERIFY(!failureMessage.isEmpty());
+    QVERIFY(!authService.isLoginPending());
+    QVERIFY(!connection.isConnected());
+}
 
 void LoginIntegrationTest::firstLoginCreatesUser()
 {

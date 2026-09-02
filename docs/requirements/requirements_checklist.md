@@ -2,6 +2,8 @@
 
 勾选规则：只有在 Ubuntu 22.04 + Qt 6.2.4 中实际验证并留下证据后，功能项才能从 `[ ]` 改为 `[x]`。页面占位、静态假数据或只在开发者电脑运行不算完成。
 
+严格构建与测试证据：[手机号登录最小闭环 PR #3](https://github.com/ggbondbest/qt-charging-platform/pull/3)。
+
 ## 1. 范围基线
 
 - [x] 首阶段范围锁定为 Qt 用户端、Qt PC Server/管理端、SQLite；
@@ -24,37 +26,37 @@
 - [x] TCP 4 字节大端长度 framing 和半包/粘包 decoder 已实现；
 - [x] schema v1、seed、数据字典已建立；
 - [x] schema/seed 已配置为 Qt resource；
-- [ ] common 单元测试在 Qt 6.2.4 通过；
+- [x] common 单元测试在 Qt 6.2.4 通过；
 - [x] schema/seed 自动验证进入 CTest/CI；
-- [ ] Ubuntu 22.04 + Qt 6.2.4 clean configure/build 通过。
+- [x] Ubuntu 22.04 + Qt 6.2.4 clean configure/build 通过。
 
 ## 3. 最小登录闭环（阶段 2 门槛）
 
-- [ ] Client 登录页校验 `^1[0-9]{10}$`；
-- [ ] Client 异步连接 Server，并发送 frame 化 `USER_LOGIN`；
-- [ ] Server 能处理头/正文半包和多帧粘包；
-- [ ] Dispatcher 校验 v1 envelope 并路由到 UserService；
-- [ ] UserRepository 按手机号查询 SQLite；
-- [ ] 已有活动用户返回同一用户；
-- [ ] 新手机号只创建一次，昵称为 `用户` + 后四位，余额为 0；
-- [ ] 冻结用户返回 `USER_FROZEN`；
-- [ ] Response 回显相同 type/requestId；
+- [x] Client 登录页校验 `^1[0-9]{10}$`；
+- [x] Client 异步连接 Server，并发送 frame 化 `USER_LOGIN`；
+- [x] Server 能处理头/正文半包和多帧粘包；
+- [x] Dispatcher 校验 v1 envelope 并路由到 UserService；
+- [x] UserRepository 按手机号查询 SQLite；
+- [x] 已有活动用户返回同一用户；
+- [x] 新手机号只创建一次，昵称为 `用户` + 后四位，余额为 0；
+- [x] 冻结用户返回 `USER_FROZEN`；
+- [x] Response 回显相同 type/requestId；
 - [ ] Client 按 requestId 匹配结果并进入首页；
 - [ ] 重连后同手机号返回原 user ID；
 - [ ] 两个并发 Client 首次登录同手机号，数据库最终只有一行；
 - [ ] Server 重启后数据仍存在；
-- [ ] Client -> Socket -> Server -> Service -> Repository -> SQLite -> Client 集成测试通过。
+- [x] Client -> Socket -> Server -> Service -> Repository -> SQLite -> Client 集成测试通过。
 
-完成本节、五人确认候选契约且 Ubuntu 22.04 + Qt 6.2.4 严格 CI 通过前，其他成员可以
-开发 mock UI、准备数据库实现，或按候选接口在隔离模块内开发，但不能各自创建并接入
-真实网络层或数据库访问层。满足条件后由组长记录真实接口并行放行结论。
+最小闭环和严格 CI 已通过；进入首页、重连、并发首次登录和 Server 重启持久化仍按上方
+未勾选项继续补齐。成员可在各自目录基于候选接口并行开发，但公共契约冻结仍需五人确认，
+且不得各自重复创建网络层或数据库基础层。
 
 ## 4. 用户端基础功能
 
 ### 4.1 登录与个人资料
 
-- [ ] 11 位手机号免密登录；
-- [ ] 新手机号自动注册；
+- [x] 11 位手机号免密登录；
+- [x] 新手机号自动注册；
 - [ ] 默认灰色头像；
 - [ ] 展示昵称和钱包余额；
 - [ ] 本地选择头像并通过受控资源接口保存；
@@ -212,8 +214,8 @@
 
 ### 正常路径
 
-- [ ] 登录已有用户；
-- [ ] 自动注册用户；
+- [x] 登录已有用户；
+- [x] 自动注册用户；
 - [ ] 查询站点和桩；
 - [ ] 预约、开始、状态刷新、停止、支付；
 - [ ] 充值；
@@ -224,8 +226,8 @@
 
 ### 异常路径
 
-- [ ] 非法手机号；
-- [ ] 冻结用户；
+- [x] 非法手机号；
+- [x] 冻结用户；
 - [ ] 错误管理员密码；
 - [ ] 重复预约；
 - [ ] 预约已占用/故障/离线电桩；
@@ -235,7 +237,7 @@
 - [ ] 余额不足；
 - [ ] 重复结算；
 - [ ] Socket 半包/粘包/断开/超时；
-- [ ] 非法 JSON/错误版本/超大 frame；
+- [x] 非法 JSON/错误版本/超大 frame；
 - [ ] 数据库锁定和查询失败；
 - [ ] 业务事务中途失败后的状态一致性。
 
