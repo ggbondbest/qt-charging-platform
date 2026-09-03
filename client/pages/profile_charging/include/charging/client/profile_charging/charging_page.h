@@ -11,6 +11,7 @@ namespace charging::client {
 
 class ActionButton;
 class Card;
+class ChargingPulse;
 class LoadingOverlay;
 class NoticePanel;
 class StatusTag;
@@ -57,6 +58,7 @@ private:
     QLabel* durationValueLabel_ = nullptr;
     QLabel* estimateValueLabel_ = nullptr;
     QLabel* updatedLabel_ = nullptr;
+    ChargingPulse* pulse_ = nullptr;
     Card* heroCard_ = nullptr;
     NoticePanel* statusNotice_ = nullptr;
     ActionButton* stopButton_ = nullptr;
