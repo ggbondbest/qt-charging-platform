@@ -1,9 +1,19 @@
-add_library(charging_client_network INTERFACE)
+add_library(charging_client_network STATIC
+    client_connection.cpp
+    client_connection.h
+    network_manager.h
+)
 add_library(ChargingPlatform::ClientNetwork ALIAS charging_client_network)
 
-target_link_libraries(charging_client_network INTERFACE
+target_include_directories(charging_client_network PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+target_link_libraries(charging_client_network
+    PUBLIC
     ChargingPlatform::Common
-    ChargingPlatform::ProjectOptions
     Qt6::Core
     Qt6::Network
+    PRIVATE
+    ChargingPlatform::ProjectOptions
 )

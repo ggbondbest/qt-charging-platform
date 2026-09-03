@@ -1,11 +1,22 @@
+#include "billing_service.h"
+#include "charging_repository.h"
 #include "charging_server.h"
+#include "charging_service.h"
+#include "database_connection.h"
 #include "main_window.h"
+#include "order_repository.h"
+#include "order_service.h"
+#include "request_dispatcher.h"
+#include "user_repository.h"
+#include "user_service.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QDir>
 #include <QHostAddress>
+#include <QStandardPaths>
 #include <QStringList>
 
 int main(int argc, char* argv[])
@@ -30,8 +41,22 @@ int main(int argc, char* argv[])
         QStringList{QStringLiteral("p"), QStringLiteral("port")},
         QCoreApplication::translate("main", "Listen on the specified TCP port."),
         QCoreApplication::translate("main", "port"), QStringLiteral("9527"));
+    const QString applicationDataPath =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString defaultDatabasePath =
+        QDir(applicationDataPath).filePath(QStringLiteral("charging-platform.sqlite3"));
+    const QCommandLineOption databaseOption(
+        QStringList{QStringLiteral("d"), QStringLiteral("database")},
+        QCoreApplication::translate("main", "Use the specified SQLite database file."),
+        QCoreApplication::translate("main", "path"), defaultDatabasePath);
+    const QCommandLineOption demoSeedOption(
+        QStringLiteral("demo-seed"),
+        QCoreApplication::translate(
+            "main", "Load the idempotent demo data. Use only with a demo database."));
     parser.addOption(addressOption);
     parser.addOption(portOption);
+    parser.addOption(databaseOption);
+    parser.addOption(demoSeedOption);
     parser.process(application);
 
     QHostAddress address;
@@ -49,7 +74,27 @@ int main(int argc, char* argv[])
         return 2;
     }
 
+    charging::server::DatabaseConnection databaseConnection;
+    QString databaseError;
+    const bool loadDemoSeed = parser.isSet(demoSeedOption);
+    if (!databaseConnection.open(parser.value(databaseOption), loadDemoSeed, &databaseError)) {
+        qCritical().noquote() << QCoreApplication::translate("main",
+                                                             "Unable to initialize database");
+        return 1;
+    }
+
+    charging::server::UserRepository userRepository(databaseConnection.database());
+    charging::server::ChargingRepository chargingRepository(databaseConnection.database());
+    charging::server::OrderRepository orderRepository(databaseConnection.database());
+    charging::server::UserService userService(&userRepository);
+    charging::server::BillingService billingService;
+    charging::server::ChargingService chargingService(&chargingRepository, &billingService);
+    charging::server::OrderService orderService(&orderRepository);
+    charging::server::RequestDispatcher requestDispatcher(&userService, &chargingService,
+                                                          &orderService);
+
     charging::server::ChargingServer server;
+    server.setRequestDispatcher(&requestDispatcher);
     if (!server.listen(address, port)) {
         qCritical().noquote() << QCoreApplication::translate("main", "Unable to start server:")
                               << server.errorString();
