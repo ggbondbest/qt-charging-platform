@@ -2,6 +2,7 @@
 
 #include "charging/common/model/models.h"
 
+#include <QPointer>
 #include <QWidget>
 
 class QLabel;
@@ -15,11 +16,16 @@ namespace services::station {
 class StationQueryService;
 struct StationDetail;
 } // namespace services::station
+namespace services::reservation {
+class ReservationService;
+} // namespace services::reservation
 } // namespace charging::client
 
 namespace charging::client::pages::station {
 
-// 站点详情页（成员 2，任务 #12）。
+class ReservationDialog;
+
+// 站点详情页（成员 2，任务 #12/#17）。
 //
 // 页面结构：站点基础信息卡（名称/地址/状态）→ 电价与距离 → 离线横幅
 // （站点 Inactive 时醒目提示）→ 充电桩卡片列表（编号/类型/功率/工作状态）。
@@ -33,7 +39,9 @@ namespace charging::client::pages::station {
 //
 // 模拟 ↔ 真实 Service 无缝：数据只经 StationQueryService 详情通道获取，
 // UI 不感知通道来源。导航复用全局 TopNavBar（返回按钮由宿主壳控制显隐），
-// 本页不重复实现导航代码；预约入口仅为 UI 占位，正式逻辑属任务 #17。
+// 本页不重复实现导航代码。任务 #17：桩卡片“预约”按钮（非空闲置灰）打开
+// ReservationDialog 提交预约，成功后刷新当前充电桩状态；未登录点击经
+// reservationLoginRequired 交宿主拦截跳转登录。
 class StationDetailPage final : public QWidget
 {
     Q_OBJECT
@@ -51,6 +59,11 @@ public:
     // 非拥有：与列表页共用同一服务实例（HomeShell 注入）。
     void setService(charging::client::services::station::StationQueryService* service);
 
+    // 任务 #17：预约服务（提交预约经弹窗组件完成）与登录态透传（由
+    // HomeShell 注入，未登录时点击预约发 reservationLoginRequired 拦截）。
+    void setReservationService(charging::client::services::reservation::ReservationService* service);
+    void setLoggedIn(bool loggedIn);
+
     // 路由入口：携带站点快照与距离（ID 非法时服务将回友好错误）。
     void openStation(const charging::model::Station& station, int distanceMeters);
 
@@ -59,22 +72,26 @@ public:
     int chargerCardCount() const;
     bool offlineBannerVisible() const;
     bool chargerEmptyVisible() const;
-    bool reservationHintVisible() const;
 
 signals:
     void backRequested();
-    // 预约占位入口点击（正式预约流程属任务 #17，本页仅发信号）。
+    // 预约入口点击（任务 #17 起携带桩 ID，宿主/测试可观察）。
     void reservationRequested(qint64 chargerId);
+    // 未登录点击预约：宿主提示登录并跳转登录页。
+    void reservationLoginRequired();
 
 private:
     void setDetailState(DetailState state);
     void clearChargerRows();
     QWidget* createChargerCard(const charging::model::Charger& charger);
+    void handleReserveRequested(const charging::model::Charger& charger);
     void handleDetailStarted();
     void handleDetailSucceeded(const services::station::StationDetail& detail);
     void handleDetailFailed(const QString& message);
 
-    services::station::StationQueryService* service_ = nullptr; // not owned
+    services::station::StationQueryService* service_ = nullptr;  // not owned
+    services::reservation::ReservationService* reservationService_ = nullptr; // not owned
+    bool loggedIn_ = true;
     DetailState viewState_ = DetailState::Loading;
 
     QStackedWidget* pageStack_ = nullptr; // Loading / Error / Ready
@@ -93,9 +110,10 @@ private:
     QWidget* chargerEmptyNotice_ = nullptr;
     QWidget* chargerListPage_ = nullptr;
     QVBoxLayout* chargerListLayout_ = nullptr;
-    QLabel* reservationHintLabel_ = nullptr;
+    QPointer<ReservationDialog> dialog_; // 非模态预约弹窗（show + setModal）
 
     charging::model::Station station_;
+    int lastDistanceMeters_ = -1;
 };
 
 } // namespace charging::client::pages::station

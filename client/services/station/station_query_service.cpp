@@ -234,6 +234,11 @@ void StationQueryService::finishMockQuery()
     emit querySucceeded(results);
 }
 
+void StationQueryService::setMockChargerReserved(qint64 chargerId)
+{
+    mockChargerOverrides_.insert(chargerId, charging::model::ChargerStatus::Reserved);
+}
+
 void StationQueryService::finishMockDetail()
 {
     const StationDetail requested = pendingDetail_;
@@ -249,6 +254,18 @@ void StationQueryService::finishMockDetail()
             StationDetail result = requested;
             result.station = item.station;
             result.chargers = mockChargersForStation(item.station);
+            // 应用任务 #17 的“已预约”模拟覆盖，并按覆盖后数据重算空位数。
+            int availableNow = 0;
+            for (auto& charger : result.chargers) {
+                const auto overrideIt = mockChargerOverrides_.find(charger.id);
+                if (overrideIt != mockChargerOverrides_.end()) {
+                    charger.status = overrideIt.value();
+                }
+                if (charger.status == charging::model::ChargerStatus::Available) {
+                    ++availableNow;
+                }
+            }
+            result.station.availableChargers = availableNow;
             result.hasChargerData = true;
             emit detailSucceeded(result);
             return;

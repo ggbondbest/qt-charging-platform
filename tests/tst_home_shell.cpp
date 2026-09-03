@@ -1,13 +1,18 @@
 #include "charging/client/widgets/top_nav_bar.h"
 #include "pages/station/home_shell.h"
+#include "pages/station/reservation_dialog.h"
+#include "pages/station/reservation_list_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
+#include "services/reservation/reservation_service.h"
 
 #include <QComboBox>
 #include <QDir>
 #include <QFrame>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStackedWidget>
@@ -16,6 +21,8 @@
 namespace {
 
 using HomeShell = charging::client::pages::station::HomeShell;
+using ReservationDialog = charging::client::pages::station::ReservationDialog;
+using ReservationListPage = charging::client::pages::station::ReservationListPage;
 using StationDetailPage = charging::client::pages::station::StationDetailPage;
 using StationHomePage = charging::client::pages::station::StationHomePage;
 
@@ -76,6 +83,57 @@ StationDetailPage* detailPage(HomeShell& shell)
     return detail;
 }
 
+ReservationListPage* recordsPage(HomeShell& shell)
+{
+    auto* page = shell.reservationPage();
+    Q_ASSERT_X(page != nullptr, "recordsPage", "HomeShell must own a ReservationListPage");
+    return page;
+}
+
+// 详情页当前全部“预约”按钮（每张充电桩卡一个，非空闲置灰）。
+QList<QPushButton*> reserveButtons(StationDetailPage& detail)
+{
+    QList<QPushButton*> buttons;
+    const auto all = detail.findChildren<QPushButton*>();
+    for (auto* button : all) {
+        if (button->objectName() == QStringLiteral("detailReserveButton")) {
+            buttons.append(button);
+        }
+    }
+    return buttons;
+}
+
+int enabledCount(const QList<QPushButton*>& buttons)
+{
+    int count = 0;
+    for (const auto* button : buttons) {
+        count += button->isEnabled() ? 1 : 0;
+    }
+    return count;
+}
+
+// 打开站点详情并等待桩列表就绪（页面切到详情路由，保证弹窗父链可见）。
+void openDetailAndWait(HomeShell& shell, qint64 stationId, int distanceMeters)
+{
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+    detail->openStation(makeStationSnapshot(stationId), distanceMeters);
+    pageStack->setCurrentWidget(detail);
+    QTest::qWait(20);
+    QVERIFY(detail->viewState() == StationDetailPage::DetailState::Loading
+            || detail->viewState() == StationDetailPage::DetailState::Ready);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+}
+
+// 从“我的”Tab 入口进入预约记录路由页。
+void openRecordsViaProfileTab(HomeShell& shell)
+{
+    tabButton(shell, QStringLiteral("profile"))->click();
+    auto* entry = shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(entry != nullptr);
+    entry->click();
+}
+
 } // namespace
 
 class HomeShellTest final : public QObject
@@ -101,6 +159,14 @@ private slots:
     void detailPageShowsChargersWithFaultAndReservation();
     void detailEmptyAndOfflineStates();
     void detailInvalidRouteShowsErrorAndBackHome();
+    // —— 任务 #17：预约弹窗与预约记录 ——
+    void reservationDialogSubmitRefreshesChargerState();
+    void reservationDialogConflictKeepsDialogOpen();
+    void reservationWithoutLoginPromptsAndRoutesToLogin();
+    void recordsPageShowsFourStatusesAndCancelRules();
+    void recordsPageCancelUpdatesState();
+    void recordsPageEmptyAndErrorStates();
+    void recordsRouteBackReturnsToProfile();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -160,8 +226,8 @@ void HomeShellTest::startsOnStationTab()
     QVERIFY(orderTab != nullptr);
     QVERIFY(rechargeTab != nullptr);
     QVERIFY(profileTab != nullptr);
-    // 4 个 Tab 页 + 1 个详情路由页（非 Tab）。
-    QCOMPARE(pageStack->count(), 5);
+    // 4 个 Tab 页 + 详情路由页 + 预约记录路由页（均非 Tab）。
+    QCOMPARE(pageStack->count(), 6);
 
     // 登录后默认落在“找站”（首页）。
     QCOMPARE(pageStack->currentIndex(), 0);
@@ -418,16 +484,44 @@ void HomeShellTest::detailPageShowsChargersWithFaultAndReservation()
     }
     QVERIFY(sawFaultCard);
 
-    // 预约入口：仅空闲桩有“预约”按钮，点击出占位提示（任务 #17 前无业务）。
-    auto* reserveButton = detail->findChild<QPushButton*>(QStringLiteral("detailReserveButton"));
-    QVERIFY(reserveButton != nullptr);
+    // 预约入口（任务 #17）：所有桩都有按钮，仅空闲可点；非空闲置灰。
+    const auto buttons = reserveButtons(*detail);
+    QCOMPARE(buttons.size(), 10);
+    QCOMPARE(enabledCount(buttons), 3); // id1：空闲 3
+    for (const auto* button : buttons) {
+        if (!button->isEnabled()) {
+            QVERIFY(!button->toolTip().isEmpty()); // 置灰需说明原因
+        }
+    }
+
     QSignalSpy reservationSpy(detail, &StationDetailPage::reservationRequested);
-    reserveButton->click();
+    QPushButton* disabledButton = nullptr;
+    QPushButton* enabledButton = nullptr;
+    for (auto* button : buttons) {
+        if (button->isEnabled() && enabledButton == nullptr) {
+            enabledButton = button;
+        } else if (!button->isEnabled() && disabledButton == nullptr) {
+            disabledButton = button;
+        }
+    }
+    QVERIFY(disabledButton != nullptr);
+    disabledButton->click(); // 置灰不可点击：不触发任何交互
+    QCOMPARE(reservationSpy.count(), 0);
+
+    // 空闲桩点击 → 弹出预约弹窗（挂在详情页上）。
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
     QCOMPARE(reservationSpy.count(), 1);
-    QVERIFY(detail->reservationHintVisible());
-    auto* hint = shell.findChild<QLabel*>(QStringLiteral("detailReservationHint"));
-    QVERIFY(hint != nullptr);
-    QVERIFY(hint->text().contains(QStringLiteral("任务 #17")));
+    auto* dialog = shell.findChild<ReservationDialog*>();
+    QVERIFY(dialog != nullptr);
+    QVERIFY(dialog->isVisible());
+    QCOMPARE(dialog->selectedMinutes(), 60); // 默认时长
+    // 预估费用 = 电价 × 时长：id1 电价 120 分/度 × 60 分钟 = ¥1.20。
+    QVERIFY(dialog->estimatedFeeText().contains(QStringLiteral("¥1.20")));
+    auto* closeButton = shell.findChild<QPushButton*>(QStringLiteral("reservationCloseButton"));
+    QVERIFY(closeButton != nullptr);
+    closeButton->click(); // 弹窗支持手动关闭
+    QTRY_VERIFY_WITH_TIMEOUT(shell.findChild<ReservationDialog*>() == nullptr, 3000);
 
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_chargers.png"));
 }
@@ -480,6 +574,255 @@ void HomeShellTest::detailInvalidRouteShowsErrorAndBackHome()
     QVERIFY(backHomeButton != nullptr);
     backHomeButton->click();
     QCOMPARE(pageStack->currentIndex(), 0);
+}
+
+void HomeShellTest::reservationDialogSubmitRefreshesChargerState()
+{
+    // 提交成功：loading 提交态 → 成功提示 → 弹窗自动关闭 → 桩状态刷新。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    openDetailAndWait(shell, 1, 850);
+    auto* detail = detailPage(shell);
+
+    QPushButton* enabledButton = nullptr;
+    for (auto* button : reserveButtons(*detail)) {
+        if (button->isEnabled()) {
+            enabledButton = button;
+            break;
+        }
+    }
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+    QPointer<ReservationDialog> dialog(shell.findChild<ReservationDialog*>());
+    QVERIFY(dialog != nullptr);
+
+    auto* submit = dialog->findChild<QPushButton*>(QStringLiteral("reservationSubmitButton"));
+    QVERIFY(submit != nullptr);
+    submit->click();
+    // 提交中：按钮禁用防重复提交（loading 态）。
+    QVERIFY(!submit->isEnabled());
+    QVERIFY(submit->text().contains(QStringLiteral("提交中")));
+    saveSnapshotIfRequested(*dialog, QStringLiteral("home_shell_reservation_submitting.png"));
+
+    // 成功：预约后桩变“已预约”，空闲数 3 → 2；弹窗展示提示后自动关闭。
+    auto* summary = shell.findChild<QLabel*>(QStringLiteral("detailChargerSummaryLabel"));
+    QVERIFY(summary != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(summary->text().contains(QStringLiteral("空闲 2")), 5000);
+    QCOMPARE(enabledCount(reserveButtons(*detail)), 2);
+    QTRY_VERIFY_WITH_TIMEOUT(dialog == nullptr, 5000);
+}
+
+void HomeShellTest::reservationDialogConflictKeepsDialogOpen()
+{
+    // 并发边界：提交瞬间桩被抢占 → 展示原因、弹窗保持、可重试可关闭。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    openDetailAndWait(shell, 1, 850);
+    auto* detail = detailPage(shell);
+    auto* service = recordsPage(shell)->service();
+    QVERIFY(service != nullptr);
+    service->setSimulateNextSubmitConflict(true);
+
+    QPushButton* enabledButton = nullptr;
+    for (auto* button : reserveButtons(*detail)) {
+        if (button->isEnabled()) {
+            enabledButton = button;
+            break;
+        }
+    }
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+    auto* dialog = shell.findChild<ReservationDialog*>();
+    QVERIFY(dialog != nullptr);
+    dialog->findChild<QPushButton*>(QStringLiteral("reservationSubmitButton"))->click();
+
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->messageText().contains(QStringLiteral("抢占")), 5000);
+    QVERIFY(dialog->isVisible()); // 失败不自动关闭
+    auto* submit = dialog->findChild<QPushButton*>(QStringLiteral("reservationSubmitButton"));
+    QVERIFY(submit->isEnabled()); // 按钮恢复可再次尝试
+    QVERIFY(submit->text().contains(QStringLiteral("确认预约")));
+    // 桩状态未被误改：失败不刷新为已预约。
+    QCOMPARE(enabledCount(reserveButtons(*detail)), 3);
+    saveSnapshotIfRequested(*dialog, QStringLiteral("home_shell_reservation_conflict.png"));
+
+    dialog->findChild<QPushButton*>(QStringLiteral("reservationCloseButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.findChild<ReservationDialog*>() == nullptr, 3000);
+}
+
+void HomeShellTest::reservationWithoutLoginPromptsAndRoutesToLogin()
+{
+    // 未登录点击预约：提示登录，“去登录”经全局 loginRequested 跳登录页。
+    HomeShell shell;
+    shell.show();
+    openDetailAndWait(shell, 1, 850);
+    auto* detail = detailPage(shell);
+
+    QSignalSpy loginSpy(&shell, &HomeShell::loginRequested);
+    QPushButton* enabledButton = nullptr;
+    for (auto* button : reserveButtons(*detail)) {
+        if (button->isEnabled()) {
+            enabledButton = button;
+            break;
+        }
+    }
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+
+    auto* prompt = shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->isVisible());
+    // 未登录不弹预约表单。
+    QVERIFY(shell.findChild<ReservationDialog*>() == nullptr);
+
+    auto* goLogin = prompt->findChild<QPushButton*>(QStringLiteral("reservationGoLoginButton"));
+    QVERIFY(goLogin != nullptr);
+    goLogin->click();
+    QCOMPARE(loginSpy.count(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt")) == nullptr, 3000);
+}
+
+void HomeShellTest::recordsPageShowsFourStatusesAndCancelRules()
+{
+    // 记录页：四状态卡片；仅“预约中”可取消，其余置灰。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    openRecordsViaProfileTab(shell);
+    QCOMPARE(pageStack->currentIndex(), 5);
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar->isBackVisible());
+
+    auto* records = recordsPage(shell);
+    QVERIFY(records->viewState() == ReservationListPage::State::Loading
+            || records->viewState() == ReservationListPage::State::List);
+    QTRY_VERIFY_WITH_TIMEOUT(records->viewState() == ReservationListPage::State::List, 3000);
+    QCOMPARE(records->recordCardCount(), 4);
+
+    QList<QPushButton*> cancelButtons;
+    const auto all = records->findChildren<QPushButton*>();
+    for (auto* button : all) {
+        if (button->objectName() == QStringLiteral("reservationCancelButton")) {
+            cancelButtons.append(button);
+        }
+    }
+    QCOMPARE(cancelButtons.size(), 4);
+    QCOMPARE(enabledCount(cancelButtons), 1); // 仅“预约中”可取消
+    for (const auto* button : cancelButtons) {
+        if (!button->isEnabled()) {
+            QVERIFY(!button->toolTip().isEmpty());
+        }
+    }
+
+    QString allText;
+    for (const auto* label : records->findChildren<QLabel*>()) {
+        allText += label->text();
+    }
+    QVERIFY(allText.contains(QStringLiteral("预约中")));
+    QVERIFY(allText.contains(QStringLiteral("已完成")));
+    QVERIFY(allText.contains(QStringLiteral("已取消")));
+    QVERIFY(allText.contains(QStringLiteral("已过期")));
+    QVERIFY(allText.contains(QStringLiteral("南山智造充电站"))); // 站点名称
+    QVERIFY(allText.contains(QStringLiteral("SZ-NSZ-03-07")));   // 桩编号
+    saveSnapshotIfRequested(*records, QStringLiteral("home_shell_reservations.png"));
+}
+
+void HomeShellTest::recordsPageCancelUpdatesState()
+{
+    // 取消“预约中”记录：成功后刷新列表，该记录转为“已取消”且按钮置灰。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    openRecordsViaProfileTab(shell);
+
+    auto* records = recordsPage(shell);
+    QTRY_VERIFY_WITH_TIMEOUT(records->viewState() == ReservationListPage::State::List, 3000);
+
+    QList<QPushButton*> cancelButtons;
+    const auto all = records->findChildren<QPushButton*>();
+    for (auto* button : all) {
+        if (button->objectName() == QStringLiteral("reservationCancelButton")) {
+            cancelButtons.append(button);
+        }
+    }
+    QPushButton* activeCancel = nullptr;
+    for (auto* button : cancelButtons) {
+        if (button->isEnabled()) {
+            activeCancel = button;
+            break;
+        }
+    }
+    QVERIFY(activeCancel != nullptr);
+    activeCancel->click();
+
+    // 取消 → 自动刷新：卡片仍 4 张，可取消按钮归零。
+    QTRY_VERIFY_WITH_TIMEOUT(
+        records->viewState() == ReservationListPage::State::List
+            && records->recordCardCount() == 4
+            && [&records]() {
+                   QList<QPushButton*> buttons;
+                   for (auto* button : records->findChildren<QPushButton*>()) {
+                       if (button->objectName() == QStringLiteral("reservationCancelButton")) {
+                           buttons.append(button);
+                       }
+                   }
+                   return enabledCount(buttons) == 0;
+               }(),
+        5000);
+    QCOMPARE(shell.findChild<QLabel*>(QStringLiteral("reservationCancelErrorLabel"))
+                 ->isHidden(),
+             true); // 无错误条
+}
+
+void HomeShellTest::recordsPageEmptyAndErrorStates()
+{
+    // 空记录 → 友好空页面；接口报错 → 错误态 + 重试恢复。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* service = recordsPage(shell)->service();
+    QVERIFY(service != nullptr);
+    service->setMockRecords({});
+
+    openRecordsViaProfileTab(shell);
+    auto* records = recordsPage(shell);
+    QTRY_VERIFY_WITH_TIMEOUT(records->viewState() == ReservationListPage::State::Empty, 3000);
+    QCOMPARE(records->recordCardCount(), 0);
+    auto* emptyNotice = shell.findChild<QWidget*>(QStringLiteral("reservationEmptyNotice"));
+    QVERIFY(emptyNotice != nullptr);
+    QVERIFY(emptyNotice->isVisible());
+    saveSnapshotIfRequested(*records, QStringLiteral("home_shell_reservations_empty.png"));
+
+    service->setSimulateFailure(true);
+    records->refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(records->viewState() == ReservationListPage::State::Error, 3000);
+    QPushButton* retryButton = nullptr;
+    for (auto* button : records->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("重试")) {
+            retryButton = button;
+            break;
+        }
+    }
+    QVERIFY(retryButton != nullptr);
+    retryButton->click();
+    QTRY_VERIFY_WITH_TIMEOUT(records->viewState() == ReservationListPage::State::Empty, 3000);
+}
+
+void HomeShellTest::recordsRouteBackReturnsToProfile()
+{
+    // 记录页顶部“返回”（复用全局导航）→ 回“我的”Tab。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+
+    openRecordsViaProfileTab(shell);
+    QCOMPARE(pageStack->currentIndex(), 5);
+    auto* backButton = shell.findChild<QPushButton*>(QStringLiteral("navBackButton"));
+    QVERIFY(backButton->isVisible());
+    backButton->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+    QVERIFY(!topBar->isBackVisible());
 }
 
 QTEST_MAIN(HomeShellTest)

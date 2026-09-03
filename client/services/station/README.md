@@ -10,4 +10,6 @@
   请求，两条通道输出同一 `querySucceeded(StationList)` /
   `detailSucceeded(StationDetail)` 信号，页面 UI 逻辑不变。路由携带非法站点
   ID 时详情通道回友好 `detailFailed`。排序/电价筛选是页面对结果的本地投影，
-  不经过本服务重复请求。
+  不经过本服务重复请求。任务 #17 增加 `setMockChargerReserved(chargerId)`：
+  仅作用于模拟通道，预约成功后把对应桩覆盖为“已预约”并重算空位数，
+  供详情页刷新演示；真实通道以服务端桩状态为准，不使用该覆盖。

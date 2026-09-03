@@ -9,6 +9,10 @@ add_library(charging_client_station_pages STATIC
     login_page.h
     platform_theme.cpp
     platform_theme.h
+    reservation_dialog.cpp
+    reservation_dialog.h
+    reservation_list_page.cpp
+    reservation_list_page.h
     station_detail_page.cpp
     station_detail_page.h
     station_home_page.cpp
@@ -28,6 +32,7 @@ target_include_directories(charging_client_station_pages PUBLIC
 target_link_libraries(charging_client_station_pages
     PUBLIC
     ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
     ChargingPlatform::ClientWidgets
     ChargingPlatform::Common
     Qt6::Widgets
