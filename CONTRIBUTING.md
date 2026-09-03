@@ -3,6 +3,7 @@
 本项目由五人协作开发。所有成员在开始编码前都应阅读：
 
 - [角色与协作流程](docs/team/roles_and_workflow.md)
+- [Git 协作指令](docs/team/git_commands.md)
 - [命名与代码风格](docs/design/naming_and_code_style.md)
 - [Qt 6.2.4 兼容规范](docs/development/qt_6_2_4_compatibility.md)
 
