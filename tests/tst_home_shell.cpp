@@ -1,9 +1,11 @@
 #include "charging/client/widgets/top_nav_bar.h"
 #include "pages/station/home_shell.h"
+#include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
 
 #include <QComboBox>
 #include <QDir>
+#include <QFrame>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -14,6 +16,7 @@
 namespace {
 
 using HomeShell = charging::client::pages::station::HomeShell;
+using StationDetailPage = charging::client::pages::station::StationDetailPage;
 using StationHomePage = charging::client::pages::station::StationHomePage;
 
 // 供 UI 评审使用的样例用户（新注册用户：昵称 用户+后四位，余额 123.45 元）。
@@ -52,6 +55,27 @@ void waitForStationList(HomeShell& shell)
     QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
 }
 
+// 构造仅带 ID 的站点快照：详情通道会以数据源回查覆盖状态字段。
+charging::model::Station makeStationSnapshot(qint64 id,
+                                             charging::model::StationStatus status
+                                                 = charging::model::StationStatus::Active)
+{
+    charging::model::Station station;
+    station.id = id;
+    station.name = QStringLiteral("测试站点 %1").arg(id);
+    station.address = QStringLiteral("测试地址 %1").arg(id);
+    station.priceCentsPerKwh = 100;
+    station.status = status;
+    return station;
+}
+
+StationDetailPage* detailPage(HomeShell& shell)
+{
+    auto* detail = shell.findChild<StationDetailPage*>();
+    Q_ASSERT_X(detail != nullptr, "detailPage", "HomeShell must own a StationDetailPage");
+    return detail;
+}
+
 } // namespace
 
 class HomeShellTest final : public QObject
@@ -73,6 +97,10 @@ private slots:
     void errorStateOffersFriendlyRetry();
     void sortAndPriceFiltersRefreshInstantly();
     void cardClickOpensDetailRouteAndBackReturns();
+    // —— 任务 #12：站点详情业务 ——
+    void detailPageShowsChargersWithFaultAndReservation();
+    void detailEmptyAndOfflineStates();
+    void detailInvalidRouteShowsErrorAndBackHome();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -229,8 +257,8 @@ void HomeShellTest::initialSearchGoesThroughLoadingToResultList()
     QCOMPARE(page->viewState(), StationHomePage::ViewState::Loading);
 
     QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
-    // 模拟数据共 5 个站点。
-    QCOMPARE(page->stationCardCount(), 5);
+    // 模拟数据共 6 个站点（含离线站与无桩站，驱动详情页边界状态演示）。
+    QCOMPARE(page->stationCardCount(), 6);
 }
 
 void HomeShellTest::topBarSearchFiltersStationList()
@@ -307,17 +335,17 @@ void HomeShellTest::sortAndPriceFiltersRefreshInstantly()
     QCOMPARE(page->viewState(), StationHomePage::ViewState::List);
     QCOMPARE(page->visibleStationIds().constFirst(), qint64(1));
 
-    // 电价筛选 ≤ ¥1.00：模拟数据中 98/86 两条命中。
+    // 电价筛选 ≤ ¥1.00：模拟数据中 98/86/92 三条命中。
     priceCombo->setCurrentIndex(1);
-    QCOMPARE(page->stationCardCount(), 2);
+    QCOMPARE(page->stationCardCount(), 3);
 
     priceCombo->setCurrentIndex(0); // 全部电价
-    QCOMPARE(page->stationCardCount(), 5);
+    QCOMPARE(page->stationCardCount(), 6);
 }
 
 void HomeShellTest::cardClickOpensDetailRouteAndBackReturns()
 {
-    // 站点卡片点击 → 详情路由页（任务 #12 占位）；返回回到找站列表。
+    // 站点卡片点击 → 详情路由页（任务 #12）；顶部导航“返回”回找站列表。
     HomeShell shell(makeSampleUser());
     shell.show();
     QTest::qWait(20); // 让窗口完成映射，鼠标事件落在真实几何上。
@@ -325,27 +353,132 @@ void HomeShellTest::cardClickOpensDetailRouteAndBackReturns()
 
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
     auto* page = shell.findChild<StationHomePage*>();
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar != nullptr);
     auto* card = page->stationCardAt(0);
     QVERIFY(card != nullptr);
 
     QTest::mouseClick(card, Qt::LeftButton);
     QCOMPARE(pageStack->currentIndex(), 4);
 
+    // 路由携带站点快照：信息区立即可见，桩列表经加载态后就绪。
+    auto* detail = detailPage(shell);
     auto* nameLabel = shell.findChild<QLabel*>(QStringLiteral("detailNameLabel"));
     QVERIFY(nameLabel != nullptr);
     QVERIFY(!nameLabel->text().isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
 
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail.png"));
 
-    auto* backButton = shell.findChild<QPushButton*>(QStringLiteral("detailBackButton"));
+    // 返回按钮复用全局顶部导航（进入详情显示、返回列表收起）。
+    auto* backButton = shell.findChild<QPushButton*>(QStringLiteral("navBackButton"));
     QVERIFY(backButton != nullptr);
+    QVERIFY(backButton->isVisible());
     backButton->click();
     QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(!topBar->isBackVisible());
 
     // 详情页内点击“找站”Tab 也应能回列表（重复点击当前 Tab 不被去重吞掉）。
     QTest::mouseClick(page->stationCardAt(0), Qt::LeftButton);
     QCOMPARE(pageStack->currentIndex(), 4);
+    QVERIFY(backButton->isVisible());
     tabButton(shell, QStringLiteral("station"))->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(!topBar->isBackVisible());
+}
+
+void HomeShellTest::detailPageShowsChargersWithFaultAndReservation()
+{
+    // 正常态：充电桩卡片列表 + 故障视觉标记 + 预约占位入口。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    detail->openStation(makeStationSnapshot(1), 850);
+    QCOMPARE(detail->viewState(), StationDetailPage::DetailState::Loading);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    pageStack->setCurrentIndex(4); // 让详情页成为当前页（截图取证）。
+    QTest::qWait(20);
+    // id1：10 桩，空闲 3/共 10（与列表页空位数一致）。
+    QCOMPARE(detail->chargerCardCount(), 10);
+    auto* summary = shell.findChild<QLabel*>(QStringLiteral("detailChargerSummaryLabel"));
+    QVERIFY(summary != nullptr);
+    QVERIFY(summary->text().contains(QStringLiteral("空闲 3")));
+
+    // 故障桩卡片带红色标记属性（页面局部样式驱动视觉）。
+    bool sawFaultCard = false;
+    const auto frames = detail->findChildren<QFrame*>();
+    for (const auto* frame : frames) {
+        if (frame->property("isChargerCard").toBool()
+            && frame->property("chargerFault").toBool()) {
+            sawFaultCard = true;
+            break;
+        }
+    }
+    QVERIFY(sawFaultCard);
+
+    // 预约入口：仅空闲桩有“预约”按钮，点击出占位提示（任务 #17 前无业务）。
+    auto* reserveButton = detail->findChild<QPushButton*>(QStringLiteral("detailReserveButton"));
+    QVERIFY(reserveButton != nullptr);
+    QSignalSpy reservationSpy(detail, &StationDetailPage::reservationRequested);
+    reserveButton->click();
+    QCOMPARE(reservationSpy.count(), 1);
+    QVERIFY(detail->reservationHintVisible());
+    auto* hint = shell.findChild<QLabel*>(QStringLiteral("detailReservationHint"));
+    QVERIFY(hint != nullptr);
+    QVERIFY(hint->text().contains(QStringLiteral("任务 #17")));
+
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_chargers.png"));
+}
+
+void HomeShellTest::detailEmptyAndOfflineStates()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    // 空数据：无桩站点 → 列表区“暂无充电桩”，页面不留大片空白。
+    detail->openStation(makeStationSnapshot(6), 3800);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    QCOMPARE(detail->chargerCardCount(), 0);
+    QVERIFY(detail->chargerEmptyVisible());
+    pageStack->setCurrentIndex(4);
+    QTest::qWait(20); // 等待重绘，截图作为 UI 评审证据。
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_empty.png"));
+
+    // 站点离线：信息状态 + 醒目横幅（数据源驱动）。
+    detail->openStation(makeStationSnapshot(4), 2650);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    QVERIFY(detail->offlineBannerVisible());
+    auto* statusTag = shell.findChild<QLabel*>(QStringLiteral("detailStatusTag"));
+    QVERIFY(statusTag != nullptr);
+    QVERIFY(statusTag->text().contains(QStringLiteral("已离线")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_offline.png"));
+}
+
+void HomeShellTest::detailInvalidRouteShowsErrorAndBackHome()
+{
+    // 无站点 ID / ID 非法：错误提示 + “返回首页”回到找站列表。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    detail->openStation(makeStationSnapshot(0), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Error, 3000);
+
+    QPushButton* backHomeButton = nullptr;
+    const auto buttons = detail->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->text() == QStringLiteral("返回首页")) {
+            backHomeButton = button;
+            break;
+        }
+    }
+    QVERIFY(backHomeButton != nullptr);
+    backHomeButton->click();
     QCOMPARE(pageStack->currentIndex(), 0);
 }
 

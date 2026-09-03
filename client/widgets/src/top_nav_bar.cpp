@@ -34,6 +34,18 @@ QLabel#navPlatformName {
 QLineEdit#navSearchLineEdit {
     min-height: 34px;
 }
+QPushButton#navBackButton {
+    background: #F4F6F8;
+    color: #1F2937;
+    border: 1px solid #D5DCE4;
+    border-radius: 15px;
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+QPushButton#navBackButton:pressed {
+    background: #E5E9EF;
+}
 QPushButton#navLoginButton {
     background: #00B578;
     color: #FFFFFF;
@@ -75,7 +87,13 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     rootLayout->setContentsMargins(16, 8, 16, 8);
     rootLayout->setSpacing(10);
 
-    // 左：Logo + 平台名称。
+    // 左：可选“返回”（二级页面显示）+ Logo + 平台名称。
+    backButton_ = new QPushButton(QStringLiteral("‹ 返回"), this);
+    backButton_->setObjectName(QStringLiteral("navBackButton"));
+    backButton_->setCursor(Qt::PointingHandCursor);
+    backButton_->setAccessibleName(tr("返回"));
+    backButton_->hide();
+
     logoLabel_ = new QLabel(QStringLiteral("⚡"), this);
     logoLabel_->setObjectName(QStringLiteral("navLogo"));
     logoLabel_->setAlignment(Qt::AlignCenter);
@@ -105,6 +123,7 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     loginButton_->setObjectName(QStringLiteral("navLoginButton"));
     loginButton_->setCursor(Qt::PointingHandCursor);
 
+    rootLayout->addWidget(backButton_);
     rootLayout->addWidget(logoLabel_);
     rootLayout->addWidget(nameLabel_);
     rootLayout->addStretch(1);
@@ -115,6 +134,7 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     rootLayout->addWidget(loginButton_);
 
     connect(loginButton_, &QPushButton::clicked, this, [this]() { emit loginRequested(); });
+    connect(backButton_, &QPushButton::clicked, this, [this]() { emit backRequested(); });
     connect(avatarButton_, &QPushButton::clicked, this,
             [this]() { emit profileRequested(); });
     connect(searchLineEdit_, &QLineEdit::returnPressed, this, [this]() {
@@ -143,6 +163,18 @@ void TopNavBar::clearUser()
 bool TopNavBar::hasUser() const
 {
     return hasUser_;
+}
+
+void TopNavBar::setBackVisible(bool visible)
+{
+    backButton_->setVisible(visible);
+    // 二级页面：Logo 可隐藏，让“返回 + 平台名”成为主视觉，避免歧义。
+    logoLabel_->setVisible(!visible);
+}
+
+bool TopNavBar::isBackVisible() const
+{
+    return backButton_->isVisible();
 }
 
 QString TopNavBar::searchText() const

@@ -24,6 +24,15 @@ struct StationListItem
 
 using StationList = QVector<StationListItem>;
 
+// 站点详情（任务 #12）：站点信息 + 距离 + 该站点下全部充电桩。
+struct StationDetail
+{
+    charging::model::Station station;
+    int distanceMeters = -1;
+    QVector<charging::model::Charger> chargers;
+    bool hasChargerData = false; // 服务端是否返回了桩列表（区分空与缺数据）
+};
+
 // 站点查询服务（成员 2，任务 #7）。
 //
 // 双通道设计，页面 UI 逻辑对二者无感知：
@@ -54,24 +63,35 @@ public:
     // 按关键字（站名/地址，不区分大小写）异步检索；空关键字返回全部。
     void search(const QString& keyword = QString());
 
+    // 站点详情（任务 #12）：异步拉取指定站点的充电桩列表。station 由列表页
+    // 路由携带（ID 非法/≤0 直接失败）；liveMode 下请求 GET_CHARGERS。
+    void fetchDetail(const charging::model::Station& station, int distanceMeters);
+
 signals:
     void queryStarted();
     void querySucceeded(const charging::client::services::station::StationList& stations);
     void queryFailed(const QString& message);
+    void detailStarted();
+    void detailSucceeded(const charging::client::services::station::StationDetail& detail);
+    void detailFailed(const QString& message);
 
 private:
     void handleResponse(const charging::protocol::ResponseEnvelope& response);
     void handleRequestFailure(const QString& requestId, const QString& errorCode,
                               const QString& message);
     void finishMockQuery();
+    void finishMockDetail();
 
     charging::client::network::ClientConnection* connection_ = nullptr;
     bool liveMode_ = false;
     bool simulateFailure_ = false;
     QString pendingRequestId_;
+    QString pendingDetailRequestId_;
     QString pendingKeyword_;
+    StationDetail pendingDetail_;
 };
 
 } // namespace charging::client::services::station
 
 Q_DECLARE_METATYPE(charging::client::services::station::StationList)
+Q_DECLARE_METATYPE(charging::client::services::station::StationDetail)

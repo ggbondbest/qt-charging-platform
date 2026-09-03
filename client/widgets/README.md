@@ -14,3 +14,8 @@
 首页注入 找站/订单/充值/我的 四项）。两者样式以对象名限定在组件内部生效，
 **不改动全局 QSS 文件**；因 `TopNavBar` 透传 `model::User`，本 target 新增
 依赖 `ChargingPlatform::Common`。
+
+任务 #12 为 `TopNavBar` 增加二级页面返回能力：`setBackVisible(bool)` 在 Logo
+左侧显示/隐藏“‹ 返回”按钮（默认隐藏，一级页面外观不变），点击发
+`backRequested()` 信号由宿主壳路由——详情页返回复用全局导航，页面不再自造
+返回栏。

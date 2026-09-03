@@ -28,8 +28,9 @@ class StationHomePage;
 // 登录态透传：User 经 setUser 进入 TopNavBar 与“我的”页；未登录构造的壳
 // 右上角显示登录按钮，点击发 loginRequested 由宿主（MainWindow）跳登录页。
 //
-// 任务 #7：顶部搜索框驱动找站页站点检索；站点卡片点击 → 详情路由
-// （StationDetailPage 占位页，详情业务属任务 #12，本次仅跳转）。
+// 任务 #7：顶部搜索框驱动找站页站点检索；站点卡片点击 → 详情路由。
+// 任务 #12：详情页与列表共用同一查询服务实例；进入详情时顶部导航显示
+// “返回”按钮（复用全局 TopNavBar，不新增页面级导航），返回/切 Tab 收起。
 class HomeShell final : public QWidget
 {
     Q_OBJECT

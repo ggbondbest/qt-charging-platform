@@ -100,7 +100,14 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     connect(topBar_, &TopNavBar::searchSubmitted, this, [this](const QString& keyword) {
         tabBar_->setCurrentTab(QStringLiteral("station"));
         pageStack_->setCurrentIndex(0);
+        topBar_->setBackVisible(false);
         stationPage_->search(keyword);
+    });
+    // 任务 #12：顶部导航“返回”按钮 → 从详情页回到找站列表。
+    connect(topBar_, &TopNavBar::backRequested, this, [this]() {
+        pageStack_->setCurrentIndex(0);
+        tabBar_->setCurrentTab(QStringLiteral("station"));
+        topBar_->setBackVisible(false);
     });
 
     // 内容区：找站 / 订单 / 充值 / 我的。
@@ -112,15 +119,20 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     pageStack_->addWidget(createRechargePage());
     pageStack_->addWidget(createProfilePage());
 
-    // 站点详情路由页（索引 4，非 Tab 页）：任务 #7 仅跳转，业务属任务 #12。
+    // 站点详情路由页（索引 4，非 Tab 页，任务 #12）：与列表页共用同一
+    // 查询服务实例（详情走同一双通道，模拟 ↔ 真实切换 UI 零改动）。
     detailPage_ = new StationDetailPage(pageStack_);
     pageStack_->addWidget(detailPage_);
+    detailPage_->setService(stationPage_->service());
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
     connect(detailPage_, &StationDetailPage::backRequested, this, [this]() {
         pageStack_->setCurrentIndex(0);
         tabBar_->setCurrentTab(QStringLiteral("station"));
+        topBar_->setBackVisible(false);
     });
+    // 预约入口信号（reservationRequested）为任务 #17 预留：本页仅透传，
+    // 详情页内展示占位提示，不做业务。
     rootLayout->addWidget(pageStack_, 1);
 
     // 底部 Tab 导航公共组件：固定底部，四个 Tab。
@@ -145,14 +157,18 @@ void HomeShell::showTab(const QString& id)
     const auto index = kIndexById.value(id, -1);
     if (index >= 0) {
         pageStack_->setCurrentIndex(index);
+        // 离开详情路由页（切任意 Tab）即收起顶部导航返回按钮。
+        topBar_->setBackVisible(pageStack_->currentWidget() == detailPage_);
     }
 }
 
 void HomeShell::openStationDetail(const charging::model::Station& station, int distanceMeters)
 {
-    // 任务 #7 只打通路由；详情业务由任务 #12 在 StationDetailPage 内实现。
+    // 路由携带站点快照（含站点 ID）：非法/缺失 ID 由服务详情通道回错误态。
     detailPage_->openStation(station, distanceMeters);
     pageStack_->setCurrentWidget(detailPage_);
+    // 复用全局顶部导航的返回按钮回列表（不重复开发页面级导航）。
+    topBar_->setBackVisible(true);
 }
 
 void HomeShell::setConnection(charging::client::network::ClientConnection* connection)
