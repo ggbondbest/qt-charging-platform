@@ -112,6 +112,33 @@ target_link_libraries(test_network_resilience PRIVATE
 add_test(NAME network_resilience COMMAND test_network_resilience)
 set_tests_properties(network_resilience PROPERTIES TIMEOUT 20)
 
+add_executable(test_wallet_service tst_wallet_service.cpp)
+target_link_libraries(test_wallet_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME wallet_service COMMAND test_wallet_service)
+
+add_executable(test_order_service tst_order_service.cpp)
+target_link_libraries(test_order_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME order_service COMMAND test_order_service)
+
+add_executable(test_charging_service tst_charging_service.cpp)
+target_link_libraries(test_charging_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME charging_service COMMAND test_charging_service)
+
 find_program(CHARGING_BASH_EXECUTABLE NAMES bash)
 find_program(CHARGING_SQLITE3_EXECUTABLE NAMES sqlite3)
 if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)
