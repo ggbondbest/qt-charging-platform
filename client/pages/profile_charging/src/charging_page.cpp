@@ -158,14 +158,13 @@ void ChargingPage::render(const charging::client::ChargingStatus& status)
     } else {
         // Degrade honestly: never render a locally guessed power value.
         powerValueLabel_->setText(QStringLiteral("--"));
-        powerCaptionLabel_->setText(tr("实时功率（服务端字段待确认）"));
+        powerCaptionLabel_->setText(tr("实时功率（本帧未上报）"));
     }
 
     energyValueLabel_->setText(formatEnergyWhAsKwh(status.order.energyWh));
     durationValueLabel_->setText(formatDurationHms(status.order.durationSeconds));
-    estimateValueLabel_->setText(
-        formatCentsAsYuan(status.estimatedAmountCents > 0 ? status.estimatedAmountCents
-                                                          : status.order.amountCents));
+    // §8.4: the live charge for a CHARGING order is order.amountCents.
+    estimateValueLabel_->setText(formatCentsAsYuan(status.order.amountCents));
     updatedLabel_->setText(
         tr("更新于 %1")
             .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))));
@@ -202,9 +201,7 @@ void ChargingPage::requestStop()
     QMessageBox box(QMessageBox::Question, tr("确认停止充电"),
                     tr("当前已充电 %1 kWh，预估费用 ¥%2。\n确定停止充电吗？")
                         .arg(formatEnergyWhAsKwh(latest_.order.energyWh),
-                             formatCentsAsYuan(latest_.estimatedAmountCents > 0
-                                                    ? latest_.estimatedAmountCents
-                                                    : latest_.order.amountCents)),
+                             formatCentsAsYuan(latest_.order.amountCents)),
                     QMessageBox::NoButton, this);
     QPushButton* confirm = box.addButton(tr("确认停止"), QMessageBox::AcceptRole);
     box.addButton(tr("继续充电"), QMessageBox::RejectRole);
