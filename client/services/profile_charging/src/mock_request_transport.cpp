@@ -184,24 +184,36 @@ QJsonObject MockRequestTransport::buildStatusPayload(const charging::model::Orde
                                                      qint64 powerWatts, qint64 energyWh,
                                                      qint64 durationSeconds) const
 {
-    // TODO(contract): GET_CHARGING_STATUS / STOP_CHARGING payload shape is not
-    // frozen in docs/api/socket_protocol.md yet. This mirrors the expected
-    // order object plus live keys powerWatts/estimatedAmountCents and the
-    // stationName/chargerCode join. Confirm with the leader before wiring.
-    QJsonObject object = charging::model::toJson(order);
-    object.insert(QStringLiteral("energyWh"), energyWh);
-    object.insert(QStringLiteral("durationSeconds"), durationSeconds);
-    const auto display = chargerDisplays_.constFind(order.chargerId);
-    if (display != chargerDisplays_.constEnd()) {
-        object.insert(QStringLiteral("stationName"), display->first);
-        object.insert(QStringLiteral("chargerCode"), display->second);
-    }
-    object.insert(QStringLiteral("powerWatts"), powerWatts);
-    object.insert(QStringLiteral("estimatedAmountCents"),
-                  amountFor(energyWh, order.unitPriceCentsPerKwh));
+    // Mirrors the frozen contract (docs/api/socket_protocol.md §8.4/8.5):
+    // the order snapshot (live durationSeconds/energyWh/amountCents for a
+    // CHARGING order, persisted values otherwise) travels under `order`,
+    // and the live power is a sibling `currentPowerWatts` (0 when the order
+    // is not charging). stationName/chargerCode stay siblings pending the
+    // leader's join decision (TODO(contract): not part of §8.4 yet).
+    QJsonObject orderObject = charging::model::toJson(order);
+    orderObject.insert(QStringLiteral("energyWh"), energyWh);
+    orderObject.insert(QStringLiteral("durationSeconds"), durationSeconds);
+    orderObject.insert(QStringLiteral("amountCents"),
+                       amountFor(energyWh, order.unitPriceCentsPerKwh));
 
     QJsonObject payload;
-    payload.insert(QStringLiteral("status"), object);
+    payload.insert(QStringLiteral("order"), orderObject);
+    payload.insert(QStringLiteral("currentPowerWatts"), powerWatts);
+    const auto display = chargerDisplays_.constFind(order.chargerId);
+    if (display != chargerDisplays_.constEnd()) {
+        payload.insert(QStringLiteral("stationName"), display->first);
+        payload.insert(QStringLiteral("chargerCode"), display->second);
+    }
+    return payload;
+}
+
+QJsonObject MockRequestTransport::payResultPayload(const charging::model::Order& order) const
+{
+    // §8.6: PAY_ORDER success carries the (completed) order object plus the
+    // post-payment authoritative balance under `balanceCents`.
+    QJsonObject payload;
+    payload.insert(QStringLiteral("order"), charging::model::toJson(order));
+    payload.insert(QStringLiteral("balanceCents"), user_.balanceCents);
     return payload;
 }
 
@@ -229,6 +241,8 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
 
     const QString getUserInfoType =
         QString::fromLatin1(charging::protocol::request_type::kGetUserInfo);
+    const QString updateUserInfoType =
+        QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
     const QString rechargeType =
         QString::fromLatin1(charging::protocol::request_type::kRecharge);
     const QString getRecordsType =
@@ -243,6 +257,34 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kPayOrder);
 
     if (type == getUserInfoType) {
+        QJsonObject payload;
+        payload.insert(QStringLiteral("user"), charging::model::toJson(user_));
+        callback(true, payload, charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == updateUserInfoType) {
+        // TODO(contract): UPDATE_USER_INFO has no frozen payload yet; this
+        // mock accepts nickname only (the single field the user edits) and
+        // mirrors the schema CHECK bounds: trim(nickname) is 1..32 chars.
+        // Avatar uploads have no protocol at all, so the UI keeps them
+        // disabled until the leader confirms an endpoint.
+        const QJsonValue nicknameValue = data.value(QStringLiteral("nickname"));
+        if (!nicknameValue.isString()) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                               QStringLiteral("nickname must be a string")));
+            return;
+        }
+        const QString nickname = nicknameValue.toString().trimmed();
+        if (nickname.isEmpty() || nickname.length() > 32) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                               QStringLiteral("nickname must be 1-32 characters")));
+            return;
+        }
+        user_.nickname = nickname;
+        user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
         QJsonObject payload;
         payload.insert(QStringLiteral("user"), charging::model::toJson(user_));
         callback(true, payload, charging::protocol::ProtocolError{});
@@ -338,9 +380,7 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         return;
     }
 
-    if (type == getChargingStatusType || type == stopChargingType) {
-        // TODO(contract): request field name is assumed as orderId (decimal
-        // string per the id convention); confirm with the leader.
+    if (type == getChargingStatusType) {
         const qint64 orderId =
             data.value(QStringLiteral("orderId")).toString().toLongLong();
         charging::model::Order* order = findOrder(orderId);
@@ -348,6 +388,45 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             callback(false, QJsonObject{},
                      mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
                                QStringLiteral("order not found")));
+            return;
+        }
+
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        if (order->status == charging::model::OrderStatus::Charging) {
+            // §8.4: a live derived snapshot; the read never writes back.
+            const qint64 liveDuration =
+                order->startedAtUtc.isValid() ? order->startedAtUtc.secsTo(now) : 0;
+            const qint64 liveEnergy = liveDuration * kMockLivePowerWatts / 3600; // Wh
+            callback(true,
+                     buildStatusPayload(*order, kMockLivePowerWatts, liveEnergy, liveDuration),
+                     charging::protocol::ProtocolError{});
+        } else {
+            // §8.4: non-charging orders return the persisted row with
+            // currentPowerWatts = 0 — still a success, not an error.
+            callback(true,
+                     buildStatusPayload(*order, 0, order->energyWh, order->durationSeconds),
+                     charging::protocol::ProtocolError{});
+        }
+        return;
+    }
+
+    if (type == stopChargingType) {
+        const qint64 orderId =
+            data.value(QStringLiteral("orderId")).toString().toLongLong();
+        charging::model::Order* order = findOrder(orderId);
+        if (order == nullptr) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
+                               QStringLiteral("order not found")));
+            return;
+        }
+        if (order->status == charging::model::OrderStatus::WaitingPayment ||
+            order->status == charging::model::OrderStatus::Completed) {
+            // §8.5: a retry after a successful stop is an idempotent success
+            // replay of the saved result (no double billing).
+            callback(true,
+                     buildStatusPayload(*order, 0, order->energyWh, order->durationSeconds),
+                     charging::protocol::ProtocolError{});
             return;
         }
         if (order->status != charging::model::OrderStatus::Charging) {
@@ -359,27 +438,22 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             return;
         }
 
+        // The mock plays the server's billing role: settle with the live
+        // snapshot and move the order to WAITING_PAYMENT. The real
+        // transition is decided by the leader's ChargingService.
         const QDateTime now = QDateTime::currentDateTimeUtc();
         const qint64 liveDuration =
             order->startedAtUtc.isValid() ? order->startedAtUtc.secsTo(now) : 0;
         const qint64 liveEnergy = liveDuration * kMockLivePowerWatts / 3600; // Wh
-
-        if (type == stopChargingType) {
-            // The mock plays the server's billing role: settle with the live
-            // snapshot and move the order to WAITING_PAYMENT. The real
-            // transition is decided by the leader's ChargingService.
-            order->durationSeconds = liveDuration;
-            order->energyWh = liveEnergy;
-            order->amountCents = amountFor(liveEnergy, order->unitPriceCentsPerKwh);
-            order->stoppedAtUtc = now;
-            order->status = charging::model::OrderStatus::WaitingPayment;
-            order->updatedAtUtc = now;
-        }
+        order->durationSeconds = liveDuration;
+        order->energyWh = liveEnergy;
+        order->amountCents = amountFor(liveEnergy, order->unitPriceCentsPerKwh);
+        order->stoppedAtUtc = now;
+        order->status = charging::model::OrderStatus::WaitingPayment;
+        order->updatedAtUtc = now;
 
         callback(true,
-                 buildStatusPayload(*order,
-                                    type == stopChargingType ? 0 : kMockLivePowerWatts,
-                                    liveEnergy, liveDuration),
+                 buildStatusPayload(*order, 0, order->energyWh, order->durationSeconds),
                  charging::protocol::ProtocolError{});
         return;
     }
@@ -392,6 +466,13 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             callback(false, QJsonObject{},
                      mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
                                QStringLiteral("order not found")));
+            return;
+        }
+        if (order->status == charging::model::OrderStatus::Completed) {
+            // §8.6: retrying payment on an already-completed order is an
+            // idempotent success — return the saved order + current balance
+            // and charge nothing (mirrors the server's no-double-debit rule).
+            callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
             return;
         }
         if (order->status != charging::model::OrderStatus::WaitingPayment) {
@@ -424,12 +505,7 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         order->paidAtUtc = now;
         order->updatedAtUtc = now;
 
-        QJsonObject payload;
-        payload.insert(QStringLiteral("amountCents"), order->amountCents);
-        payload.insert(QStringLiteral("balanceAfterCents"), user_.balanceCents);
-        payload.insert(QStringLiteral("paidAt"),
-                       now.toString(Qt::ISODateWithMs)); // "2026-...T...Z"
-        callback(true, payload, charging::protocol::ProtocolError{});
+        callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
         return;
     }
 
