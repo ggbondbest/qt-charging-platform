@@ -229,6 +229,8 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
 
     const QString getUserInfoType =
         QString::fromLatin1(charging::protocol::request_type::kGetUserInfo);
+    const QString updateUserInfoType =
+        QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
     const QString rechargeType =
         QString::fromLatin1(charging::protocol::request_type::kRecharge);
     const QString getRecordsType =
@@ -243,6 +245,34 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kPayOrder);
 
     if (type == getUserInfoType) {
+        QJsonObject payload;
+        payload.insert(QStringLiteral("user"), charging::model::toJson(user_));
+        callback(true, payload, charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == updateUserInfoType) {
+        // TODO(contract): UPDATE_USER_INFO has no frozen payload yet; this
+        // mock accepts nickname only (the single field the user edits) and
+        // mirrors the schema CHECK bounds: trim(nickname) is 1..32 chars.
+        // Avatar uploads have no protocol at all, so the UI keeps them
+        // disabled until the leader confirms an endpoint.
+        const QJsonValue nicknameValue = data.value(QStringLiteral("nickname"));
+        if (!nicknameValue.isString()) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                               QStringLiteral("nickname must be a string")));
+            return;
+        }
+        const QString nickname = nicknameValue.toString().trimmed();
+        if (nickname.isEmpty() || nickname.length() > 32) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                               QStringLiteral("nickname must be 1-32 characters")));
+            return;
+        }
+        user_.nickname = nickname;
+        user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
         QJsonObject payload;
         payload.insert(QStringLiteral("user"), charging::model::toJson(user_));
         callback(true, payload, charging::protocol::ProtocolError{});

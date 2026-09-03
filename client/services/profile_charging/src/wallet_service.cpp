@@ -30,6 +30,11 @@ bool WalletService::isFetchingProfile() const
     return fetchingProfile_;
 }
 
+bool WalletService::isUpdatingNickname() const
+{
+    return updatingNickname_;
+}
+
 bool WalletService::isRecharging() const
 {
     return recharging_;
@@ -78,6 +83,58 @@ void WalletService::fetchProfile()
                          }
                          emit profileLoaded(user);
                      });
+}
+
+void WalletService::updateNickname(const QString& nickname)
+{
+    const QString type =
+        QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
+    if (updatingNickname_) {
+        return; // An update is in flight; never send a second one.
+    }
+    if (transport_ == nullptr) {
+        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInternalError,
+                                                  QStringLiteral("transport is not installed")));
+        return;
+    }
+    const QString trimmed = nickname.trimmed();
+    if (trimmed.isEmpty() || trimmed.length() > 32) {
+        // Local pre-check mirrors the documented schema bound (1..32 chars);
+        // the server stays authoritative once real interfaces are released.
+        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
+                                                  QStringLiteral("昵称需为 1–32 个字符")));
+        return;
+    }
+
+    updatingNickname_ = true;
+    QJsonObject payload;
+    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
+    // nickname-only shape below is what the mock understands. Avatar uploads
+    // have no protocol at all and are not sent from this client.
+    payload.insert(QStringLiteral("nickname"), trimmed);
+    transport_->send(
+        type, payload,
+        [this](bool success, const QJsonObject& data,
+               const charging::protocol::ProtocolError& error) {
+            updatingNickname_ = false;
+            const QString updateType = QString::fromLatin1(
+                charging::protocol::request_type::kUpdateUserInfo);
+            if (!success) {
+                emit operationFailed(updateType, error);
+                return;
+            }
+            charging::model::User user;
+            QString parseError;
+            if (!charging::model::fromJson(data.value(QStringLiteral("user")).toObject(),
+                                           &user, &parseError)) {
+                emit operationFailed(
+                    updateType, makeLocalError(
+                                   charging::protocol::error_code::kInternalError,
+                                   QStringLiteral("invalid user payload: ") + parseError));
+                return;
+            }
+            emit profileLoaded(user);
+        });
 }
 
 void WalletService::recharge(qint64 amountCents)

@@ -70,6 +70,82 @@ private slots:
         QCOMPARE(user.balanceCents, qint64(10000));
     }
 
+    void updateNicknameRoundTripsAndTrims()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateNickname(QStringLiteral("  新昵称  "));
+        QVERIFY(waitForSignal(loaded));
+
+        const charging::model::User updated =
+            qvariant_cast<charging::model::User>(loaded.at(0).at(0));
+        QCOMPARE(updated.nickname, QStringLiteral("新昵称"));
+        QVERIFY(!service.isUpdatingNickname());
+
+        // The mock keeps the change: a fresh fetch reports the same nickname.
+        QSignalSpy refetched(&service, &WalletService::profileLoaded);
+        service.fetchProfile();
+        QVERIFY(waitForSignal(refetched));
+        const charging::model::User reread =
+            qvariant_cast<charging::model::User>(refetched.at(0).at(0));
+        QCOMPARE(reread.nickname, QStringLiteral("新昵称"));
+    }
+
+    void invalidNicknamesFailLocallyWithoutRoundTrip()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy failed(&service, &WalletService::operationFailed);
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateNickname(QStringLiteral("   "));
+        service.updateNickname(QString(33, QChar(u'名')));
+        QCOMPARE(failed.count(), 2); // Both rejected synchronously.
+        QCOMPARE(loaded.count(), 0);
+        QCOMPARE(failed.at(0).at(1).value<charging::protocol::ProtocolError>().code,
+                 QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope));
+        QVERIFY(!service.isUpdatingNickname());
+    }
+
+    void duplicateUpdateNicknameIsIgnoredWhileInFlight()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateNickname(QStringLiteral("第一个"));
+        service.updateNickname(QStringLiteral("第二个")); // Swallowed by the guard.
+        QVERIFY(waitForSignal(loaded));
+        QTest::qWait(600);
+        QCOMPARE(loaded.count(), 1);
+        const charging::model::User updated =
+            qvariant_cast<charging::model::User>(loaded.at(0).at(0));
+        QCOMPARE(updated.nickname, QStringLiteral("第一个"));
+    }
+
+    void updateNicknameFailurePropagatesAndReleasesGuard()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        transport.setNextFailure(
+            QString::fromLatin1(charging::protocol::error_code::kConnectionError));
+
+        QSignalSpy failed(&service, &WalletService::operationFailed);
+        service.updateNickname(QStringLiteral("改名"));
+        QVERIFY(waitForSignal(failed));
+        QCOMPARE(failed.at(0).at(0).toString(),
+                 QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo));
+        QVERIFY(!service.isUpdatingNickname());
+
+        // A retry after the transient failure must succeed.
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateNickname(QStringLiteral("改名"));
+        QVERIFY(waitForSignal(loaded));
+    }
+
     void rechargeUpdatesBalanceAndCreatesRecord()
     {
         MockRequestTransport transport;

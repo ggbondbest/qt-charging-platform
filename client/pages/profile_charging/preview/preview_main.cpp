@@ -1,7 +1,7 @@
 // Local-only preview shell for Member 3 pages (wallet + recharge + orders +
-// charging + settlement). Runs against MockRequestTransport so the UI can be
-// reviewed before the real interfaces are released. Never linked into
-// charging_client.
+// charging + settlement + profile hub + profile edit). Runs against
+// MockRequestTransport so the UI can be reviewed before the real interfaces
+// are released. Never linked into charging_client.
 
 #include "charging/client/profile_charging/charging_page.h"
 #include "charging/client/profile_charging/charging_service.h"
@@ -9,6 +9,8 @@
 #include "charging/client/profile_charging/order_detail_page.h"
 #include "charging/client/profile_charging/order_list_page.h"
 #include "charging/client/profile_charging/order_service.h"
+#include "charging/client/profile_charging/profile_edit_page.h"
+#include "charging/client/profile_charging/profile_page.h"
 #include "charging/client/profile_charging/recharge_page.h"
 #include "charging/client/profile_charging/settlement_page.h"
 #include "charging/client/profile_charging/wallet_page.h"
@@ -31,11 +33,11 @@ namespace {
 constexpr int kPreviewWidth = 420;
 constexpr int kPreviewHeight = 860;
 
-// Optional smoke hooks: --page=wallet|recharge|orders|order-detail|charging|
-// settlement --screenshot=/tmp/x.png
+// Optional smoke hooks: --page=profile|profile-edit|wallet|recharge|orders|
+// order-detail|charging|settlement --screenshot=/tmp/x.png
 struct PreviewArgs
 {
-    QString page = QStringLiteral("wallet");
+    QString page = QStringLiteral("profile");
     QString screenshotPath;
 };
 
@@ -87,16 +89,24 @@ int main(int argc, char* argv[])
     auto* orderDetailPage = new charging::client::OrderDetailPage();
     auto* chargingPage = new charging::client::ChargingPage(&chargingService);
     auto* settlementPage = new charging::client::SettlementPage(&chargingService);
+    auto* profilePage = new charging::client::ProfilePage(&walletService, &orderService);
+    auto* profileEditPage = new charging::client::ProfileEditPage(&walletService);
     stack.addWidget(walletPage); // index 0
     stack.addWidget(rechargePage); // index 1
     stack.addWidget(orderListPage); // index 2
     stack.addWidget(orderDetailPage); // index 3
     stack.addWidget(chargingPage); // index 4
     stack.addWidget(settlementPage); // index 5
+    stack.addWidget(profilePage); // index 6 (hub)
+    stack.addWidget(profileEditPage); // index 7
 
     // Recharge can be entered from the wallet or from settlement (insufficient
     // balance); remember which so the return lands in the right place.
-    bool rechargingFromSettlement = false;
+    // Remember where each shared page was entered from so "back" returns to
+    // the real origin (wallet page vs profile hub vs settlement) instead of
+    // a hard-coded destination.
+    QWidget* rechargeReturnPage = walletPage;
+    QWidget* ordersReturnPage = walletPage;
 
     qint64 lastKnownBalanceCents = 0;
     QObject::connect(&walletService, &charging::client::WalletService::profileLoaded,
@@ -104,39 +114,85 @@ int main(int argc, char* argv[])
                          lastKnownBalanceCents = user.balanceCents;
                      });
 
+    // Land on a page after navigation; refresh the data-driven ones so
+    // balances and badge counts never go stale.
+    const auto landOn = [&](QWidget* page) {
+        stack.setCurrentWidget(page);
+        if (page == walletPage) {
+            walletPage->refresh();
+        } else if (page == profilePage) {
+            profilePage->refresh();
+        }
+    };
+
     QObject::connect(walletPage, &charging::client::WalletPage::rechargeRequested, [&]() {
-        rechargingFromSettlement = false;
+        rechargeReturnPage = walletPage;
         rechargePage->setBalance(lastKnownBalanceCents);
         stack.setCurrentWidget(rechargePage);
     });
     QObject::connect(rechargePage, &charging::client::RechargePage::backRequested, [&]() {
-        if (rechargingFromSettlement) {
-            rechargingFromSettlement = false;
+        if (rechargeReturnPage == settlementPage) {
             stack.setCurrentWidget(settlementPage);
             return;
         }
-        stack.setCurrentWidget(walletPage);
-        walletPage->refresh();
+        landOn(rechargeReturnPage);
     });
     QObject::connect(
         rechargePage, &charging::client::RechargePage::rechargeSucceeded,
         [&](qint64 balanceAfterCents) {
-            if (rechargingFromSettlement) {
-                rechargingFromSettlement = false;
+            if (rechargeReturnPage == settlementPage) {
                 settlementPage->setBalance(balanceAfterCents);
                 stack.setCurrentWidget(settlementPage);
                 return;
             }
-            stack.setCurrentWidget(walletPage);
-            walletPage->refresh();
+            landOn(rechargeReturnPage);
         });
 
     QObject::connect(walletPage, &charging::client::WalletPage::ordersRequested, [&]() {
+        ordersReturnPage = walletPage;
         stack.setCurrentWidget(orderListPage);
         orderListPage->refresh();
     });
-    QObject::connect(orderListPage, &charging::client::OrderListPage::backRequested, [&]() {
+    QObject::connect(walletPage, &charging::client::WalletPage::profileRequested, [&]() {
+        stack.setCurrentWidget(profilePage);
+        profilePage->refresh();
+    });
+    QObject::connect(profilePage, &charging::client::ProfilePage::profileEditRequested, [&]() {
+        stack.setCurrentWidget(profileEditPage);
+        profileEditPage->refresh();
+    });
+    QObject::connect(profileEditPage, &charging::client::ProfileEditPage::backRequested, [&]() {
+        stack.setCurrentWidget(profilePage);
+        profilePage->refresh(); // picked nickname must land on the hub
+    });
+    QObject::connect(profilePage, &charging::client::ProfilePage::walletRequested, [&]() {
         stack.setCurrentWidget(walletPage);
+        walletPage->refresh();
+    });
+    QObject::connect(profilePage, &charging::client::ProfilePage::rechargeRequested, [&]() {
+        rechargeReturnPage = profilePage;
+        rechargePage->setBalance(lastKnownBalanceCents);
+        stack.setCurrentWidget(rechargePage);
+    });
+    const auto openFilteredOrders = [&](charging::client::OrderService::Filter filter) {
+        ordersReturnPage = profilePage;
+        stack.setCurrentWidget(orderListPage);
+        orderListPage->showFilter(filter);
+    };
+    QObject::connect(profilePage, &charging::client::ProfilePage::allOrdersRequested,
+                     [&]() { openFilteredOrders(charging::client::OrderService::Filter::All); });
+    QObject::connect(profilePage, &charging::client::ProfilePage::chargingOrdersRequested, [&]() {
+        openFilteredOrders(charging::client::OrderService::Filter::Charging);
+    });
+    QObject::connect(profilePage, &charging::client::ProfilePage::waitingPaymentOrdersRequested,
+                     [&]() {
+                         openFilteredOrders(charging::client::OrderService::Filter::WaitingPayment);
+                     });
+    QObject::connect(profilePage, &charging::client::ProfilePage::completedOrdersRequested, [&]() {
+        openFilteredOrders(charging::client::OrderService::Filter::Completed);
+    });
+    QObject::connect(orderListPage, &charging::client::OrderListPage::backRequested, [&]() {
+        landOn(ordersReturnPage);
     });
     QObject::connect(orderListPage, &charging::client::OrderListPage::orderOpened,
                      [&](const charging::client::OrderSummary& summary) {
@@ -190,7 +246,7 @@ int main(int argc, char* argv[])
         walletService.fetchProfile(); // keep the shell's balance honest
     });
     QObject::connect(settlementPage, &charging::client::SettlementPage::rechargeRequested, [&]() {
-        rechargingFromSettlement = true;
+        rechargeReturnPage = settlementPage;
         rechargePage->setBalance(lastKnownBalanceCents);
         stack.setCurrentWidget(rechargePage);
     });
@@ -235,6 +291,12 @@ int main(int argc, char* argv[])
     if (args.page == QStringLiteral("recharge")) {
         rechargePage->setBalance(10000);
         stack.setCurrentWidget(rechargePage);
+    } else if (args.page == QStringLiteral("profile")) {
+        stack.setCurrentWidget(profilePage);
+        profilePage->refresh();
+    } else if (args.page == QStringLiteral("profile-edit")) {
+        stack.setCurrentWidget(profileEditPage);
+        profileEditPage->refresh();
     } else if (args.page == QStringLiteral("charging")) {
         openSessionSmoke(true);
     } else if (args.page == QStringLiteral("settlement")) {
