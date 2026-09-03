@@ -31,6 +31,11 @@ public:
     QString searchText() const;
     void clearSearch();
 
+    // 详情页等二级页面：在 Logo 左侧显示“‹ 返回”按钮（任务 #12）。
+    // 默认隐藏，一级页面保持原样。
+    void setBackVisible(bool visible);
+    bool isBackVisible() const;
+
 signals:
     // 搜索框回车触发；keyword 为去空白后的文本。
     void searchSubmitted(const QString& keyword);
@@ -38,8 +43,11 @@ signals:
     void loginRequested();
     // 已登录状态下点击头像，请求进入个人中心。
     void profileRequested();
+    // 二级页面点击左上角“返回”。
+    void backRequested();
 
 private:
+    QPushButton* backButton_ = nullptr;
     QLabel* logoLabel_ = nullptr;
     QLabel* nameLabel_ = nullptr;
     QLineEdit* searchLineEdit_ = nullptr;
