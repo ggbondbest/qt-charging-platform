@@ -1,6 +1,6 @@
-# 充电平台阶段 0/1 架构基线
+# 充电平台架构基线
 
-状态：`candidate-v1`（最小登录闭环和严格 CI 已通过，待五人确认后冻结）
+状态：`candidate-v1`（登录和核心充电闭环已实现，待严格 CI 与五人确认后冻结）
 
 ## 1. 范围与约束
 
@@ -51,8 +51,8 @@ charging_server
 - Client 不得链接 QtSql、不得直接打开平台数据库；
 - 页面不得包含 SQL，不得直接读写 `QTcpSocket`；
 - Dispatcher 只做协议校验、鉴权和路由，不承载业务事务；
-- Service 负责业务状态机和事务边界；
-- Repository 只负责查询与持久化，不弹窗、不拼协议响应；
+- Service 负责业务用例、状态规则和对外错误映射；
+- Repository 负责查询、持久化和 SQLite 原子事务，不弹窗、不拼协议响应；
 - Server 管理页面也必须经过 Service/Repository，不能绕过业务规则；
 - `database/schema.sql` 和 `database/seed.sql` 通过资源 target 编译进 Server，不能依赖启动时的当前目录。
 
@@ -196,10 +196,24 @@ Charger:     RESERVED -> AVAILABLE
 - 同一用户最多一个未完成订单；
 - 同一电桩最多一个 `RESERVED` / `CHARGING` 订单。
 
+### 6.4 当前实现入口
+
+- `ChargingStateMachine` 提供预约、订单和电桩的显式迁移表；Repository 的旧状态
+  `WHERE` 条件和影响行数检查是并发写入时的最终约束；
+- `ChargingService` 提供预约、取消、开始、实时状态和停止；
+- `ChargingService` 根据服务端 UTC 时间计算充电时长，`BillingService` 使用额定功率、
+  时长和订单电价快照执行纯整数计费；
+- `OrderService` 提供待支付订单结算；
+- `ChargingRepository` 和 `OrderRepository` 以 `BEGIN IMMEDIATE` 执行多表事务和旧状态条件更新。
+
+实时状态是派生快照，只在停止时固化计量值。重复停止和重复支付返回已有结果，
+不重复累计或扣款。预约有效期为 15 分钟；当前采用服务端惰性扫描，下一次预约、取消、
+开始或状态查询会原子将到期业务改为 `EXPIRED` / `CANCELLED` / `AVAILABLE`，尚无定时推送。
+
 ## 7. 线程模型
 
-当前最小登录闭环使用异步 Socket，但 Service、Repository 和 SQLite 暂时与 Server 管理界面
-运行在同一线程，只适用于低并发实训联调。进入充电计时、多客户端联调前，按以下目标迁移：
+当前核心闭环使用异步 Socket，但 Service、Repository 和 SQLite 暂时与 Server 管理界面
+运行在同一线程，只适用于低并发实训联调。进行并发压力或规模化多客户端运行前，按以下目标迁移：
 
 - GUI 线程拥有管理界面、`QTcpServer` 和 `QTcpSocket`，只做非阻塞收发和轻量解析；
 - 一个专用 `QThread` 拥有 Service、Repository 和 SQLite connection；
@@ -255,7 +269,7 @@ Login page
 
 ## 10. 五人并行边界
 
-阶段 0/1 候选公共契约形成后，建议分支边界为：
+候选公共契约形成后，五人分支边界为：
 
 - 组长：`feature/socket-core` / 核心状态机与集成；
 - 成员 2：`feature/client-station` / 登录、找站、找桩、地图入口；
@@ -263,10 +277,10 @@ Login page
 - 成员 4：`feature/server-dashboard-management` / 管理登录、Dashboard、用户/站/桩管理；
 - 成员 5：`feature/database-repositories` / 初始化、Repository、事务和 DB 测试。
 
-手机号登录最小闭环已经提供可复用的 Socket、Session、Service、Repository 和数据库运行
+登录和核心充电闭环已经提供可复用的 Socket、Session、Service、Repository 和数据库运行
 时边界。成员可以在各自目录基于候选接口并行开发，但在五人确认前，不宣布公共
-契约冻结，也不各自重复创建 Socket/SQL 基础层或复制公共 Model。严格 CI 已通过；跨模块
-PR 先更新相应设计文档，经组长 review 后再改公共接口，五人确认后记录冻结结论。
+契约冻结，也不各自重复创建 Socket/SQL 基础层或复制公共 Model。跨模块 PR 先更新相应
+设计文档，经组长 review 并通过严格 CI 后再改公共接口，五人确认后记录冻结结论。
 
 ## 11. Qt 6.2.4 兼容红线
 
@@ -279,7 +293,7 @@ PR 先更新相应设计文档，经组长 review 后再改公共接口，五人
 - Socket 长度头手动按大端编码，不使用可能受 `QDataStream::Version` 影响的对象序列化；
 - 不得提交操作系统元数据、构建目录、用户 Kit 文件或本机绝对路径。
 
-## 12. 真实接口并行放行门槛（阶段 1/2）
+## 12. 真实接口并行放行门槛
 
 - `charging_common` 能在 Qt 6.2.4/C++17 编译；
 - enum 的字符串往返及未知值拒绝测试通过；

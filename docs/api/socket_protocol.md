@@ -1,6 +1,6 @@
 # Socket JSON 协议 v1
 
-状态：`candidate-v1`（待五人确认与最小登录闭环验证）
+状态：`candidate-v1`（登录和核心充电闭环已实现，待严格 CI 与五人确认后冻结）
 
 实现入口：
 
@@ -42,7 +42,8 @@ uint32_big_endian(N) || compact_utf8_json
 - 字段名：`lowerCamelCase`，大小写敏感；
 - 动作和状态：`UPPER_SNAKE_CASE`，大小写敏感；
 - 所有 envelope 都携带整数 `protocolVersion: 1`；
-- ID 使用十进制字符串，例如 `"userId": "42"`；
+- 数据库主键和业务 ID 使用十进制字符串，必须匹配 `[1-9][0-9]*` 且位于正
+  `qint64` 范围内，例如 `"userId": "42"`；`requestId` 是请求关联标识，不受此规则限制；
 - 金额使用整数分，例如 `"balanceCents": 10000` 表示 ¥100.00；
 - 所有非 ID 整数必须在 JSON 可精确表示的区间
   `[-9007199254740991, 9007199254740991]` 内；业务字段的非负/正数约束另行适用；
@@ -185,7 +186,10 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 | `RESTART_CHARGER` | 模拟远程重启 | 管理员 | `chargerId` |
 | `CREATE_STATION` | 新增电站 | 管理员 | 站点字段；另行冻结完整校验 |
 
-动作名集中在 `protocol.h` 的 `request_type` namespace。Dispatcher 遇到 envelope 合法但未注册的 type，返回 `UNKNOWN_REQUEST_TYPE`。
+动作名集中在 `protocol.h` 的 `request_type` namespace。当前 Dispatcher 已实现
+`USER_LOGIN`、`RESERVE_CHARGER`、`CANCEL_RESERVATION`、`START_CHARGING`、
+`GET_CHARGING_STATUS`、`STOP_CHARGING` 和 `PAY_ORDER`。表中其他动作是已预留的公共名称，
+在对应成员实现并注册前会返回 `UNKNOWN_REQUEST_TYPE`。
 
 ## 7. USER_LOGIN 详细契约
 
@@ -213,9 +217,154 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 
 Seed 用户余额是演示数据，不是新注册默认值。
 
-## 8. 错误码
+## 8. 预约—充电—结算详细契约
 
-### 8.1 framing / envelope
+以下动作均要求当前 TCP Session 已通过 `USER_LOGIN` 绑定用户。Server 只使用
+Session 中的 user ID；即使 Client 在 `data` 中额外传入 `userId`，也必须忽略。
+
+### 8.1 `RESERVE_CHARGER`
+
+请求 `data`：
+
+```json
+{ "chargerId": "1" }
+```
+
+成功 `data`：
+
+```json
+{
+  "reservation": { "id": "1", "status": "ACTIVE" },
+  "order": { "id": "1", "status": "RESERVED" }
+}
+```
+
+上例仅展示关键字段，实际响应使用 `model_json.h` 的完整 DTO。Server 在同一个
+`BEGIN IMMEDIATE` 事务中确认用户和电站可用、创建 15 分钟有效的预约、按当前电价快照
+创建订单，并将电桩从 `AVAILABLE` 改为 `RESERVED`。用户已有未完成订单时不允许
+再次预约。当前版本在下一次预约、取消、开始或状态查询时扫描并原子清理已过期预约，
+暂不提供准点定时扫描或主动过期推送。
+
+### 8.2 `CANCEL_RESERVATION`
+
+请求 `data`：
+
+```json
+{ "reservationId": "1" }
+```
+
+成功 `data` 包含完整 `reservation` 和 `order`。一个事务内完成：
+
+```text
+Reservation ACTIVE -> CANCELLED
+Order       RESERVED -> CANCELLED
+Charger     RESERVED -> AVAILABLE
+```
+
+对已取消预约重试时返回现有结果，不重复改状态。
+
+### 8.3 `START_CHARGING`
+
+请求 `data`：
+
+```json
+{ "reservationId": "1" }
+```
+
+成功 `data` 包含完整 `reservation` 和 `order`。仅本人、未过期的 `ACTIVE` 预约可以开始，
+一个事务内完成：
+
+```text
+Reservation ACTIVE   -> FULFILLED
+Order       RESERVED -> CHARGING
+Charger     RESERVED -> CHARGING
+```
+
+对同一预约重复开始返回 `INVALID_STATE_TRANSITION`。
+
+### 8.4 `GET_CHARGING_STATUS`
+
+请求 `data`：
+
+```json
+{ "orderId": "1" }
+```
+
+成功 `data`：
+
+```json
+{
+  "order": {
+    "id": "1",
+    "status": "CHARGING",
+    "durationSeconds": 250,
+    "energyWh": 500,
+    "amountCents": 60
+  },
+  "currentPowerWatts": 7200
+}
+```
+
+充电中的 `order` 是实时派生快照，查询本身不将计量数据写回 SQLite。断线重新登录后可以
+用同一 order ID 恢复查询。非充电状态返回已持久化的订单，并使
+`currentPowerWatts = 0`。
+
+### 8.5 `STOP_CHARGING`
+
+请求 `data`：
+
+```json
+{ "orderId": "1" }
+```
+
+成功 `data` 包含完整 `order`。Server 按自己的 UTC 时间和电桩额定功率计算最终费用，
+并在一个事务内完成：
+
+```text
+Order   CHARGING -> WAITING_PAYMENT
+Charger CHARGING -> AVAILABLE
+```
+
+同时固化订单的时长、电量、金额和停止时间，并且只累加一次电桩充电次数与时长。
+对 `WAITING_PAYMENT` 或 `COMPLETED` 订单重试停止时，返回已保存结果，不重复计费。
+
+### 8.6 `PAY_ORDER`
+
+请求 `data`：
+
+```json
+{ "orderId": "1" }
+```
+
+成功 `data`：
+
+```json
+{
+  "order": { "id": "1", "status": "COMPLETED" },
+  "balanceCents": 9880
+}
+```
+
+仅本人的 `WAITING_PAYMENT` 订单可扣款。余额条件扣减与
+`Order WAITING_PAYMENT -> COMPLETED` 处于同一事务；余额不足时两者都不改变。对已完成
+订单重试支付只返回当前结果，不再扣款。
+
+### 8.7 计费规则
+
+v1 使用固定额定功率模拟，全程采用 `qint64` 整数并进行溢出检查：
+
+```text
+durationSeconds = floor(serverNowUtc - startedAtUtc)
+energyWh        = floor(powerWatts * durationSeconds / 3600)
+amountCents     = floor((energyWh * unitPriceCentsPerKwh + 500) / 1000)
+```
+
+最后一式表示金额精确到分并按半分向上取整。电价是创建订单时的快照，充电期间修改电站
+当前电价不会改变已有订单。
+
+## 9. 错误码
+
+### 9.1 framing / envelope
 
 | code | 场景 |
 | --- | --- |
@@ -226,19 +375,19 @@ Seed 用户余额是演示数据，不是新注册默认值。
 | `UNSUPPORTED_PROTOCOL_VERSION` | 版本不是 1 |
 | `UNKNOWN_REQUEST_TYPE` | Dispatcher 未注册该动作 |
 
-### 8.2 鉴权和业务
+### 9.2 鉴权和业务
 
 | code | 场景 |
 | --- | --- |
 | `INVALID_PHONE` | 手机号格式错误 |
 | `USER_FROZEN` | 用户已冻结 |
 | `UNAUTHORIZED` | 未登录、角色不符或资源不属于当前用户 |
-| `CHARGER_NOT_AVAILABLE` | 电桩不能预约/开始 |
+| `CHARGER_NOT_AVAILABLE` | 预约目标电桩或其所属电站不可用 |
 | `INVALID_STATE_TRANSITION` | 业务状态不允许该操作 |
 | `INSUFFICIENT_BALANCE` | 支付余额不足 |
-| `NOT_FOUND` | 目标不存在或不可见 |
+| `NOT_FOUND` | 目标不存在；资源不属于当前用户时使用 `UNAUTHORIZED` |
 
-### 8.3 服务端和客户端本地
+### 9.3 服务端和客户端本地
 
 | code | 场景 |
 | --- | --- |
@@ -247,9 +396,11 @@ Seed 用户余额是演示数据，不是新注册默认值。
 | `CONNECTION_ERROR` | Client 本地连接失败 |
 | `REQUEST_TIMEOUT` | Client 本地请求超时 |
 
-Client 必须为未知 code 提供统一兜底提示。Server 日志可以关联 requestId 和内部错误，但不得发送密码、password hash、salt、完整 SQL 或本地文件路径。
+Client 必须为未知 code 提供统一兜底提示。Server 日志可以关联 requestId 和经过控制的
+内部错误分类。响应和日志都不得包含密码、password hash、salt、完整 SQL 或本地文件路径；
+通用异常边界不得直接输出未脱敏的 `exception.what()`。
 
-## 9. 会话、并发与幂等
+## 10. 会话、并发与幂等
 
 - 初始 Session 为 `ANONYMOUS`；登录后只能成为 `USER` 或 `ADMIN` 之一；
 - 需要鉴权的动作从 Session 取 identity，不接受 Client 用 `userId` 越权；
@@ -259,7 +410,7 @@ Client 必须为未知 code 提供统一兜底提示。Server 日志可以关联
 - `PAY_ORDER`、`STOP_CHARGING`、取消预约等必须由数据库旧状态条件保证幂等；
 - v1 不提供明文密码以外的传输加密。课程本机演示只允许 loopback/可信局域网；如跨机器或公网必须先增加 TLS，不能把该协议宣称为生产安全。
 
-## 10. 兼容策略
+## 11. 兼容策略
 
 - v1 可新增可选响应字段，旧 Client 忽略未知字段；
 - 不能删除/改名字段、改变字段类型/单位、复用状态含义；
@@ -267,7 +418,7 @@ Client 必须为未知 code 提供统一兜底提示。Server 日志可以关联
 - 公共动作、错误码、enum 字符串的变更必须同时修改代码、本文档和测试；
 - 服务端不支持收到的版本时返回 `UNSUPPORTED_PROTOCOL_VERSION`；如果 framing 已损坏则直接断开。
 
-## 11. 最低测试集
+## 12. 最低测试集
 
 - Request 和成功/失败 Response 序列化后可严格解析；
 - 缺失 `data`、错误 kind、空 requestId、错误版本、数组根、非法 JSON 被拒绝；
@@ -279,3 +430,12 @@ Client 必须为未知 code 提供统一兜底提示。Server 日志可以关联
 - ID 保持字符串，金额保持整数；
 - 相同 requestId 的响应能够由 Client 正确关联；
 - 未知 type、未登录请求和冻结用户返回对应错误码。
+- `RESERVE_CHARGER`、`CANCEL_RESERVATION`、`START_CHARGING`、
+  `GET_CHARGING_STATUS`、`STOP_CHARGING`、`PAY_ORDER` 均能通过 Dispatcher 到达对应用例；
+- 鉴权动作只使用 Session 绑定的 user ID，伪造 `data.userId` 无效，访问他人资源返回
+  `UNAUTHORIZED`；
+- 计费整数公式、电价快照和余额不足路径有确定性测试；
+- 15 分钟预约惰性过期会在后续业务请求中原子同步预约、订单和电桩状态；
+- 重复取消、停止和支付不会重复更新统计或扣款；
+- 预约、开始、停止和支付在中途失败时完整回滚；
+- 真实 TCP 连接覆盖登录、预约、开始、状态查询、停止和支付的完整闭环。
