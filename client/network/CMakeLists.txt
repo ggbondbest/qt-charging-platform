@@ -1,6 +1,7 @@
 add_library(charging_client_network STATIC
     client_connection.cpp
     client_connection.h
+    network_manager.h
 )
 add_library(ChargingPlatform::ClientNetwork ALIAS charging_client_network)
 

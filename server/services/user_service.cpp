@@ -55,7 +55,7 @@ LoginResult UserService::loginOrRegister(const QString& phone) const
 
     const UserLookupResult lookup = userRepository_->findByPhone(phone);
     if (!lookup.ok) {
-        qWarning().noquote() << "Unable to look up login user:" << lookup.errorMessage;
+        qWarning().noquote() << "Unable to look up login user";
         result.error = databaseError();
         return result;
     }
@@ -73,7 +73,7 @@ LoginResult UserService::loginOrRegister(const QString& phone) const
     const QString nickname = QStringLiteral("用户") + phone.right(4);
     const UserCreateResult creation = userRepository_->create(phone, nickname);
     if (!creation.ok) {
-        qWarning().noquote() << "Unable to auto-register login user:" << creation.errorMessage;
+        qWarning().noquote() << "Unable to auto-register login user";
         result.error = databaseError();
         return result;
     }

@@ -1,6 +1,12 @@
 add_library(charging_server_repositories STATIC
+    charging_repository.cpp
+    charging_repository.h
+    order_repository.cpp
+    order_repository.h
+    repository_row_mapper.h
     user_repository.cpp
     user_repository.h
+    workflow_repository_types.h
 )
 add_library(ChargingPlatform::ServerRepositories ALIAS charging_server_repositories)
 
