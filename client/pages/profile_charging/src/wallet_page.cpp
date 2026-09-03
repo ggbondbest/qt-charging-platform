@@ -37,9 +37,12 @@ void WalletPage::buildUi()
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
     auto* ordersButton = new ActionButton(ActionButton::Variant::Ghost, tr("我的订单 ›"), this);
     connect(ordersButton, &ActionButton::clicked, this, &WalletPage::ordersRequested);
+    auto* profileButton = new ActionButton(ActionButton::Variant::Ghost, tr("个人中心 ›"), this);
+    connect(profileButton, &ActionButton::clicked, this, &WalletPage::profileRequested);
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
     headerRow->addWidget(ordersButton);
+    headerRow->addWidget(profileButton);
     rootLayout->addLayout(headerRow);
 
     balanceCard_ = new Card(this);

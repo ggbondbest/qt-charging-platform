@@ -41,6 +41,7 @@ private:
     charging::model::Order* findOrder(qint64 orderId);
     QJsonObject buildStatusPayload(const charging::model::Order& order, qint64 powerWatts,
                                    qint64 energyWh, qint64 durationSeconds) const;
+    QJsonObject payResultPayload(const charging::model::Order& order) const;
 
     charging::model::User user_;
     QVector<charging::model::RechargeRecord> records_; // newest first

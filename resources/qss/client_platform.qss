@@ -80,6 +80,73 @@ QLabel[role="successCheck"] {
     font-weight: 800;
     color: #00B578;
 }
+QLabel#uiAvatar {
+    font-size: 28px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #00B578;
+    border-radius: 32px;
+}
+/* 个人中心 Hub：较小的头像、余额大圆、订单角标 */
+QLabel#uiAvatarHub {
+    font-size: 24px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #00B578;
+    border-radius: 28px;
+}
+QWidget#uiBalancePanel {
+    background: #00B578;
+    border-radius: 12px;
+}
+QLabel#uiBalanceCaption {
+    font-size: 12px;
+    font-weight: 600;
+    color: #D6F5E8;
+}
+QLabel#uiBalanceValue {
+    font-size: 28px;
+    font-weight: 800;
+    color: #FFFFFF;
+}
+QLabel#uiBadge[tone="danger"] {
+    background: #FA5151;
+}
+QLabel#uiBadge[tone="success"] {
+    background: #00B578;
+}
+QLabel#uiBadge[tone="neutral"] {
+    background: #9CA3AF;
+}
+QLabel#uiBadge {
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 9px;
+    padding: 0px;
+}
+QLabel#uiIdentityName {
+    font-size: 17px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel[role="gridIcon"] {
+    font-size: 26px;
+    color: #1F2937;
+}
+QLabel[role="gridCaption"] {
+    font-size: 12px;
+    color: #6B7280;
+}
+QLineEdit#uiNicknameEdit {
+    font-size: 15px;
+    color: #1F2937;
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 10px;
+    padding: 8px 10px;
+    selection-background-color: #00B578;
+}
 QLabel[role="noticeGlyph"] {
     color: #9CA3AF;
 }

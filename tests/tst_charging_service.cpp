@@ -71,8 +71,29 @@ private slots:
                  charging::model::toString(charging::model::OrderStatus::Charging));
         QVERIFY(status.powerKnown);
         QVERIFY(status.powerWatts > 0);
-        QVERIFY(status.estimatedAmountCents > 0);
+        // §8.4: the live charge for a CHARGING order rides inside the order.
+        QVERIFY(status.order.amountCents > 0);
         QVERIFY(!status.stationName.isEmpty());
+        service.stopTracking();
+    }
+
+    void statusOfNonChargingOrderSucceedsWithZeroPower()
+    {
+        MockRequestTransport transport;
+        ChargingService service(&transport);
+
+        // §8.4: querying a non-charging order is a success carrying the
+        // persisted order with currentPowerWatts = 0 (not an error).
+        QSignalSpy loaded(&service, &ChargingService::statusLoaded);
+        QSignalSpy failed(&service, &ChargingService::operationFailed);
+        service.startTracking(kWaitingOrderId);
+        QVERIFY(waitForSignal(loaded));
+        const ChargingStatus status = qvariant_cast<ChargingStatus>(loaded.at(0).at(0));
+        QCOMPARE(charging::model::toString(status.order.status),
+                 charging::model::toString(charging::model::OrderStatus::WaitingPayment));
+        QVERIFY(status.powerKnown);
+        QCOMPARE(status.powerWatts, qint64(0));
+        QCOMPARE(failed.count(), 0);
         service.stopTracking();
     }
 
@@ -140,7 +161,7 @@ private slots:
         QVERIFY(!service.isPaying());
     }
 
-    void payAlreadyPaidOrderRejected()
+    void payCompletedOrderIsIdempotentSuccess()
     {
         MockRequestTransport transport;
         ChargingService service(&transport);
@@ -148,15 +169,43 @@ private slots:
         QSignalSpy paid(&service, &ChargingService::paymentCompleted);
         service.payOrder(kWaitingOrderId);
         QVERIFY(waitForSignal(paid));
+        const qint64 firstAmount = paid.at(0).at(0).toLongLong();
+        const qint64 firstBalance = paid.at(0).at(1).toLongLong();
 
-        // Second attempt hits the server-side state guard (not the local one,
-        // which has already released), returning INVALID_STATE_TRANSITION.
-        QSignalSpy failed(&service, &ChargingService::operationFailed);
+        // §8.6: retrying payment on an already-COMPLETED order is an
+        // idempotent success that returns the current result and deducts
+        // nothing further (mirrors the leader's no-double-debit rule).
         service.payOrder(kWaitingOrderId);
-        QVERIFY(waitForSignal(failed));
-        QCOMPARE(failed.at(0).at(1).value<charging::protocol::ProtocolError>().code,
-                 QString::fromLatin1(charging::protocol::error_code::kInvalidStateTransition));
-        QCOMPARE(paid.count(), 1); // The first payment was not duplicated.
+        for (int elapsed = 0; elapsed < kWaitMs && paid.count() < 2; elapsed += 50) {
+            QTest::qWait(50);
+        }
+        QVERIFY(paid.count() >= 2);
+        QCOMPARE(paid.at(1).at(0).toLongLong(), firstAmount);
+        QCOMPARE(paid.at(1).at(1).toLongLong(), firstBalance); // balance unchanged
+    }
+
+    void stopRetryAfterSettleIsIdempotentSuccess()
+    {
+        MockRequestTransport transport;
+        ChargingService service(&transport);
+
+        QSignalSpy completed(&service, &ChargingService::stopCompleted);
+        service.startTracking(kChargingOrderId);
+        service.stopCharging();
+        QVERIFY(waitForSignal(completed));
+        const ChargingStatus first = qvariant_cast<ChargingStatus>(completed.at(0).at(0));
+        QVERIFY(first.order.stoppedAtUtc.isValid());
+
+        // A retry after WAITING_PAYMENT re-settles nothing: same persisted
+        // amount, still a success (§8.5).
+        service.stopCharging();
+        for (int elapsed = 0; elapsed < kWaitMs && completed.count() < 2; elapsed += 50) {
+            QTest::qWait(50);
+        }
+        QVERIFY(completed.count() >= 2);
+        const ChargingStatus replay = qvariant_cast<ChargingStatus>(completed.at(1).at(0));
+        QCOMPARE(replay.order.amountCents, first.order.amountCents);
+        service.stopTracking();
     }
 
     void unknownOrderRejectedAsNotFound()

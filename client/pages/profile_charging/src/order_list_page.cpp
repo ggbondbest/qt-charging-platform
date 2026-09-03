@@ -124,6 +124,18 @@ void OrderListPage::refresh()
     service_->fetchOrders(currentFilter_, loadingPage_);
 }
 
+void OrderListPage::showFilter(OrderService::Filter filter)
+{
+    // Entry from elsewhere (profile hub badge cells): sync the chip row the
+    // same way a chip click would, then run the shared filter path.
+    applyingFilter_ = true;
+    for (int index = 0; index < filterChips_.size(); ++index) {
+        filterChips_.at(index)->setChecked(filterValues_.at(index) == filter);
+    }
+    applyingFilter_ = false;
+    applyFilter(filter);
+}
+
 void OrderListPage::applyFilter(OrderService::Filter filter)
 {
     if (service_->isFetchingOrders()) {

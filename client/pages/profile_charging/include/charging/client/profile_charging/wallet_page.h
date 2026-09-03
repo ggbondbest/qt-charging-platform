@@ -33,6 +33,7 @@ public:
 signals:
     void rechargeRequested();
     void ordersRequested();
+    void profileRequested();
 
 private slots:
     void onProfileLoaded(const charging::model::User& user);
