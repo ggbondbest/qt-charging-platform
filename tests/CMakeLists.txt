@@ -42,6 +42,21 @@ target_link_libraries(test_model_json PRIVATE
 )
 add_test(NAME model_json COMMAND test_model_json)
 
+add_executable(test_login_integration tst_login_integration.cpp)
+target_link_libraries(test_login_integration PRIVATE
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME login_integration COMMAND test_login_integration)
+set_tests_properties(login_integration PROPERTIES TIMEOUT 20)
+
 find_program(CHARGING_BASH_EXECUTABLE NAMES bash)
 find_program(CHARGING_SQLITE3_EXECUTABLE NAMES sqlite3)
 if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)

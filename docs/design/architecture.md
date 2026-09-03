@@ -1,6 +1,6 @@
 # 充电平台阶段 0/1 架构基线
 
-状态：`candidate-v1`（待五人确认、严格 CI 和最小登录闭环验证后冻结）
+状态：`candidate-v1`（最小登录闭环和严格 CI 已通过，待五人确认后冻结）
 
 ## 1. 范围与约束
 
@@ -198,7 +198,8 @@ Charger:     RESERVED -> AVAILABLE
 
 ## 7. 线程模型
 
-阶段 1 推荐使用“异步 Socket + 单业务工作线程”作为最小安全实现：
+当前最小登录闭环使用异步 Socket，但 Service、Repository 和 SQLite 暂时与 Server 管理界面
+运行在同一线程，只适用于低并发实训联调。进入充电计时、多客户端联调前，按以下目标迁移：
 
 - GUI 线程拥有管理界面、`QTcpServer` 和 `QTcpSocket`，只做非阻塞收发和轻量解析；
 - 一个专用 `QThread` 拥有 Service、Repository 和 SQLite connection；
@@ -208,7 +209,8 @@ Charger:     RESERVED -> AVAILABLE
 - 禁止在不同线程共享同一个 `QSqlDatabase` connection；创建、查询、关闭都在所属线程完成；
 - 所有 `QSqlQuery` 销毁后才能 `removeDatabase()`。
 
-该结构已经满足 GUI/网络事件循环与数据库业务分离。需要扩大并发时可以将业务层替换成受控线程池，但 Service/Repository 接口和协议无需变化。
+当前代码尚未完成上述 GUI/数据库线程分离。迁移时保持 Service、Repository 接口和协议
+不变，不能把已创建的 `QSqlDatabase` 连接直接移动到其他线程。
 
 ## 8. SQLite 生命周期
 
@@ -261,10 +263,10 @@ Login page
 - 成员 4：`feature/server-dashboard-management` / 管理登录、Dashboard、用户/站/桩管理；
 - 成员 5：`feature/database-repositories` / 初始化、Repository、事务和 DB 测试。
 
-候选契约经五人确认、Ubuntu 22.04 + Qt 6.2.4 严格 CI 和手机号登录最小闭环验证前，
-成员可以使用 mock service、准备数据库实现，或基于候选接口在隔离模块内开发，但不能
-自己创建并接入 Socket、SQL 或复制公共 Model。跨模块 PR 先更新相应设计文档，经组长
-review 后再改公共接口。
+手机号登录最小闭环已经提供可复用的 Socket、Session、Service、Repository 和数据库运行
+时边界。成员可以在各自目录基于候选接口并行开发，但在五人确认前，不宣布公共
+契约冻结，也不各自重复创建 Socket/SQL 基础层或复制公共 Model。严格 CI 已通过；跨模块
+PR 先更新相应设计文档，经组长 review 后再改公共接口，五人确认后记录冻结结论。
 
 ## 11. Qt 6.2.4 兼容红线
 

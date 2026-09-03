@@ -1,6 +1,10 @@
 add_library(charging_server_core STATIC
+    client_session.cpp
+    client_session.h
     charging_server.cpp
     charging_server.h
+    request_dispatcher.cpp
+    request_dispatcher.h
 )
 add_library(ChargingPlatform::ServerCore ALIAS charging_server_core)
 add_library(ChargingPlatform::ServerNetwork ALIAS charging_server_core)
@@ -14,4 +18,6 @@ target_link_libraries(charging_server_core
         ChargingPlatform::ProjectOptions
         Qt6::Core
         Qt6::Network
+    PRIVATE
+        ChargingPlatform::ServerServices
 )

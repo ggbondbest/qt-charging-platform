@@ -2,10 +2,10 @@
 
 基于 Ubuntu 22.04、Qt Framework 6.2.4、C++17 和 SQLite 的电动汽车充电桩应用管理平台。
 
-> 当前状态：阶段 0/1 候选开发基线。Client/Server 可构建启动，公共模型、Socket 协议和
-> SQLite 候选 v1 已建立；登录与后续业务功能尚未实现，不应将占位界面视为已完成功能。
-> 候选契约需经五人确认，并通过 Ubuntu 22.04 + Qt 6.2.4 严格 CI 与最小登录闭环后，
-> 才放行全面接入真实接口。
+> 当前状态：阶段 1/2 集成基线。手机号登录最小闭环已经实际经过 Client、TCP、Server、
+> UserService、UserRepository 和 SQLite，并纳入自动集成测试。找站、预约、充电、结算和
+> 管理后台等后续业务仍待实现。Ubuntu 22.04 / Qt 6.2.4 严格 CI 已通过；公共契约冻结仍
+> 需五人确认和 Review。
 
 ## 第一阶段范围
 
@@ -27,6 +27,7 @@ SQLite
 - 公共 User/Station/Charger/Reservation/Order 等候选模型、状态和 JSON 转换。
 - TCP 4 字节大端长度帧、JSON v1 envelope、稳定动作名与错误码。
 - SQLite schema v1：8 张表、外键、CHECK、索引、活动业务唯一约束和可重复 seed。
+- 手机号登录/自动注册：Client 异步请求、Server 二次校验、SQLite 查询/创建和冻结拦截。
 - QtTest、数据库完整性验证、Ubuntu 22.04 / Qt 6.2.4 GitHub Actions。
 - 五人分工、分支、Commit、PR、Code Review、命名和 Qt 兼容规范。
 
@@ -66,7 +67,7 @@ bash scripts/verify_database.sh
 就将它们变成全员的强制依赖。不得提交个人 `CMAKE_PREFIX_PATH`、Qt Creator
 `.user` 文件或任何本机绝对路径。
 
-## 启动骨架应用
+## 启动应用
 
 Ubuntu 普通 CMake 构建下：
 
@@ -75,7 +76,9 @@ Ubuntu 普通 CMake 构建下：
 ./build/client/charging-client
 ```
 
-当前窗口用于验证项目装配与模块边界，尚未接入真实登录业务。
+先启动 Server，再启动 Client。Client 输入 11 位手机号后会通过真实 TCP 请求 Server；
+已有用户直接返回，新手机号自动注册，冻结用户会被拒绝。Server 可使用
+`--database <path>` 指定 SQLite 文件；只有显式传入 `--demo-seed` 才加载演示数据。
 
 ## 目录和依赖方向
 
@@ -133,12 +136,12 @@ git switch -c feature/client-station-list
 
 ## 下一个集成目标
 
-组长先在独立 feature 分支打通真实手机号登录闭环：
+手机号登录闭环已经打通：
 
 ```text
 Client -> TCP frame -> Server -> UserService -> UserRepository -> SQLite -> Client
 ```
 
-在候选契约经五人确认、严格 CI 通过且该闭环验证 UI、Socket、协议、Service、Repository
-和 SQLite 前，成员只并行做 mock UI、数据库准备和基于候选接口的隔离开发，不得各自接入
-真实 Socket/SQL。组长记录放行结论后，再让五名成员全面并行接入真实接口。
+下一步可在各自目录并行实现站点/电桩查询、个人中心与订单页面、管理端页面和相应
+Repository。公共契约冻结和跨模块真实联调仍以五人确认及严格 CI 为准；`common/`、
+`database/schema.sql` 和跨模块接口属于高冲突区域，修改前必须确认契约并通过 PR Review。
