@@ -1,6 +1,8 @@
 add_library(charging_client_station_services STATIC
     auth_service.cpp
     auth_service.h
+    station_query_service.cpp
+    station_query_service.h
 )
 add_library(ChargingPlatform::ClientStationServices ALIAS charging_client_station_services)
 
