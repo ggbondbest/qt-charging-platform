@@ -253,6 +253,17 @@ void ChargingTcpIntegrationTest::sameConnectionCompletesAuthenticatedWorkflow()
                  .toString(),
              QString::number(fixture.userId()));
 
+    const RequestOutcome unknownAction =
+        sendAndWait(&client, QStringLiteral("TEST_UNKNOWN_ACTION"), QJsonObject());
+    QVERIFY2(unknownAction.transportErrorCode.isEmpty(),
+             qPrintable(unknownAction.transportErrorMessage));
+    QVERIFY(unknownAction.responseReceived);
+    QVERIFY(!unknownAction.response.success);
+    QCOMPARE(unknownAction.response.type, QStringLiteral("TEST_UNKNOWN_ACTION"));
+    QCOMPARE(unknownAction.response.requestId, unknownAction.requestId);
+    QCOMPARE(unknownAction.response.error.code,
+             QString::fromLatin1(charging::protocol::error_code::kUnknownRequestType));
+
     QJsonObject invalidId;
     invalidId.insert(QStringLiteral("chargerId"), static_cast<double>(fixture.chargerId()));
     const RequestOutcome invalid =
