@@ -1,4 +1,13 @@
 add_library(charging_server_services STATIC
+    billing_service.cpp
+    billing_service.h
+    charging_service.cpp
+    charging_service.h
+    charging_state_machine.cpp
+    charging_state_machine.h
+    order_service.cpp
+    order_service.h
+    service_clock.h
     user_service.cpp
     user_service.h
 )

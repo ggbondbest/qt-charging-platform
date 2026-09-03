@@ -1,5 +1,13 @@
 # Server Repositories
 
 放置 Repository 接口和 SQLite 实现。该模块只负责查询与持久化，不弹窗、不构造协议
-响应；Schema 变更走独立契约 PR。当前 `UserRepository` 已实现按手机号查询和并发安全的
-首次创建；其他业务 Repository 仍待实现。
+响应；Schema 变更走独立契约 PR。
+
+当前已实现：
+
+- `UserRepository`：按手机号查询和并发安全的首次创建；
+- `ChargingRepository`：预约、过期、取消、开始、状态和停止的多表事务；
+- `OrderRepository`：余额扣减与订单完成的单事务支付。
+
+写流程使用 `BEGIN IMMEDIATE`，每次状态更新都带旧状态条件并检查影响行数。Repository
+只返回领域错误和仅供日志使用的诊断文本，Service 不会把 SQLite 错误直接返回客户端。

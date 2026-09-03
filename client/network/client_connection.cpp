@@ -22,8 +22,7 @@ QString connectionErrorCode()
 
 ClientConnection::ClientConnection(QObject* parent)
     : ClientConnection(QStringLiteral("127.0.0.1"), kDefaultServerPort, parent)
-{
-}
+{}
 
 ClientConnection::ClientConnection(const QString& hostName, quint16 port, QObject* parent)
     : QObject(parent), hostName_(hostName), port_(port), socket_(new QTcpSocket(this))
@@ -55,8 +54,7 @@ QString ClientConnection::sendRequest(const QString& type, const QJsonObject& da
     timeoutTimer->setSingleShot(true);
     const QString requestId = request.requestId;
     connect(timeoutTimer, &QTimer::timeout, this, [this, requestId]() {
-        failRequest(requestId,
-                    QString::fromLatin1(charging::protocol::error_code::kRequestTimeout),
+        failRequest(requestId, QString::fromLatin1(charging::protocol::error_code::kRequestTimeout),
                     tr("请求超时，请检查服务端后重试"));
     });
 
@@ -65,6 +63,7 @@ QString ClientConnection::sendRequest(const QString& type, const QJsonObject& da
     pending.frame = frame;
     pending.timeoutTimer = timeoutTimer;
     pendingRequests_.insert(requestId, pending);
+    unsentRequestIds_.enqueue(requestId);
     timeoutTimer->start(kRequestTimeoutMilliseconds);
 
     if (isConnected()) {
@@ -100,10 +99,13 @@ void ClientConnection::handleConnected()
 void ClientConnection::handleDisconnected()
 {
     frameDecoder_.reset();
-    emit connectionStateChanged(false);
     if (!pendingRequests_.isEmpty()) {
         failAllRequests(connectionErrorCode(), tr("与服务端的连接已断开"));
     }
+    // Clear requests owned by the old connection before notifying observers.
+    // A direct slot is then free to enqueue a fresh request for reconnection
+    // without that request being mistaken for an old pending one.
+    emit connectionStateChanged(false);
 }
 
 void ClientConnection::handleReadyRead()
@@ -148,7 +150,8 @@ void ClientConnection::handleReadyRead()
 void ClientConnection::handleSocketError()
 {
     if (!pendingRequests_.isEmpty()) {
-        failAllRequests(connectionErrorCode(), tr("无法连接服务端：%1").arg(socket_->errorString()));
+        failAllRequests(connectionErrorCode(),
+                        tr("无法连接服务端：%1").arg(socket_->errorString()));
     }
 }
 
@@ -165,17 +168,24 @@ void ClientConnection::sendPendingRequests()
         return;
     }
 
-    for (auto iterator = pendingRequests_.begin(); iterator != pendingRequests_.end(); ++iterator) {
-        if (iterator->sent) {
+    while (!unsentRequestIds_.isEmpty()) {
+        const QString requestId = unsentRequestIds_.dequeue();
+        auto iterator = pendingRequests_.find(requestId);
+        if (iterator == pendingRequests_.end() || iterator->sent) {
             continue;
         }
-        const qint64 acceptedBytes = socket_->write(iterator->frame);
-        if (acceptedBytes != iterator->frame.size()) {
-            failAllRequests(connectionErrorCode(), tr("发送请求失败：%1").arg(socket_->errorString()));
+
+        // QHash is retained for O(1) requestId lookup, but it must not decide
+        // wire order: queued requests are always written in insertion order.
+        const QByteArray frame = iterator->frame;
+        iterator->sent = true;
+        const qint64 acceptedBytes = socket_->write(frame);
+        if (acceptedBytes != frame.size()) {
+            failAllRequests(connectionErrorCode(),
+                            tr("发送请求失败：%1").arg(socket_->errorString()));
             socket_->abort();
             return;
         }
-        iterator->sent = true;
     }
 }
 
@@ -190,6 +200,9 @@ void ClientConnection::failRequest(const QString& requestId, const QString& erro
         iterator->timeoutTimer->stop();
         iterator->timeoutTimer->deleteLater();
     }
+    if (!iterator->sent) {
+        unsentRequestIds_.removeOne(requestId);
+    }
     pendingRequests_.erase(iterator);
 
     // A socket write can fail inside sendRequest(). Delivering the terminal
@@ -203,6 +216,7 @@ void ClientConnection::failRequest(const QString& requestId, const QString& erro
 void ClientConnection::failAllRequests(const QString& errorCode, const QString& message)
 {
     const QList<QString> requestIds = pendingRequests_.keys();
+    unsentRequestIds_.clear();
     for (const QString& requestId : requestIds) {
         failRequest(requestId, errorCode, message);
     }

@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QQueue>
 #include <QString>
 #include <QtGlobal>
 
@@ -29,8 +30,7 @@ public:
 signals:
     void connectionStateChanged(bool connected);
     void responseReceived(const charging::protocol::ResponseEnvelope& response);
-    void requestFailed(const QString& requestId, const QString& errorCode,
-                       const QString& message);
+    void requestFailed(const QString& requestId, const QString& errorCode, const QString& message);
 
 private slots:
     void handleConnected();
@@ -49,8 +49,7 @@ private:
 
     void ensureConnected();
     void sendPendingRequests();
-    void failRequest(const QString& requestId, const QString& errorCode,
-                     const QString& message);
+    void failRequest(const QString& requestId, const QString& errorCode, const QString& message);
     void failAllRequests(const QString& errorCode, const QString& message);
     void closeForProtocolError(const charging::protocol::ProtocolError& error);
 
@@ -59,6 +58,7 @@ private:
     QTcpSocket* socket_ = nullptr;
     charging::protocol::FrameDecoder frameDecoder_;
     QHash<QString, PendingRequest> pendingRequests_;
+    QQueue<QString> unsentRequestIds_;
 };
 
 } // namespace charging::client::network
