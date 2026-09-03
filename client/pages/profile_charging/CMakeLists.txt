@@ -1,6 +1,7 @@
 add_library(charging_client_profile_charging_pages STATIC
     include/charging/client/profile_charging/avatar_library.h
     include/charging/client/profile_charging/charging_page.h
+    include/charging/client/profile_charging/charging_pulse.h
     include/charging/client/profile_charging/order_detail_page.h
     include/charging/client/profile_charging/order_list_page.h
     include/charging/client/profile_charging/order_status_display.h
@@ -11,6 +12,7 @@ add_library(charging_client_profile_charging_pages STATIC
     include/charging/client/profile_charging/wallet_page.h
     src/avatar_library.cpp
     src/charging_page.cpp
+    src/charging_pulse.cpp
     src/order_detail_page.cpp
     src/order_list_page.cpp
     src/order_status_display.cpp

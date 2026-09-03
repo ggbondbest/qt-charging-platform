@@ -1,5 +1,6 @@
 #include "charging/client/profile_charging/charging_page.h"
 
+#include "charging/client/profile_charging/charging_pulse.h"
 #include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/order_status_display.h"
 #include "charging/client/profile_charging/presentation_format.h"
@@ -10,6 +11,7 @@
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
+#include "charging/common/model/enums.h"
 
 #include <QDateTime>
 #include <QHBoxLayout>
@@ -77,6 +79,11 @@ void ChargingPage::buildUi()
     powerRow->addWidget(powerValueLabel_);
     powerRow->addWidget(powerUnitLabel);
     powerRow->addStretch();
+    // Decorative session-life indicator; animates only while the order is
+    // actually CHARGING (driven from render()).
+    pulse_ = new ChargingPulse(heroCard_);
+    pulse_->setActive(false);
+    powerRow->addWidget(pulse_, 0, Qt::AlignVCenter);
     heroLayout->addLayout(powerRow);
 
     powerCaptionLabel_ = new QLabel(tr("实时功率"), heroCard_);
@@ -165,6 +172,9 @@ void ChargingPage::render(const charging::client::ChargingStatus& status)
     const OrderStatusDisplay statusDisplay = orderStatusDisplay(status.order.status);
     statusTag_->setText(statusDisplay.text);
     statusTag_->setTone(statusDisplay.tone);
+    // The pulse breathes only for a live session; once the server reports any
+    // other state it settles to its idle look (hidden pages stop on their own).
+    pulse_->setActive(status.order.status == charging::model::OrderStatus::Charging);
 
     if (status.powerKnown) {
         powerValueLabel_->setText(formatWattsAsKw(status.powerWatts));
@@ -197,6 +207,8 @@ void ChargingPage::onStopCompleted(const charging::client::ChargingStatus& statu
 {
     overlay_->hideFor();
     setStopBusy(false);
+    // Server confirmed the session is over even if this page stays mounted.
+    pulse_->setActive(false);
     emit settlementRequested(status);
 }
 
