@@ -16,10 +16,13 @@
 #include "pages/station/settings_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
+#include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
 #include "services/settings/settings_service.h"
+#include "fake_tencent_server.h"
 
 #include <QCheckBox>
+#include <QByteArray>
 #include <QComboBox>
 #include <QDateTimeEdit>
 #include <QDialog>
@@ -48,8 +51,10 @@ using StationDetailPage = charging::client::pages::station::StationDetailPage;
 using StationHomePage = charging::client::pages::station::StationHomePage;
 using ReservationService = charging::client::services::reservation::ReservationService;
 using ReservationRecord = charging::client::services::reservation::ReservationRecord;
+using MapGeoService = charging::client::services::map::MapGeoService;
 using SettingsService = charging::client::services::settings::SettingsService;
 using Vehicle = charging::client::services::settings::Vehicle;
+using charging::testing::FakeTencentServer;
 
 // 供 UI 评审使用的样例用户（新注册用户：昵称 用户+后四位，余额 123.45 元）。
 charging::model::User makeSampleUser()
@@ -230,6 +235,57 @@ void clickReserveAndWaitConfirm(HomeShell& shell)
     QCOMPARE(pageStack->currentIndex(), 5);
 }
 
+// —— 腾讯地图接入用例夹具（成员 2）：独立页面 + 假 HTTP 服务，
+//    不动 HomeShell 装配（装配路径已由 goCharge/settings 等用例覆盖）。
+
+charging::model::Station makeMapStation()
+{
+    auto station = makeStationSnapshot(1);
+    station.latitude = 22.55;
+    station.longitude = 113.95;
+    return station;
+}
+
+charging::model::Charger makeMapCharger()
+{
+    charging::model::Charger charger;
+    charger.id = 11;
+    charger.code = QStringLiteral("A01");
+    charger.type = charging::model::ChargerType::Fast;
+    charger.powerWatts = 120000;
+    return charger;
+}
+
+ReservationRecord makeMapRecord()
+{
+    ReservationRecord record;
+    record.stationName = QStringLiteral("测试站点 1");
+    record.chargerCode = QStringLiteral("A01");
+    record.chargerSpec = QStringLiteral("直流快充 · 120kW");
+    record.distanceMeters = 850; // 模拟口径，升级后应变为真实距离
+    record.startAtUtc = QDateTime::currentDateTimeUtc().addSecs(30 * 60);
+    record.hasStationLocation = true;
+    record.stationLatitude = 22.55;
+    record.stationLongitude = 113.95;
+    return record;
+}
+
+// 矩阵成功响应：真实行驶 4321 m / 600 s（= 10 分钟车程 + 5 分钟准备 = 15）。
+const QByteArray kMapMatrixJson = QByteArrayLiteral(R"({
+    "status": 0,
+    "result": {"rows": [{"elements": [{"distance": 4321, "duration": 600}]}]}
+})");
+
+// 路线成功响应：5120 m / 12 min / 3 段（口径：路线 duration 为分钟）。
+const QByteArray kMapRouteJson = QByteArrayLiteral(R"({
+    "status": 0,
+    "result": {"mode": {"distance": 5120, "duration": 12, "steps": [
+        {"instruction": "沿滨海大道直行约2000米", "distance": 2000},
+        {"instruction": "在路口右转进入科苑北路", "distance": 800},
+        {"instruction": "到达目的地附近", "distance": 10}
+    ]}}
+})");
+
 } // namespace
 
 class HomeShellTest final : public QObject
@@ -237,6 +293,19 @@ class HomeShellTest final : public QObject
     Q_OBJECT
 
 private slots:
+    // 地图接入用例会在用例内设置 key，统一在前后清除，保证所有用例
+    // 默认走“无 key = 纯模拟”口径（与 CI 环境一致，防用例间泄漏）。
+    void init()
+    {
+        qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_SECRET", "");
+    }
+    void cleanup()
+    {
+        qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_SECRET", "");
+    }
+
     // —— 任务 #2：导航外壳 ——
     void loggedInShellRendersTopBarWithUser();
     void loggedOutShellShowsLoginButtonAndEmits();
@@ -285,6 +354,12 @@ private slots:
     void settingsVehicleDialogCrudAndQuota();
     void protectionSwitchGatedByPasswordDialog();
     void goChargePromptNavigatesAndBackReturnsToOrderTab();
+    // —— 腾讯地图接入：确认页距离矩阵升级 / 导航页真实路线（模拟兜底） ——
+    void confirmPageUpgradesSlotWithRealMatrix();
+    void confirmPageKeepsUserEditedSlotWhenMatrixArrives();
+    void confirmPageFallsBackWithToastOnMatrixFailure();
+    void navigationPageSwapsToRealRoute();
+    void navigationPageKeepsMockRouteOnFailure();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -1778,6 +1853,159 @@ void HomeShellTest::goChargePromptNavigatesAndBackReturnsToOrderTab()
     shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
     QCOMPARE(pageStack->currentIndex(), 3);
     QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+}
+
+void HomeShellTest::confirmPageUpgradesSlotWithRealMatrix()
+{
+    // 地图接入（确认页）：模拟推荐即时可用 → 真实矩阵到达后原地升级
+    // 车程分钟数并标注“真实路况”；时序由假服务扣包控制，永不触外网。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    QVERIFY(mapService.hasUsableKey());
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+    mapService.setRequestTimeoutForTesting(2000);
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    // 模拟口径先出（850 m → 约 7 分钟），请求在途带“更新中…”后缀。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 7 分钟")));
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("（更新中…）")));
+
+    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
+    server.releasePending(kMapMatrixJson);
+    QTRY_VERIFY_WITH_TIMEOUT(!page.recommendedSlotText().contains(QStringLiteral("更新中")),
+                             5000);
+
+    // 600 s 车程 + 5 min 出发准备 = 15 分钟（区别于模拟 7 分钟）。
+    // 不比较具体时刻：15 分钟对齐下不同分钟数可能落到同一开始刻度。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 15 分钟")));
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("真实路况")));
+    QCOMPARE(page.selectedMinutes(), 45);  // 时长仍为规格上限 45 分钟
+}
+
+void HomeShellTest::confirmPageKeepsUserEditedSlotWhenMatrixArrives()
+{
+    // 用户手动改过起止时间后，真实矩阵只升级文案、不覆盖其编辑。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    auto* startEdit = page.findChild<QDateTimeEdit*>(QStringLiteral("reservationStartEdit"));
+    QVERIFY(startEdit != nullptr);
+    const QDateTime edited = QDateTime::currentDateTime().addSecs(2 * 3600);
+    startEdit->setDateTime(edited); // 触发 userEditedSlot_
+
+    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
+    server.releasePending(kMapMatrixJson);
+    QTRY_VERIFY_WITH_TIMEOUT(page.recommendedSlotText().contains(QStringLiteral("真实路况")),
+                             5000);
+
+    QCOMPARE(page.startUtc(), edited.toUTC()); // 未被真实推荐覆盖
+}
+
+void HomeShellTest::confirmPageFallsBackWithToastOnMatrixFailure()
+{
+    // 密钥无效（status 310）：推荐保持模拟口径 + 一次性非阻塞 Toast，
+    // 页面流程不打断（任务书第 3 条：Toast + 页内文案，不用模态框）。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "invalid-key-for-test");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 310, \"message\": \"invalid key\"}"));
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    QTRY_VERIFY_WITH_TIMEOUT(!page.recommendedSlotText().contains(QStringLiteral("更新中")),
+                             5000);
+    // 兜底：推荐文案回到模拟口径，无“真实路况”标注。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 7 分钟")));
+    QVERIFY(!page.recommendedSlotText().contains(QStringLiteral("真实路况")));
+    // 非阻塞 Toast（成员 3 组件，objectName 定位）。
+    auto* toast = page.findChild<QFrame*>(QStringLiteral("uiToast"));
+    QVERIFY(toast != nullptr);
+    auto* toastLabel = toast->findChild<QLabel*>(QStringLiteral("uiToastLabel"));
+    QVERIFY(toastLabel != nullptr);
+    QVERIFY(toastLabel->text().contains(QStringLiteral("地图服务暂不可用")));
+    QVERIFY(toastLabel->text().contains(QStringLiteral("模拟")));
+}
+
+void HomeShellTest::navigationPageSwapsToRealRoute()
+{
+    // 地图接入（导航页）：模拟路线先行渲染（永不空页）→ 真实路线到达
+    // 后原地替换距离/时长/步骤，caption 与 usingRealRoute 切换真实口径。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    NavigationPage page;
+    page.setMapService(&mapService);
+    page.openRoute(makeMapRecord());
+
+    auto* caption = page.findChild<QLabel*>(QStringLiteral("navigationCaptionLabel"));
+    QVERIFY(caption != nullptr);
+    QVERIFY(!page.usingRealRoute());
+    QVERIFY(page.distanceText().contains(QStringLiteral("850"))); // 模拟距离
+    QVERIFY(caption->text().contains(QStringLiteral("模拟数据")));
+    const int mockSteps = page.routeStepCount();
+    QVERIFY(mockSteps >= 5);
+
+    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
+    QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/direction/v1/driving/")));
+    server.releasePending(kMapRouteJson);
+    QTRY_VERIFY_WITH_TIMEOUT(page.usingRealRoute(), 5000);
+
+    QVERIFY(page.distanceText().contains(QStringLiteral("5.1"))); // 5120 m
+    QVERIFY(page.etaText().contains(QStringLiteral("约 12 分钟")));
+    QCOMPARE(page.routeStepCount(), 3); // 真实 3 段替换模拟 5~7 段
+    QVERIFY(caption->text().contains(QStringLiteral("真实导航路线")));
+}
+
+void HomeShellTest::navigationPageKeepsMockRouteOnFailure()
+{
+    // 限流（status 121）：保持模拟路线，caption 标注接口异常原因 + Toast。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 121, \"message\": \"quota\"}"));
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    NavigationPage page;
+    page.setMapService(&mapService);
+    page.openRoute(makeMapRecord());
+
+    auto* caption = page.findChild<QLabel*>(QStringLiteral("navigationCaptionLabel"));
+    QVERIFY(caption != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(caption->text().contains(QStringLiteral("接口异常")), 5000);
+    QVERIFY(caption->text().contains(QStringLiteral("模拟数据")));
+    QVERIFY(!page.usingRealRoute());
+    QVERIFY(page.routeStepCount() >= 5); // 模拟步骤原样保留
+    auto* toastLabel = page.findChild<QLabel*>(QStringLiteral("uiToastLabel"));
+    QVERIFY(toastLabel != nullptr);
+    QVERIFY(toastLabel->text().contains(QStringLiteral("已展示模拟路线")));
 }
 
 QTEST_MAIN(HomeShellTest)

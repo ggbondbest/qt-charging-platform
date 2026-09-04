@@ -25,6 +25,7 @@
 #include "pages/station/settings_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
+#include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
 #include "services/settings/settings_service.h"
 
@@ -195,6 +196,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     // 单一事实源。
     reservationService_ = new services::reservation::ReservationService(this);
     settingsService_ = new services::settings::SettingsService(this);
+    // 腾讯地图 WebService（key 经环境变量注入；无 key 时页面保持纯模拟）。
+    mapGeoService_ = new services::map::MapGeoService(this);
     if (hasUser_) {
         reservationService_->setUserId(user_.id);
     }
@@ -217,6 +220,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     confirmPage_ = new ReservationConfirmPage(pageStack_);
     confirmPage_->setService(reservationService_);
     confirmPage_->setSettingsService(settingsService_);
+    confirmPage_->setMapService(mapGeoService_);
     pageStack_->addWidget(confirmPage_);
     // 【关闭】→ 返回站点详情页（顶部导航返回同语义：确认页的返回目标
     // 正是入页时记录的详情页）。
@@ -358,9 +362,10 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     settingsPage_->setSettingsService(settingsService_);
     pageStack_->addWidget(settingsPage_);
 
-    // 导航页：预约成功“去充电”进入；本轮渲染模拟路线摘要，
-    // 真实腾讯地图路线 API 就绪后仅替换数据来源（见 navigation_page.cpp）。
+    // 导航页：预约成功“去充电”进入；key 可用时腾讯路线规划接口渲染真实
+    // 路线，异常/无 key 保持模拟路线摘要（见 navigation_page.cpp）。
     navigationPage_ = new NavigationPage(pageStack_);
+    navigationPage_->setMapService(mapGeoService_);
     pageStack_->addWidget(navigationPage_);
 
     connect(stationPage_, &StationHomePage::stationSelected, this,

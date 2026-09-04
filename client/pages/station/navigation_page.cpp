@@ -1,7 +1,9 @@
 #include "pages/station/navigation_page.h"
 
 #include "charging/client/widgets/card.h"
+#include "charging/client/widgets/toast.h"
 #include "pages/station/platform_theme.h"
+#include "services/map/map_geo_service.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -56,20 +58,18 @@ void clearLayoutItems(QVBoxLayout* layout)
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
-// 真实地图接入点（本轮未实现，后续迭代替换本文件内模拟逻辑即可，页面
-// 结构与信号形状不变）：
+// 真实地图接入（成员 2 地图接入迭代，已落地）：
 //
-// 1. 距离矩阵 / 路线规划（WebService API，QNetworkAccessManager 请求）：
-//    用 `CHARGING_TENCENT_MAP_KEY`（环境变量注入，禁止提交进仓库）请求
-//    https://apis.map.qq.com/ws/direction/v1/driving/?from=..&to=.. ，
-//    解析 mode.distance / mode.duration / steps[] 替换 buildMockSteps()
-//    与本文件的模拟估算；服务端域名需先在腾讯位置服务控制台绑定。
-// 2. 地图渲染（本机已装 Qt6 WebEngine 时）：复用 StationMapPanel 的
-//    WebEngine + tencent_map.html 通道，在本页顶部占位区渲染真实地图与
-//    路线 polyline。
-// 3. 距离口径统一：预约记录 distanceMeters 与推荐时段 travelMinutes
-//    （ReservationService::recommendSlot）应改由上述 API 返回，两处共用
-//    同一数据源。
+// 1. 路线规划：MapGeoService::requestDrivingRoute（腾讯 WebService
+//    ws/direction/v1/driving/，key 经 CHARGING_TENCENT_MAP_KEY 环境
+//    变量注入）→ handleRouteResult 原地替换距离/时长/步骤，caption 切
+//    “真实导航路线 · 腾讯地图”；接口异常保持模拟步骤 + caption 标注原因
+//    + Toast。见 openRoute/handleRouteResult 实现。
+// 2. 地图渲染（WebEngine 可用时）：可复用 StationMapPanel 的
+//    WebEngine + tencent_map.html 通道在本页顶部占位区渲染路线 polyline
+//    （本机与 CI 均无 WebEngine，占位文案保留）。
+// 3. 距离口径统一：确认页距离矩阵结果已写入 ReservationRecord
+//    distanceMeters，本页直接消费同一记录。
 // ─────────────────────────────────────────────────────────────────────────
 NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
 {
@@ -87,10 +87,12 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
     rootLayout->addWidget(titleLabel);
 
     auto* caption = new QLabel(
-        tr("导航路线为模拟数据 · 腾讯地图接口就绪后渲染真实路线（WebEngine 可用时内嵌地图）"),
+        tr("导航路线为模拟数据 · 腾讯地图路线接口就绪后自动切换真实路线"),
         this);
     caption->setObjectName(QStringLiteral("navigationCaptionLabel"));
     caption->setWordWrap(true);
+    captionLabel_ = caption;
+    defaultCaptionText_ = caption->text();
     rootLayout->addWidget(caption);
 
     // 长内容滚动容器：鼠标滚轮上下滚动（规格通用要求）。
@@ -107,8 +109,8 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
     contentLayout->setSpacing(10);
     scroll->setWidget(content);
 
-    // 顶部地图占位（WebEngine + Key 就绪后替换为真实地图渲染区）。
-    auto* mapPlaceholder = new QLabel(tr("🗺️ 地图路线渲染区（待腾讯地图接口接入）"), content);
+    // 顶部地图占位（WebEngine + Key 就绪后可替换为真实地图渲染区）。
+    auto* mapPlaceholder = new QLabel(tr("🗺️ 地图路线渲染区（当前展示文字路线摘要）"), content);
     mapPlaceholder->setObjectName(QStringLiteral("navigationMapPlaceholder"));
     mapPlaceholder->setAlignment(Qt::AlignCenter);
     contentLayout->addWidget(mapPlaceholder);
@@ -184,6 +186,25 @@ QPair<QStringList, int> NavigationPage::buildMockSteps(const ReservationRecord& 
     return {steps, slot.travelMinutes};
 }
 
+void NavigationPage::setMapService(services::map::MapGeoService* mapService)
+{
+    if (mapService_ == mapService) {
+        return;
+    }
+    mapService_ = mapService;
+    if (mapService_ == nullptr) {
+        return;
+    }
+    connect(mapService_, &services::map::MapGeoService::routeSucceeded, this,
+            [this](quint64 requestId, const services::map::RouteResult& route) {
+                handleRouteResult(requestId, route);
+            });
+    connect(mapService_, &services::map::MapGeoService::routeFailed, this,
+            [this](quint64 requestId, services::map::MapError, const QString& message) {
+                handleRouteFailure(requestId, message);
+            });
+}
+
 void NavigationPage::openRoute(const ReservationRecord& record)
 {
     record_ = record;
@@ -195,6 +216,7 @@ void NavigationPage::openRoute(const ReservationRecord& record)
                                 ? tr("全程约 %1 km").arg(distance / 1000.0, 0, 'f', 1)
                                 : tr("全程约 %1 m").arg(distance));
 
+    // 模拟路线先行渲染（永不空页）：真实路线到达后原地替换。
     const auto [steps, travelMinutes] = buildMockSteps(record_);
     QString etaText = tr("预计行驶约 %1 分钟").arg(travelMinutes);
     if (record_.startAtUtc.isValid()) {
@@ -207,8 +229,34 @@ void NavigationPage::openRoute(const ReservationRecord& record)
     etaLabel_->setText(etaText);
 
     clearLayoutItems(stepsLayout_);
+    appendStepRows(steps);
+
+    // 真实路线（地图接入）：key 可用且预约记录带站点坐标时异步请求；
+    // 复位展示口径并记录代际，过期响应在回调里丢弃。
+    usingRealRoute_ = false;
+    captionLabel_->setText(defaultCaptionText_);
+    routeGeneration_ = 0;
+    if (mapService_ != nullptr && mapService_->hasUsableKey() && record_.hasStationLocation) {
+        routeGeneration_ = mapService_->requestDrivingRoute(
+            mapService_->userLocation(),
+            {record_.stationLatitude, record_.stationLongitude});
+    }
+}
+
+void NavigationPage::appendStepRows(const QStringList& steps)
+{
+    // 真实路线分段可能很长：截断展示并给出省略说明行（该行不计入
+    // routeStepCount 的双列步骤数）。
+    constexpr int kMaxDisplayedSteps = 15;
     int index = 1;
     for (const QString& step : steps) {
+        if (index > kMaxDisplayedSteps) {
+            auto* more = new QLabel(tr("……后续 %1 段已省略").arg(steps.size() - kMaxDisplayedSteps),
+                                    stepsHost_);
+            more->setProperty("role", QStringLiteral("secondary"));
+            stepsLayout_->addWidget(more);
+            return;
+        }
         auto* row = new QHBoxLayout();
         auto* badge = new QLabel(QString::number(index++), stepsHost_);
         badge->setProperty("role", QStringLiteral("secondary"));
@@ -219,6 +267,58 @@ void NavigationPage::openRoute(const ReservationRecord& record)
         row->addWidget(label, 1);
         stepsLayout_->addLayout(row);
     }
+}
+
+void NavigationPage::handleRouteResult(quint64 requestId,
+                                       const services::map::RouteResult& route)
+{
+    if (requestId != routeGeneration_) {
+        return; // 已切页/重复请求：旧响应作废
+    }
+    routeGeneration_ = 0;
+
+    if (route.distanceMeters >= 0) {
+        const int meters = route.distanceMeters;
+        distanceLabel_->setText(meters >= 1000
+                                    ? tr("全程约 %1 km").arg(meters / 1000.0, 0, 'f', 1)
+                                    : tr("全程约 %1 m").arg(meters));
+    }
+    const int travelMinutes = route.durationMinutes;
+    if (travelMinutes > 0) {
+        QString etaText = tr("预计行驶约 %1 分钟").arg(travelMinutes);
+        if (record_.startAtUtc.isValid()) {
+            etaText += tr(" · 建议 %1 前出发（预约 %2 开始）")
+                           .arg(record_.startAtUtc.addSecs(-(travelMinutes + 5) * 60)
+                                    .toLocalTime()
+                                    .toString(QStringLiteral("HH:mm")),
+                                record_.startAtUtc.toLocalTime().toString(QStringLiteral("HH:mm")));
+        }
+        etaLabel_->setText(etaText);
+    }
+    if (!route.steps.isEmpty()) {
+        QStringList instructions;
+        instructions.reserve(route.steps.size());
+        for (const auto& step : route.steps) {
+            instructions << step.instruction;
+        }
+        clearLayoutItems(stepsLayout_);
+        appendStepRows(instructions);
+    }
+
+    usingRealRoute_ = true;
+    captionLabel_->setText(tr("真实导航路线 · 腾讯地图"));
+}
+
+void NavigationPage::handleRouteFailure(quint64 requestId, const QString& message)
+{
+    if (requestId != routeGeneration_) {
+        return;
+    }
+    routeGeneration_ = 0;
+    // 保持模拟路线，caption 标注原因 + 一次性非阻塞提示（任务书第 3 条）。
+    captionLabel_->setText(tr("导航路线为模拟数据（接口异常：%1）").arg(message));
+    Toast::show(window(), tr("地图服务暂不可用（%1），已展示模拟路线").arg(message),
+                charging::client::StatusTag::Tone::Warning);
 }
 
 QString NavigationPage::distanceText() const
@@ -241,6 +341,11 @@ int NavigationPage::routeStepCount() const
         }
     }
     return count;
+}
+
+bool NavigationPage::usingRealRoute() const
+{
+    return usingRealRoute_;
 }
 
 } // namespace charging::client::pages::station

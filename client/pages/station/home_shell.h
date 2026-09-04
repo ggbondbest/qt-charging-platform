@@ -29,6 +29,9 @@ class ProfileEditPage;
 namespace network {
 class ClientConnection;
 }
+namespace services::map {
+class MapGeoService;
+} // namespace services::map
 namespace services::reservation {
 class ReservationService;
 struct ReservationRecord;
@@ -146,6 +149,7 @@ private:
     NavigationPage* navigationPage_ = nullptr; // 路由页（登录后 13；登录前 8）
     charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
     charging::client::services::settings::SettingsService* settingsService_ = nullptr;
+    charging::client::services::map::MapGeoService* mapGeoService_ = nullptr;
     QVector<BackTarget> backTargets_;
 
     // ---- 成员 3 整合：共享 mock 通道 + 服务 + 页面（TODO(contract) 换真实通道） ----

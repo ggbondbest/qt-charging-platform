@@ -15,6 +15,11 @@ class ReservationService;
 struct ReservationRecord;
 } // namespace charging::client::services::reservation
 
+namespace charging::client::services::map {
+class MapGeoService;
+struct DistanceElement;
+} // namespace charging::client::services::map
+
 namespace charging::client::services::settings {
 class SettingsService;
 }
@@ -59,6 +64,10 @@ public:
     void setService(charging::client::services::reservation::ReservationService* service);
     // 车辆下拉数据源（设置-车辆管理）；车辆增删改实时联动本下拉。
     void setSettingsService(charging::client::services::settings::SettingsService* settings);
+    // 腾讯地图服务（成员 2 地图接入）：注入且 key 可用时，进入本页在
+    // 模拟推荐之外再请求距离矩阵，用真实行驶距离/时长升级推荐时段；
+    // 接口异常 Toast 提示并保持模拟口径。未注入 = 纯模拟（现状行为）。
+    void setMapService(charging::client::services::map::MapGeoService* mapService);
 
     // 路由入口：刷新预约上下文并复位表单/提示。distanceMeters 为展示用
     // 虚拟导航距离（推荐时段估算与订单页左栏共用，对接导航模块）。
@@ -84,6 +93,10 @@ signals:
 private:
     void refreshVehicles();
     void applyRecommendedSlot();
+    void refreshRecommendedButton();
+    void handleMatrixResult(quint64 requestId,
+                            const QVector<charging::client::services::map::DistanceElement>& elements);
+    void handleMatrixFailure(quint64 requestId, const QString& message);
     void updateSlotValidity();
     void handleSubmit();
     void handleSubmitStarted(qint64 chargerId);
@@ -94,6 +107,11 @@ private:
 
     charging::client::services::reservation::ReservationService* service_ = nullptr;
     charging::client::services::settings::SettingsService* settings_ = nullptr;
+    charging::client::services::map::MapGeoService* mapService_ = nullptr;
+    quint64 mapGeneration_ = 0;    // 过期矩阵响应过滤（快速切换站点时旧响应后到）
+    bool userEditedSlot_ = false;  // 用户手动改过起止时间：真实结果不覆盖其编辑
+    bool applyingSlot_ = false;    // 程序写入 QDateTimeEdit 时屏蔽 userEdited 置位
+    QString recommendedBaseText_;  // 推荐按钮基础文案（“更新中”后缀之外的部分）
     charging::model::Station station_;
     charging::model::Charger charger_;
     int distanceMeters_ = -1;

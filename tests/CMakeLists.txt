@@ -161,6 +161,18 @@ set_tests_properties(station_map_panel PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+add_executable(test_map_geo_service tst_map_geo_service.cpp)
+target_link_libraries(test_map_geo_service PRIVATE
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ProjectOptions
+    Qt6::Network
+    Qt6::Test
+)
+add_test(NAME map_geo_service COMMAND test_map_geo_service)
+set_tests_properties(map_geo_service PROPERTIES
+    TIMEOUT 30
+)
+
 add_executable(test_station_query_service tst_station_query_service.cpp)
 target_link_libraries(test_station_query_service PRIVATE
     ChargingPlatform::ClientStationServices

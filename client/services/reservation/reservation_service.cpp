@@ -197,6 +197,10 @@ void ReservationService::submit(const charging::model::Charger& charger,
     record.estimatedFeeCents =
         station.priceCentsPerKwh * qMax(0, durationMinutes) / 60;
     record.distanceMeters = distanceMeters;
+    // 站点坐标透传：导航页据此向腾讯路线规划接口寻址目的地（无坐标则保持模拟）。
+    record.hasStationLocation = station.latitude != 0.0 || station.longitude != 0.0;
+    record.stationLatitude = station.latitude;
+    record.stationLongitude = station.longitude;
     pendingSubmitRecord_ = record;
 
     if (durationMinutes <= 0) {
@@ -420,14 +424,23 @@ int ReservationService::cancelLateReservations()
 
 RecommendedSlot ReservationService::recommendSlot(int distanceMeters, const QDateTime& nowUtc)
 {
-    // 模拟估算：行驶时长 = 出发准备 5 分钟 + 距离向上取整每 500 米 1 分钟；
-    // 开始时刻 = 现在 + 行驶时长，向上对齐本地整点 15 分钟刻度；
-    // 结束 = 开始 + 45 分钟（规格上限）。真实地图 API 就绪后仅替换估算。
+    // 模拟估算：行驶时长 = 出发准备 5 分钟 + 距离向上取整每 500 米 1 分钟。
+    // 真实地图 API 就绪后由确认页改用 recommendSlotFromTravelMinutes
+    // （腾讯距离矩阵返回的真实 duration 换算分钟），本估算保持原口径兜底。
     const int safeDistance = qMax(0, distanceMeters);
     const int travelMinutes = kTravelBaseMinutes
         + (safeDistance + kTravelMetersPerMinute - 1) / kTravelMetersPerMinute;
+    return recommendSlotFromTravelMinutes(travelMinutes, nowUtc);
+}
 
-    QDateTime local = nowUtc.toLocalTime().addSecs(travelMinutes * 60);
+RecommendedSlot ReservationService::recommendSlotFromTravelMinutes(int travelMinutes,
+                                                                   const QDateTime& nowUtc)
+{
+    // 开始时刻 = 现在 + 行驶时长，向上对齐本地整点 15 分钟刻度；
+    // 结束 = 开始 + 45 分钟（规格上限）。
+    const int safeMinutes = qMax(0, travelMinutes);
+
+    QDateTime local = nowUtc.toLocalTime().addSecs(safeMinutes * 60);
     const QTime time = local.time();
     const int secsOfDay = time.hour() * 3600 + time.minute() * 60 + time.second();
     const int remainder = secsOfDay % kSlotAlignmentSecs;
@@ -436,7 +449,7 @@ RecommendedSlot ReservationService::recommendSlot(int distanceMeters, const QDat
     }
 
     RecommendedSlot slot;
-    slot.travelMinutes = travelMinutes;
+    slot.travelMinutes = safeMinutes;
     slot.startUtc = local.toUTC();
     slot.endUtc = slot.startUtc.addSecs(kMaxSlotMinutes * 60);
     return slot;

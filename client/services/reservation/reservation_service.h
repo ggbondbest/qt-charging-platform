@@ -36,6 +36,10 @@ struct ReservationRecord
     int durationMinutes = 0;
     qint64 estimatedFeeCents = 0;
     int distanceMeters = -1; // 虚拟数据：预留对接后续导航模块
+    // 站点坐标（腾讯路线规划接口寻址用；0/0 或 false = 导航页保持模拟路线）。
+    bool hasStationLocation = false;
+    double stationLatitude = 0.0;
+    double stationLongitude = 0.0;
 };
 
 using ReservationList = QVector<ReservationRecord>;
@@ -122,9 +126,15 @@ public:
     int cancelLateReservations();
 
     // 系统推荐时段：start = 现在 + 模拟行驶时长后向上对齐 15 分钟刻度，
-    // end = start + 45 分钟（时间段预约的“✨ 使用系统推荐时段”）。
+    // end = start + 45 分钟（时间段预约的”✨ 使用系统推荐时段”）。
     static RecommendedSlot recommendSlot(int distanceMeters,
                                          const QDateTime& nowUtc = QDateTime::currentDateTimeUtc());
+
+    // 同口径推荐时段，但行驶时长由调用方提供（腾讯距离矩阵真实时长
+    // durationSeconds/60 向上取整 + 出发准备分钟由调用方合并）——真实
+    // 地图数据就绪后确认页改走本入口，估算版保持兜底。
+    static RecommendedSlot recommendSlotFromTravelMinutes(
+        int travelMinutes, const QDateTime& nowUtc = QDateTime::currentDateTimeUtc());
 
 signals:
     void listStarted();

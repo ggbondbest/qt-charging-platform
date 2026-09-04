@@ -1,7 +1,9 @@
 #include "pages/station/reservation_confirm_page.h"
 
 #include "charging/client/widgets/card.h"
+#include "charging/client/widgets/toast.h"
 #include "pages/station/platform_theme.h"
+#include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
 #include "services/settings/settings_service.h"
 
@@ -21,6 +23,10 @@ using services::reservation::ReservationService;
 
 // 与 Service 层一致的业务上限（UI 先行拦截 + Service 兜底，防绕过）。
 constexpr int kMaxSlotMinutes = 45;
+
+// 出发准备分钟数：与 ReservationService 模拟估算同口径；真实距离矩阵
+// 返回的 duration 仅为行驶时长，合并后交给 recommendSlotFromTravelMinutes。
+constexpr int kTravelPrepMinutes = 5;
 
 // 页面局部样式：电动绿 token 与全局主题一致，仅本页生效，不改全局 QSS。
 const char* kConfirmPageStyleSheet = R"(
@@ -206,9 +212,19 @@ ReservationConfirmPage::ReservationConfirmPage(QWidget* parent) : QWidget(parent
     connect(vehicleComboBox_, &QComboBox::currentIndexChanged, this,
             [this](int) { updateSlotValidity(); });
     connect(startEdit_, &QDateTimeEdit::dateTimeChanged, this,
-            [this](const QDateTime&) { updateSlotValidity(); });
+            [this](const QDateTime&) {
+                if (!applyingSlot_) {
+                    userEditedSlot_ = true;
+                }
+                updateSlotValidity();
+            });
     connect(endEdit_, &QDateTimeEdit::dateTimeChanged, this,
-            [this](const QDateTime&) { updateSlotValidity(); });
+            [this](const QDateTime&) {
+                if (!applyingSlot_) {
+                    userEditedSlot_ = true;
+                }
+                updateSlotValidity();
+            });
 }
 
 void ReservationConfirmPage::setService(services::reservation::ReservationService* service)
@@ -242,6 +258,27 @@ void ReservationConfirmPage::setSettingsService(
     refreshVehicles();
 }
 
+void ReservationConfirmPage::setMapService(services::map::MapGeoService* mapService)
+{
+    if (mapService_ == mapService) {
+        return;
+    }
+    mapService_ = mapService;
+    if (mapService_ == nullptr) {
+        return;
+    }
+    // 矩阵结果只关心“本页当前这次请求”（openContext 记录代际），过期响应丢弃。
+    connect(mapService_, &services::map::MapGeoService::distanceMatrixSucceeded, this,
+            [this](quint64 requestId,
+                   const QVector<services::map::DistanceElement>& elements) {
+                handleMatrixResult(requestId, elements);
+            });
+    connect(mapService_, &services::map::MapGeoService::distanceMatrixFailed, this,
+            [this](quint64 requestId, services::map::MapError, const QString& message) {
+                handleMatrixFailure(requestId, message);
+            });
+}
+
 void ReservationConfirmPage::openContext(const charging::model::Station& station,
                                          const charging::model::Charger& charger,
                                          int distanceMeters)
@@ -258,12 +295,23 @@ void ReservationConfirmPage::openContext(const charging::model::Station& station
             .arg(charger_.powerWatts / 1000));
 
     // 复位表单与提示：每次进入都是一次全新预约，默认填入系统推荐时段。
+    userEditedSlot_ = false;
+    mapGeneration_ = 0;
     refreshVehicles();
     applyRecommendedSlot();
     messageLabel_->hide();
     submitting_ = false;
     resetSubmitButton();
     updateSlotValidity();
+
+    // 腾讯距离矩阵（地图接入）：key 可用且站点带坐标时，在模拟推荐之外
+    // 异步请求真实行驶距离/时长升级推荐时段；无 key 不发请求（现状行为）。
+    if (mapService_ != nullptr && mapService_->hasUsableKey()
+        && (station_.latitude != 0.0 || station_.longitude != 0.0)) {
+        mapGeneration_ = mapService_->requestDistanceMatrix(
+            {{station_.latitude, station_.longitude}});
+        refreshRecommendedButton();
+    }
 }
 
 ReservationConfirmPage::PageState ReservationConfirmPage::pageState() const
@@ -334,17 +382,91 @@ void ReservationConfirmPage::applyRecommendedSlot()
 {
     // 模拟估算（ReservationService::recommendSlot）：出发准备 + 距离换算
     // 行驶时长后对齐 15 分钟刻度，时长取规格上限 45 分钟。
-    // 真实地图接入点：腾讯路线规划/距离矩阵 API 就绪后仅需替换该估算来源。
+    // 真实地图数据就绪后 handleMatrixResult 改走
+    // recommendSlotFromTravelMinutes，本估算保持兜底口径。
     const auto slot = ReservationService::recommendSlot(
         distanceMeters_, QDateTime::currentDateTimeUtc());
+    applyingSlot_ = true;
     startEdit_->setDateTime(slot.startUtc.toLocalTime());
     endEdit_->setDateTime(slot.endUtc.toLocalTime());
-    recommendedButton_->setText(
+    applyingSlot_ = false;
+    recommendedBaseText_ =
         tr("✨ 推荐 %1—%2 · 约 %3 分钟车程")
             .arg(slot.startUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
                  slot.endUtc.toLocalTime().toString(QStringLiteral("HH:mm")))
-            .arg(slot.travelMinutes));
+            .arg(slot.travelMinutes);
+    refreshRecommendedButton();
     updateSlotValidity();
+}
+
+void ReservationConfirmPage::refreshRecommendedButton()
+{
+    // “更新中…”后缀仅在矩阵请求在途时追加（代际非零）。
+    recommendedButton_->setText(mapGeneration_ != 0
+                                    ? recommendedBaseText_ + tr("（更新中…）")
+                                    : recommendedBaseText_);
+}
+
+void ReservationConfirmPage::handleMatrixResult(
+    quint64 requestId, const QVector<services::map::DistanceElement>& elements)
+{
+    if (requestId != mapGeneration_ || elements.isEmpty()) {
+        return; // 过期响应或空矩阵：保持模拟口径
+    }
+    mapGeneration_ = 0;
+    const auto& element = elements.first();
+    if (element.distanceMeters >= 0) {
+        // 真实行驶距离入账：提交时随 ReservationRecord 流转到订单/导航页。
+        distanceMeters_ = element.distanceMeters;
+    }
+    if (element.durationSeconds > 0) {
+        // 真实时长 = 行驶 duration + 出发准备（与模拟估算同口径合并）。
+        const int travelMinutes =
+            kTravelPrepMinutes + (element.durationSeconds + 59) / 60;
+        const auto slot = ReservationService::recommendSlotFromTravelMinutes(
+            travelMinutes, QDateTime::currentDateTimeUtc());
+        if (!userEditedSlot_) {
+            // 用户未手动改过时才覆盖表单；否则只升级按钮文案作参考。
+            applyingSlot_ = true;
+            startEdit_->setDateTime(slot.startUtc.toLocalTime());
+            endEdit_->setDateTime(slot.endUtc.toLocalTime());
+            applyingSlot_ = false;
+        }
+        recommendedBaseText_ =
+            tr("✨ 推荐 %1—%2 · 约 %3 分钟车程（真实路况）")
+                .arg(slot.startUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
+                     slot.endUtc.toLocalTime().toString(QStringLiteral("HH:mm")))
+                .arg(slot.travelMinutes);
+    } else if (element.distanceMeters >= 0) {
+        // 只拿到距离没拿到时长：用真实距离重走模拟估算口径。
+        const auto slot = ReservationService::recommendSlot(
+            distanceMeters_, QDateTime::currentDateTimeUtc());
+        if (!userEditedSlot_) {
+            applyingSlot_ = true;
+            startEdit_->setDateTime(slot.startUtc.toLocalTime());
+            endEdit_->setDateTime(slot.endUtc.toLocalTime());
+            applyingSlot_ = false;
+        }
+        recommendedBaseText_ =
+            tr("✨ 推荐 %1—%2 · 约 %3 分钟车程")
+                .arg(slot.startUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
+                     slot.endUtc.toLocalTime().toString(QStringLiteral("HH:mm")))
+                .arg(slot.travelMinutes);
+    }
+    refreshRecommendedButton();
+    updateSlotValidity();
+}
+
+void ReservationConfirmPage::handleMatrixFailure(quint64 requestId, const QString& message)
+{
+    if (requestId != mapGeneration_) {
+        return;
+    }
+    mapGeneration_ = 0;
+    refreshRecommendedButton();
+    // 非阻塞提示（任务书第 3 条）：模拟推荐继续可用，页面流程不打断。
+    Toast::show(window(), tr("地图服务暂不可用（%1），推荐时段基于模拟距离").arg(message),
+                charging::client::StatusTag::Tone::Warning);
 }
 
 void ReservationConfirmPage::updateSlotValidity()

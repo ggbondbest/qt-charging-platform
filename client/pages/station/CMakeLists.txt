@@ -41,6 +41,7 @@ target_link_libraries(charging_client_station_pages
     PUBLIC
     ChargingPlatform::ClientStationServices
     ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientMapServices
     ChargingPlatform::ClientSettingsServices
     ChargingPlatform::ClientProfileChargingPages
     ChargingPlatform::ClientProfileChargingServices
