@@ -2,6 +2,7 @@
 
 #include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/presentation_format.h"
+#include "charging/client/widgets/action_bar.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/loading_overlay.h"
@@ -32,9 +33,15 @@ SettlementPage::SettlementPage(ChargingService* service, QWidget* parent)
 
 void SettlementPage::buildUi()
 {
-    auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(20, 20, 20, 20);
+    // 外框：内容区 + 底部操作条（待支付/已支付两条，互斥显示）。
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
+    auto* content = new QWidget(this);
+    auto* rootLayout = new QVBoxLayout(content);
+    rootLayout->setContentsMargins(20, 16, 20, 16);
     rootLayout->setSpacing(14);
+    outerLayout->addWidget(content, 1);
 
     auto* headerRow = new QHBoxLayout();
     auto* titleLabel = new QLabel(tr("订单结算"), this);
@@ -44,6 +51,7 @@ void SettlementPage::buildUi()
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
     headerRow->addWidget(backButton);
+    backButton_ = backButton;
     rootLayout->addLayout(headerRow);
 
     // ---------- pending state ----------
@@ -56,7 +64,8 @@ void SettlementPage::buildUi()
     pendingLayout->addWidget(stationLabel_);
 
     amountLabel_ = new QLabel(QStringLiteral("¥ --"), pendingCard_);
-    amountLabel_->setProperty("role", QStringLiteral("balance"));
+    // 待付金额用行内强金额即可；支付成功态同理，34px 余额字只属于钱包横幅。
+    amountLabel_->setProperty("role", QStringLiteral("amountStrong"));
     pendingLayout->addWidget(amountLabel_);
 
     auto* amountCaption = new QLabel(tr("本次充电费用"), pendingCard_);
@@ -83,10 +92,10 @@ void SettlementPage::buildUi()
     pendingLayout->addWidget(rechargeButton_);
     rootLayout->addWidget(pendingCard_);
 
-    payButton_ = new ActionButton(ActionButton::Variant::Primary, tr("确认支付"), this);
-    payButton_->setMinimumHeight(46);
+    payBar_ = new ActionBar(ActionBar::Variant::Primary, tr("确认支付"), this);
+    outerLayout->addWidget(payBar_);
+    payButton_ = payBar_->actionButton();
     connect(payButton_, &ActionButton::clicked, this, &SettlementPage::requestPay);
-    rootLayout->addWidget(payButton_);
 
     // ---------- paid result state ----------
     paidCard_ = new Card(this);
@@ -101,7 +110,7 @@ void SettlementPage::buildUi()
     paidTitle->setAlignment(Qt::AlignHCenter);
     paidLayout->addWidget(paidTitle);
     paidAmountLabel_ = new QLabel(QStringLiteral("¥ --"), paidCard_);
-    paidAmountLabel_->setProperty("role", QStringLiteral("balance"));
+    paidAmountLabel_->setProperty("role", QStringLiteral("amountStrong"));
     paidAmountLabel_->setAlignment(Qt::AlignHCenter);
     paidLayout->addWidget(paidAmountLabel_);
     paidBalanceLabel_ = new QLabel(QString(), paidCard_);
@@ -110,14 +119,13 @@ void SettlementPage::buildUi()
     paidLayout->addWidget(paidBalanceLabel_);
     paidCard_->setVisible(false);
     rootLayout->addWidget(paidCard_);
-
     rootLayout->addStretch();
 
-    doneButton_ = new ActionButton(ActionButton::Variant::Primary, tr("查看订单"), this);
-    doneButton_->setMinimumHeight(46);
-    doneButton_->setVisible(false);
+    doneBar_ = new ActionBar(ActionBar::Variant::Primary, tr("查看订单"), this);
+    outerLayout->addWidget(doneBar_);
+    doneButton_ = doneBar_->actionButton();
+    doneBar_->setVisible(false);
     connect(doneButton_, &ActionButton::clicked, this, &SettlementPage::doneRequested);
-    rootLayout->addWidget(doneButton_);
 
     overlay_ = new LoadingOverlay(this);
     overlay_->setVisible(false);
@@ -150,12 +158,18 @@ void SettlementPage::setBalance(qint64 balanceCents)
     refreshAffordability();
 }
 
+void SettlementPage::setEmbedded(bool embedded)
+{
+    backButton_->setVisible(!embedded);
+}
+
 void SettlementPage::renderPending()
 {
     pendingCard_->setVisible(true);
     paidCard_->setVisible(false);
+    payBar_->setVisible(true);
+    doneBar_->setVisible(false);
     payButton_->setVisible(true);
-    doneButton_->setVisible(false);
     setPaying(false);
 
     const charging::model::Order& order = stopped_.order;
@@ -216,7 +230,8 @@ void SettlementPage::renderPaid(qint64 amountCents, qint64 balanceAfterCents)
 {
     paidShown_ = true;
     pendingCard_->setVisible(false);
-    payButton_->setVisible(false);
+    payBar_->setVisible(false);
+    doneBar_->setVisible(true);
     paidCard_->setVisible(true);
     paidAmountLabel_->setText(QStringLiteral("¥%1").arg(formatCentsAsYuan(amountCents)));
     paidBalanceLabel_->setText(

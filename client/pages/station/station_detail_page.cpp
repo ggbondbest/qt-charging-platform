@@ -162,6 +162,8 @@ StationDetailPage::StationDetailPage(QWidget* parent) : QWidget(parent)
     nameLabel_ = new QLabel(contentPage);
     nameLabel_->setObjectName(QStringLiteral("detailNameLabel"));
     nameLabel_->setProperty("role", QStringLiteral("sectionTitle"));
+    // 不换行的长文本会撑宽整页最小尺寸，导致右侧（状态标签/按钮列）被裁切。
+    nameLabel_->setWordWrap(true);
     statusTag_ = new StatusTag(QString(), StatusTag::Tone::Success, contentPage);
     statusTag_->setObjectName(QStringLiteral("detailStatusTag"));
     titleRow->addWidget(nameLabel_);
@@ -172,6 +174,7 @@ StationDetailPage::StationDetailPage(QWidget* parent) : QWidget(parent)
     addressLabel_ = new QLabel(contentPage);
     addressLabel_->setObjectName(QStringLiteral("detailAddressLabel"));
     addressLabel_->setProperty("role", QStringLiteral("secondary"));
+    addressLabel_->setWordWrap(true);
     body->addWidget(addressLabel_);
 
     auto* priceRow = new QHBoxLayout();
@@ -214,6 +217,7 @@ StationDetailPage::StationDetailPage(QWidget* parent) : QWidget(parent)
     chargerScroll->setObjectName(QStringLiteral("detailChargerScroll"));
     chargerScroll->setWidgetResizable(true);
     chargerScroll->setFrameShape(QFrame::NoFrame);
+    chargerScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     chargerListPage_ = new QWidget(chargerScroll);
     chargerListLayout_ = new QVBoxLayout(chargerListPage_);
     chargerListLayout_->setContentsMargins(0, 0, 8, 0);

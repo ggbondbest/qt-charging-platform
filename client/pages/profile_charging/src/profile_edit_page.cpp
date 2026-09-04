@@ -46,8 +46,9 @@ void ProfileEditPage::buildUi()
     auto* headerRow = new QHBoxLayout();
     auto* titleLabel = new QLabel(tr("编辑资料"), this);
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
-    auto* backButton = new ActionButton(ActionButton::Variant::Ghost, tr("‹ 返回"), this);
+    auto* backButton = new ActionButton(ActionButton::Variant::Ghost, tr("返回"), this);
     connect(backButton, &ActionButton::clicked, this, &ProfileEditPage::backRequested);
+    backButton_ = backButton;
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
     headerRow->addWidget(backButton);
@@ -160,6 +161,12 @@ void ProfileEditPage::buildUi()
 
     overlay_ = new LoadingOverlay(this);
     setEditingVisible(false);
+}
+
+void ProfileEditPage::setEmbedded(bool embedded)
+{
+    // 全局顶部导航已提供返回，隐藏页内返回按钮。
+    backButton_->setVisible(!embedded);
 }
 
 void ProfileEditPage::refresh()

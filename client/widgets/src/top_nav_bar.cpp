@@ -101,11 +101,12 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     nameLabel_ = new QLabel(tr("电动汽车充电桩平台"), this);
     nameLabel_->setObjectName(QStringLiteral("navPlatformName"));
 
-    // 中：站点搜索输入框（弹性伸缩，占用中部空间）。
+    // 中：站点搜索输入框（弹性伸缩，占用中部空间；窄窗口下优先保证可读）。
     searchLineEdit_ = new QLineEdit(this);
     searchLineEdit_->setObjectName(QStringLiteral("navSearchLineEdit"));
     searchLineEdit_->setPlaceholderText(tr("搜索站点 / 地址"));
     searchLineEdit_->setClearButtonEnabled(true);
+    searchLineEdit_->setMinimumWidth(140);
     searchLineEdit_->setMaximumWidth(320);
 
     // 右：登录态动态区。未登录 → 登录按钮；已登录 → 头像 + 昵称。
@@ -126,7 +127,6 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     rootLayout->addWidget(backButton_);
     rootLayout->addWidget(logoLabel_);
     rootLayout->addWidget(nameLabel_);
-    rootLayout->addStretch(1);
     rootLayout->addWidget(searchLineEdit_, 2);
     rootLayout->addStretch(1);
     rootLayout->addWidget(nicknameLabel_);
@@ -149,6 +149,9 @@ void TopNavBar::setUser(const charging::model::User& user)
     nicknameLabel_->show();
     avatarButton_->show();
     loginButton_->hide();
+    // 窄窗口下品牌名与搜索、身份区互相挤占：已登录时让位给"搜索 + 头像昵称"。
+    logoLabel_->hide();
+    nameLabel_->hide();
 }
 
 void TopNavBar::clearUser()
@@ -158,6 +161,8 @@ void TopNavBar::clearUser()
     nicknameLabel_->hide();
     avatarButton_->hide();
     loginButton_->show();
+    logoLabel_->show();
+    nameLabel_->show();
 }
 
 bool TopNavBar::hasUser() const
@@ -168,8 +173,9 @@ bool TopNavBar::hasUser() const
 void TopNavBar::setBackVisible(bool visible)
 {
     backButton_->setVisible(visible);
-    // 二级页面：Logo 可隐藏，让“返回 + 平台名”成为主视觉，避免歧义。
-    logoLabel_->setVisible(!visible);
+    // 二级页面：未登录时"返回 + 平台名"成为主视觉；已登录时品牌区让位给搜索。
+    logoLabel_->setVisible(!visible && !hasUser_);
+    nameLabel_->setVisible(!hasUser_);
 }
 
 bool TopNavBar::isBackVisible() const

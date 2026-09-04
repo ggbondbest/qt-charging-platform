@@ -9,6 +9,7 @@ class QVBoxLayout;
 
 namespace charging::client {
 
+class ActionBar;
 class ActionButton;
 class Card;
 class StatusTag;
@@ -24,6 +25,8 @@ public:
     explicit OrderDetailPage(QWidget* parent = nullptr);
 
     void showOrder(const charging::client::OrderSummary& summary);
+    // 整合壳层（HomeShell）内使用：隐藏页内返回按钮（全局顶部导航负责返回）。
+    void setEmbedded(bool embedded);
     // The order currently on screen; lets the shell forward it to settlement.
     charging::client::OrderSummary currentOrder() const { return summary_; }
 
@@ -43,6 +46,8 @@ private:
     QLabel* energyLabel_ = nullptr;
     QLabel* durationLabel_ = nullptr;
     QVBoxLayout* detailRowsLayout_ = nullptr;
+    ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层时隐藏）
+    ActionBar* payBar_ = nullptr;        // 待支付态底部操作条
     ActionButton* payButton_ = nullptr;
 
     charging::client::OrderSummary summary_;

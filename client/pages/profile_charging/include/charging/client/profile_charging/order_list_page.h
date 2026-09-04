@@ -8,6 +8,7 @@
 
 class QLabel;
 class QScrollArea;
+class QStackedWidget;
 class QVBoxLayout;
 
 namespace charging::client {
@@ -32,6 +33,9 @@ public:
     // Enter the list on a specific filter (used by the profile hub badge
     // cells); switches the chip row and re-fetches.
     void showFilter(OrderService::Filter filter);
+    // 整合壳层（HomeShell）内使用：本页为底部 Tab 根页，返回按钮无意义，
+    // 嵌入时隐藏（信号保留，独立预览仍可用）。
+    void setEmbedded(bool embedded);
 
 signals:
     void backRequested();
@@ -55,12 +59,14 @@ private:
 
     OrderService* service_ = nullptr;
 
+    ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层 Tab 时隐藏）
     QVector<ActionButton*> filterChips_;
     QVector<OrderService::Filter> filterValues_;
     bool applyingFilter_ = false;
     OrderService::Filter currentFilter_ = OrderService::Filter::All;
 
     QScrollArea* listScroll_ = nullptr;
+    QStackedWidget* listStack_ = nullptr; // 列表 / 空态·错误态提示互斥（提示铺满列表区）
     QVBoxLayout* listLayout_ = nullptr;
     ActionButton* loadMoreButton_ = nullptr;
     NoticePanel* listNotice_ = nullptr;

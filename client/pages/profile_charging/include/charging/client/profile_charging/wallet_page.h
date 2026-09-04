@@ -29,6 +29,9 @@ public:
     // Re-fetch profile and first records page; called on entry and after a
     // recharge so the page never keeps stale balances.
     void refresh();
+    // 整合壳层（HomeShell）内使用：隐藏页内跳转按钮与称呼行
+    //（底部 Tab / 个人中心已提供同等入口，余额才是本页主角）。
+    void setEmbedded(bool embedded);
 
 signals:
     void rechargeRequested();
@@ -58,6 +61,8 @@ private:
     QLabel* balanceValueLabel_ = nullptr;
     Card* balanceCard_ = nullptr;
     ActionButton* rechargeButton_ = nullptr;
+    ActionButton* ordersButton_ = nullptr;  // 页内跳转（嵌入壳层时隐藏）
+    ActionButton* profileButton_ = nullptr; // 页内跳转（嵌入壳层时隐藏）
     NoticePanel* profileNotice_ = nullptr;
 
     QScrollArea* recordsScroll_ = nullptr;

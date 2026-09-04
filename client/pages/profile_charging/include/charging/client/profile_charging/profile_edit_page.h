@@ -30,6 +30,8 @@ public:
 
     // Re-fetch the profile on entry so the page never shows stale data.
     void refresh();
+    // 整合壳层（HomeShell）内使用：隐藏页内返回按钮（全局顶部导航负责返回）。
+    void setEmbedded(bool embedded);
 
 signals:
     void backRequested();
@@ -53,6 +55,7 @@ private:
     QLabel* avatarLabel_ = nullptr;
     QLabel* identityNameLabel_ = nullptr;
     QLabel* identityPhoneLabel_ = nullptr;
+    ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层时隐藏）
     ActionButton* avatarButton_ = nullptr;
 
     QLabel* nicknameValueLabel_ = nullptr;

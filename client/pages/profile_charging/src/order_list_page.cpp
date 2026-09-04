@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
+#include <QStackedWidget>
 #include <QVBoxLayout>
 
 namespace charging::client {
@@ -41,11 +42,11 @@ void OrderListPage::buildUi()
     auto* headerRow = new QHBoxLayout();
     auto* titleLabel = new QLabel(tr("我的订单"), this);
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
-    auto* backButton = new ActionButton(ActionButton::Variant::Ghost, tr("返回"), this);
-    connect(backButton, &ActionButton::clicked, this, &OrderListPage::backRequested);
+    backButton_ = new ActionButton(ActionButton::Variant::Ghost, tr("返回"), this);
+    connect(backButton_, &ActionButton::clicked, this, &OrderListPage::backRequested);
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
-    headerRow->addWidget(backButton);
+    headerRow->addWidget(backButton_);
     rootLayout->addLayout(headerRow);
 
     auto* filterRow = new QHBoxLayout();
@@ -91,12 +92,16 @@ void OrderListPage::buildUi()
     listLayout_->setSpacing(8);
     listLayout_->addStretch();
     listScroll_->setWidget(listContainer);
-    rootLayout->addWidget(listScroll_, 1);
 
     listNotice_ = new NoticePanel(QStringLiteral("—"), tr("暂无订单"), QString(), QString(), this);
-    listNotice_->setVisible(false);
     connect(listNotice_, &NoticePanel::actionTriggered, this, &OrderListPage::refresh);
-    rootLayout->addWidget(listNotice_);
+    // 列表与空态/错误态放同一 QStackedWidget：此前用 setVisible 互斥，空态时
+    // 滚动区（唯一有拉伸因子的项）被隐藏，提示缩在顶部一小条、下方大片空白。
+    listStack_ = new QStackedWidget(this);
+    listStack_->setObjectName(QStringLiteral("uiOrderListStack"));
+    listStack_->addWidget(listScroll_); // 0：正常列表
+    listStack_->addWidget(listNotice_); // 1：空态 / 错误态
+    rootLayout->addWidget(listStack_, 1);
 
     loadMoreButton_ = new ActionButton(ActionButton::Variant::Secondary, tr("加载更多"), this);
     loadMoreButton_->setVisible(false);
@@ -112,6 +117,12 @@ void OrderListPage::buildUi()
 
     overlay_ = new LoadingOverlay(this);
     overlay_->setVisible(false);
+}
+
+void OrderListPage::setEmbedded(bool embedded)
+{
+    // 壳层 Tab 根页不需要返回按钮；全局顶部导航负责路由页返回。
+    backButton_->setVisible(!embedded);
 }
 
 void OrderListPage::refresh()
@@ -275,15 +286,13 @@ void OrderListPage::clearOrderRows()
 void OrderListPage::showListNotice(const QString& glyph, const QString& title,
                                    const QString& description, const QString& actionText)
 {
-    listScroll_->setVisible(false);
     listNotice_->setContent(glyph, title, description, actionText);
-    listNotice_->setVisible(true);
+    listStack_->setCurrentWidget(listNotice_);
 }
 
 void OrderListPage::hideListNotice()
 {
-    listNotice_->setVisible(false);
-    listScroll_->setVisible(true);
+    listStack_->setCurrentWidget(listScroll_);
 }
 
 } // namespace charging::client

@@ -104,7 +104,7 @@ QLabel#uiBalanceCaption {
     font-weight: 600;
     color: #D6F5E8;
 }
-QLabel#uiBalanceValue {
+QLabel#balanceLabel {
     font-size: 28px;
     font-weight: 800;
     color: #FFFFFF;
@@ -125,7 +125,7 @@ QLabel#uiBadge {
     border-radius: 9px;
     padding: 0px;
 }
-QLabel#uiIdentityName {
+QLabel#nicknameLabel {
     font-size: 17px;
     font-weight: 800;
     color: #1F2937;
@@ -162,6 +162,66 @@ QFrame#uiCard {
     background: #FFFFFF;
     border: 1px solid #E5E9EF;
     border-radius: 16px;
+}
+
+/* ---------- 底部操作条（ActionBar：主操作钉底，白底 + 顶部细分割线） ---------- */
+QWidget#uiActionBar {
+    background: #FFFFFF;
+    border-top: 1px solid #E5E9EF;
+}
+QLabel#uiActionCaption {
+    font-size: 12px;
+    color: #6B7280;
+}
+QWidget#uiActionBar QPushButton#uiActionButton {
+    border-radius: 14px;
+    padding: 14px 22px;
+}
+
+/* ---------- 钱包流水：合并为一张记录卡（行间细线，不再一行一卡） ---------- */
+QScrollArea#uiWalletRecords {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QScrollArea#uiWalletRecords > QWidget,
+QScrollArea#uiWalletRecords > QWidget > QWidget {
+    background: transparent;
+}
+QFrame#uiRecordRow {
+    background: transparent;
+    border: none;
+}
+QFrame#uiRecordSeparator {
+    background: #EEF2F6;
+    border: none;
+}
+
+/* ---------- 个人中心：账号服务行 / 退出登录（贴底弱化为文字行） ---------- */
+QPushButton#openReservationsButton {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #EEF2F6;
+    text-align: left;
+    color: #1F2937;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 2px 0px;
+}
+QPushButton#openReservationsButton:pressed {
+    color: #00B578;
+}
+QPushButton#logoutButton {
+    background: transparent;
+    border: none;
+    color: #FA5151;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton#logoutButton:pressed {
+    color: #D9363E;
+    background: #FDEBEB;
+    border-radius: 12px;
 }
 
 /* ---------- 按钮 ---------- */

@@ -39,6 +39,8 @@ NoticePanel::NoticePanel(const QString& glyph, const QString& title, const QStri
     descriptionLabel_->setAlignment(Qt::AlignCenter);
     descriptionLabel_->setWordWrap(true);
 
+    // 上下拉伸：面板占满整块区域时内容垂直居中（无多余空间时不影响尺寸）。
+    layout->addStretch();
     layout->addWidget(glyphLabel_);
     layout->addWidget(titleLabel_);
     layout->addWidget(descriptionLabel_);
@@ -53,6 +55,7 @@ NoticePanel::NoticePanel(const QString& glyph, const QString& title, const QStri
     buttonRow->addStretch();
     layout->addSpacing(6);
     layout->addLayout(buttonRow);
+    layout->addStretch();
 
     setContent(glyph, title, description, actionText);
 }

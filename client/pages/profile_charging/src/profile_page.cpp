@@ -10,6 +10,7 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 namespace charging::client {
@@ -53,7 +54,8 @@ void ProfilePage::buildUi()
     auto* identityText = new QVBoxLayout();
     identityText->setSpacing(2);
     identityNameLabel_ = new QLabel(tr("未登录"), identityCard);
-    identityNameLabel_->setObjectName(QStringLiteral("uiIdentityName"));
+    // objectName 沿用壳层测试锚点（QSS 选择器同步更名）。
+    identityNameLabel_->setObjectName(QStringLiteral("nicknameLabel"));
     identityPhoneLabel_ = new QLabel(QStringLiteral("--"), identityCard);
     identityPhoneLabel_->setProperty("role", QStringLiteral("caption"));
     identityText->addWidget(identityNameLabel_);
@@ -87,7 +89,7 @@ void ProfilePage::buildUi()
     balanceCaptionLabel_ = new QLabel(tr("当前余额（元）"), balancePanel);
     balanceCaptionLabel_->setObjectName(QStringLiteral("uiBalanceCaption"));
     balanceValueLabel_ = new QLabel(QStringLiteral("¥ --"), balancePanel);
-    balanceValueLabel_->setObjectName(QStringLiteral("uiBalanceValue"));
+    balanceValueLabel_->setObjectName(QStringLiteral("balanceLabel"));
     balanceLayout->addWidget(balanceCaptionLabel_);
     balanceLayout->addWidget(balanceValueLabel_);
     walletLayout->addWidget(balancePanel);
@@ -109,17 +111,10 @@ void ProfilePage::buildUi()
     auto* ordersCard = new Card(this);
     auto* ordersLayout = ordersCard->bodyLayout();
 
-    auto* ordersHeader = new QHBoxLayout();
+    // 标题独占一行："全部订单"就是第一个格子，不再在标题旁重复放跳转按钮。
     auto* ordersTitle = new QLabel(tr("我的订单"), ordersCard);
     ordersTitle->setProperty("role", QStringLiteral("sectionTitle"));
-    auto* allOrdersButton =
-        new ActionButton(ActionButton::Variant::Ghost, tr("全部订单 ›"), ordersCard);
-    allOrdersButton->setStyleSheet(QStringLiteral("font-size:12px;"));
-    connect(allOrdersButton, &ActionButton::clicked, this, &ProfilePage::allOrdersRequested);
-    ordersHeader->addWidget(ordersTitle);
-    ordersHeader->addStretch();
-    ordersHeader->addWidget(allOrdersButton);
-    ordersLayout->addLayout(ordersHeader);
+    ordersLayout->addWidget(ordersTitle);
 
     auto* gridRow = new QHBoxLayout();
     gridRow->setSpacing(10);
@@ -143,11 +138,11 @@ void ProfilePage::buildUi()
     ordersLayout->addLayout(gridRow);
     rootLayout->addWidget(ordersCard);
 
-    // ---------- 更多服务（其他成员的模块，占位禁用，不做假功能） ----------
+    // ---------- 账号与服务（预约 / 设置；退出登录独立置底） ----------
     auto* moreCard = new Card(this);
     auto* moreLayout = moreCard->bodyLayout();
 
-    auto* moreTitle = new QLabel(tr("更多服务"), moreCard);
+    auto* moreTitle = new QLabel(tr("账号与服务"), moreCard);
     moreTitle->setProperty("role", QStringLiteral("sectionTitle"));
     moreLayout->addWidget(moreTitle);
 
@@ -164,7 +159,17 @@ void ProfilePage::buildUi()
         rowLayout->addWidget(hintLabel);
         moreLayout->addWidget(row);
     };
-    addPlaceholderRow(tr("电站列表"), tr("待成员2 模块开放"));
+    // 电站列表入口已合并进壳层底部 Tab（成员 2 模块），此处只保留预约记录
+    // 入口；设置仍是占位，不做假功能。
+    auto* reservationsButton = new QPushButton(tr("📒  我的预约　›"), moreCard);
+    reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
+    reservationsButton->setCursor(Qt::PointingHandCursor);
+    reservationsButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    reservationsButton->setMinimumHeight(44);
+    connect(reservationsButton, &QPushButton::clicked, this,
+            &ProfilePage::reservationRecordsRequested);
+    moreLayout->addWidget(reservationsButton);
+
     addPlaceholderRow(tr("设置"), tr("待开放"));
     rootLayout->addWidget(moreCard);
 
@@ -175,6 +180,15 @@ void ProfilePage::buildUi()
     rootLayout->addWidget(profileNotice_);
 
     rootLayout->addStretch();
+
+    // 退出登录是全页唯一危险动作：移出卡片、贴底、通栏弱化为文字行，
+    // 与日常入口在视觉上拉开层级。
+    auto* logoutButton = new QPushButton(tr("退出登录"), this);
+    logoutButton->setObjectName(QStringLiteral("logoutButton"));
+    logoutButton->setCursor(Qt::PointingHandCursor);
+    logoutButton->setMinimumHeight(48);
+    connect(logoutButton, &QPushButton::clicked, this, &ProfilePage::logoutRequested);
+    rootLayout->addWidget(logoutButton);
 }
 
 ClickableCard* ProfilePage::buildGridCell(const QString& glyph, const QString& caption,
@@ -241,11 +255,22 @@ void ProfilePage::refresh()
     orderService_->fetchStatusCounts();
 }
 
+void ProfilePage::setIdentity(const charging::model::User& user)
+{
+    renderIdentity(user);
+    // 同步渲染真实登录账号；随后 refresh() 会用服务端资料覆盖余额等字段。
+}
+
 void ProfilePage::onProfileLoaded(const charging::model::User& user)
+{
+    profileNotice_->setVisible(false);
+    renderIdentity(user);
+}
+
+void ProfilePage::renderIdentity(const charging::model::User& user)
 {
     user_ = user;
     hasUser_ = true;
-    profileNotice_->setVisible(false);
 
     const QString nickname = user_.nickname.isEmpty() ? tr("未设置") : user_.nickname;
     avatarLabel_->setText(nickname.isEmpty() ? QStringLiteral("用") : QString(nickname.at(0)));

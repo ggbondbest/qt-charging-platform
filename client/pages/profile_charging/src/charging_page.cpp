@@ -3,6 +3,7 @@
 #include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/order_status_display.h"
 #include "charging/client/profile_charging/presentation_format.h"
+#include "charging/client/widgets/action_bar.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/loading_overlay.h"
@@ -31,18 +32,24 @@ ChargingPage::ChargingPage(ChargingService* service, QWidget* parent)
 
 void ChargingPage::buildUi()
 {
-    auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(20, 20, 20, 20);
+    // 外框：内容区 + 底部操作条（停止充电钉底，危险操作不随内容漂移）。
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
+    auto* content = new QWidget(this);
+    auto* rootLayout = new QVBoxLayout(content);
+    rootLayout->setContentsMargins(20, 16, 20, 16);
     rootLayout->setSpacing(14);
+    outerLayout->addWidget(content, 1);
 
     auto* headerRow = new QHBoxLayout();
     auto* titleLabel = new QLabel(tr("充电过程"), this);
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
-    auto* backButton = new ActionButton(ActionButton::Variant::Ghost, tr("返回"), this);
-    connect(backButton, &ActionButton::clicked, this, &ChargingPage::backRequested);
+    backButton_ = new ActionButton(ActionButton::Variant::Ghost, tr("返回"), this);
+    connect(backButton_, &ActionButton::clicked, this, &ChargingPage::backRequested);
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
-    headerRow->addWidget(backButton);
+    headerRow->addWidget(backButton_);
     rootLayout->addLayout(headerRow);
 
     heroCard_ = new Card(this);
@@ -117,13 +124,20 @@ void ChargingPage::buildUi()
     rootLayout->addWidget(statusNotice_);
     rootLayout->addStretch();
 
-    stopButton_ = new ActionButton(ActionButton::Variant::Danger, tr("停止充电"), this);
-    stopButton_->setMinimumHeight(46);
+    stopBar_ = new ActionBar(ActionBar::Variant::Danger, tr("停止充电"), this);
+    stopBar_->setCaption(tr("结束后按实际电量与时长结算"));
+    outerLayout->addWidget(stopBar_);
+    stopButton_ = stopBar_->actionButton();
     connect(stopButton_, &ActionButton::clicked, this, &ChargingPage::requestStop);
-    rootLayout->addWidget(stopButton_);
 
     overlay_ = new LoadingOverlay(this);
     overlay_->setVisible(false);
+}
+
+void ChargingPage::setEmbedded(bool embedded)
+{
+    // 全局顶部导航已提供返回，隐藏页内返回按钮。
+    backButton_->setVisible(!embedded);
 }
 
 void ChargingPage::startFor(const charging::client::ChargingStatus& initial)

@@ -9,14 +9,14 @@
 
 namespace charging::client {
 
-// TEMPORARY MOCK — visual development only.
+// TEMPORARY MOCK — dual-channel dev transport, same pattern as the station
+// and reservation services (mock channel by default, live switch once the
+// leader ships the matching server commands).
 //
-// This class replaces the real ClientConnection until the leader releases the
-// production network layer. It keeps an in-memory user, responds to the
-// candidate-v1 wallet actions with contract-shaped JSON payloads (parsed back
-// through common model_json so field names stay honest), and simulates
-// latency asynchronously with QTimer. It must not be linked into the shipped
-// client app; delete this file when the real transport adapter lands.
+// It keeps an in-memory user, responds to the candidate-v1 wallet actions
+// with contract-shaped JSON payloads (parsed back through common model_json
+// so field names stay honest), and simulates latency asynchronously with
+// QTimer. Delete this file when the real IRequestTransport adapter lands.
 class MockRequestTransport final : public QObject, public IRequestTransport
 {
     Q_OBJECT
@@ -32,6 +32,11 @@ public:
     // Test/demo helper: sets the in-memory balance so the insufficient-balance
     // path of PAY_ORDER can be exercised without a real wallet drain.
     void drainBalanceTo(qint64 cents);
+    // Integrated shell: seed the mock session with the real logged-in user so
+    // identity/balance shown by profile/wallet pages are the actual account.
+    // Orders and recharge records stay demo seeds until the server implements
+    // the wallet-family commands (TODO(contract)).
+    void setUser(const charging::model::User& user);
 
 private:
     void handleRequest(const QString& type, const QJsonObject& data,
