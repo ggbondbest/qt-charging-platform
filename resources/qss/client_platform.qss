@@ -398,6 +398,20 @@ QScrollArea#uiRecordsScroll {
 QScrollArea#uiRecordsScroll > QWidget > QWidget {
     background: transparent;
 }
+
+/* ---------- 订单月度分组表头（token：neutral 系） ---------- */
+QWidget#uiMonthHeader {
+    background: transparent;
+}
+QLabel#uiMonthTitle {
+    color: #6B7280;
+    font-size: 13px;
+    font-weight: 700;
+}
+QLabel#uiMonthSummary {
+    color: #9CA3AF;
+    font-size: 12px;
+}
 QScrollBar:vertical {
     background: transparent;
     width: 6px;

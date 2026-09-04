@@ -138,14 +138,16 @@ void MockRequestTransport::seedDemoOrders()
     };
 
     // Oldest first; reversed below so orders_ ends up newest first.
+    // 种子时间刻意跨 3 个自然月（约 70/40 天前 + 本周），让列表的月度分组
+    // 表头在预览里始终可见；相对"今天"计算以免种子过期。
     orders_.append(makeOrder(12, charging::model::OrderStatus::Cancelled, 98, 0, 0,
                              0, 0, 0));
-    orders_[orders_.size() - 1].createdAtUtc = now.addDays(-7);
-    orders_[orders_.size() - 1].updatedAtUtc = now.addDays(-7);
+    orders_[orders_.size() - 1].createdAtUtc = now.addDays(-71);
+    orders_[orders_.size() - 1].updatedAtUtc = now.addDays(-71);
     orders_[orders_.size() - 1].amountCents = 0;
 
     orders_.append(makeOrder(11, charging::model::OrderStatus::Completed, 132, 24680, 5538,
-                             3 * 24 * 3600, 3 * 24 * 3600 - 5538, 3 * 24 * 3600 - 5538 - 60));
+                             40 * 24 * 3600, 40 * 24 * 3600 - 5538, 40 * 24 * 3600 - 5538 - 60));
     orders_.append(makeOrder(12, charging::model::OrderStatus::Completed, 98, 15200, 3300,
                              24 * 3600 + 3600, 24 * 3600, 24 * 3600 - 30));
     orders_.append(makeOrder(11, charging::model::OrderStatus::WaitingPayment, 132, 18500, 4210,

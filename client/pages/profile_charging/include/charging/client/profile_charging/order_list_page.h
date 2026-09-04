@@ -18,6 +18,9 @@ class LoadingOverlay;
 class NoticePanel;
 
 // Order history list: filter chips, paged rows, Loading/Empty/Error states.
+// Rows are grouped under month headers ("2026年9月" + 单数/金额/电量 汇总);
+// the sort and the sums are display-only conveniences over the same
+// server-authoritative rows, never new protocol state.
 // Pure presentation: every row comes from OrderService, which mirrors the
 // server-side list. Opening a row only navigates; it never changes state.
 class OrderListPage final : public QWidget
@@ -49,6 +52,8 @@ private slots:
 private:
     void buildUi();
     QWidget* buildOrderRow(const charging::client::OrderSummary& summary);
+    QWidget* buildMonthHeader(const QString& monthKey, QLabel** summaryOut);
+    void rebuildMonthGroups();
     void applyFilter(OrderService::Filter filter);
     void clearOrderRows();
     void showListNotice(const QString& glyph, const QString& title, const QString& description,

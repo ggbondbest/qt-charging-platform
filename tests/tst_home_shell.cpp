@@ -235,6 +235,8 @@ private slots:
     void emptyOrderListNoticeFillsListArea();
     // —— 头像库回归：编辑资料页网格选择 → UPDATE_USER_INFO → 全站渲染 ——
     void avatarChoicePersistsAndRendersLibraryAvatar();
+    // —— 订单月度分组：时间倒序 + 月表头（单数/金额/电量汇总） ——
+    void orderListGroupsRowsByMonthWithTotals();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -1282,6 +1284,54 @@ void HomeShellTest::avatarChoicePersistsAndRendersLibraryAvatar()
     auto* hubAvatar = shell.findChild<QLabel*>(QStringLiteral("uiAvatarHub"));
     QVERIFY(hubAvatar != nullptr);
     QVERIFY(hubAvatar->property("hasAvatar").toBool());
+}
+
+void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
+{
+    // 月度分组回归：跨月订单应按月倒序分组，每月表头汇总单数/金额/电量。
+    // 汇总只是可见行相加（服务端仍是唯一事实来源），这里核对该算术与结构。
+    qRegisterMetaType<charging::client::OrderSummary>();
+    qRegisterMetaType<QVector<charging::client::OrderSummary>>();
+
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderService = shell.findChild<charging::client::OrderService*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(orderService != nullptr);
+
+    const auto makeOrder = [](qint64 id, const QDate& day, qint64 cents, qint64 wh) {
+        charging::client::OrderSummary summary;
+        summary.order.id = id;
+        summary.order.orderNo = QStringLiteral("T%1").arg(id);
+        summary.order.status = charging::model::OrderStatus::Completed;
+        summary.order.startedAtUtc = QDateTime(day, QTime(9, 0), Qt::UTC); // 月中，跨时区安全
+        summary.order.amountCents = cents;
+        summary.order.energyWh = wh;
+        summary.stationName = QStringLiteral("测试电站");
+        summary.chargerCode = QStringLiteral("A0");
+        return summary;
+    };
+
+    // 乱序喂入，验证页面自己按时间倒序分组。
+    QVector<charging::client::OrderSummary> orders;
+    orders << makeOrder(1, QDate(2026, 7, 20), 3258, 24680)
+           << makeOrder(2, QDate(2026, 8, 10), 100, 1000)
+           << makeOrder(3, QDate(2026, 8, 25), 220, 1670);
+    emit orderService->ordersLoaded(orders, orders.size(), false);
+
+    const auto titles = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthTitle"));
+    const auto summaries = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthSummary"));
+    QCOMPARE(titles.size(), 2);
+    QCOMPARE(summaries.size(), 2);
+    // 时间倒序：八月在前，七月在后。
+    QCOMPARE(titles.at(0)->text(), QStringLiteral("2026年8月"));
+    QCOMPARE(titles.at(1)->text(), QStringLiteral("2026年7月"));
+    // 八月合计 2 单 ¥3.20 (100+220) 2.67 kWh (1000+1670)；七月 1 单。
+    QCOMPARE(summaries.at(0)->text(), QStringLiteral("2 单 · ¥3.20 · 2.67 kWh"));
+    QCOMPARE(summaries.at(1)->text(), QStringLiteral("1 单 · ¥32.58 · 24.68 kWh"));
 }
 
 QTEST_MAIN(HomeShellTest)
