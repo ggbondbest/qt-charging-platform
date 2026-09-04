@@ -51,7 +51,7 @@ class NavigationPage;
 //
 // 复用全局公共组件 TopNavBar（顶部导航）与 BottomTabBar（底部 Tab），
 // 所有用户端页面统一沿用这套导航/样式/交互。底部四个 Tab 固定为：
-// 找站（首页，默认激活）/ 订单 / 充值 / 我的；内容区为 QStackedWidget。
+// 找站（首页，默认激活）/ 订单 / 充电 / 我的；内容区为 QStackedWidget。
 //
 // 登录态透传：User 经 setUser 进入 TopNavBar 与“我的”页；未登录构造的壳
 // 右上角显示登录按钮，点击发 loginRequested 由宿主（MainWindow）跳登录页。
@@ -65,7 +65,7 @@ class NavigationPage;
 // 未登录点击提示登录。
 //
 // 全端整合（成员 3）：三个占位 Tab 换成成员 3 真实页面——订单 →
-// OrderListPage、充值 → WalletPage、我的 → ProfilePage 中心页（含编辑资料/
+// OrderListPage、充电 Tab（原“充值”）→ WalletPage、我的 → ProfilePage 中心页（含编辑资料/
 // 详情/结算/充值/充电过程路由页，索引 7–11；充电中订单点击进入 ChargingPage，
 // 停止 → 结算闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务暂走
 // 共享 mock 通道，服务端命令就绪后切换（TODO(contract)）。“我的预约”入口与
@@ -132,7 +132,7 @@ private:
     void showNoVehiclePrompt();
     void showGoChargePrompt(const services::reservation::ReservationRecord& record);
     QWidget* createOrderPage();
-    QWidget* createRechargePage();
+    QWidget* createChargingPage();
     QWidget* createProfilePage();
 
     charging::client::TopNavBar* topBar_ = nullptr;
@@ -154,7 +154,7 @@ private:
     charging::client::OrderService* orderService_ = nullptr;
     charging::client::ChargingService* chargingService_ = nullptr;
     charging::client::ProfilePage* profilePage_ = nullptr;    // “我的”Tab（登录后）
-    charging::client::WalletPage* walletPage_ = nullptr;      // “充值”Tab（充值记录）
+    charging::client::WalletPage* walletPage_ = nullptr;      // “充电”Tab（登录态内容：钱包/充值记录）
     charging::client::OrderListPage* orderListPage_ = nullptr; // “订单”Tab
     charging::client::OrderDetailPage* orderDetailPage_ = nullptr; // 路由页 7
     charging::client::SettlementPage* settlementPage_ = nullptr;   // 路由页 8

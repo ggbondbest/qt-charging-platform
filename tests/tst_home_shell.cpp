@@ -337,12 +337,12 @@ void HomeShellTest::startsOnStationTab()
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
     auto* stationTab = tabButton(shell, QStringLiteral("station"));
     auto* orderTab = tabButton(shell, QStringLiteral("order"));
-    auto* rechargeTab = tabButton(shell, QStringLiteral("recharge"));
+    auto* chargingTab = tabButton(shell, QStringLiteral("charging"));
     auto* profileTab = tabButton(shell, QStringLiteral("profile"));
     QVERIFY(pageStack != nullptr);
     QVERIFY(stationTab != nullptr);
     QVERIFY(orderTab != nullptr);
-    QVERIFY(rechargeTab != nullptr);
+    QVERIFY(chargingTab != nullptr);
     QVERIFY(profileTab != nullptr);
     // 4 个 Tab 页 + 详情/预约确认/预约模块路由页（成员 2）
     // + 成员 3 整合路由页 5 个（订单详情/结算/充值/编辑资料/充电过程）
@@ -353,7 +353,7 @@ void HomeShellTest::startsOnStationTab()
     QCOMPARE(pageStack->currentIndex(), 0);
     QVERIFY(stationTab->isChecked());
     QVERIFY(!orderTab->isChecked());
-    QVERIFY(!rechargeTab->isChecked());
+    QVERIFY(!chargingTab->isChecked());
     QVERIFY(!profileTab->isChecked());
 }
 
@@ -365,7 +365,7 @@ void HomeShellTest::togglesBetweenTabs()
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
     auto* stationTab = tabButton(shell, QStringLiteral("station"));
     auto* orderTab = tabButton(shell, QStringLiteral("order"));
-    auto* rechargeTab = tabButton(shell, QStringLiteral("recharge"));
+    auto* chargingTab = tabButton(shell, QStringLiteral("charging"));
     auto* profileTab = tabButton(shell, QStringLiteral("profile"));
     QVERIFY(pageStack != nullptr);
 
@@ -376,7 +376,7 @@ void HomeShellTest::togglesBetweenTabs()
     };
 
     const QList<Expectation> expectations = {
-        {orderTab, 1}, {rechargeTab, 2}, {profileTab, 3}, {stationTab, 0}, {orderTab, 1},
+        {orderTab, 1}, {chargingTab, 2}, {profileTab, 3}, {stationTab, 0}, {orderTab, 1},
     };
     for (const auto& expectation : expectations) {
         expectation.button->click();
@@ -384,14 +384,14 @@ void HomeShellTest::togglesBetweenTabs()
         QVERIFY(expectation.button->isChecked());
         // 同一时刻只允许一个 Tab 处于选中态。
         const int checkedCount = stationTab->isChecked() + orderTab->isChecked()
-            + rechargeTab->isChecked() + profileTab->isChecked();
+            + chargingTab->isChecked() + profileTab->isChecked();
         QCOMPARE(checkedCount, 1);
     }
 
     orderTab->click();
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order.png"));
-    rechargeTab->click();
-    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_recharge.png"));
+    chargingTab->click();
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_charging.png"));
     profileTab->click();
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_profile.png"));
 }

@@ -43,7 +43,7 @@ namespace charging::client::pages::station {
 
 namespace {
 
-// 占位页（订单 / 充值）：卡片内说明槽位与后续负责人，保持统一导航样式。
+// 占位页（订单 / 充电）：卡片内说明槽位与后续负责人，保持统一导航样式。
 QWidget* makePlaceholderPage(const QString& glyph, const QString& title, const QString& hint,
                              QWidget* parent)
 {
@@ -85,7 +85,7 @@ const QHash<QString, int>& tabIndexById()
 {
     static const QHash<QString, int> kIndexById{
         {QStringLiteral("station"), 0},   {QStringLiteral("order"), 1},
-        {QStringLiteral("recharge"), 2}, {QStringLiteral("profile"), 3},
+        {QStringLiteral("charging"), 2}, {QStringLiteral("profile"), 3},
     };
     return kIndexById;
 }
@@ -140,7 +140,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     // 任务 #12/#17：顶部导航“返回”按钮 → 按当前路由回上一级页面。
     connect(topBar_, &TopNavBar::backRequested, this, &HomeShell::leaveRoute);
 
-    // 内容区：找站 / 订单 / 充值 / 我的。
+    // 内容区：找站 / 订单 / 充电 / 我的。
     // 全端整合：登录态下三个占位 Tab 换成成员 3 真实页面；未登录保持
     // 占位（不向游客暴露 mock 数据）。
     pageStack_ = new QStackedWidget(this);
@@ -178,7 +178,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(orderListPage_)
                                    : createOrderPage());
     pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(walletPage_)
-                                   : createRechargePage());
+                                   : createChargingPage());
     pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(profilePage_)
                                    : createProfilePage());
 
@@ -281,7 +281,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         connect(profilePage_, &ProfilePage::profileEditRequested, this,
                 &HomeShell::openProfileEdit);
         connect(profilePage_, &ProfilePage::walletRequested, this, [this]() {
-            tabBar_->setCurrentTab(QStringLiteral("recharge"));
+            tabBar_->setCurrentTab(QStringLiteral("charging"));
         });
         connect(profilePage_, &ProfilePage::rechargeRequested, this, &HomeShell::openRecharge);
         connect(profilePage_, &ProfilePage::allOrdersRequested, this, [this]() {
@@ -369,11 +369,11 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     rootLayout->addWidget(pageStack_, 1);
 
     // 底部 Tab 导航公共组件：固定底部，四个 Tab。
-    // “充值”Tab 挂载的是钱包页（余额+充值+流水），文案改为“钱包”更贴合内容；
-    // Tab id 保持 recharge，不动成员 2 的测试锚点。
+    // 原“充值”Tab 按团队调整更名“充电”（路由 ID 同步 charging）；登录态
+    // 下挂载成员 3 钱包页（余额+充值+流水），充值入口保留在其中。
     tabBar_ = new BottomTabBar({{QStringLiteral("station"), tr("🔍 找站")},
                                 {QStringLiteral("order"), tr("📋 订单")},
-                                {QStringLiteral("recharge"), tr("💰 钱包")},
+                                {QStringLiteral("charging"), tr("⚡ 充电")},
                                 {QStringLiteral("profile"), tr("👤 我的")}},
                                this);
     rootLayout->addWidget(tabBar_);
@@ -401,7 +401,7 @@ void HomeShell::showTab(const QString& id)
         } else {
             orderListPage_->refresh();
         }
-    } else if (id == QLatin1String("recharge") && walletPage_) {
+    } else if (id == QLatin1String("charging") && walletPage_) {
         walletPage_->refresh();
     } else if (id == QLatin1String("profile") && profilePage_) {
         profilePage_->refresh();
@@ -698,10 +698,11 @@ QWidget* HomeShell::createOrderPage()
                                pageStack_);
 }
 
-QWidget* HomeShell::createRechargePage()
+QWidget* HomeShell::createChargingPage()
 {
-    return makePlaceholderPage(QStringLiteral("💰"), tr("充值"),
-                               tr("登录后可查看钱包余额并充值。"),
+    return makePlaceholderPage(QStringLiteral("⚡"), tr("充电"),
+                               tr("充电会话与结算流程成员 3 已实现（ChargingPage / "
+                                  "SettlementPage），等待充电业务联调后替换本占位页。"),
                                pageStack_);
 }
 
