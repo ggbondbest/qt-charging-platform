@@ -6,6 +6,7 @@
 #include "charging/client/widgets/status_tag.h"
 #include "pages/station/platform_theme.h"
 #include "services/reservation/reservation_service.h"
+#include "services/settings/settings_service.h"
 #include "services/station/station_query_service.h"
 
 #include <QHBoxLayout>
@@ -15,6 +16,8 @@
 #include <QStackedWidget>
 #include <QVariant>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace charging::client::pages::station {
 
@@ -278,6 +281,22 @@ void StationDetailPage::setReservationService(
     reservationService_ = service;
 }
 
+void StationDetailPage::setSettingsService(
+    services::settings::SettingsService* settings)
+{
+    settings_ = settings;
+}
+
+bool StationDetailPage::matchesDefaultVehicle(const charging::model::Charger& charger) const
+{
+    // 无车辆档案（未接入设置服务或尚未添加车辆）时不做接口类型筛选。
+    if (settings_ == nullptr) {
+        return true;
+    }
+    const auto* vehicle = settings_->defaultVehicle();
+    return vehicle == nullptr || vehicle->connectorType == charger.type;
+}
+
 StationDetailPage::DetailState StationDetailPage::viewState() const
 {
     return viewState_;
@@ -342,7 +361,15 @@ void StationDetailPage::handleDetailSucceeded(const services::station::StationDe
     offlineBanner_->setVisible(!active);
 
     clearChargerRows();
-    for (const auto& charger : detail.chargers) {
+    // 任务 #17 二次迭代：与默认车辆接口类型匹配的“空闲”桩排在前面
+    // （stable_partition 保持其余相对顺序，接口不匹配的桩仍展示可选）。
+    auto chargers = detail.chargers;
+    const auto isTopPriority = [this](const charging::model::Charger& charger) {
+        return charger.status == charging::model::ChargerStatus::Available
+            && matchesDefaultVehicle(charger);
+    };
+    std::stable_partition(chargers.begin(), chargers.end(), isTopPriority);
+    for (const auto& charger : chargers) {
         chargerListLayout_->addWidget(createChargerCard(charger));
     }
     const int available = detail.station.availableChargers;
@@ -411,6 +438,10 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
     reserveButton->setEnabled(reservable);
     if (reservable) {
         reserveButton->setCursor(Qt::PointingHandCursor);
+        if (!matchesDefaultVehicle(charger)) {
+            // 接口类型与默认车辆不匹配：仅提示，不禁止选择（用户可换车）。
+            reserveButton->setToolTip(tr("与默认车辆接口不匹配，预约前请确认车辆"));
+        }
     } else {
         reserveButton->setToolTip(tr("仅空闲充电桩可预约"));
     }
@@ -432,9 +463,18 @@ void StationDetailPage::handleReserveRequested(const charging::model::Charger& c
         return;
     }
 
-    // 业务约束（任务 #17 迭代）：存在未结束预约时拦截新建，交宿主弹提示，
+    // 任务 #17 二次迭代：预约名额由车辆决定——账号下无车辆时无法发起
+    // 预约，交宿主提示引导去「设置 - 车辆管理」添加。
+    if (settings_ != nullptr && settings_->vehicleCount() <= 0) {
+        emit reservationVehicleRequired();
+        return;
+    }
+
+    // 名额制业务约束：有效预约数已达车辆数上限时拦截新建，交宿主弹提示，
     // 不进入预约确认页面（Service 层提交时仍会二次校验，防绕过）。
-    if (reservationService_ != nullptr && reservationService_->hasUnfinishedReservation()) {
+    if (reservationService_ != nullptr
+        && reservationService_->activeReservationCount()
+            >= reservationService_->unfinishedSlotLimit()) {
         emit reservationBlocked();
         return;
     }

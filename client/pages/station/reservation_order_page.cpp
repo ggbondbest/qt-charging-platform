@@ -243,11 +243,18 @@ void ReservationOrderPage::setActiveReservation(
     cancelling_ = false;
     cancelButton_->setEnabled(true);
     cancelButton_->setText(tr("取消预约"));
-    const QString clock = active_.reservation.expiresAtUtc.toString(QStringLiteral("HH:mm"));
-    activeInfoLabel_->setText(tr("%1 · %2\n%3 · %4 分钟 · 预估 ¥%5")
-                                  .arg(active_.stationName, active_.chargerCode,
-                                       active_.chargerSpec, QString::number(active_.durationMinutes),
-                                       QString::number(active_.estimatedFeeCents / 100.0, 'f', 2)));
+    const QString startText = active_.startAtUtc.isValid()
+        ? active_.startAtUtc.toLocalTime().toString(QStringLiteral("HH:mm"))
+        : QStringLiteral("--");
+    const QString endText
+        = active_.reservation.expiresAtUtc.toLocalTime().toString(QStringLiteral("HH:mm"));
+    activeInfoLabel_->setText(
+        tr("%1 · %2\n%3 · %4 分钟 · 预估 ¥%5\n车辆 %6 · 时段 %7—%8")
+            .arg(active_.stationName, active_.chargerCode, active_.chargerSpec,
+                 QString::number(active_.durationMinutes),
+                 QString::number(active_.estimatedFeeCents / 100.0, 'f', 2),
+                 active_.vehiclePlate.isEmpty() ? tr("未关联") : active_.vehiclePlate,
+                 startText, endText));
     if (active_.distanceMeters >= 1000) {
         distanceLabel_->setText(
             tr("约 %1 km").arg(active_.distanceMeters / 1000.0, 0, 'f', 1));
@@ -313,8 +320,13 @@ void ReservationOrderPage::applyCountdown()
         countdownTimer_->stop();
         return;
     }
-    const qint64 remaining =
-        QDateTime::currentDateTimeUtc().secsTo(active_.reservation.expiresAtUtc);
+    // 迟到扫描（任务 #17 二次迭代）：每秒 tick 顺带驱动全库“开始 + 15 分钟
+    // 未到站”自动取消（流转经 reservationExpired 信号回流模块刷新）。
+    if (service_ != nullptr) {
+        service_->cancelLateReservations();
+    }
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const qint64 remaining = now.secsTo(active_.reservation.expiresAtUtc);
     if (remaining <= 0) {
         // 倒计时归零：状态自动流转（预约中 → 已过期），模块收到流转信号后
         // 重新拉取列表刷新展示。
@@ -328,15 +340,34 @@ void ReservationOrderPage::applyCountdown()
         }
         return;
     }
-    countdownLabel_->setText(formatClock(remaining));
-    const QString tone = remaining > kGreenThresholdSecs
-        ? QStringLiteral("green")
-        : (remaining >= kYellowFloorSecs ? QStringLiteral("yellow") : QStringLiteral("red"));
-    if (countdownLabel_->property("countdownTone").toString() != tone) {
-        countdownLabel_->setProperty("countdownTone", tone);
-        countdownLabel_->style()->unpolish(countdownLabel_);
-        countdownLabel_->style()->polish(countdownLabel_);
+
+    auto setTone = [this](const QString& tone) {
+        if (countdownLabel_->property("countdownTone").toString() != tone) {
+            countdownLabel_->setProperty("countdownTone", tone);
+            countdownLabel_->style()->unpolish(countdownLabel_);
+            countdownLabel_->style()->polish(countdownLabel_);
+        }
+    };
+
+    const bool waiting = active_.startAtUtc.isValid() && now < active_.startAtUtc;
+    if (waiting) {
+        // 阶段一：时段尚未开始——“距开始 mm:ss”（绿色等待态）。
+        countdownLabel_->setText(
+            tr("距开始 %1").arg(formatClock(now.secsTo(active_.startAtUtc))));
+        setTone(QStringLiteral("green"));
+        expiresAtLabel_->setText(tr("预约时段 %1—%2 · 等待开始")
+                                     .arg(active_.startAtUtc.toLocalTime().toString(
+                                              QStringLiteral("HH:mm")),
+                                          active_.reservation.expiresAtUtc.toLocalTime().toString(
+                                              QStringLiteral("HH:mm"))));
+        return;
     }
+
+    // 阶段二：时段进行中——剩余时长三档色（>30 分绿 / 5~30 分黄 / <5 分红）。
+    countdownLabel_->setText(formatClock(remaining));
+    setTone(remaining > kGreenThresholdSecs
+        ? QStringLiteral("green")
+        : (remaining >= kYellowFloorSecs ? QStringLiteral("yellow") : QStringLiteral("red")));
     expiresAtLabel_->setText(
         tr("有效至 %1（%2）")
             .arg(active_.reservation.expiresAtUtc.toString(QStringLiteral("HH:mm:ss")),

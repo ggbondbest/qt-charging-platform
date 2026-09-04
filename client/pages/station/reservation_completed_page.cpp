@@ -52,6 +52,26 @@ StatusView statusView(charging::model::ReservationStatus status)
     return {"未知", StatusTag::Tone::Neutral};
 }
 
+// 迟到取消特殊文案（任务 #17 二次迭代）：区分“主动取消”与“超时未到自动取消”。
+QString statusTextFor(const services::reservation::ReservationRecord& record)
+{
+    using charging::model::ReservationStatus;
+    if (record.lateCancelled && record.reservation.status == ReservationStatus::Cancelled) {
+        return QObject::tr("已取消·迟到");
+    }
+    return QObject::tr(statusView(record.reservation.status).text);
+}
+
+// 预约时段文案（开始—结束）；无开始时刻的历史记录回退用预约创建时刻。
+QString slotText(const services::reservation::ReservationRecord& record, const QString& format)
+{
+    const QDateTime start
+        = record.startAtUtc.isValid() ? record.startAtUtc : record.reservation.reservedAtUtc;
+    return QStringLiteral("%1—%2")
+        .arg(start.toLocalTime().toString(format),
+             record.reservation.expiresAtUtc.toLocalTime().toString(format));
+}
+
 void clearLayoutItems(QLayout* layout)
 {
     while (QLayoutItem* item = layout->takeAt(0)) {
@@ -217,8 +237,8 @@ QWidget* ReservationCompletedPage::createHistoryCard(
     auto* titleRow = new QHBoxLayout();
     auto* nameLabel = new QLabel(record.stationName, card);
     nameLabel->setProperty("role", QStringLiteral("sectionTitle"));
-    const auto view = statusView(record.reservation.status);
-    auto* statusTag = new StatusTag(tr(view.text), view.tone, card);
+    auto* statusTag = new StatusTag(statusTextFor(record),
+                                    statusView(record.reservation.status).tone, card);
     statusTag->setObjectName(QStringLiteral("historyStatusTag"));
     titleRow->addWidget(nameLabel);
     titleRow->addStretch();
@@ -237,9 +257,10 @@ QWidget* ReservationCompletedPage::createHistoryCard(
 
     auto* timeRow = new QHBoxLayout();
     auto* timeLabel = new QLabel(
-        tr("预约时间 %1")
+        tr("预约 %1 · 时段 %2")
             .arg(record.reservation.reservedAtUtc.toLocalTime().toString(
-                QStringLiteral("yyyy-MM-dd HH:mm"))),
+                QStringLiteral("yyyy-MM-dd")),
+                 slotText(record, QStringLiteral("HH:mm"))),
         card);
     timeLabel->setProperty("role", QStringLiteral("secondary"));
     auto* feeLabel = new QLabel(
@@ -282,20 +303,20 @@ void ReservationCompletedPage::openDetailDialog(
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
     layout->addWidget(titleLabel);
 
-    const auto view = statusView(record.reservation.status);
     const QString text =
         tr("站点名称：%1\n充电桩：%2\n充电规格：%3\n预约时长：%4 分钟\n预约时间：%5\n"
-           "有效截止：%6\n预估费用：¥%7\n预约状态：%8")
+           "预约时段：%6\n有效截止：%7\n预估费用：¥%8\n预约状态：%9")
             .arg(record.stationName,
                  record.chargerCode,
                  record.chargerSpec.isEmpty() ? tr("--") : record.chargerSpec,
                  QString::number(record.durationMinutes),
                  record.reservation.reservedAtUtc.toLocalTime().toString(
                      QStringLiteral("yyyy-MM-dd HH:mm")),
+                 slotText(record, QStringLiteral("MM-dd HH:mm")),
                  record.reservation.expiresAtUtc.toLocalTime().toString(
                      QStringLiteral("yyyy-MM-dd HH:mm")),
                  QString::number(record.estimatedFeeCents / 100.0, 'f', 2),
-                 tr(view.text));
+                 statusTextFor(record));
     auto* body = new QLabel(text, dialog);
     body->setObjectName(QStringLiteral("reservationDetailDialogText"));
     body->setWordWrap(true);

@@ -18,6 +18,9 @@ struct StationDetail;
 namespace services::reservation {
 class ReservationService;
 } // namespace services::reservation
+namespace services::settings {
+class SettingsService;
+} // namespace services::settings
 } // namespace charging::client
 
 namespace charging::client::pages::station {
@@ -62,6 +65,10 @@ public:
     // 与登录态透传（由 HomeShell 注入，未登录时点击预约发
     // reservationLoginRequired 拦截）。
     void setReservationService(charging::client::services::reservation::ReservationService* service);
+    // 任务 #17 二次迭代：车辆档案来源（默认车辆接口类型用于桩卡片匹配提示
+    // 与排序；车辆数用于预约名额判断）。无车辆时点击预约发
+    // reservationVehicleRequired 交宿主引导去设置添加。
+    void setSettingsService(charging::client::services::settings::SettingsService* settings);
     void setLoggedIn(bool loggedIn);
 
     // 路由入口：携带站点快照与距离（ID 非法时服务将回友好错误）。
@@ -83,7 +90,10 @@ signals:
     void reservationRequested(qint64 chargerId);
     // 未登录点击预约：宿主提示登录并跳转登录页。
     void reservationLoginRequired();
-    // 存在未结束预约被拦截（任务 #17 迭代业务约束）：宿主弹提示。
+    // 账号下无车辆被拦截（任务 #17 二次迭代：名额由车辆决定）：
+    // 宿主弹提示引导去「设置 - 车辆管理」添加车辆。
+    void reservationVehicleRequired();
+    // 可预约名额已全部占用被拦截（名额制业务约束）：宿主弹提示。
     void reservationBlocked();
     // 满足预约条件：宿主路由至独立预约确认页面（任务 #17 迭代，携带
     // 站点快照 / 桩 / 虚拟导航距离）。
@@ -95,6 +105,8 @@ private:
     void setDetailState(DetailState state);
     void clearChargerRows();
     QWidget* createChargerCard(const charging::model::Charger& charger);
+    // 桩接口类型与默认车辆匹配（无车辆/无默认车时视为匹配，不做筛选）。
+    bool matchesDefaultVehicle(const charging::model::Charger& charger) const;
     void handleReserveRequested(const charging::model::Charger& charger);
     void handleDetailStarted();
     void handleDetailSucceeded(const services::station::StationDetail& detail);
@@ -102,6 +114,7 @@ private:
 
     services::station::StationQueryService* service_ = nullptr;  // not owned
     services::reservation::ReservationService* reservationService_ = nullptr; // not owned
+    services::settings::SettingsService* settings_ = nullptr; // not owned
     bool loggedIn_ = true;
     DetailState viewState_ = DetailState::Loading;
 

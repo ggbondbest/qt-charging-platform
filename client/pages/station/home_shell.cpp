@@ -12,17 +12,21 @@
 #include "charging/client/profile_charging/wallet_page.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/client/widgets/card.h"
+#include "charging/client/widgets/clickable_card.h"
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
 #include "charging/client/widgets/top_nav_bar.h"
 #include "network/client_connection.h"
 #include "pages/station/platform_theme.h"
+#include "pages/station/navigation_page.h"
 #include "pages/station/reservation_confirm_page.h"
 #include "pages/station/reservation_module_page.h"
+#include "pages/station/settings_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
 #include "services/reservation/reservation_service.h"
+#include "services/settings/settings_service.h"
 
 #include <QHBoxLayout>
 #include <QHash>
@@ -32,6 +36,8 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+
+#include <functional>
 
 namespace charging::client::pages::station {
 
@@ -182,37 +188,46 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     pageStack_->addWidget(detailPage_);
     detailPage_->setService(stationPage_->service());
 
-    // 任务 #17 迭代：预约服务统一注入详情页（入口拦截）、独立预约确认
-    // 页面（索引 5 路由页，替代原弹窗）与“我的预约”模块页（索引 6 路由
-    // 页，二级 Tab：预约订单 / 已完成的预约）；登录态与用户 ID 由壳透传。
+    // 任务 #17 二次迭代：预约服务统一注入详情页（入口拦截）、独立预约确认
+    // 页面（索引 5 路由页）、"我的预约"模块页（索引 6 路由页）；设置页与
+    // 导航页追加在成员 3 路由页 7–11 之后（登录态 12/13）；登录态与用户 ID
+    // 由壳透传。SettingsService 构造于壳内，作为车辆名额/默认车/通知开关的
+    // 单一事实源。
     reservationService_ = new services::reservation::ReservationService(this);
+    settingsService_ = new services::settings::SettingsService(this);
     if (hasUser_) {
         reservationService_->setUserId(user_.id);
     }
+    reservationService_->setSettingsService(settingsService_);
     detailPage_->setReservationService(reservationService_);
+    detailPage_->setSettingsService(settingsService_);
     detailPage_->setLoggedIn(hasUser_);
     connect(detailPage_, &StationDetailPage::reservationLoginRequired, this,
             &HomeShell::showReservationLoginPrompt);
-    // 业务约束：存在未结束预约时点击预约 → 提示拦截，不进入确认页。
+    // 名额制业务约束：有效预约数已达车辆数上限时提示拦截，不进入确认页。
     connect(detailPage_, &StationDetailPage::reservationBlocked, this,
             &HomeShell::showUnfinishedReservationPrompt);
+    // 无车辆拦截：预约名额由车辆决定，提示引导去设置-车辆管理添加。
+    connect(detailPage_, &StationDetailPage::reservationVehicleRequired, this,
+            &HomeShell::showNoVehiclePrompt);
     // 满足条件 → 路由至独立预约确认页面（不再弹窗）。
     connect(detailPage_, &StationDetailPage::reservationConfirmRequested, this,
             &HomeShell::openReservationConfirm);
 
     confirmPage_ = new ReservationConfirmPage(pageStack_);
     confirmPage_->setService(reservationService_);
+    confirmPage_->setSettingsService(settingsService_);
     pageStack_->addWidget(confirmPage_);
     // 【关闭】→ 返回站点详情页（顶部导航返回同语义：确认页的返回目标
     // 正是入页时记录的详情页）。
     connect(confirmPage_, &ReservationConfirmPage::closeRequested, this,
             &HomeShell::leaveRoute);
-    // 预约成功 → 刷新详情页桩状态并自动路由至预约模块【预约订单】Tab。
-    connect(confirmPage_, &ReservationConfirmPage::confirmed, this,
+    // 预约成功 → 刷新详情页桩状态，弹"是否现在前往充电？"：
+    // 去充电 → 导航页（模拟路线）；稍后再说 → 预约模块【预约订单】Tab。
+    connect(confirmPage_, &ReservationConfirmPage::succeeded, this,
             [this](const services::reservation::ReservationRecord& record) {
                 detailPage_->noteChargerReserved(record.reservation.chargerId);
-                modulePage_->showOrderTab();
-                openReservationModule();
+                showGoChargePrompt(record);
             });
 
     modulePage_ = new ReservationModulePage(pageStack_);
@@ -287,6 +302,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         });
         connect(profilePage_, &ProfilePage::reservationRecordsRequested, this,
                 &HomeShell::openReservationModule);
+        connect(profilePage_, &ProfilePage::settingsRequested, this,
+                &HomeShell::openSettings);
         connect(profilePage_, &ProfilePage::logoutRequested, this,
                 [this]() { emit logoutRequested(); });
 
@@ -333,6 +350,18 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         connect(profileEditPage_, &ProfileEditPage::backRequested, this,
                 &HomeShell::leaveRoute);
     }
+
+    // 设置独立页面（任务 #17 二次迭代）：账号安全 / 车辆管理 / 通知开关；
+    // 登录态经成员 3 ProfilePage“设置”行进入（返回栈固定回“我的”Tab），
+    // 未登录拦截提示登录。
+    settingsPage_ = new SettingsPage(pageStack_);
+    settingsPage_->setSettingsService(settingsService_);
+    pageStack_->addWidget(settingsPage_);
+
+    // 导航页：预约成功“去充电”进入；本轮渲染模拟路线摘要，
+    // 真实腾讯地图路线 API 就绪后仅替换数据来源（见 navigation_page.cpp）。
+    navigationPage_ = new NavigationPage(pageStack_);
+    pageStack_->addWidget(navigationPage_);
 
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
@@ -479,6 +508,34 @@ void HomeShell::openProfileEdit()
     pushRoute(profileEditPage_);
 }
 
+void HomeShell::openSettings()
+{
+    if (!hasUser_) {
+        // 未登录访问“设置”（账号安全/车辆管理涉及账户数据）：同样拦截。
+        showReservationLoginPrompt();
+        return;
+    }
+    settingsPage_->refresh();
+    // 返回目的地固定为“我的”Tab（入口语义与预约模块一致：无论从
+    // ProfilePage“设置”行还是无车辆引导弹窗进入，返回都回个人中心）。
+    backTargets_.clear();
+    backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
+    pageStack_->setCurrentWidget(settingsPage_);
+    topBar_->setBackVisible(true);
+}
+
+void HomeShell::openNavigation(const services::reservation::ReservationRecord& record)
+{
+    // 导航页路由：展示到预约桩的模拟路线摘要。返回链固定为
+    // 导航 → 预约模块【预约订单】→“我的”Tab（确认页不作为返回目的地）。
+    navigationPage_->openRoute(record);
+    backTargets_.clear();
+    backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
+    backTargets_.push_back(BackTarget{modulePage_, QString()});
+    pageStack_->setCurrentWidget(navigationPage_);
+    topBar_->setBackVisible(true);
+}
+
 void HomeShell::leaveRoute()
 {
     if (backTargets_.isEmpty()) {
@@ -501,7 +558,7 @@ void HomeShell::leaveRoute()
             showTab(target.tabId);
         }
     } else {
-        // 回上层路由页（如结算→详情）：保留返回按钮与剩余栈。
+        // 回上层路由页（如结算→详情、导航→预约订单）：保留返回按钮与剩余栈。
         pageStack_->setCurrentWidget(target.page);
         topBar_->setBackVisible(!backTargets_.isEmpty());
     }
@@ -532,13 +589,13 @@ void HomeShell::showReservationLoginPrompt()
 
 void HomeShell::showUnfinishedReservationPrompt()
 {
-    // 业务约束提示（任务 #17 迭代）：存在未结束预约时禁止新建。非模态，
-    // “去查看”直达预约模块【预约订单】Tab 结束当前预约。
+    // 业务约束提示（任务 #17 二次迭代，名额制）：有效预约数已达车辆数
+    // 上限时禁止新建。非模态，“去查看”直达预约模块【预约订单】Tab。
     auto* prompt = new QMessageBox(this);
     prompt->setObjectName(QStringLiteral("unfinishedReservationPrompt"));
     prompt->setIcon(QMessageBox::Warning);
     prompt->setWindowTitle(tr("无法发起新预约"));
-    prompt->setText(tr("您当前尚有未结束的预约，请结束当前预约后再发起新预约"));
+    prompt->setText(tr("可预约名额已全部占用（名额 = 车辆数），请结束当前预约后再发起新预约"));
     QPushButton* goLook = prompt->addButton(tr("去查看"), QMessageBox::AcceptRole);
     goLook->setObjectName(QStringLiteral("unfinishedGoLookButton"));
     prompt->addButton(tr("知道了"), QMessageBox::RejectRole);
@@ -549,6 +606,62 @@ void HomeShell::showUnfinishedReservationPrompt()
             openReservationModule();
         }
     });
+    prompt->open();
+}
+
+void HomeShell::showNoVehiclePrompt()
+{
+    // 无车辆拦截（任务 #17 二次迭代）：预约名额由车辆决定。非模态，
+    // “去添加车辆”直达设置页-车辆管理模块。
+    auto* prompt = new QMessageBox(this);
+    prompt->setObjectName(QStringLiteral("vehicleRequiredPrompt"));
+    prompt->setIcon(QMessageBox::Warning);
+    prompt->setWindowTitle(tr("需要添加车辆"));
+    prompt->setText(tr("预约名额由车辆决定，请先在「设置 - 车辆管理」添加车辆。"));
+    QPushButton* goSettings = prompt->addButton(tr("去添加车辆"), QMessageBox::AcceptRole);
+    goSettings->setObjectName(QStringLiteral("vehicleGoSettingsButton"));
+    prompt->addButton(tr("稍后再说"), QMessageBox::RejectRole);
+    prompt->setAttribute(Qt::WA_DeleteOnClose);
+    connect(prompt, &QMessageBox::finished, this, [this, prompt, goSettings](int) {
+        if (prompt->clickedButton() == goSettings) {
+            openSettings();
+        }
+    });
+    prompt->open();
+}
+
+void HomeShell::showGoChargePrompt(const services::reservation::ReservationRecord& record)
+{
+    // 预约成功引导（任务 #17 二次迭代）：时间段开始前需前往充电站——
+    // “去充电”进入导航页（本轮为模拟路线摘要），“稍后再说”进入
+    // 预约模块【预约订单】Tab 查看倒计时。
+    auto* prompt = new QMessageBox(this);
+    prompt->setObjectName(QStringLiteral("goChargePrompt"));
+    prompt->setIcon(QMessageBox::Information);
+    prompt->setWindowTitle(tr("预约提交成功"));
+    prompt->setText(tr("预约提交成功，是否现在前往充电？"));
+    QString detail = tr("%1 · %2").arg(record.stationName, record.chargerCode);
+    if (record.startAtUtc.isValid()) {
+        detail += tr("\n预约时段 %1—%2")
+                      .arg(record.startAtUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
+                           record.reservation.expiresAtUtc.toLocalTime().toString(
+                               QStringLiteral("HH:mm")));
+    }
+    prompt->setInformativeText(detail);
+    QPushButton* goCharge = prompt->addButton(tr("🧭 去充电"), QMessageBox::AcceptRole);
+    goCharge->setObjectName(QStringLiteral("goChargeButton"));
+    prompt->addButton(tr("稍后再说"), QMessageBox::RejectRole);
+    prompt->setAttribute(Qt::WA_DeleteOnClose);
+    const services::reservation::ReservationRecord recordCopy = record;
+    connect(prompt, &QMessageBox::finished, this,
+            [this, prompt, goCharge, recordCopy](int) {
+                if (prompt->clickedButton() == goCharge) {
+                    openNavigation(recordCopy);
+                } else {
+                    modulePage_->showOrderTab();
+                    openReservationModule();
+                }
+            });
     prompt->open();
 }
 
@@ -571,6 +684,11 @@ StationHomePage* HomeShell::stationPage() const
 ReservationModulePage* HomeShell::reservationModule() const
 {
     return modulePage_;
+}
+
+services::settings::SettingsService* HomeShell::settingsService() const
+{
+    return settingsService_;
 }
 
 QWidget* HomeShell::createOrderPage()
