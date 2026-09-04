@@ -29,7 +29,7 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
     // 平台主题（成员 3 维护的全局 QSS token）在装配任何页面前安装一次。
     pages::station::installPlatformTheme();
 
-    setWindowTitle(tr("电动汽车充电桩应用管理平台 v0.5 · 站点详情"));
+    setWindowTitle(tr("电动汽车充电桩应用管理平台 v0.6 · 充电桩预约"));
     resize(760, 600);
 
     connection_ = new network::ClientConnection(hostName, port, this);

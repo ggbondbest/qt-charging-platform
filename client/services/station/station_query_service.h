@@ -3,6 +3,7 @@
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/protocol.h"
 
+#include <QHash>
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -67,6 +68,10 @@ public:
     // 路由携带（ID 非法/≤0 直接失败）；liveMode 下请求 GET_CHARGERS。
     void fetchDetail(const charging::model::Station& station, int distanceMeters);
 
+    // 任务 #17：模拟通道把某桩标记为“已预约”（预约成功后详情页刷新用）。
+    // 仅作用于模拟数据；真实通道以服务端状态为准。
+    void setMockChargerReserved(qint64 chargerId);
+
 signals:
     void queryStarted();
     void querySucceeded(const charging::client::services::station::StationList& stations);
@@ -89,6 +94,7 @@ private:
     QString pendingDetailRequestId_;
     QString pendingKeyword_;
     StationDetail pendingDetail_;
+    QHash<qint64, charging::model::ChargerStatus> mockChargerOverrides_;
 };
 
 } // namespace charging::client::services::station

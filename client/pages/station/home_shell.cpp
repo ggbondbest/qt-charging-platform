@@ -6,12 +6,15 @@
 #include "charging/client/widgets/top_nav_bar.h"
 #include "network/client_connection.h"
 #include "pages/station/platform_theme.h"
+#include "pages/station/reservation_list_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
+#include "services/reservation/reservation_service.h"
 
 #include <QHBoxLayout>
 #include <QHash>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -100,15 +103,12 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     connect(topBar_, &TopNavBar::searchSubmitted, this, [this](const QString& keyword) {
         tabBar_->setCurrentTab(QStringLiteral("station"));
         pageStack_->setCurrentIndex(0);
+        route_ = Route::None;
         topBar_->setBackVisible(false);
         stationPage_->search(keyword);
     });
-    // 任务 #12：顶部导航“返回”按钮 → 从详情页回到找站列表。
-    connect(topBar_, &TopNavBar::backRequested, this, [this]() {
-        pageStack_->setCurrentIndex(0);
-        tabBar_->setCurrentTab(QStringLiteral("station"));
-        topBar_->setBackVisible(false);
-    });
+    // 任务 #12/#17：顶部导航“返回”按钮 → 按当前路由回上一级页面。
+    connect(topBar_, &TopNavBar::backRequested, this, &HomeShell::leaveRoute);
 
     // 内容区：找站 / 订单 / 充值 / 我的。
     pageStack_ = new QStackedWidget(this);
@@ -124,15 +124,24 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     detailPage_ = new StationDetailPage(pageStack_);
     pageStack_->addWidget(detailPage_);
     detailPage_->setService(stationPage_->service());
+
+    // 任务 #17：预约服务统一注入详情页（预约弹窗）与“我的预约”记录页
+    // （索引 5 路由页）；登录态与用户 ID 由壳透传，页面不重复实现。
+    reservationService_ = new services::reservation::ReservationService(this);
+    if (hasUser_) {
+        reservationService_->setUserId(user_.id);
+    }
+    detailPage_->setReservationService(reservationService_);
+    detailPage_->setLoggedIn(hasUser_);
+    connect(detailPage_, &StationDetailPage::reservationLoginRequired, this,
+            &HomeShell::showReservationLoginPrompt);
+    recordsPage_ = new ReservationListPage(pageStack_);
+    recordsPage_->setService(reservationService_);
+    pageStack_->addWidget(recordsPage_);
+
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
-    connect(detailPage_, &StationDetailPage::backRequested, this, [this]() {
-        pageStack_->setCurrentIndex(0);
-        tabBar_->setCurrentTab(QStringLiteral("station"));
-        topBar_->setBackVisible(false);
-    });
-    // 预约入口信号（reservationRequested）为任务 #17 预留：本页仅透传，
-    // 详情页内展示占位提示，不做业务。
+    connect(detailPage_, &StationDetailPage::backRequested, this, &HomeShell::leaveRoute);
     rootLayout->addWidget(pageStack_, 1);
 
     // 底部 Tab 导航公共组件：固定底部，四个 Tab。
@@ -157,8 +166,9 @@ void HomeShell::showTab(const QString& id)
     const auto index = kIndexById.value(id, -1);
     if (index >= 0) {
         pageStack_->setCurrentIndex(index);
-        // 离开详情路由页（切任意 Tab）即收起顶部导航返回按钮。
-        topBar_->setBackVisible(pageStack_->currentWidget() == detailPage_);
+        // 切任意 Tab 即离开详情/预约记录路由页：收起顶部导航返回按钮。
+        route_ = Route::None;
+        topBar_->setBackVisible(false);
     }
 }
 
@@ -169,6 +179,56 @@ void HomeShell::openStationDetail(const charging::model::Station& station, int d
     pageStack_->setCurrentWidget(detailPage_);
     // 复用全局顶部导航的返回按钮回列表（不重复开发页面级导航）。
     topBar_->setBackVisible(true);
+    route_ = Route::StationDetail;
+}
+
+void HomeShell::openReservationRecords()
+{
+    if (!hasUser_) {
+        // 未登录访问“我的预约”：提示登录后跳登录页（沿用全局登录态）。
+        showReservationLoginPrompt();
+        return;
+    }
+    recordsPage_->refresh();
+    pageStack_->setCurrentWidget(recordsPage_);
+    topBar_->setBackVisible(true);
+    route_ = Route::ReservationRecords;
+}
+
+void HomeShell::leaveRoute()
+{
+    // 顶部导航/详情返回统一出口：按当前路由回上一级（记录页 → “我的”，
+    // 详情页 → 找站列表），并收起返回按钮。Tab 可能本就处于选中态
+    // （路由页不改变 Tab 选中），因此除切 Tab 外显式落回内容栈。
+    const bool toProfile = route_ == Route::ReservationRecords;
+    route_ = Route::None;
+    topBar_->setBackVisible(false);
+    tabBar_->setCurrentTab(toProfile ? QStringLiteral("profile")
+                                     : QStringLiteral("station"));
+    pageStack_->setCurrentIndex(toProfile ? 3 : 0);
+}
+
+void HomeShell::showReservationLoginPrompt()
+{
+    // 登录拦截提示（任务 #17）：非模态确认框，“去登录”经全局 loginRequested
+    // 由宿主跳登录页；不重复实现登录逻辑。
+    auto* prompt = new QMessageBox(this);
+    prompt->setObjectName(QStringLiteral("reservationLoginPrompt"));
+    prompt->setIcon(QMessageBox::Warning);
+    prompt->setWindowTitle(tr("需要登录"));
+    prompt->setText(tr("预约充电桩需要先登录账号。"));
+    prompt->setInformativeText(tr("登录后即可预约充电桩并查看我的预约记录。"));
+    QPushButton* goLogin =
+        prompt->addButton(tr("去登录"), QMessageBox::AcceptRole);
+    goLogin->setObjectName(QStringLiteral("reservationGoLoginButton"));
+    prompt->addButton(tr("稍后再说"), QMessageBox::RejectRole);
+    prompt->setAttribute(Qt::WA_DeleteOnClose);
+    connect(prompt, &QMessageBox::finished, this, [this, prompt, goLogin](int) {
+        if (prompt->clickedButton() == goLogin) {
+            emit loginRequested();
+        }
+    });
+    prompt->open();
 }
 
 void HomeShell::setConnection(charging::client::network::ClientConnection* connection)
@@ -176,11 +236,17 @@ void HomeShell::setConnection(charging::client::network::ClientConnection* conne
     // 页面构造时无需连接即可用模拟数据渲染；注入后保留真实接口通道，
     // 服务端 GET_STATIONS 就绪时开启 liveMode 即无缝切换（UI 逻辑不变）。
     stationPage_->service()->setConnection(connection);
+    reservationService_->setConnection(connection);
 }
 
 StationHomePage* HomeShell::stationPage() const
 {
     return stationPage_;
+}
+
+ReservationListPage* HomeShell::reservationPage() const
+{
+    return recordsPage_;
 }
 
 QWidget* HomeShell::createOrderPage()
@@ -213,8 +279,15 @@ QWidget* HomeShell::createProfilePage()
                                        tr("立即登录"), card);
         connect(notice, &NoticePanel::actionTriggered, this,
                 [this]() { emit loginRequested(); });
+        // 未登录也可点“我的预约”入口：由壳统一拦截并提示登录（任务 #17）。
+        auto* reservationsButton = new QPushButton(tr("📒 我的预约"), card);
+        reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
+        reservationsButton->setCursor(Qt::PointingHandCursor);
+        connect(reservationsButton, &QPushButton::clicked, this,
+                &HomeShell::openReservationRecords);
         body->addStretch();
         body->addWidget(notice);
+        body->addWidget(reservationsButton, 0, Qt::AlignCenter);
         body->addStretch();
         outer->addStretch();
         outer->addWidget(card);
@@ -255,6 +328,14 @@ QWidget* HomeShell::createProfilePage()
     balanceLabel->setObjectName(QStringLiteral("balanceLabel"));
     balanceLabel->setProperty("role", QStringLiteral("amountStrong"));
     body->addWidget(balanceLabel);
+
+    // “我的预约”入口（任务 #17）：预约记录页经壳路由进入，复用全局导航。
+    auto* reservationsButton = new QPushButton(tr("📒 我的预约"), card);
+    reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
+    reservationsButton->setCursor(Qt::PointingHandCursor);
+    connect(reservationsButton, &QPushButton::clicked, this,
+            &HomeShell::openReservationRecords);
+    body->addWidget(reservationsButton);
 
     auto* logoutButton = new QPushButton(tr("退出登录"), card);
     logoutButton->setObjectName(QStringLiteral("logoutButton"));

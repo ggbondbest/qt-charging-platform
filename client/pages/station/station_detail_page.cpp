@@ -5,6 +5,8 @@
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/status_tag.h"
 #include "pages/station/platform_theme.h"
+#include "pages/station/reservation_dialog.h"
+#include "services/reservation/reservation_service.h"
 #include "services/station/station_query_service.h"
 
 #include <QHBoxLayout>
@@ -46,10 +48,10 @@ QPushButton#detailReserveButton {
 QPushButton#detailReserveButton:pressed {
     background: #009A66;
 }
-QLabel#detailReservationHint {
-    color: #00A76D;
-    font-size: 12px;
-    font-weight: 600;
+QPushButton#detailReserveButton:disabled {
+    background: #F4F6F8;
+    color: #9AA5B1;
+    border: 1px solid #D5DCE4;
 }
 )";
 
@@ -220,12 +222,6 @@ StationDetailPage::StationDetailPage(QWidget* parent) : QWidget(parent)
     chargerScroll->setWidget(chargerListPage_);
     chargerStack_->addWidget(chargerScroll);
 
-    reservationHintLabel_ = new QLabel(contentPage);
-    reservationHintLabel_->setObjectName(QStringLiteral("detailReservationHint"));
-    reservationHintLabel_->setWordWrap(true);
-    reservationHintLabel_->hide();
-    contentLayout->addWidget(reservationHintLabel_);
-
     // 初始为整页加载中：openStation() 拉取桩列表后进入 Ready（或 Error）。
     setDetailState(DetailState::Loading);
 }
@@ -249,6 +245,7 @@ void StationDetailPage::setService(services::station::StationQueryService* servi
 void StationDetailPage::openStation(const charging::model::Station& station, int distanceMeters)
 {
     station_ = station;
+    lastDistanceMeters_ = distanceMeters;
 
     nameLabel_->setText(station.name);
     addressLabel_->setText(station.address);
@@ -259,13 +256,23 @@ void StationDetailPage::openStation(const charging::model::Station& station, int
     statusTag_->setTone(active ? StatusTag::Tone::Success : StatusTag::Tone::Danger);
     offlineBanner_->setVisible(!active);
     chargerSummaryLabel_->setText(tr("充电桩"));
-    reservationHintLabel_->hide();
 
     // 信息区先展示路由快照，桩列表异步拉取（无服务注入时保持加载中）。
     setDetailState(DetailState::Loading);
     if (service_ != nullptr) {
         service_->fetchDetail(station, distanceMeters);
     }
+}
+
+void StationDetailPage::setLoggedIn(bool loggedIn)
+{
+    loggedIn_ = loggedIn;
+}
+
+void StationDetailPage::setReservationService(
+    services::reservation::ReservationService* service)
+{
+    reservationService_ = service;
 }
 
 StationDetailPage::DetailState StationDetailPage::viewState() const
@@ -295,11 +302,6 @@ bool StationDetailPage::chargerEmptyVisible() const
 {
     // 列表区当前页是否为“暂无充电桩”提示。
     return chargerEmptyNotice_->isVisibleTo(this);
-}
-
-bool StationDetailPage::reservationHintVisible() const
-{
-    return reservationHintLabel_->isVisibleTo(this);
 }
 
 void StationDetailPage::setDetailState(DetailState state)
@@ -399,23 +401,51 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
     specRow->addWidget(powerLabel);
     specRow->addStretch();
 
-    if (charger.status == charging::model::ChargerStatus::Available) {
-        // 预约点击入口：仅 UI 占位，正式逻辑属任务 #17（空闲桩才可预约）。
-        auto* reserveButton = new QPushButton(tr("预约"), card);
-        reserveButton->setObjectName(QStringLiteral("detailReserveButton"));
+    // 预约入口（任务 #17）：所有桩展示按钮；非空闲置灰不可点击（权限控制）。
+    auto* reserveButton = new QPushButton(tr("预约"), card);
+    reserveButton->setObjectName(QStringLiteral("detailReserveButton"));
+    const bool reservable = charger.status == charging::model::ChargerStatus::Available;
+    reserveButton->setEnabled(reservable);
+    if (reservable) {
         reserveButton->setCursor(Qt::PointingHandCursor);
-        const qint64 chargerId = charger.id;
-        connect(reserveButton, &QPushButton::clicked, this, [this, chargerId]() {
-            reservationHintLabel_->setText(
-                tr("✅ 已收到预约请求（占位）：正式预约流程将在任务 #17 上线。"));
-            reservationHintLabel_->show();
-            emit reservationRequested(chargerId);
-        });
-        specRow->addWidget(reserveButton);
+    } else {
+        reserveButton->setToolTip(tr("仅空闲充电桩可预约"));
     }
+    connect(reserveButton, &QPushButton::clicked, this,
+            [this, charger]() { handleReserveRequested(charger); });
+    specRow->addWidget(reserveButton);
     body->addLayout(specRow);
 
     return card;
+}
+
+void StationDetailPage::handleReserveRequested(const charging::model::Charger& charger)
+{
+    emit reservationRequested(charger.id);
+
+    if (!loggedIn_) {
+        // 未登录拦截：交宿主（HomeShell）提示登录并跳转登录页。
+        emit reservationLoginRequired();
+        return;
+    }
+
+    // 非模态但独占的弹窗（setModal + show：阻塞交互但不阻塞事件循环）。
+    auto* dialog = new ReservationDialog(station_, charger, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setService(reservationService_);
+    connect(dialog, &ReservationDialog::reserved, this, [this](qint64 chargerId) {
+        // 预约成功 → 刷新当前充电桩状态（模拟通道本地置为已预约后重拉；
+        // 真实通道由服务端数据体现，override 仅作用于模拟结果）。
+        if (service_ != nullptr) {
+            service_->setMockChargerReserved(chargerId);
+            service_->fetchDetail(station_, lastDistanceMeters_);
+        }
+    });
+    if (dialog_ != nullptr) {
+        dialog_->close();
+    }
+    dialog_ = dialog;
+    dialog->show();
 }
 
 void StationDetailPage::clearChargerRows()

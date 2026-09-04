@@ -12,10 +12,14 @@ class TopNavBar;
 namespace network {
 class ClientConnection;
 }
+namespace services::reservation {
+class ReservationService;
+} // namespace services::reservation
 }
 
 namespace charging::client::pages::station {
 
+class ReservationListPage;
 class StationDetailPage;
 class StationHomePage;
 
@@ -31,6 +35,8 @@ class StationHomePage;
 // 任务 #7：顶部搜索框驱动找站页站点检索；站点卡片点击 → 详情路由。
 // 任务 #12：详情页与列表共用同一查询服务实例；进入详情时顶部导航显示
 // “返回”按钮（复用全局 TopNavBar，不新增页面级导航），返回/切 Tab 收起。
+// 任务 #17：预约服务（ReservationService）统一注入详情页与“我的预约”
+// 记录页；记录页为索引 5 路由页（从“我的”入口进入，未登录点击提示登录）。
 class HomeShell final : public QWidget
 {
     Q_OBJECT
@@ -46,6 +52,7 @@ public:
     void setConnection(charging::client::network::ClientConnection* connection);
 
     StationHomePage* stationPage() const;
+    ReservationListPage* reservationPage() const;
 
 signals:
     // 已登录时用户点击“退出登录”，请求返回登录页。
@@ -56,8 +63,18 @@ signals:
 private:
     explicit HomeShell(const charging::model::User* user, QWidget* parent);
 
+    enum class Route
+    {
+        None,
+        StationDetail,
+        ReservationRecords,
+    };
+
     void showTab(const QString& id);
     void openStationDetail(const charging::model::Station& station, int distanceMeters);
+    void openReservationRecords();
+    void leaveRoute();
+    void showReservationLoginPrompt();
     QWidget* createOrderPage();
     QWidget* createRechargePage();
     QWidget* createProfilePage();
@@ -67,6 +84,9 @@ private:
     charging::client::BottomTabBar* tabBar_ = nullptr;
     StationHomePage* stationPage_ = nullptr;
     StationDetailPage* detailPage_ = nullptr;
+    ReservationListPage* recordsPage_ = nullptr;
+    charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
+    Route route_ = Route::None;
     charging::model::User user_;
     bool hasUser_ = false;
 };

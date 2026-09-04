@@ -178,6 +178,27 @@ set_tests_properties(station_query_service PROPERTIES
     TIMEOUT 30
 )
 
+add_executable(test_reservation_service tst_reservation_service.cpp)
+target_link_libraries(test_reservation_service PRIVATE
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientNetwork
+    ChargingPlatform::Common
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_service COMMAND test_reservation_service)
+set_tests_properties(reservation_service PROPERTIES
+    TIMEOUT 60
+)
+
 add_executable(test_client_navigation
     tst_client_navigation.cpp
     ../client/app/main_window.cpp
