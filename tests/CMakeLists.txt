@@ -139,6 +139,93 @@ target_link_libraries(test_charging_service PRIVATE
 )
 add_test(NAME charging_service COMMAND test_charging_service)
 
+add_executable(test_home_shell tst_home_shell.cpp)
+target_link_libraries(test_home_shell PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME home_shell COMMAND test_home_shell)
+set_tests_properties(home_shell PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_station_map_panel tst_station_map_panel.cpp)
+target_link_libraries(test_station_map_panel PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME station_map_panel COMMAND test_station_map_panel)
+set_tests_properties(station_map_panel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_station_query_service tst_station_query_service.cpp)
+target_link_libraries(test_station_query_service PRIVATE
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME station_query_service COMMAND test_station_query_service)
+set_tests_properties(station_query_service PROPERTIES
+    TIMEOUT 30
+)
+
+add_executable(test_reservation_service tst_reservation_service.cpp)
+target_link_libraries(test_reservation_service PRIVATE
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientNetwork
+    ChargingPlatform::Common
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_service COMMAND test_reservation_service)
+set_tests_properties(reservation_service PROPERTIES
+    TIMEOUT 60
+)
+
+add_executable(test_client_navigation
+    tst_client_navigation.cpp
+    ../client/app/main_window.cpp
+    ../client/app/main_window.h
+)
+target_include_directories(test_client_navigation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../client/app
+)
+target_link_libraries(test_client_navigation PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME client_navigation COMMAND test_client_navigation)
+set_tests_properties(client_navigation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 20
+)
+
+
 find_program(CHARGING_BASH_EXECUTABLE NAMES bash)
 find_program(CHARGING_SQLITE3_EXECUTABLE NAMES sqlite3)
 if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)

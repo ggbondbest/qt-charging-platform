@@ -12,14 +12,15 @@ namespace charging::client {
 
 // One live snapshot of a charging session plus the joined display fields.
 // All values are server-provided; the UI never computes billing locally.
+// Mirrors the frozen §8.4 shape: the order (live durationSeconds/energyWh/
+// amountCents while CHARGING) plus the sibling currentPowerWatts.
 struct ChargingStatus
 {
     charging::model::Order order;
-    QString stationName;
+    QString stationName; // TODO(contract): join fields still pending the leader
     QString chargerCode;
     qint64 powerWatts = 0;
-    bool powerKnown = false; // TODO(contract): currentPowerWatts not frozen yet
-    qint64 estimatedAmountCents = 0;
+    bool powerKnown = false; // false only if the envelope lacks currentPowerWatts
 };
 
 // Use cases around an active charging session: live status polling, stop,
@@ -30,7 +31,10 @@ class ChargingService final : public QObject
     Q_OBJECT
 
 public:
-    static constexpr int kStatusPollIntervalMs = 2000;
+    // Poll cadence is a client UX choice: 1s keeps the duration counter
+    // ticking like a stopwatch (server-side load preference still
+    // TODO(contract) once the leader's real endpoint is live).
+    static constexpr int kStatusPollIntervalMs = 1000;
 
     explicit ChargingService(IRequestTransport* transport, QObject* parent = nullptr);
     ~ChargingService() override;
@@ -56,7 +60,11 @@ signals:
 
 private:
     void handlePollTick();
-    static bool parseStatus(const QJsonObject& object, ChargingStatus* outStatus,
+    // Parses a GET_CHARGING_STATUS / STOP_CHARGING success envelope
+    // (§8.4/8.5): { order: {...}, currentPowerWatts: N, stationName?,
+    // chargerCode? }. Returns false when the order sub-object is missing or
+    // fails model validation.
+    static bool parseStatus(const QJsonObject& data, ChargingStatus* outStatus,
                             QString* errorMessage);
 
     IRequestTransport* transport_ = nullptr;

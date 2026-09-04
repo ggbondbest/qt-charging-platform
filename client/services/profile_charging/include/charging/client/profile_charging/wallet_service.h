@@ -25,15 +25,17 @@ public:
     explicit WalletService(IRequestTransport* transport, QObject* parent = nullptr);
 
     bool isFetchingProfile() const;
+    bool isUpdatingNickname() const;
     bool isRecharging() const;
     bool isFetchingRecords() const;
 
     void fetchProfile();                    // GET_USER_INFO
+    void updateNickname(const QString& nickname); // UPDATE_USER_INFO
     void recharge(qint64 amountCents);      // RECHARGE
     void fetchRechargeRecords(int page);    // GET_RECHARGE_RECORDS, page from 1
 
 signals:
-    void profileLoaded(const charging::model::User& user);
+    void profileLoaded(const charging::model::User& user); // also after UPDATE_USER_INFO
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVector<charging::model::RechargeRecord>& records,
                                int total, bool hasMore);
@@ -42,6 +44,7 @@ signals:
 private:
     IRequestTransport* transport_ = nullptr;
     bool fetchingProfile_ = false;
+    bool updatingNickname_ = false;
     bool recharging_ = false;
     bool fetchingRecords_ = false;
 };
