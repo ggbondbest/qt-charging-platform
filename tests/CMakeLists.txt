@@ -26,6 +26,18 @@ target_link_libraries(test_database_resources PRIVATE
 )
 add_test(NAME database_resources COMMAND test_database_resources)
 
+add_executable(test_station_charger_repositories tst_station_charger_repositories.cpp)
+target_link_libraries(test_station_charger_repositories PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME station_charger_repositories COMMAND test_station_charger_repositories)
+
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE
     ChargingPlatform::Common

@@ -6,6 +6,8 @@
 当前已实现：
 
 - `UserRepository`：按手机号查询和并发安全的首次创建；
+- `StationRepository`：站点关键字/状态筛选、分页和电桩数量聚合；
+- `ChargerRepository`：按站点、状态、类型筛选并分页查询电桩；
 - `ChargingRepository`：预约、过期、取消、开始、状态和停止的多表事务；
 - `OrderRepository`：余额扣减与订单完成的单事务支付。
 
