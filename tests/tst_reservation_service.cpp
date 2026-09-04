@@ -203,10 +203,14 @@ private slots:
     void mockListCoversAllReservationStatusesNewestFirst();
     void mockSubmitSuccessAppendsRecord();
     void mockSubmitInvalidDurationFails();
-    void mockSubmitConflictAndPreemptionFail();
+    void mockSubmitSingleUnfinishedRuleAndPreemption();
     void mockCancelOnlyForActiveReservation();
     void simulatedFailureCoversListSubmitAndCancel();
     void mockRecordsCanBeOverridden();
+    // —— 任务 #17 迭代：业务约束与倒计时到期流转 ——
+    void hasUnfinishedReservationTracksStore();
+    void expireReservationOnlyConvertsStillActive();
+    void submitCarriesChargerSpecAndDistance();
     // —— 真实通道接缝 ——
     void liveListWithoutProtocolCommandFailsFriendly();
     void liveSubmitWithoutLoginIsRejected();
@@ -252,6 +256,8 @@ void ReservationServiceTest::mockSubmitSuccessAppendsRecord()
 {
     ReservationService service;
     service.setUserId(42);
+    // 单预约约束：默认模拟数据含“预约中”记录，先清空再演示成功路径。
+    service.setMockRecords({});
     QSignalSpy startedSpy(&service, &ReservationService::submitStarted);
     QSignalSpy succeededSpy(&service, &ReservationService::submitSucceeded);
     QSignalSpy failedSpy(&service, &ReservationService::submitFailed);
@@ -273,12 +279,12 @@ void ReservationServiceTest::mockSubmitSuccessAppendsRecord()
     // 预估费用 = 电价(分/度) × 分钟 / 60 = 120 分。
     QCOMPARE(record.estimatedFeeCents, qint64(120));
 
-    // 新记录进入列表首位，刷新即可见（记录页“成功后刷新”依赖此语义）。
+    // 新记录进入列表首位，刷新即可见（预约订单页“成功后展示”依赖此语义）。
     QSignalSpy listSpy(&service, &ReservationService::listSucceeded);
     service.fetchList();
     QTRY_VERIFY_WITH_TIMEOUT(listSpy.count() == 1, 3000);
     const auto records = listSpy.at(0).at(0).value<ReservationList>();
-    QCOMPARE(records.size(), 5);
+    QCOMPARE(records.size(), 1);
     QCOMPARE(records.first().reservation.chargerId, qint64(7001));
 }
 
@@ -295,29 +301,44 @@ void ReservationServiceTest::mockSubmitInvalidDurationFails()
     QVERIFY(failedSpy.at(0).at(0).toString().contains(QStringLiteral("时长")));
 }
 
-void ReservationServiceTest::mockSubmitConflictAndPreemptionFail()
+void ReservationServiceTest::mockSubmitSingleUnfinishedRuleAndPreemption()
 {
     ReservationService service;
+    service.setMockRecords({}); // 清空默认数据，聚焦单预约约束路径
     QSignalSpy succeededSpy(&service, &ReservationService::submitSucceeded);
     QSignalSpy failedSpy(&service, &ReservationService::submitFailed);
 
-    // 同一空闲桩连续提交：第二次命中“预约冲突”（已有进行中的预约）。
+    // 业务约束：已有未结束预约时再次提交（即使空闲桩）被 Service 兜底拒绝。
     service.submit(makeCharger(7003), makeStation(), 60);
     QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 1, 3000);
     service.submit(makeCharger(7003), makeStation(), 60);
     QTRY_VERIFY_WITH_TIMEOUT(failedSpy.count() == 1, 3000);
-    QVERIFY(failedSpy.at(0).at(0).toString().contains(QStringLiteral("冲突")));
+    QVERIFY(failedSpy.at(0).at(0)
+                .toString()
+                .contains(QStringLiteral("您当前尚有未结束的预约，请结束当前预约后再发起新预约")));
+    QCOMPARE(succeededSpy.count(), 1); // 拒绝不产生新记录
 
-    // 并发边界：提交瞬间桩被其他用户抢占（失败原因透传给弹窗展示）。
+    // 结束当前预约（取消）后可再次发起。
+    QSignalSpy cancelSucceededSpy(&service, &ReservationService::cancelSucceeded);
+    const auto first = succeededSpy.at(0).at(0).value<ReservationRecord>();
+    service.cancel(first.reservation.id);
+    QTRY_VERIFY_WITH_TIMEOUT(cancelSucceededSpy.count() == 1, 3000);
+    service.submit(makeCharger(7003), makeStation(), 60);
+    QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 2, 3000);
+
+    // 并发边界：提交瞬间桩被其他用户抢占（失败原因透传给确认页展示）。
     service.setSimulateNextSubmitConflict(true);
+    const auto second = succeededSpy.at(1).at(0).value<ReservationRecord>();
+    service.cancel(second.reservation.id); // 先结束，避免命中唯一性约束
+    QTRY_VERIFY_WITH_TIMEOUT(cancelSucceededSpy.count() == 2, 3000);
     service.submit(makeCharger(7004), makeStation(), 60);
     QTRY_VERIFY_WITH_TIMEOUT(failedSpy.count() == 2, 3000);
     QVERIFY(failedSpy.at(1).at(0).toString().contains(QStringLiteral("抢占")));
-    QCOMPARE(succeededSpy.count(), 1); // 失败不产生新记录
+    QCOMPARE(succeededSpy.count(), 2); // 失败不产生新记录
 
     // 抢占开关一次性消耗：下一次提交恢复正常。
     service.submit(makeCharger(7005), makeStation(), 60);
-    QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 2, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 3, 3000);
 }
 
 void ReservationServiceTest::mockCancelOnlyForActiveReservation()
@@ -380,7 +401,7 @@ void ReservationServiceTest::simulatedFailureCoversListSubmitAndCancel()
 
 void ReservationServiceTest::mockRecordsCanBeOverridden()
 {
-    // 空覆盖驱动记录页“暂无预约记录”空态。
+    // 空覆盖驱动预约模块“暂无记录”空态（订单页 / 已完成页共用列表通道）。
     ReservationService service;
     service.setMockRecords({});
     QSignalSpy listSpy(&service, &ReservationService::listSucceeded);
@@ -388,6 +409,98 @@ void ReservationServiceTest::mockRecordsCanBeOverridden()
     service.fetchList();
     QTRY_VERIFY_WITH_TIMEOUT(listSpy.count() == 1, 3000);
     QCOMPARE(listSpy.at(0).at(0).value<ReservationList>().size(), 0);
+}
+
+void ReservationServiceTest::hasUnfinishedReservationTracksStore()
+{
+    // 业务约束查询：仅“预约中”且倒计时未归零的记录计为未结束。
+    ReservationService service;
+    QVERIFY(service.hasUnfinishedReservation()); // 默认数据含 9001 预约中
+
+    // 已过期的“预约中”不算未结束（expiresAtUtc 已过的记录）。
+    ReservationRecord stale;
+    stale.reservation.id = 9010;
+    stale.reservation.status = charging::model::ReservationStatus::Active;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    stale.reservation.reservedAtUtc = now.addSecs(-7200);
+    stale.reservation.expiresAtUtc = now.addSecs(-3600); // 已到期未流转
+    service.setMockRecords({stale});
+    QVERIFY(!service.hasUnfinishedReservation());
+
+    // 已结束状态（已完成/已取消）不算未结束。
+    stale.reservation.expiresAtUtc = now.addSecs(3600);
+    stale.reservation.status = charging::model::ReservationStatus::Cancelled;
+    service.setMockRecords({stale});
+    QVERIFY(!service.hasUnfinishedReservation());
+    stale.reservation.status = charging::model::ReservationStatus::Active;
+    service.setMockRecords({stale});
+    QVERIFY(service.hasUnfinishedReservation());
+}
+
+void ReservationServiceTest::expireReservationOnlyConvertsStillActive()
+{
+    // 倒计时归零流转：仅“预约中”记录被置为“已过期”；重复调用幂等，
+    // 已结束记录不受影响，流转信号始终发出（页面据此刷新）。
+    ReservationService service;
+    QSignalSpy expiredSpy(&service, &ReservationService::reservationExpired);
+    QSignalSpy listSpy(&service, &ReservationService::listSucceeded);
+
+    service.expireReservation(9001); // Active → Expired
+    QCOMPARE(expiredSpy.count(), 1);
+    service.expireReservation(9001); // 重复流转：状态不变，仍发信号
+    QCOMPARE(expiredSpy.count(), 2);
+    service.expireReservation(9002); // Fulfilled 不受影响
+    service.expireReservation(9999); // 不存在的记录：不崩溃
+    QCOMPARE(expiredSpy.count(), 4);
+
+    service.fetchList();
+    QTRY_VERIFY_WITH_TIMEOUT(listSpy.count() == 1, 3000);
+    const auto records = listSpy.at(0).at(0).value<ReservationList>();
+    QCOMPARE(records.size(), 4);
+    int expiredCount = 0;
+    for (const auto& record : records) {
+        if (record.reservation.id == 9001 || record.reservation.id == 9004) {
+            QVERIFY(record.reservation.status == charging::model::ReservationStatus::Expired);
+            ++expiredCount;
+        }
+        if (record.reservation.id == 9002) {
+            QVERIFY(record.reservation.status
+                    == charging::model::ReservationStatus::Fulfilled);
+        }
+    }
+    QCOMPARE(expiredCount, 2);
+    // 全部结束后不再阻断新预约。
+    QVERIFY(!service.hasUnfinishedReservation());
+}
+
+void ReservationServiceTest::submitCarriesChargerSpecAndDistance()
+{
+    // 预约上下文扩展字段：充电规格文案 + 虚拟导航距离（预约订单页三栏展示）。
+    ReservationService service;
+    service.setMockRecords({});
+    QSignalSpy succeededSpy(&service, &ReservationService::submitSucceeded);
+
+    service.submit(makeCharger(7008), makeStation(120), 60, 1500);
+    QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 1, 3000);
+    const auto record = succeededSpy.at(0).at(0).value<ReservationRecord>();
+    QCOMPARE(record.chargerSpec, QStringLiteral("直流快充 · 160kW"));
+    QCOMPARE(record.distanceMeters, 1500);
+
+    // 交流桩文案。
+    service.cancel(record.reservation.id);
+    QSignalSpy cancelSpy(&service, &ReservationService::cancelSucceeded);
+    QTRY_VERIFY_WITH_TIMEOUT(cancelSpy.count() == 1, 3000);
+    charging::model::Charger slow;
+    slow.id = 7009;
+    slow.code = QStringLiteral("CHG-SLOW-1");
+    slow.type = charging::model::ChargerType::Slow;
+    slow.powerWatts = 7000;
+    QSignalSpy submitSpy(&service, &ReservationService::submitSucceeded);
+    service.submit(slow, makeStation(100), 30);
+    QTRY_VERIFY_WITH_TIMEOUT(submitSpy.count() == 1, 3000);
+    const auto second = submitSpy.at(0).at(0).value<ReservationRecord>();
+    QCOMPARE(second.chargerSpec, QStringLiteral("交流慢充 · 7kW"));
+    QCOMPARE(second.distanceMeters, -1); // 未提供距离：占位缺省
 }
 
 void ReservationServiceTest::liveListWithoutProtocolCommandFailsFriendly()
