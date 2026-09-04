@@ -99,6 +99,27 @@ QLabel#uiAvatar {
     background: #00B578;
     border-radius: 32px;
 }
+/* 内置头像库渲染为带透明角的圆形 pixmap，此时字母底色必须让位。 */
+QLabel#uiAvatar[hasAvatar="true"] {
+    background: transparent;
+}
+/* 编辑资料页：头像库选择网格 */
+QPushButton#uiAvatarChoice {
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 26px;
+    padding: 0;
+}
+QPushButton#uiAvatarChoice:checked {
+    border-color: #00B578;
+    background: #EAF9F2;
+}
+QPushButton#uiAvatarChoice[defaultAvatar="true"] {
+    background: #00B578;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 800;
+}
 /* 个人中心 Hub：较小的头像、余额大圆、订单角标 */
 QLabel#uiAvatarHub {
     font-size: 24px;
@@ -106,6 +127,9 @@ QLabel#uiAvatarHub {
     color: #FFFFFF;
     background: #00B578;
     border-radius: 28px;
+}
+QLabel#uiAvatarHub[hasAvatar="true"] {
+    background: transparent;
 }
 QWidget#uiBalancePanel {
     background: #00B578;

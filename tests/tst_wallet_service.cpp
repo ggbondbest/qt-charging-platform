@@ -125,8 +125,45 @@ private slots:
         QCOMPARE(updated.nickname, QStringLiteral("第一个"));
     }
 
-    void updateNicknameFailurePropagatesAndReleasesGuard()
+    void updateAvatarRoundTripsAndDefaultRestores()
     {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateAvatar(QStringLiteral("bolt"));
+        QVERIFY(waitForSignal(loaded));
+
+        const charging::model::User updated =
+            qvariant_cast<charging::model::User>(loaded.at(0).at(0));
+        QCOMPARE(updated.avatarKey, QStringLiteral("bolt"));
+        QVERIFY(!service.isUpdatingAvatar());
+
+        // The mock keeps the choice; "" restores the default (initial) avatar.
+        QSignalSpy reset(&service, &WalletService::profileLoaded);
+        service.updateAvatar(QString());
+        QVERIFY(waitForSignal(reset));
+        const charging::model::User restored =
+            qvariant_cast<charging::model::User>(reset.at(0).at(0));
+        QVERIFY(restored.avatarKey.isEmpty());
+    }
+
+    void duplicateUpdateAvatarIsIgnoredWhileInFlight()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy loaded(&service, &WalletService::profileLoaded);
+        service.updateAvatar(QStringLiteral("cat"));
+        service.updateAvatar(QStringLiteral("moon")); // Swallowed by the guard.
+        QVERIFY(waitForSignal(loaded));
+        QTest::qWait(600);
+        QCOMPARE(loaded.count(), 1);
+        QCOMPARE(qvariant_cast<charging::model::User>(loaded.at(0).at(0)).avatarKey,
+                 QStringLiteral("cat"));
+    }
+
+    void updateNicknameFailurePropagatesAndReleasesGuard()    {
         MockRequestTransport transport;
         WalletService service(&transport);
 

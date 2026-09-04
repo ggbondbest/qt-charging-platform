@@ -26,11 +26,13 @@ public:
 
     bool isFetchingProfile() const;
     bool isUpdatingNickname() const;
+    bool isUpdatingAvatar() const;
     bool isRecharging() const;
     bool isFetchingRecords() const;
 
     void fetchProfile();                    // GET_USER_INFO
     void updateNickname(const QString& nickname); // UPDATE_USER_INFO
+    void updateAvatar(const QString& avatarKey);  // UPDATE_USER_INFO（内置头像库选择）
     void recharge(qint64 amountCents);      // RECHARGE
     void fetchRechargeRecords(int page);    // GET_RECHARGE_RECORDS, page from 1
 
@@ -45,6 +47,7 @@ private:
     IRequestTransport* transport_ = nullptr;
     bool fetchingProfile_ = false;
     bool updatingNickname_ = false;
+    bool updatingAvatar_ = false;
     bool recharging_ = false;
     bool fetchingRecords_ = false;
 };

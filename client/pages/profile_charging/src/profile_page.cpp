@@ -1,6 +1,7 @@
 #include "charging/client/profile_charging/profile_page.h"
 
 #include "charging/client/profile_charging/client_errors.h"
+#include "charging/client/profile_charging/avatar_library.h"
 #include "charging/client/profile_charging/presentation_format.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
@@ -273,7 +274,11 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
     hasUser_ = true;
 
     const QString nickname = user_.nickname.isEmpty() ? tr("未设置") : user_.nickname;
-    avatarLabel_->setText(nickname.isEmpty() ? QStringLiteral("用") : QString(nickname.at(0)));
+    // 内置头像库有 key 时渲染头像图，否则回退昵称首字字母头像。
+    AvatarLibrary::applyToLabel(avatarLabel_, user_.avatarKey,
+                                nickname.isEmpty() ? QStringLiteral("用")
+                                                   : QString(nickname.at(0)),
+                                56);
     identityNameLabel_->setText(nickname);
     identityPhoneLabel_->setText(user_.phone);
     balanceValueLabel_->setText(
