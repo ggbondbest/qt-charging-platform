@@ -5,6 +5,7 @@
 
 当前已实现：
 
+- `DashboardRepository`：营收、订单、电桩状态汇总及最多 31 天趋势；
 - `UserRepository`：按手机号查询和并发安全的首次创建；
 - `StationRepository`：站点关键字/状态筛选、分页和电桩数量聚合；
 - `ChargerRepository`：按站点、状态、类型筛选并分页查询电桩；

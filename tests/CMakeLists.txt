@@ -62,6 +62,18 @@ target_link_libraries(test_reservation_operation_logs PRIVATE
 )
 add_test(NAME reservation_operation_logs COMMAND test_reservation_operation_logs)
 
+add_executable(test_dashboard_repository tst_dashboard_repository.cpp)
+target_link_libraries(test_dashboard_repository PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME dashboard_repository COMMAND test_dashboard_repository)
+
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE
     ChargingPlatform::Common
