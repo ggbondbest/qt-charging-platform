@@ -3,9 +3,7 @@
 #include <QVector>
 #include <QWidget>
 
-namespace charging::client {
-class NoticePanel;
-}
+class QLabel;
 
 namespace charging::client::pages::station {
 
@@ -46,7 +44,8 @@ private:
     void showDegraded(const QString& title, const QString& description);
     void tryBuildMapView();
 
-    NoticePanel* degradedNotice_ = nullptr;
+    QWidget* degradedBanner_ = nullptr; // 一行式降级横幅（不再占用整块地图高度）
+    QLabel* degradedBannerLabel_ = nullptr;
     QWidget* mapView_ = nullptr; // 可用时为 QWebEngineView，否则为空
     QVector<MapStationPoint> stations_;
     bool degraded_ = true;

@@ -10,6 +10,7 @@ class QVBoxLayout;
 
 namespace charging::client {
 
+class ActionBar;
 class ActionButton;
 class Card;
 class LoadingOverlay;
@@ -29,6 +30,8 @@ public:
     void showOrder(const charging::client::ChargingStatus& stopped);
     // Current wallet balance for the pre-pay hint (cents).
     void setBalance(qint64 balanceCents);
+    // 整合壳层（HomeShell）内使用：隐藏页内返回按钮（全局顶部导航负责返回）。
+    void setEmbedded(bool embedded);
 
 signals:
     void backRequested();
@@ -59,6 +62,9 @@ private:
     QLabel* stationLabel_ = nullptr;
     QLabel* balanceLabel_ = nullptr;
     QLabel* hintLabel_ = nullptr;
+    ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层时隐藏）
+    ActionBar* payBar_ = nullptr;        // 待支付态底部操作条
+    ActionBar* doneBar_ = nullptr;       // 支付完成态底部操作条
     QVBoxLayout* infoRowsLayout_ = nullptr;
     ActionButton* payButton_ = nullptr;
     ActionButton* rechargeButton_ = nullptr;

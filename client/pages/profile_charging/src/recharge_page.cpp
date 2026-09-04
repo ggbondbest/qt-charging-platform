@@ -2,6 +2,7 @@
 
 #include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/presentation_format.h"
+#include "charging/client/widgets/action_bar.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/loading_overlay.h"
@@ -37,17 +38,23 @@ RechargePage::RechargePage(WalletService* service, QWidget* parent)
 
 void RechargePage::buildUi()
 {
-    auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(20, 16, 20, 20);
+    // 外框：内容区 + 底部操作条（ActionBar）。主按钮钉在页面底部，
+    // 不再随长内容漂到空白区中间。
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
+    auto* content = new QWidget(this);
+    auto* rootLayout = new QVBoxLayout(content);
+    rootLayout->setContentsMargins(20, 16, 20, 16);
     rootLayout->setSpacing(14);
+    outerLayout->addWidget(content, 1);
 
     auto* headerRow = new QHBoxLayout();
     headerRow->setSpacing(6);
     backButton_ = new ActionButton(ActionButton::Variant::Ghost, QStringLiteral("←"), this);
     backButton_->setFixedWidth(44);
     connect(backButton_, &ActionButton::clicked, this, &RechargePage::backRequested);
-    auto* titleLabel = new QLabel(tr("充值"), this);
-    titleLabel->setProperty("role", QStringLiteral("pageTitle"));
+    auto* titleLabel = new QLabel(tr("充值"), this);    titleLabel->setProperty("role", QStringLiteral("pageTitle"));
     headerRow->addWidget(backButton_);
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
@@ -59,7 +66,8 @@ void RechargePage::buildUi()
     auto* balanceCaption = new QLabel(tr("当前余额（元）"), balanceCard);
     balanceCaption->setProperty("role", QStringLiteral("caption"));
     balanceValueLabel_ = new QLabel(QStringLiteral("¥ --"), balanceCard);
-    balanceValueLabel_->setProperty("role", QStringLiteral("balance"));
+    // 支付辅助信息降级为行内金额（34px 大余额只属于首页/钱包页的横幅）。
+    balanceValueLabel_->setProperty("role", QStringLiteral("amountStrong"));
     balanceLayout->addWidget(balanceCaption);
     balanceLayout->addStretch();
     balanceLayout->addWidget(balanceValueLabel_);
@@ -112,14 +120,16 @@ void RechargePage::buildUi()
         }
     });
     amountLayout->addWidget(customAmountEdit_);
+    // 默认选中 ¥100：让选择态与选中样式从一开始就有落点。
+    amountChips_.at(1)->setChecked(true);
 
     rootLayout->addWidget(amountCard);
     rootLayout->addStretch();
 
-    confirmButton_ = new ActionButton(ActionButton::Variant::Primary, tr("确认充值"), this);
-    confirmButton_->setMinimumHeight(50);
+    auto* actionBar = new ActionBar(ActionBar::Variant::Primary, tr("确认充值"), this);
+    outerLayout->addWidget(actionBar);
+    confirmButton_ = actionBar->actionButton();
     connect(confirmButton_, &ActionButton::clicked, this, &RechargePage::onConfirmClicked);
-    rootLayout->addWidget(confirmButton_);
 
     overlay_ = new LoadingOverlay(this);
     overlay_->setVisible(false);
@@ -130,12 +140,19 @@ void RechargePage::setBalance(qint64 balanceCents)
     balanceValueLabel_->setText(QStringLiteral("¥ %1").arg(formatCentsAsYuan(balanceCents)));
 }
 
+void RechargePage::setEmbedded(bool embedded)
+{
+    // 全局顶部导航已提供返回，隐藏页内返回按钮。
+    backButton_->setVisible(!embedded);
+}
+
 void RechargePage::resetForm()
 {
     for (ActionButton* chip : amountChips_) {
         chip->setChecked(false);
     }
     customAmountEdit_->clear();
+    amountChips_.at(1)->setChecked(true); // 回到默认 ¥100
 }
 
 qint64 RechargePage::selectedAmountCents(QString* invalidReason) const

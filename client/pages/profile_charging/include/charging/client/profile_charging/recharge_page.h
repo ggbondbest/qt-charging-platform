@@ -26,6 +26,9 @@ public:
     // Shows the balance captured when the page was entered (display only).
     void setBalance(qint64 balanceCents);
     void resetForm();
+    // 整合壳层（HomeShell）内使用：顶部全局导航已提供返回，隐藏页内返回
+    // 按钮，避免双返回（信号保留，独立预览仍可用）。
+    void setEmbedded(bool embedded);
 
 signals:
     void backRequested();

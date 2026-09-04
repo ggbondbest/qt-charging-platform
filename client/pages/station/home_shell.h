@@ -1,14 +1,31 @@
 #pragma once
 
+#include "charging/client/profile_charging/order_service.h"
 #include "charging/client/widgets/bottom_tab_bar.h"
 #include "charging/common/model/models.h"
 
+#include <QString>
+#include <QVector>
 #include <QWidget>
+
+#include <optional>
 
 class QStackedWidget;
 
 namespace charging::client {
 class TopNavBar;
+class MockRequestTransport;
+class WalletService;
+class OrderService;
+class ChargingService;
+class ProfilePage;
+class WalletPage;
+class OrderListPage;
+class OrderDetailPage;
+class ChargingPage;
+class SettlementPage;
+class RechargePage;
+class ProfileEditPage;
 namespace network {
 class ClientConnection;
 }
@@ -40,6 +57,15 @@ class StationHomePage;
 // 确认页面（索引 5 路由页，替代原弹窗）与“我的预约”模块页（索引 6 路由
 // 页，二级 Tab：预约订单 / 已完成的预约）；存在未结束预约时入口拦截提示；
 // 未登录点击提示登录。
+//
+// 全端整合（成员 3）：三个占位 Tab 换成成员 3 真实页面——订单 →
+// OrderListPage、充值 → WalletPage、我的 → ProfilePage 中心页（含编辑资料/
+// 详情/结算/充值/充电过程路由页，索引 7–11；充电中订单点击进入 ChargingPage，
+// 停止 → 结算闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务暂走
+// 共享 mock 通道，服务端命令就绪后切换（TODO(contract)）。“我的预约”入口与
+// 退出登录按钮保留原测试锚点 objectName（openReservationsButton/logoutButton/
+// nicknameLabel/balanceLabel）。路由返回改为返回栈（backTargets_），支持
+// “详情→结算”等多级返回；切任意 Tab 清栈。
 class HomeShell final : public QWidget
 {
     Q_OBJECT
@@ -66,12 +92,12 @@ signals:
 private:
     explicit HomeShell(const charging::model::User* user, QWidget* parent);
 
-    enum class Route
+    // 路由返回栈条目：回 Tab 页记 tabId（切 Tab 顺带清路由态），
+    // 回路由页记 page（保持返回按钮可见，支持多级返回）。
+    struct BackTarget
     {
-        None,
-        StationDetail,
-        ReservationConfirm, // 独立预约确认页面（任务 #17 迭代，替代弹窗）
-        ReservationModule,  // 我的预约模块（二级 Tab 容器）
+        QWidget* page = nullptr;
+        QString tabId;
     };
 
     void showTab(const QString& id);
@@ -79,6 +105,12 @@ private:
     void openReservationConfirm(const charging::model::Station& station,
                                 const charging::model::Charger& charger, int distanceMeters);
     void openReservationModule();
+    // 全端整合：成员 3 路由页统一入口（记录当前位置 → 切页 → 显示返回）。
+    void pushRoute(QWidget* page);
+    void openOrderDetail(const charging::client::OrderSummary& summary);
+    void openSettlement();
+    void openRecharge();
+    void openProfileEdit();
     void leaveRoute();
     void showReservationLoginPrompt();
     void showUnfinishedReservationPrompt();
@@ -94,7 +126,24 @@ private:
     ReservationConfirmPage* confirmPage_ = nullptr;
     ReservationModulePage* modulePage_ = nullptr;
     charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
-    Route route_ = Route::None;
+    QVector<BackTarget> backTargets_;
+
+    // ---- 成员 3 整合：共享 mock 通道 + 服务 + 页面（TODO(contract) 换真实通道） ----
+    charging::client::MockRequestTransport* mockTransport_ = nullptr;
+    charging::client::WalletService* walletService_ = nullptr;
+    charging::client::OrderService* orderService_ = nullptr;
+    charging::client::ChargingService* chargingService_ = nullptr;
+    charging::client::ProfilePage* profilePage_ = nullptr;    // “我的”Tab（登录后）
+    charging::client::WalletPage* walletPage_ = nullptr;      // “充值”Tab（充值记录）
+    charging::client::OrderListPage* orderListPage_ = nullptr; // “订单”Tab
+    charging::client::OrderDetailPage* orderDetailPage_ = nullptr; // 路由页 7
+    charging::client::SettlementPage* settlementPage_ = nullptr;   // 路由页 8
+    charging::client::RechargePage* rechargePage_ = nullptr;       // 路由页 9
+    charging::client::ProfileEditPage* profileEditPage_ = nullptr; // 路由页 10
+    charging::client::ChargingPage* chargingPage_ = nullptr;       // 路由页 11（充电中订单）
+    charging::client::OrderSummary currentSummary_;                // 详情/结算路由上下文
+    qint64 lastKnownBalanceCents_ = 0;
+    std::optional<charging::client::OrderService::Filter> pendingOrderFilter_;
     charging::model::User user_;
     bool hasUser_ = false;
 };

@@ -16,11 +16,11 @@ class NoticePanel;
 
 // Profile hub (个人中心): the tab root that links into the other member-3
 // surfaces, mirroring the mainstream "我的" layout — identity header that
-// opens ProfileEditPage, the wallet group (with the balance rendered
-// directly in a large circle) above the order group (entry cells carry
-// per-status count badges from OrderService::fetchStatusCounts), and a
-// disabled "更多" group for modules owned by other members. The hub renders
-// cached data only; every business number stays server-authoritative.
+// opens ProfileEditPage, the wallet group (WeChat-style balance banner) above
+// the order group (entry cells carry per-status count badges from
+// OrderService::fetchStatusCounts), a reservations entry and logout for the
+// integrated shell, and a disabled "更多" row for future modules. The hub
+// renders cached data only; every business number stays server-authoritative.
 class ProfilePage final : public QWidget
 {
     Q_OBJECT
@@ -33,6 +33,10 @@ public:
     // balance or counts.
     void refresh();
 
+    // Integrated shell: render the real logged-in user synchronously (before
+    // any async profile round-trip), so identity/balance never flash placeholders.
+    void setIdentity(const charging::model::User& user);
+
 signals:
     void profileEditRequested();
     void walletRequested();          // 充值记录 (wallet page shows the section)
@@ -41,6 +45,8 @@ signals:
     void chargingOrdersRequested();
     void waitingPaymentOrdersRequested();
     void completedOrdersRequested();
+    void reservationRecordsRequested(); // 我的预约（成员 2 模块，壳路由）
+    void logoutRequested();
 
 private slots:
     void onProfileLoaded(const charging::model::User& user);
@@ -53,6 +59,7 @@ private:
                                  const QString& badgeTone, QLabel** badgeOut);
     static QString badgeText(int count); // "99+" cap; empty for 0.
     void applyBadge(QLabel* badge, const QString& badgeTone, int count);
+    void renderIdentity(const charging::model::User& user); // shared by setIdentity/async load
 
     WalletService* walletService_ = nullptr;
     OrderService* orderService_ = nullptr;

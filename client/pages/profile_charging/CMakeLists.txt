@@ -50,3 +50,20 @@ target_link_libraries(charging_profile_preview PRIVATE
 set_target_properties(charging_profile_preview PROPERTIES
     OUTPUT_NAME "charging-profile-preview"
 )
+
+# Local-only screenshot harness for the integrated HomeShell (member 2 chrome
+# + member 3 pages) for UI review. Never part of charging_client.
+add_executable(charging_shell_preview
+    preview/shell_preview_main.cpp
+    ${CMAKE_SOURCE_DIR}/resources/client_platform.qrc
+)
+
+target_link_libraries(charging_shell_preview PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ClientProfileChargingPages
+    Qt6::Widgets
+)
+
+set_target_properties(charging_shell_preview PROPERTIES
+    OUTPUT_NAME "charging-shell-preview"
+)

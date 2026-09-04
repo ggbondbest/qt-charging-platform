@@ -37,6 +37,8 @@ target_link_libraries(charging_client_station_pages
     PUBLIC
     ChargingPlatform::ClientStationServices
     ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientProfileChargingServices
     ChargingPlatform::ClientWidgets
     ChargingPlatform::Common
     Qt6::Widgets

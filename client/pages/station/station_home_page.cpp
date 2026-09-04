@@ -107,7 +107,8 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
     //    下方筛选与列表照常浏览（规格：页面仍可正常浏览）。
     mapPanel_ = new StationMapPanel(this);
     mapPanel_->setObjectName(QStringLiteral("stationMapPanel"));
-    mapPanel_->setFixedHeight(170);
+    // 降级态收成一行横幅的高度，把省下的空间还给电站列表；真实地图仍占 170。
+    mapPanel_->setFixedHeight(mapPanel_->isDegraded() ? 56 : 170);
     rootLayout->addWidget(mapPanel_);
     // 面板内部处理“重试”（重新尝试构建地图视图）；本任务地图保持容器高度。
 
@@ -182,6 +183,8 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
     scrollArea->setObjectName(QStringLiteral("uiRecordsScroll"));
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
+    // 卡片内容自适应宽度（配合下方标签换行），杜绝多余的横向滚动条。
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     listPage_ = new QWidget(scrollArea);
     listLayout_ = new QVBoxLayout(listPage_);
     listLayout_->setContentsMargins(0, 0, 8, 0);
@@ -352,6 +355,8 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
     auto* titleRow = new QHBoxLayout();
     auto* nameLabel = new QLabel(item.station.name, card);
     nameLabel->setProperty("role", QStringLiteral("sectionTitle"));
+    // 长站名/地址不换行会撑宽滚动区内容（右侧空桩标签被裁 + 横向滚动条）。
+    nameLabel->setWordWrap(true);
     auto* availabilityTag = new StatusTag(
         item.station.availableChargers > 0
             ? tr("空闲 %1/%2").arg(item.station.availableChargers).arg(item.station.totalChargers)
@@ -365,6 +370,7 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
 
     auto* addressLabel = new QLabel(item.station.address, card);
     addressLabel->setProperty("role", QStringLiteral("secondary"));
+    addressLabel->setWordWrap(true);
     body->addWidget(addressLabel);
 
     auto* detailRow = new QHBoxLayout();

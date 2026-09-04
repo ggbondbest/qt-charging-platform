@@ -29,8 +29,11 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
     // 平台主题（成员 3 维护的全局 QSS token）在装配任何页面前安装一次。
     pages::station::installPlatformTheme();
 
-    setWindowTitle(tr("电动汽车充电桩应用管理平台 v0.7 · 预约改版"));
-    resize(760, 600);
+    // 版本叙事：v0.7 预约改版（成员 2）→ v0.8 全端整合（成员 3 页面并入壳层）。
+    setWindowTitle(tr("电动汽车充电桩应用管理平台 v0.8 · 全端整合"));
+    // 移动端优先：默认按主流手机视口尺寸打开（预览/截图同为 420×860）；
+    // 仍可自由缩放，桌面演示不受限。
+    resize(420, 860);
 
     connection_ = new network::ClientConnection(hostName, port, this);
     authService_ = new services::station::AuthService(connection_, this);

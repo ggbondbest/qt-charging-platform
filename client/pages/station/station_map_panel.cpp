@@ -1,12 +1,14 @@
 #include "pages/station/station_map_panel.h"
 
-#include "charging/client/widgets/notice_panel.h"
-
 #include <QFile>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QVBoxLayout>
+#include <QLabel>
+#include <QPushButton>
 #include <QtGlobal>
+#include <QVBoxLayout>
 
 #ifdef CHARGING_PLATFORM_HAS_WEBENGINE
 #include <QWebEngineView>
@@ -38,16 +40,55 @@ StationMapPanel::StationMapPanel(QWidget* parent) : QWidget(parent)
     // 本模块 qrc（地图页面模板）需要显式初始化。
     ensureStationResourceRegistered();
 
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    // 局部样式（token 与全局主题一致，仅本面板生效）。
+    setStyleSheet(QString::fromLatin1(R"(
+QFrame#mapDegradedBanner {
+    background: #FFF7E8;
+    border: 1px solid #F0B860;
+    border-radius: 12px;
+}
+QLabel#mapDegradedLabel {
+    color: #8A5A00;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+}
+QPushButton#mapRetryButton {
+    background: #FFFFFF;
+    color: #8A5A00;
+    border: 1px solid #E0B667;
+    border-radius: 13px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+)"));
 
-    degradedNotice_ = new NoticePanel(QStringLiteral("🗺"), tr("地图暂不可用"), QString(),
-                                      tr("重试"), this);
-    connect(degradedNotice_, &NoticePanel::actionTriggered, this, [this]() {
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(12, 8, 12, 8);
+
+    // 一行式降级横幅：告知"地图不可用"但不占用整块地图高度。
+    degradedBanner_ = new QFrame(this);
+    degradedBanner_->setObjectName(QStringLiteral("mapDegradedBanner"));
+    auto* bannerLayout = new QHBoxLayout(degradedBanner_);
+    bannerLayout->setContentsMargins(12, 7, 10, 7);
+    bannerLayout->setSpacing(8);
+    degradedBannerLabel_ = new QLabel(degradedBanner_);
+    degradedBannerLabel_->setObjectName(QStringLiteral("mapDegradedLabel"));
+    degradedBannerLabel_->setWordWrap(true);
+    auto* retryButton = new QPushButton(tr("重试"), degradedBanner_);
+    retryButton->setObjectName(QStringLiteral("mapRetryButton"));
+    retryButton->setCursor(Qt::PointingHandCursor);
+    connect(retryButton, &QPushButton::clicked, this, [this]() {
         tryBuildMapView();
         emit retryRequested();
     });
-    layout->addWidget(degradedNotice_);
+    bannerLayout->addWidget(degradedBannerLabel_, 1);
+    bannerLayout->addWidget(retryButton, 0, Qt::AlignVCenter);
+    degradedBanner_->setVisible(false);
+    layout->addWidget(degradedBanner_);
+    layout->addStretch();
 
     tryBuildMapView();
 }
@@ -83,8 +124,10 @@ void StationMapPanel::showDegraded(const QString& title, const QString& descript
         mapView_->deleteLater();
         mapView_ = nullptr;
     }
-    degradedNotice_->setContent(QStringLiteral("🗺"), title, description, tr("重试"));
-    degradedNotice_->show();
+    // 完整原因文案收进 tooltip，横幅本身保持一行。
+    degradedBannerLabel_->setText(tr("%1 · 不影响下方电站列表与预约").arg(title));
+    degradedBannerLabel_->setToolTip(description);
+    degradedBanner_->setVisible(true);
 }
 
 void StationMapPanel::tryBuildMapView()
@@ -110,7 +153,7 @@ void StationMapPanel::tryBuildMapView()
             return;
         }
         degraded_ = false;
-        degradedNotice_->hide();
+        degradedBanner_->setVisible(false);
     });
     static_cast<QVBoxLayout*>(layout())->addWidget(view);
     mapView_ = view;

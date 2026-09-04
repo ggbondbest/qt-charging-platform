@@ -1,3 +1,9 @@
+#include "charging/client/profile_charging/charging_page.h"
+#include "charging/client/profile_charging/order_detail_page.h"
+#include "charging/client/profile_charging/order_list_page.h"
+#include "charging/client/profile_charging/recharge_page.h"
+#include "charging/client/profile_charging/settlement_page.h"
+#include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/top_nav_bar.h"
 #include "pages/station/home_shell.h"
 #include "pages/station/reservation_completed_page.h"
@@ -220,6 +226,11 @@ private slots:
     void reservationEmptyAndErrorStates();
     void countdownThresholdsAndExpiryTransition();
     void moduleRouteBackReturnsToProfile();
+    // —— 全端整合回归：充电中订单路由、支付完成回订单 Tab、充值回跳、空态布局 ——
+    void chargingOrderRoutesToChargingPage();
+    void settlementDoneReturnsToFilteredOrderTab();
+    void rechargeFromSettlementReturnsAndUnlocksPay();
+    void emptyOrderListNoticeFillsListArea();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -279,8 +290,9 @@ void HomeShellTest::startsOnStationTab()
     QVERIFY(orderTab != nullptr);
     QVERIFY(rechargeTab != nullptr);
     QVERIFY(profileTab != nullptr);
-    // 4 个 Tab 页 + 详情路由页 + 预约确认路由页 + 我的预约模块路由页。
-    QCOMPARE(pageStack->count(), 7);
+    // 4 个 Tab 页 + 详情/预约确认/预约模块路由页（成员 2）
+    // + 成员 3 整合路由页 5 个（订单详情/结算/充值/编辑资料/充电过程）= 12。
+    QCOMPARE(pageStack->count(), 12);
 
     // 登录后默认落在“找站”（首页）。
     QCOMPARE(pageStack->currentIndex(), 0);
@@ -346,16 +358,16 @@ void HomeShellTest::avatarOpensProfilePage()
 
 void HomeShellTest::profilePageRedesignKeepsUserAndAddsFunctionSlots()
 {
-    // 任务 #17 迭代：个人中心重构——用户信息居上、功能容器垂直排布、
-    // 退出登录红色字体置于最底部（长内容 QScrollArea 支持滚轮）。
+    // 全端整合：登录态“我的”Tab 由成员 3 的 ProfilePage 中心页承接（取代
+    // 任务 #17 迭代期的临时个人中心）。身份/余额/预约入口/退出登录锚点
+    // 语义保持；占位功能卡片由真实的订单四宫格角标与资料/钱包入口取代。
     HomeShell shell(makeSampleUser());
 
     QSignalSpy logoutSpy(&shell, &HomeShell::logoutRequested);
     tabButton(shell, QStringLiteral("profile"))->click();
 
-    auto* scroll = shell.findChild<QScrollArea*>(QStringLiteral("profileScroll"));
-    QVERIFY(scroll != nullptr);
-    QVERIFY(scroll->widget() != nullptr);
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentIndex(), 3);
 
     auto* nicknameLabel = shell.findChild<QLabel*>(QStringLiteral("nicknameLabel"));
     auto* balanceLabel = shell.findChild<QLabel*>(QStringLiteral("balanceLabel"));
@@ -364,19 +376,15 @@ void HomeShellTest::profilePageRedesignKeepsUserAndAddsFunctionSlots()
     QVERIFY(nicknameLabel->text().contains(QStringLiteral("用户5678")));
     QVERIFY(balanceLabel->text().contains(QStringLiteral("123.45")));
 
-    // 功能容器：我的预约 + 充电订单/优惠券/设置 占位（仅入口，业务后续对接）。
-    int functionSlots = 0;
-    const auto frames = scroll->widget()->findChildren<QFrame*>();
-    for (const auto* frame : frames) {
-        functionSlots += frame->property("isFunctionSlot").toBool() ? 1 : 0;
-    }
-    QCOMPARE(functionSlots, 4);
+    // “我的预约”入口保留测试锚点，点击经壳路由至预约模块。
+    auto* reservationsEntry =
+        shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(reservationsEntry != nullptr);
 
-    // 退出登录：红色危险文案（属性选择器驱动局部样式），位于功能区之后。
+    // 退出登录：红色危险文案（全局 QSS #logoutButton），点击发 logoutRequested。
     auto* logoutButton = shell.findChild<QPushButton*>(QStringLiteral("logoutButton"));
     QVERIFY(logoutButton != nullptr);
     QCOMPARE(logoutButton->text(), QStringLiteral("退出登录"));
-    QCOMPARE(logoutButton->property("isDangerText").toBool(), true);
     logoutButton->click();
     QCOMPARE(logoutSpy.count(), 1);
 }
@@ -1057,6 +1065,157 @@ void HomeShellTest::moduleRouteBackReturnsToProfile()
     QCOMPARE(pageStack->currentIndex(), 3);
     QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
     QVERIFY(!topBar->isBackVisible());
+}
+
+void HomeShellTest::chargingOrderRoutesToChargingPage()
+{
+    // 修复回归：充电中订单点击应进入“充电过程”路由页（停止充电唯一入口），
+    // 而不是只读的订单详情页（否则用户在壳层内无法结束会话）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* chargingPage = shell.findChild<charging::client::ChargingPage*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(chargingPage != nullptr);
+
+    charging::client::OrderSummary live;
+    live.order.id = 101;
+    live.order.status = charging::model::OrderStatus::Charging;
+    live.stationName = QStringLiteral("测试电站");
+    live.chargerCode = QStringLiteral("DC-01");
+    emit orderList->orderOpened(live);
+
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(chargingPage));
+    QVERIFY(topBar->isBackVisible());
+    // 嵌入壳层：页内返回隐藏，返回动作由顶部全局导航承担。
+    QPushButton* inPageBack = nullptr;
+    for (auto* button : chargingPage->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("返回")) {
+            inPageBack = button;
+            break;
+        }
+    }
+    QVERIFY(inPageBack != nullptr);
+    QVERIFY(!inPageBack->isVisible());
+}
+
+void HomeShellTest::settlementDoneReturnsToFilteredOrderTab()
+{
+    // 修复回归：支付完成点“查看订单”应切到订单 Tab 并按“已完成”筛选——
+    // 此前 setCurrentTab 同 id 不发信号，按钮表现为无响应。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderDetail = shell.findChild<charging::client::OrderDetailPage*>();
+    auto* settlement = shell.findChild<charging::client::SettlementPage*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(orderDetail != nullptr);
+    QVERIFY(settlement != nullptr);
+
+    charging::client::OrderSummary pending;
+    pending.order.id = 102;
+    pending.order.status = charging::model::OrderStatus::WaitingPayment;
+    pending.order.amountCents = 2442;
+    pending.stationName = QStringLiteral("测试电站");
+    emit orderList->orderOpened(pending);
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(orderDetail));
+
+    emit orderDetail->payRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+
+    emit settlement->doneRequested();
+    QCOMPARE(pageStack->currentIndex(), 1); // 订单 Tab
+    QVERIFY(tabButton(shell, QStringLiteral("order"))->isChecked());
+    QVERIFY(!topBar->isBackVisible());      // 返回栈已清
+    // 筛选芯片同步为“已完成”（showFilter 同步生效，数据异步刷新）。
+    QPushButton* completedChip = nullptr;
+    for (auto* button : orderList->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("已完成")) {
+            completedChip = button;
+            break;
+        }
+    }
+    QVERIFY(completedChip != nullptr);
+    QVERIFY(completedChip->isChecked());
+}
+
+void HomeShellTest::rechargeFromSettlementReturnsAndUnlocksPay()
+{
+    // 修复回归：余额不足 → 去充值 → 充值成功后应自动回跳结算页，且结算页
+    // 拿到权威新余额解锁“确认支付”。此前回跳后余额仍是进页旧快照，按钮置灰。
+    HomeShell shell(makeSampleUser()); // 余额 ¥123.45
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderDetail = shell.findChild<charging::client::OrderDetailPage*>();
+    auto* settlement = shell.findChild<charging::client::SettlementPage*>();
+    auto* recharge = shell.findChild<charging::client::RechargePage*>();
+    QVERIFY(recharge != nullptr);
+
+    charging::client::OrderSummary pending;
+    pending.order.id = 103;
+    pending.order.status = charging::model::OrderStatus::WaitingPayment;
+    pending.order.amountCents = 24420; // ¥244.20 > 余额 → 买不起
+    pending.stationName = QStringLiteral("测试电站");
+    emit orderList->orderOpened(pending);
+    emit orderDetail->payRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+
+    // 结算页初始：支付置灰、“去充值”可见（余额不足 UI 门槛）。
+    QPushButton* payButton = nullptr;
+    QPushButton* jumpRecharge = nullptr;
+    for (auto* button : settlement->findChildren<QPushButton*>()) {
+        if (button->text().startsWith(QStringLiteral("确认支付"))) {
+            payButton = button;
+        } else if (button->text() == QStringLiteral("去充值")) {
+            jumpRecharge = button;
+        }
+    }
+    QVERIFY(payButton != nullptr);
+    QVERIFY(!payButton->isEnabled());
+    QVERIFY(jumpRecharge != nullptr);
+    QVERIFY(jumpRecharge->isVisible());
+
+    emit settlement->rechargeRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(recharge));
+
+    // 充值成功（直接发公共信号，绕开 mock 时延）：应自动回结算页并解锁支付。
+    emit recharge->rechargeSucceeded(999900);
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+    QVERIFY(payButton->isEnabled());
+    QVERIFY(!jumpRecharge->isVisible());
+    for (auto* label : settlement->findChildren<QLabel*>()) {
+        if (label->text().startsWith(QStringLiteral("当前余额"))) {
+            QVERIFY(label->text().contains(QStringLiteral("9999")));
+            QVERIFY(!label->text().contains(QStringLiteral("123.45")));
+        }
+    }
+}
+
+void HomeShellTest::emptyOrderListNoticeFillsListArea()
+{
+    // 修复回归：订单为空时空态提示应铺满列表区（此前滚动区隐藏后无拉伸项，
+    // 提示缩在顶部一小条、下方大片空白）。
+    HomeShell shell(makeSampleUser());
+    shell.resize(420, 860);
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderService = shell.findChild<charging::client::OrderService*>();
+    auto* listStack = orderList->findChild<QStackedWidget*>(QStringLiteral("uiOrderListStack"));
+    auto* notice = orderList->findChild<charging::client::NoticePanel*>();
+    QVERIFY(orderService != nullptr);
+    QVERIFY(listStack != nullptr);
+    QVERIFY(notice != nullptr);
+
+    emit orderService->ordersLoaded({}, 0, false);
+    QCOMPARE(listStack->currentWidget(), static_cast<QWidget*>(notice));
+    QVERIFY(notice->height() >= listStack->height() - 10); // 铺满而非缩在顶部
 }
 
 QTEST_MAIN(HomeShellTest)

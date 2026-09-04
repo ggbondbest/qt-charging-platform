@@ -170,6 +170,18 @@ void MockRequestTransport::drainBalanceTo(qint64 cents)
     user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 }
 
+void MockRequestTransport::setUser(const charging::model::User& user)
+{
+    // Seed the real login account; demo orders/records stay (see header note).
+    user_.id = user.id;
+    user_.phone = user.phone;
+    user_.nickname = user.nickname;
+    user_.avatarKey = user.avatarKey;
+    user_.balanceCents = user.balanceCents;
+    user_.status = user.status;
+    user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
+}
+
 charging::model::Order* MockRequestTransport::findOrder(qint64 orderId)
 {
     for (charging::model::Order& order : orders_) {

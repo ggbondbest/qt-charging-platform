@@ -1,4 +1,5 @@
 add_library(charging_client_widgets STATIC
+    include/charging/client/widgets/action_bar.h
     include/charging/client/widgets/action_button.h
     include/charging/client/widgets/bottom_tab_bar.h
     include/charging/client/widgets/card.h
@@ -8,6 +9,7 @@ add_library(charging_client_widgets STATIC
     include/charging/client/widgets/status_tag.h
     include/charging/client/widgets/toast.h
     include/charging/client/widgets/top_nav_bar.h
+    src/action_bar.cpp
     src/action_button.cpp
     src/bottom_tab_bar.cpp
     src/card.cpp

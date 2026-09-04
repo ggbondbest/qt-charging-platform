@@ -35,14 +35,14 @@ void WalletPage::buildUi()
     auto* headerRow = new QHBoxLayout();
     auto* titleLabel = new QLabel(tr("钱包"), this);
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
-    auto* ordersButton = new ActionButton(ActionButton::Variant::Ghost, tr("我的订单 ›"), this);
-    connect(ordersButton, &ActionButton::clicked, this, &WalletPage::ordersRequested);
-    auto* profileButton = new ActionButton(ActionButton::Variant::Ghost, tr("个人中心 ›"), this);
-    connect(profileButton, &ActionButton::clicked, this, &WalletPage::profileRequested);
+    ordersButton_ = new ActionButton(ActionButton::Variant::Ghost, tr("我的订单 ›"), this);
+    connect(ordersButton_, &ActionButton::clicked, this, &WalletPage::ordersRequested);
+    profileButton_ = new ActionButton(ActionButton::Variant::Ghost, tr("个人中心 ›"), this);
+    connect(profileButton_, &ActionButton::clicked, this, &WalletPage::profileRequested);
     headerRow->addWidget(titleLabel);
     headerRow->addStretch();
-    headerRow->addWidget(ordersButton);
-    headerRow->addWidget(profileButton);
+    headerRow->addWidget(ordersButton_);
+    headerRow->addWidget(profileButton_);
     rootLayout->addLayout(headerRow);
 
     balanceCard_ = new Card(this);
@@ -62,7 +62,7 @@ void WalletPage::buildUi()
     balanceLayout->addWidget(balanceCaption);
     balanceLayout->addWidget(balanceValueLabel_);
 
-    rechargeButton_ = new ActionButton(ActionButton::Variant::Primary, tr("充 值"), balanceCard_);
+    rechargeButton_ = new ActionButton(ActionButton::Variant::Primary, tr("充值"), balanceCard_);
     rechargeButton_->setMinimumHeight(46);
     connect(rechargeButton_, &ActionButton::clicked, this, &WalletPage::rechargeRequested);
     balanceLayout->addWidget(rechargeButton_);
@@ -79,15 +79,18 @@ void WalletPage::buildUi()
     recordsTitle->setProperty("role", QStringLiteral("sectionTitle"));
     rootLayout->addWidget(recordsTitle);
 
+    // 流水合并为一张带边框的记录卡：行本身透明、行间细分隔线，
+    // 不再是"一行一卡"的碎卡墙。
     recordsScroll_ = new QScrollArea(this);
-    recordsScroll_->setObjectName(QStringLiteral("uiRecordsScroll"));
+    recordsScroll_->setObjectName(QStringLiteral("uiWalletRecords"));
     recordsScroll_->setWidgetResizable(true);
+    recordsScroll_->setFrameShape(QFrame::NoFrame);
     recordsScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     auto* recordsContainer = new QWidget(recordsScroll_);
     recordsListLayout_ = new QVBoxLayout(recordsContainer);
-    recordsListLayout_->setContentsMargins(0, 0, 0, 0);
-    recordsListLayout_->setSpacing(8);
+    recordsListLayout_->setContentsMargins(4, 2, 4, 2);
+    recordsListLayout_->setSpacing(0);
     recordsListLayout_->addStretch();
     recordsScroll_->setWidget(recordsContainer);
     rootLayout->addWidget(recordsScroll_, 1);
@@ -112,6 +115,15 @@ void WalletPage::buildUi()
 
     overlay_ = new LoadingOverlay(this);
     overlay_->setVisible(false);
+}
+
+void WalletPage::setEmbedded(bool embedded)
+{
+    // 壳层里底部 Tab / 个人中心已提供订单与资料入口；称呼行也与个人中心重复。
+    ordersButton_->setVisible(!embedded);
+    profileButton_->setVisible(!embedded);
+    nicknameLabel_->setVisible(!embedded);
+    phoneLabel_->setVisible(!embedded);
 }
 
 void WalletPage::refresh()
@@ -163,7 +175,14 @@ void WalletPage::onRecordsLoaded(const QVector<charging::model::RechargeRecord>&
     }
     for (const charging::model::RechargeRecord& record : records) {
         shownRecords_.append(record);
-        // Insert before the trailing stretch item.
+        // Insert before the trailing stretch item; hairline separator between
+        // rows (not before the first), rows themselves stay flat inside the card.
+        if (recordsListLayout_->count() > 1) {
+            auto* separator = new QFrame(recordsScroll_);
+            separator->setObjectName(QStringLiteral("uiRecordSeparator"));
+            separator->setFixedHeight(1);
+            recordsListLayout_->insertWidget(recordsListLayout_->count() - 1, separator);
+        }
         recordsListLayout_->insertWidget(recordsListLayout_->count() - 1,
                                          buildRecordRow(record));
     }
@@ -208,9 +227,9 @@ void WalletPage::onOperationFailed(const QString& type,
 
 QWidget* WalletPage::buildRecordRow(const charging::model::RechargeRecord& record)
 {
-    // Plain styled frame (not Card) so the horizontal row owns the only layout.
+    // Flat row inside the merged records card (no per-row border/radius).
     auto* row = new QFrame(this);
-    row->setObjectName(QStringLiteral("uiCard"));
+    row->setObjectName(QStringLiteral("uiRecordRow"));
     auto* rowLayout = new QHBoxLayout(row);
     rowLayout->setContentsMargins(16, 12, 16, 12);
     rowLayout->setSpacing(10);
