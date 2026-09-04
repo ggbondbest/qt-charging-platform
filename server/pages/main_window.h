@@ -26,7 +26,6 @@ protected:
 
 private slots:
     void handleLoginSubmitted(const QString& username, const QString& password);
-    void handleLogoutClicked();
 
 private:
     QWidget* createManagementPage();

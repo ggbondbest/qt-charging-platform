@@ -18,17 +18,49 @@
 #include <QPainterPath>
 #include <QPen>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 #include <QtMath>
 
+#include <limits>
+
 namespace charging::server {
 
 namespace {
 
 constexpr int kPageSize = 10;
+
+QString formatCents(qint64 cents)
+{
+    return QString::number(cents / 100) + QStringLiteral(".")
+        + QStringLiteral("%1").arg(cents % 100, 2, 10, QLatin1Char('0'));
+}
+
+bool parseBalanceCents(const QString& text, qint64* cents)
+{
+    static const QRegularExpression kAmountPattern(
+        QStringLiteral("^(0|[1-9][0-9]{0,12})(?:\\.([0-9]{1,2}))?$"));
+    const QRegularExpressionMatch match = kAmountPattern.match(text.trimmed());
+    if (!match.hasMatch()) {
+        return false;
+    }
+
+    bool isValid = false;
+    const qint64 wholeUnits = match.captured(1).toLongLong(&isValid);
+    if (!isValid || wholeUnits > std::numeric_limits<qint64>::max() / 100) {
+        return false;
+    }
+    const QString fraction = match.captured(2).leftJustified(2, QLatin1Char('0'));
+    const qint64 fractionalCents = fraction.isEmpty() ? 0 : fraction.toLongLong(&isValid);
+    if (!isValid) {
+        return false;
+    }
+    *cents = wholeUnits * 100 + fractionalCents;
+    return true;
+}
 
 QLabel* createTextLabel(const QString& text, const QString& style, QWidget* parent)
 {
@@ -316,18 +348,18 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
 void UserManagementPage::createMockRecords()
 {
     records_ = {
-        {tr("U10024568"), tr("星辰大海"), tr("138****5678"), 256.80, tr("正常"), tr("2025-06-01 10:24:36"), tr("2025-06-01 09:31:27"), 56, false, true},
-        {tr("U10024567"), tr("清风明月"), tr("139****2468"), 98.50, tr("正常"), tr("2025-05-31 22:17:09"), tr("2025-05-31 18:45:16"), 23, false, true},
-        {tr("U10024566"), tr("行云流水"), tr("137****1357"), 0.00, tr("正常"), tr("2025-05-31 21:03:55"), tr("—"), 0, false, true},
-        {tr("U10024565"), tr("小鹿乱撞"), tr("186****8888"), 532.60, tr("正常"), tr("2025-05-31 19:40:12"), tr("2025-05-31 17:22:43"), 78, true, true},
-        {tr("U10024564"), tr("一路向北"), tr("151****6666"), -35.20, tr("冻结"), tr("2025-05-31 18:22:01"), tr("2025-05-30 21:13:09"), 12, false, false},
-        {tr("U10024563"), tr("阳光正好"), tr("188****7777"), 128.00, tr("正常"), tr("2025-05-31 16:57:39"), tr("2025-06-01 08:12:55"), 34, false, false},
-        {tr("U10024562"), tr("未来可期"), tr("199****0000"), 10.00, tr("冻结"), tr("2025-05-31 15:36:48"), tr("2025-05-29 11:05:33"), 5, false, false},
-        {tr("U10024561"), tr("随遇而安"), tr("136****4321"), 286.40, tr("正常"), tr("2025-05-31 14:12:29"), tr("2025-06-01 07:44:12"), 67, false, false},
-        {tr("U10024560"), tr("晚风轻拂"), tr("187****5555"), 0.00, tr("正常"), tr("2025-05-31 12:05:17"), tr("—"), 0, false, false},
-        {tr("U10024559"), tr("追风少年"), tr("150****9999"), 76.30, tr("正常"), tr("2025-05-31 11:18:44"), tr("2025-05-31 10:02:21"), 9, false, false},
-        {tr("U10024558"), tr("春暖花开"), tr("133****2501"), 406.00, tr("正常"), tr("2025-05-30 16:03:22"), tr("2025-05-31 13:18:04"), 31, false, false},
-        {tr("U10024557"), tr("云卷云舒"), tr("177****1920"), 23.60, tr("正常"), tr("2025-05-30 12:36:50"), tr("2025-05-30 18:42:15"), 8, true, false},
+        {tr("U10024568"), tr("星辰大海"), tr("138****5678"), 25680, tr("正常"), tr("2025-06-01 10:24:36"), tr("2025-06-01 09:31:27"), 56, false, true},
+        {tr("U10024567"), tr("清风明月"), tr("139****2468"), 9850, tr("正常"), tr("2025-05-31 22:17:09"), tr("2025-05-31 18:45:16"), 23, false, true},
+        {tr("U10024566"), tr("行云流水"), tr("137****1357"), 0, tr("正常"), tr("2025-05-31 21:03:55"), tr("—"), 0, false, true},
+        {tr("U10024565"), tr("小鹿乱撞"), tr("186****8888"), 53260, tr("正常"), tr("2025-05-31 19:40:12"), tr("2025-05-31 17:22:43"), 78, true, true},
+        {tr("U10024564"), tr("一路向北"), tr("151****6666"), 3520, tr("冻结"), tr("2025-05-31 18:22:01"), tr("2025-05-30 21:13:09"), 12, false, false},
+        {tr("U10024563"), tr("阳光正好"), tr("188****7777"), 12800, tr("正常"), tr("2025-05-31 16:57:39"), tr("2025-06-01 08:12:55"), 34, false, false},
+        {tr("U10024562"), tr("未来可期"), tr("199****0000"), 1000, tr("冻结"), tr("2025-05-31 15:36:48"), tr("2025-05-29 11:05:33"), 5, false, false},
+        {tr("U10024561"), tr("随遇而安"), tr("136****4321"), 28640, tr("正常"), tr("2025-05-31 14:12:29"), tr("2025-06-01 07:44:12"), 67, false, false},
+        {tr("U10024560"), tr("晚风轻拂"), tr("187****5555"), 0, tr("正常"), tr("2025-05-31 12:05:17"), tr("—"), 0, false, false},
+        {tr("U10024559"), tr("追风少年"), tr("150****9999"), 7630, tr("正常"), tr("2025-05-31 11:18:44"), tr("2025-05-31 10:02:21"), 9, false, false},
+        {tr("U10024558"), tr("春暖花开"), tr("133****2501"), 40600, tr("正常"), tr("2025-05-30 16:03:22"), tr("2025-05-31 13:18:04"), 31, false, false},
+        {tr("U10024557"), tr("云卷云舒"), tr("177****1920"), 2360, tr("正常"), tr("2025-05-30 12:36:50"), tr("2025-05-30 18:42:15"), 8, true, false},
     };
 }
 
@@ -341,12 +373,17 @@ bool UserManagementPage::recordMatchesFilters(const UserRecord& record) const
         || registrationComboBox_->currentIndex() == 2 || record.isRecentRegistration;
     bool minimumOk = true;
     bool maximumOk = true;
-    const double minimumBalance = minimumBalanceLineEdit_->text().trimmed().isEmpty()
-        ? -1.0e12 : minimumBalanceLineEdit_->text().toDouble(&minimumOk);
-    const double maximumBalance = maximumBalanceLineEdit_->text().trimmed().isEmpty()
-        ? 1.0e12 : maximumBalanceLineEdit_->text().toDouble(&maximumOk);
-    return minimumOk && maximumOk && minimumBalance <= maximumBalance && matchesKeyword && matchesStatus
-        && matchesRegistration && record.balance >= minimumBalance && record.balance <= maximumBalance;
+    qint64 minimumBalanceCents = 0;
+    qint64 maximumBalanceCents = std::numeric_limits<qint64>::max();
+    if (!minimumBalanceLineEdit_->text().trimmed().isEmpty()) {
+        minimumOk = parseBalanceCents(minimumBalanceLineEdit_->text(), &minimumBalanceCents);
+    }
+    if (!maximumBalanceLineEdit_->text().trimmed().isEmpty()) {
+        maximumOk = parseBalanceCents(maximumBalanceLineEdit_->text(), &maximumBalanceCents);
+    }
+    return minimumOk && maximumOk && minimumBalanceCents <= maximumBalanceCents && matchesKeyword
+        && matchesStatus && matchesRegistration && record.balanceCents >= minimumBalanceCents
+        && record.balanceCents <= maximumBalanceCents;
 }
 
 void UserManagementPage::applyFilters()
@@ -355,10 +392,16 @@ void UserManagementPage::applyFilters()
     bool maximumOk = true;
     const QString minimumText = minimumBalanceLineEdit_->text().trimmed();
     const QString maximumText = maximumBalanceLineEdit_->text().trimmed();
-    const double minimumBalance = minimumText.isEmpty() ? -1.0e12 : minimumText.toDouble(&minimumOk);
-    const double maximumBalance = maximumText.isEmpty() ? 1.0e12 : maximumText.toDouble(&maximumOk);
-    if (!minimumOk || !maximumOk || minimumBalance > maximumBalance) {
-        setFeedback(tr("余额区间无效：请输入数字，且最小值不能大于最大值"), true);
+    qint64 minimumBalanceCents = 0;
+    qint64 maximumBalanceCents = std::numeric_limits<qint64>::max();
+    if (!minimumText.isEmpty()) {
+        minimumOk = parseBalanceCents(minimumText, &minimumBalanceCents);
+    }
+    if (!maximumText.isEmpty()) {
+        maximumOk = parseBalanceCents(maximumText, &maximumBalanceCents);
+    }
+    if (!minimumOk || !maximumOk || minimumBalanceCents > maximumBalanceCents) {
+        setFeedback(tr("余额区间无效：请输入非负金额，且最小值不能大于最大值"), true);
         return;
     }
     filteredRecordIndexes_.clear();
@@ -395,7 +438,7 @@ void UserManagementPage::rebuildTable()
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
         const UserRecord& record = records_.at(recordIndex);
         const QList<QString> values = {record.id, record.nickname, record.phone,
-                                       QString::number(record.balance, 'f', 2), record.registeredAt,
+                                       formatCents(record.balanceCents), record.registeredAt,
                                        record.lastChargeAt, QString::number(record.totalOrders), QString(), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
             if (column == 7 || column == 8 || column == 9) {
@@ -404,9 +447,6 @@ void UserManagementPage::rebuildTable()
             auto* item = new QTableWidgetItem(values.at(column));
             item->setData(Qt::UserRole, recordIndex);
             item->setTextAlignment(Qt::AlignCenter);
-            if (column == 3 && record.balance < 0) {
-                item->setForeground(QColor("#ee5757"));
-            }
             tableWidget_->setItem(row, column, item);
         }
         tableWidget_->setCellWidget(row, 7, createCompactStatusTag(record.status, tableWidget_));
@@ -475,7 +515,7 @@ void UserManagementPage::showUserDetails(int recordIndex)
     detailPhoneLabel_->setText(tr("手机号：%1").arg(record.phone));
     detailAccountLabel_->setText(
         tr("实名认证　已实名\n累计消费　¥ 2,586.80\n账户余额　¥ %1\n最近登录　2025-06-01 09:58:12\n常用电站　未来科技城充电站、滨江时代广场充电站")
-            .arg(QString::number(record.balance, 'f', 2)));
+            .arg(formatCents(record.balanceCents)));
     riskTagLabel_->setText(record.isRiskFocused ? tr("风险关注") : tr("信用良好"));
     riskTagLabel_->setStyleSheet(record.isRiskFocused
                                      ? QStringLiteral("background:#fff5e7; color:#ed9b22; border-radius:5px;"

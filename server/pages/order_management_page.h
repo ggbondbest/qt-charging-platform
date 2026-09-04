@@ -1,6 +1,9 @@
 #pragma once
 
+#include <charging/common/model/enums.h>
+
 #include <QString>
+#include <QtGlobal>
 #include <QVector>
 #include <QWidget>
 
@@ -34,13 +37,13 @@ private:
         QString station;
         QString charger;
         QString chargerType;
-        QString status;
+        charging::model::OrderStatus status = charging::model::OrderStatus::Reserved;
         QString startAt;
         QString duration;
-        double energyKwh = 0.0;
-        double chargeFee = 0.0;
-        double serviceFee = 0.0;
-        double discountFee = 0.0;
+        qint64 energyWh = 0;
+        qint64 chargeFeeCents = 0;
+        qint64 serviceFeeCents = 0;
+        qint64 discountFeeCents = 0;
         QString paymentMethod;
         QString paymentStatus;
     };

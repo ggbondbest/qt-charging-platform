@@ -21,16 +21,59 @@
 #include <QPair>
 #include <QPen>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 #include <QtMath>
+
+#include <cmath>
 
 namespace charging::server {
 
 namespace {
 
 constexpr int kPageSize = 8;
+
+QString formatPriceCents(qint64 priceCents)
+{
+    return QString::number(priceCents / 100) + QStringLiteral(".")
+        + QStringLiteral("%1").arg(priceCents % 100, 2, 10, QLatin1Char('0'));
+}
+
+bool parseCoordinate(const QString& text, double minimum, double maximum, double* coordinate)
+{
+    bool isValid = false;
+    const double value = text.trimmed().toDouble(&isValid);
+    if (!isValid || !std::isfinite(value) || value < minimum || value > maximum) {
+        return false;
+    }
+    *coordinate = value;
+    return true;
+}
+
+bool parsePriceCents(const QString& text, qint64* priceCents)
+{
+    static const QRegularExpression kPricePattern(
+        QStringLiteral("^(0|[1-9][0-9]{0,3})(?:\\.([0-9]{1,2}))?$"));
+    const QRegularExpressionMatch match = kPricePattern.match(text.trimmed());
+    if (!match.hasMatch()) {
+        return false;
+    }
+
+    bool isValid = false;
+    const qint64 wholeUnits = match.captured(1).toLongLong(&isValid);
+    if (!isValid) {
+        return false;
+    }
+    const QString fraction = match.captured(2).leftJustified(2, QLatin1Char('0'));
+    const qint64 fractionalCents = fraction.isEmpty() ? 0 : fraction.toLongLong(&isValid);
+    if (!isValid) {
+        return false;
+    }
+    *priceCents = wholeUnits * 100 + fractionalCents;
+    return true;
+}
 
 QLabel* createTextLabel(const QString& text, const QString& style, QWidget* parent)
 {
@@ -365,15 +408,15 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
 void StationManagementPage::createMockRecords()
 {
     records_ = {
-        {tr("STN000328"), tr("未来科技城充电站"), tr("杭州市"), tr("余杭区"), tr("文一西路969号未来科技城通勤园停车场B区"), tr("运营中"), 24, 18, 6, 68, 68, tr("张伟"), tr("138 6712 8888")},
-        {tr("STN000329"), tr("西溪湿地公园充电站"), tr("杭州市"), tr("西湖区"), tr("天目山路518号西溪湿地北门"), tr("运营中"), 16, 10, 6, 52, 62, tr("李娜"), tr("139 5800 2146")},
-        {tr("STN000330"), tr("滨江星光大道充电站"), tr("杭州市"), tr("滨江区"), tr("江南大道228号星光大道地下车库"), tr("运营中"), 20, 14, 6, 74, 71, tr("王凯"), tr("136 7574 6012")},
-        {tr("STN000331"), tr("萧山机场P4充电站"), tr("杭州市"), tr("萧山区"), tr("机场高速萧山机场P4停车场"), tr("运营中"), 30, 24, 6, 96, 75, tr("陈力"), tr("137 3815 3377")},
-        {tr("STN000332"), tr("钱江世纪城充电站"), tr("杭州市"), tr("滨江区"), tr("民和路与奔竞大道交叉口"), tr("运营中"), 18, 12, 6, 60, 65, tr("赵敏"), tr("135 8821 9104")},
-        {tr("STN000333"), tr("城西银泰充电站"), tr("杭州市"), tr("拱墅区"), tr("丰潭路380号城西银泰城B2层"), tr("空闲"), 12, 8, 4, 28, 53, tr("周辰"), tr("186 6804 2241")},
-        {tr("STN000334"), tr("下沙大学城充电站"), tr("杭州市"), tr("余杭区"), tr("学源街998号下沙大学城东区"), tr("运营中"), 22, 14, 8, 46, 49, tr("朱琳"), tr("158 5814 7732")},
-        {tr("STN000335"), tr("临平地铁站充电站"), tr("杭州市"), tr("余杭区"), tr("临平地铁站南广场地下停车场"), tr("空闲"), 16, 8, 8, 32, 48, tr("孙洋"), tr("150 6810 1835")},
-        {tr("STN000336"), tr("宁波东部新城充电站"), tr("宁波市"), tr("鄞州区"), tr("宁穿路1888号东部新城停车楼"), tr("已停用"), 14, 10, 4, 0, 0, tr("吴峰"), tr("188 5726 1300")},
+        {tr("STN000328"), tr("未来科技城充电站"), tr("杭州市"), tr("余杭区"), tr("文一西路969号未来科技城通勤园停车场B区"), 30.2741, 120.0724, 128, tr("运营中"), 24, 18, 6, 68, 68, tr("张伟"), tr("138 6712 8888")},
+        {tr("STN000329"), tr("西溪湿地公园充电站"), tr("杭州市"), tr("西湖区"), tr("天目山路518号西溪湿地北门"), 30.2675, 120.0819, 135, tr("运营中"), 16, 10, 6, 52, 62, tr("李娜"), tr("139 5800 2146")},
+        {tr("STN000330"), tr("滨江星光大道充电站"), tr("杭州市"), tr("滨江区"), tr("江南大道228号星光大道地下车库"), 30.2086, 120.2103, 142, tr("运营中"), 20, 14, 6, 74, 71, tr("王凯"), tr("136 7574 6012")},
+        {tr("STN000331"), tr("萧山机场P4充电站"), tr("杭州市"), tr("萧山区"), tr("机场高速萧山机场P4停车场"), 30.2296, 120.4341, 145, tr("运营中"), 30, 24, 6, 96, 75, tr("陈力"), tr("137 3815 3377")},
+        {tr("STN000332"), tr("钱江世纪城充电站"), tr("杭州市"), tr("滨江区"), tr("民和路与奔竞大道交叉口"), 30.2324, 120.2189, 138, tr("运营中"), 18, 12, 6, 60, 65, tr("赵敏"), tr("135 8821 9104")},
+        {tr("STN000333"), tr("城西银泰充电站"), tr("杭州市"), tr("拱墅区"), tr("丰潭路380号城西银泰城B2层"), 30.2897, 120.1116, 132, tr("空闲"), 12, 8, 4, 28, 53, tr("周辰"), tr("186 6804 2241")},
+        {tr("STN000334"), tr("下沙大学城充电站"), tr("杭州市"), tr("余杭区"), tr("学源街998号下沙大学城东区"), 30.3217, 120.3529, 125, tr("运营中"), 22, 14, 8, 46, 49, tr("朱琳"), tr("158 5814 7732")},
+        {tr("STN000335"), tr("临平地铁站充电站"), tr("杭州市"), tr("余杭区"), tr("临平地铁站南广场地下停车场"), 30.4218, 120.3006, 130, tr("空闲"), 16, 8, 8, 32, 48, tr("孙洋"), tr("150 6810 1835")},
+        {tr("STN000336"), tr("宁波东部新城充电站"), tr("宁波市"), tr("鄞州区"), tr("宁穿路1888号东部新城停车楼"), 29.8637, 121.6198, 140, tr("已停用"), 14, 10, 4, 0, 0, tr("吴峰"), tr("188 5726 1300")},
     };
 }
 
@@ -503,7 +546,11 @@ void StationManagementPage::showStationDetails(int recordIndex)
     detailIdLabel_->setText(tr("电站ID：%1").arg(record.code));
     detailStatusLabel_->setText(record.status);
     detailStatusLabel_->setStyleSheet(stationStatusStyle(record.status));
-    detailAddressLabel_->setText(record.city + record.district + tr("\n") + record.address);
+    detailAddressLabel_->setText(
+        record.city + record.district + tr("\n") + record.address
+        + tr("\n坐标　%1, %2\n电价　¥ %3 / kWh")
+              .arg(QString::number(record.latitude, 'f', 6),
+                   QString::number(record.longitude, 'f', 6), formatPriceCents(record.priceCentsPerKwh)));
     detailContactLabel_->setText(tr("营业时间　00:00 - 24:00\n负责人　　%1\n联系电话　%2")
                                      .arg(record.contactName, record.contactPhone));
     detailConfigurationLabel_->setText(tr("%1 台　　　 %2 台　　　 %3 台\n电桩总数　　 快充桩　　　慢充桩")
@@ -572,6 +619,9 @@ void StationManagementPage::showStationDialog(int recordIndex)
     configureManagementComboBox(cityComboBox);
     auto* districtLineEdit = new QLineEdit(&dialog);
     auto* addressLineEdit = new QLineEdit(&dialog);
+    auto* latitudeLineEdit = new QLineEdit(&dialog);
+    auto* longitudeLineEdit = new QLineEdit(&dialog);
+    auto* priceLineEdit = new QLineEdit(&dialog);
     auto* contactLineEdit = new QLineEdit(&dialog);
     auto* phoneLineEdit = new QLineEdit(&dialog);
     if (isEditing) {
@@ -582,17 +632,26 @@ void StationManagementPage::showStationDialog(int recordIndex)
         cityComboBox->setCurrentText(record.city);
         districtLineEdit->setText(record.district);
         addressLineEdit->setText(record.address);
+        latitudeLineEdit->setText(QString::number(record.latitude, 'f', 6));
+        longitudeLineEdit->setText(QString::number(record.longitude, 'f', 6));
+        priceLineEdit->setText(formatPriceCents(record.priceCentsPerKwh));
         contactLineEdit->setText(record.contactName);
         phoneLineEdit->setText(record.contactPhone);
     } else {
         codeLineEdit->setPlaceholderText(tr("例如 STN000337"));
         nameLineEdit->setPlaceholderText(tr("例如 西湖文体中心充电站"));
+        latitudeLineEdit->setPlaceholderText(tr("例如 30.274100"));
+        longitudeLineEdit->setPlaceholderText(tr("例如 120.155100"));
+        priceLineEdit->setPlaceholderText(tr("例如 1.28"));
     }
     formLayout->addRow(tr("电站编号 *"), codeLineEdit);
     formLayout->addRow(tr("电站名称 *"), nameLineEdit);
     formLayout->addRow(tr("城市 *"), cityComboBox);
     formLayout->addRow(tr("区域 *"), districtLineEdit);
     formLayout->addRow(tr("详细地址 *"), addressLineEdit);
+    formLayout->addRow(tr("纬度 *（-90 ～ 90）"), latitudeLineEdit);
+    formLayout->addRow(tr("经度 *（-180 ～ 180）"), longitudeLineEdit);
+    formLayout->addRow(tr("电价 *（元 / kWh）"), priceLineEdit);
     formLayout->addRow(tr("负责人 *"), contactLineEdit);
     formLayout->addRow(tr("联系电话 *"), phoneLineEdit);
     layout->addLayout(formLayout);
@@ -602,12 +661,23 @@ void StationManagementPage::showStationDialog(int recordIndex)
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, codeLineEdit, nameLineEdit, districtLineEdit,
-                                                              addressLineEdit, contactLineEdit, phoneLineEdit]() {
+    connect(buttons, &QDialogButtonBox::accepted, &dialog,
+            [&dialog, codeLineEdit, nameLineEdit, districtLineEdit, addressLineEdit,
+             latitudeLineEdit, longitudeLineEdit, priceLineEdit, contactLineEdit, phoneLineEdit]() {
         if (codeLineEdit->text().trimmed().isEmpty() || nameLineEdit->text().trimmed().isEmpty()
             || districtLineEdit->text().trimmed().isEmpty() || addressLineEdit->text().trimmed().isEmpty()
             || contactLineEdit->text().trimmed().isEmpty() || phoneLineEdit->text().trimmed().isEmpty()) {
             QMessageBox::warning(&dialog, QObject::tr("请补全信息"), QObject::tr("所有带 * 的字段均为必填项。"));
+            return;
+        }
+        double latitude = 0.0;
+        double longitude = 0.0;
+        qint64 priceCents = 0;
+        if (!parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude)
+            || !parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude)
+            || !parsePriceCents(priceLineEdit->text(), &priceCents)) {
+            QMessageBox::warning(&dialog, QObject::tr("输入格式不正确"),
+                                 QObject::tr("请填写有效的经纬度，以及最多两位小数的非负电价。"));
             return;
         }
         dialog.accept();
@@ -615,12 +685,21 @@ void StationManagementPage::showStationDialog(int recordIndex)
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
+    double latitude = 0.0;
+    double longitude = 0.0;
+    qint64 priceCents = 0;
+    Q_ASSERT(parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude));
+    Q_ASSERT(parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude));
+    Q_ASSERT(parsePriceCents(priceLineEdit->text(), &priceCents));
     if (isEditing) {
         StationRecord& record = records_[recordIndex];
         record.name = nameLineEdit->text().trimmed();
         record.city = cityComboBox->currentText();
         record.district = districtLineEdit->text().trimmed();
         record.address = addressLineEdit->text().trimmed();
+        record.latitude = latitude;
+        record.longitude = longitude;
+        record.priceCentsPerKwh = priceCents;
         record.contactName = contactLineEdit->text().trimmed();
         record.contactPhone = phoneLineEdit->text().trimmed();
         selectedRecordIndex_ = recordIndex;
@@ -637,8 +716,9 @@ void StationManagementPage::showStationDialog(int recordIndex)
         }
     }
     records_.append({code, nameLineEdit->text().trimmed(), cityComboBox->currentText(),
-                     districtLineEdit->text().trimmed(), addressLineEdit->text().trimmed(), tr("运营中"),
-                     12, 8, 4, 0, 0, contactLineEdit->text().trimmed(), phoneLineEdit->text().trimmed()});
+                     districtLineEdit->text().trimmed(), addressLineEdit->text().trimmed(), latitude,
+                     longitude, priceCents, tr("运营中"), 12, 8, 4, 0, 0,
+                     contactLineEdit->text().trimmed(), phoneLineEdit->text().trimmed()});
     selectedRecordIndex_ = records_.size() - 1;
     applyFilters();
     showStationDetails(selectedRecordIndex_);

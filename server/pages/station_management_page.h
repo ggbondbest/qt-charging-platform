@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QtGlobal>
 #include <QVector>
 #include <QWidget>
 
@@ -35,6 +36,9 @@ private:
         QString city;
         QString district;
         QString address;
+        double latitude = 0.0;
+        double longitude = 0.0;
+        qint64 priceCentsPerKwh = 0;
         QString status;
         int chargerCount = 0;
         int fastChargerCount = 0;

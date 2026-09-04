@@ -28,6 +28,18 @@ namespace {
 
 constexpr int kPageSize = 10;
 
+QString formatCents(qint64 cents)
+{
+    return QString::number(cents / 100) + QStringLiteral(".")
+        + QStringLiteral("%1").arg(cents % 100, 2, 10, QLatin1Char('0'));
+}
+
+QString formatKwh(qint64 energyWh)
+{
+    return QString::number(energyWh / 1000) + QStringLiteral(".")
+        + QStringLiteral("%1").arg((energyWh % 1000) / 10, 2, 10, QLatin1Char('0'));
+}
+
 QLabel* createTextLabel(const QString& text, const QString& style, QWidget* parent)
 {
     auto* label = new QLabel(text, parent);
@@ -35,40 +47,59 @@ QLabel* createTextLabel(const QString& text, const QString& style, QWidget* pare
     return label;
 }
 
-QString orderStatusStyle(const QString& status)
+QString orderStatusText(charging::model::OrderStatus status)
 {
-    if (status == QObject::tr("进行中")) {
+    using charging::model::OrderStatus;
+    switch (status) {
+    case OrderStatus::Charging:
+        return QObject::tr("充电中");
+    case OrderStatus::WaitingPayment:
+        return QObject::tr("待支付");
+    case OrderStatus::Completed:
+        return QObject::tr("已完成");
+    case OrderStatus::Cancelled:
+        return QObject::tr("已取消");
+    case OrderStatus::Reserved:
+        return QObject::tr("已预约");
+    }
+    return QString();
+}
+
+QString orderStatusStyle(charging::model::OrderStatus status)
+{
+    using charging::model::OrderStatus;
+    if (status == OrderStatus::Charging) {
         return QStringLiteral("background:#fff3df; color:#f08a1c; border-radius:6px; padding:0 7px;"
                               " font-size:12px; font-weight:600;");
     }
-    if (status == QObject::tr("已完成")) {
+    if (status == OrderStatus::Completed) {
         return QStringLiteral("background:#e8f8f1; color:#20ad86; border-radius:6px; padding:0 7px;"
                               " font-size:12px; font-weight:600;");
     }
-    if (status == QObject::tr("已支付")) {
+    if (status == OrderStatus::WaitingPayment) {
         return QStringLiteral("background:#eaf2ff; color:#337df1; border-radius:6px; padding:0 7px;"
                               " font-size:12px; font-weight:600;");
     }
-    if (status == QObject::tr("异常")) {
-        return QStringLiteral("background:#fff0f0; color:#ee5757; border-radius:6px; padding:0 7px;"
+    if (status == OrderStatus::Cancelled) {
+        return QStringLiteral("background:#f1f4f8; color:#708096; border-radius:6px; padding:0 7px;"
                               " font-size:12px; font-weight:600;");
     }
-    return QStringLiteral("background:#f1f4f8; color:#708096; border-radius:6px; padding:0 7px;"
+    return QStringLiteral("background:#fff0f0; color:#ee5757; border-radius:6px; padding:0 7px;"
                           " font-size:12px; font-weight:600;");
 }
 
-QLabel* createStatusTag(const QString& status, QWidget* parent)
+QLabel* createStatusTag(charging::model::OrderStatus status, QWidget* parent)
 {
-    auto* label = new QLabel(status, parent);
+    auto* label = new QLabel(orderStatusText(status), parent);
     label->setAlignment(Qt::AlignCenter);
     label->setStyleSheet(orderStatusStyle(status));
     return label;
 }
 
-QWidget* createCompactStatusTag(const QString& status, QWidget* parent)
+QWidget* createCompactStatusTag(charging::model::OrderStatus status, QWidget* parent)
 {
     auto* label = createStatusTag(status, nullptr);
-    label->setFixedSize(status.size() >= 3 ? 54 : 46, 26);
+    label->setFixedSize(label->text().size() >= 3 ? 54 : 46, 26);
     return createManagementTableCell(label, parent);
 }
 
@@ -181,9 +212,18 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     auto* secondLine = new QHBoxLayout();
     secondLine->setSpacing(10);
     statusComboBox_ = new QComboBox(toolbar);
-    statusComboBox_->addItems({tr("全部状态"), tr("进行中"), tr("已完成"), tr("已支付"), tr("异常"), tr("已退款")});
+    statusComboBox_->addItem(tr("全部状态"));
+    statusComboBox_->addItem(
+        tr("充电中"), static_cast<int>(charging::model::OrderStatus::Charging));
+    statusComboBox_->addItem(
+        tr("待支付"), static_cast<int>(charging::model::OrderStatus::WaitingPayment));
+    statusComboBox_->addItem(
+        tr("已完成"), static_cast<int>(charging::model::OrderStatus::Completed));
+    statusComboBox_->addItem(
+        tr("已取消"), static_cast<int>(charging::model::OrderStatus::Cancelled));
     dateRangeComboBox_ = new QComboBox(toolbar);
-    dateRangeComboBox_->addItems({tr("全部时间"), tr("今日"), tr("近 7 日")});
+    dateRangeComboBox_->addItems(
+        {tr("全部时间"), tr("演示日（6 月 1 日）"), tr("演示期（近 7 日）")});
     for (auto* comboBox : {statusComboBox_, dateRangeComboBox_}) {
         comboBox->setMinimumWidth(126);
         configureManagementComboBox(comboBox);
@@ -262,7 +302,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* titleRow = new QHBoxLayout();
     detailOrderNumberLabel_ = createTextLabel(QString(), QStringLiteral("color:#273751; font-size:14px; font-weight:700;"), detailCard);
-    detailStatusLabel_ = createStatusTag(tr("进行中"), detailCard);
+    detailStatusLabel_ = createStatusTag(charging::model::OrderStatus::Charging, detailCard);
     titleRow->addWidget(detailOrderNumberLabel_);
     titleRow->addStretch();
     titleRow->addWidget(detailStatusLabel_);
@@ -337,18 +377,18 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
 void OrderManagementPage::createMockRecords()
 {
     records_ = {
-        {tr("CP202506010001"), tr("张先生"), tr("138****5678"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), tr("进行中"), tr("2025-06-01 10:28:45"), tr("36分22秒"), 24.16, 34.62, 6.92, 0.00, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010002"), tr("李女士"), tr("159****8899"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), tr("已完成"), tr("2025-06-01 09:56:13"), tr("1时48分"), 38.24, 54.78, 10.96, 0.00, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010003"), tr("王先生"), tr("137****1122"), tr("城西西溪充电站"), tr("CP10010205"), tr("交流桩"), tr("已支付"), tr("2025-06-01 09:31:17"), tr("56分05秒"), 23.58, 31.86, 6.37, 0.00, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010004"), tr("陈女士"), tr("186****3344"), tr("奥体中心充电站"), tr("CP10010218"), tr("直流桩"), tr("异常"), tr("2025-06-01 08:47:25"), tr("28分47秒"), 16.72, 22.57, 4.51, 0.00, tr("—"), tr("支付失败")},
-        {tr("CP202506010005"), tr("刘先生"), tr("152****7788"), tr("萧山机场充电站"), tr("CP10010267"), tr("直流桩"), tr("已完成"), tr("2025-06-01 07:55:41"), tr("32分06秒"), 18.34, 24.74, 4.95, 0.00, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010006"), tr("赵先生"), tr("139****9900"), tr("西溪湿地充电站"), tr("CP10010345"), tr("交流桩"), tr("已完成"), tr("2025-06-01 07:12:30"), tr("1时38分"), 32.61, 44.02, 8.80, 0.00, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010007"), tr("吴女士"), tr("158****2211"), tr("社区便民充电站"), tr("CP10010378"), tr("交流桩"), tr("已退款"), tr("2025-06-01 06:41:18"), tr("24分36秒"), 12.48, 16.85, 3.37, 20.22, tr("支付宝"), tr("已退款")},
-        {tr("CP202506010008"), tr("孙先生"), tr("187****4455"), tr("下沙大学城充电站"), tr("CP10010402"), tr("交流桩"), tr("已支付"), tr("2025-06-01 06:15:56"), tr("45分12秒"), 20.13, 27.18, 5.44, 0.00, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010009"), tr("周女士"), tr("150****6677"), tr("临平新城充电站"), tr("CP10010495"), tr("直流桩"), tr("已完成"), tr("2025-06-01 05:30:22"), tr("1时03分"), 28.33, 38.25, 7.65, 0.00, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010010"), tr("黄先生"), tr("188****5566"), tr("富阳商旅充电站"), tr("CP10010533"), tr("交流桩"), tr("异常"), tr("2025-06-01 05:05:11"), tr("24分18秒"), 10.57, 14.28, 2.85, 0.00, tr("—"), tr("待支付")},
-        {tr("CP202505310011"), tr("杨女士"), tr("136****3456"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), tr("已完成"), tr("2025-05-31 23:42:11"), tr("54分36秒"), 26.80, 38.16, 7.63, 0.00, tr("微信支付"), tr("已支付")},
-        {tr("CP202505310012"), tr("何先生"), tr("131****8024"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), tr("已支付"), tr("2025-05-31 22:17:40"), tr("48分10秒"), 21.44, 30.02, 6.00, 0.00, tr("支付宝"), tr("已支付")},
+        {tr("CP202506010001"), tr("张先生"), tr("138****5678"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), charging::model::OrderStatus::Charging, tr("2025-06-01 10:28:45"), tr("36分22秒"), 24160, 3462, 692, 0, tr("微信支付"), tr("待支付")},
+        {tr("CP202506010002"), tr("李女士"), tr("159****8899"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 09:56:13"), tr("1时48分"), 38240, 5478, 1096, 0, tr("支付宝"), tr("已支付")},
+        {tr("CP202506010003"), tr("王先生"), tr("137****1122"), tr("城西西溪充电站"), tr("CP10010205"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 09:31:17"), tr("56分05秒"), 23580, 3186, 637, 0, tr("微信支付"), tr("已支付")},
+        {tr("CP202506010004"), tr("陈女士"), tr("186****3344"), tr("奥体中心充电站"), tr("CP10010218"), tr("直流桩"), charging::model::OrderStatus::WaitingPayment, tr("2025-06-01 08:47:25"), tr("28分47秒"), 16720, 2257, 451, 0, tr("—"), tr("支付失败")},
+        {tr("CP202506010005"), tr("刘先生"), tr("152****7788"), tr("萧山机场充电站"), tr("CP10010267"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 07:55:41"), tr("32分06秒"), 18340, 2474, 495, 0, tr("支付宝"), tr("已支付")},
+        {tr("CP202506010006"), tr("赵先生"), tr("139****9900"), tr("西溪湿地充电站"), tr("CP10010345"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 07:12:30"), tr("1时38分"), 32610, 4402, 880, 0, tr("微信支付"), tr("已支付")},
+        {tr("CP202506010007"), tr("吴女士"), tr("158****2211"), tr("社区便民充电站"), tr("CP10010378"), tr("交流桩"), charging::model::OrderStatus::Cancelled, tr("2025-06-01 06:41:18"), tr("24分36秒"), 12480, 1685, 337, 2022, tr("支付宝"), tr("已取消")},
+        {tr("CP202506010008"), tr("孙先生"), tr("187****4455"), tr("下沙大学城充电站"), tr("CP10010402"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 06:15:56"), tr("45分12秒"), 20130, 2718, 544, 0, tr("微信支付"), tr("已支付")},
+        {tr("CP202506010009"), tr("周女士"), tr("150****6677"), tr("临平新城充电站"), tr("CP10010495"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 05:30:22"), tr("1时03分"), 28330, 3825, 765, 0, tr("支付宝"), tr("已支付")},
+        {tr("CP202506010010"), tr("黄先生"), tr("188****5566"), tr("富阳商旅充电站"), tr("CP10010533"), tr("交流桩"), charging::model::OrderStatus::WaitingPayment, tr("2025-06-01 05:05:11"), tr("24分18秒"), 10570, 1428, 285, 0, tr("—"), tr("待支付")},
+        {tr("CP202505310011"), tr("杨女士"), tr("136****3456"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-05-31 23:42:11"), tr("54分36秒"), 26800, 3816, 763, 0, tr("微信支付"), tr("已支付")},
+        {tr("CP202505310012"), tr("何先生"), tr("131****8024"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-05-31 22:17:40"), tr("48分10秒"), 21440, 3002, 600, 0, tr("支付宝"), tr("已支付")},
     };
 }
 
@@ -362,7 +402,8 @@ bool OrderManagementPage::recordMatchesFilters(const OrderRecord& record) const
     const bool matchesPhone = contains(record.phone, phoneLineEdit_->text().trimmed());
     const bool matchesStation = stationComboBox_->currentIndex() == 0 || record.station == stationComboBox_->currentText();
     const bool matchesCharger = chargerComboBox_->currentIndex() == 0 || record.charger == chargerComboBox_->currentText();
-    const bool matchesStatus = statusComboBox_->currentIndex() == 0 || record.status == statusComboBox_->currentText();
+    const bool matchesStatus = statusComboBox_->currentIndex() == 0
+        || static_cast<int>(record.status) == statusComboBox_->currentData().toInt();
     const bool matchesDate = dateRangeComboBox_->currentIndex() == 0 || dateRangeComboBox_->currentIndex() == 2
         || record.startAt.startsWith(QStringLiteral("2025-06-01"));
     return matchesOrder && matchesUser && matchesPhone && matchesStation && matchesCharger && matchesStatus && matchesDate;
@@ -405,13 +446,14 @@ void OrderManagementPage::rebuildTable()
     for (int row = 0; row < end - begin; ++row) {
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
         const OrderRecord& record = records_.at(recordIndex);
-        const double total = record.chargeFee + record.serviceFee - record.discountFee;
+        const qint64 totalCents = record.chargeFeeCents + record.serviceFeeCents
+            - record.discountFeeCents;
         const QList<QString> values = {record.orderNo, record.userName + tr("\n") + record.phone, record.station,
                                        record.charger + tr("\n") + record.chargerType, record.startAt,
-                                       record.duration, QString::number(record.energyKwh, 'f', 2),
-                                       tr("¥ %1").arg(QString::number(record.chargeFee, 'f', 2)),
-                                       tr("¥ %1").arg(QString::number(record.serviceFee, 'f', 2)),
-                                       tr("¥ %1").arg(QString::number(total, 'f', 2)), QString(), QString()};
+                                       record.duration, formatKwh(record.energyWh),
+                                       tr("¥ %1").arg(formatCents(record.chargeFeeCents)),
+                                       tr("¥ %1").arg(formatCents(record.serviceFeeCents)),
+                                       tr("¥ %1").arg(formatCents(totalCents)), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
             if (column == 10 || column == 11) {
                 continue;
@@ -466,19 +508,20 @@ void OrderManagementPage::showOrderDetails(int recordIndex)
     }
     selectedRecordIndex_ = recordIndex;
     const OrderRecord& record = records_.at(recordIndex);
-    const double total = record.chargeFee + record.serviceFee - record.discountFee;
+    const qint64 totalCents = record.chargeFeeCents + record.serviceFeeCents
+        - record.discountFeeCents;
     detailOrderNumberLabel_->setText(record.orderNo);
-    detailStatusLabel_->setText(record.status);
+    detailStatusLabel_->setText(orderStatusText(record.status));
     detailStatusLabel_->setStyleSheet(orderStatusStyle(record.status));
     detailCreatedAtLabel_->setText(tr("创建时间：%1").arg(record.startAt));
     chargingInfoLabel_->setText(
         tr("电站名称　%1\n电桩编号　%2（%3）\n启动时间　%4\n累计结束　%5\n已充时长　%6\n已充电量　%7 kWh\nSOC变化　　32% → 78%")
             .arg(record.station, record.charger, record.chargerType, record.startAt,
-                 record.startAt, record.duration, QString::number(record.energyKwh, 'f', 2)));
+                 record.startAt, record.duration, formatKwh(record.energyWh)));
     feeInfoLabel_->setText(
         tr("充电费　　　¥ %1\n服务费　　　¥ %2\n优惠金额　　¥ %3\n────────────\n实付金额　　¥ %4")
-            .arg(QString::number(record.chargeFee, 'f', 2), QString::number(record.serviceFee, 'f', 2),
-                 QString::number(record.discountFee, 'f', 2), QString::number(total, 'f', 2)));
+            .arg(formatCents(record.chargeFeeCents), formatCents(record.serviceFeeCents),
+                 formatCents(record.discountFeeCents), formatCents(totalCents)));
     paymentInfoLabel_->setText(tr("支付方式　%1\n支付状态　%2\n交易单号　4200002825202506011289")
                                      .arg(record.paymentMethod, record.paymentStatus));
     refreshButton_->setEnabled(true);

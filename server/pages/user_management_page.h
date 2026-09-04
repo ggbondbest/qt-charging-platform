@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QtGlobal>
 #include <QVector>
 #include <QWidget>
 
@@ -32,7 +33,7 @@ private:
         QString id;
         QString nickname;
         QString phone;
-        double balance = 0.0;
+        qint64 balanceCents = 0;
         QString status;
         QString registeredAt;
         QString lastChargeAt;

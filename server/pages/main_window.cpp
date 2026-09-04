@@ -14,14 +14,12 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QPainter>
 #include <QPalette>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
-#include <QStatusBar>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -106,48 +104,6 @@ private:
     int iconType_ = 0;
 };
 
-QPushButton* createFooterButton(const QString& text, QWidget* parent)
-{
-    auto* button = new QPushButton(text, parent);
-    button->setObjectName(QStringLiteral("footerButton"));
-    button->setMinimumHeight(48);
-    button->setCursor(Qt::PointingHandCursor);
-    return button;
-}
-
-class NotificationButton final : public QPushButton
-{
-public:
-    explicit NotificationButton(QWidget* parent) : QPushButton(parent)
-    {
-        setFixedSize(38, 38);
-        setCursor(Qt::PointingHandCursor);
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(QColor("#1d2c46"), 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(Qt::NoBrush);
-        const QRectF bell(10, 9, 15, 16);
-        painter.drawArc(bell, 25 * 16, 130 * 16);
-        painter.drawLine(bell.left() + 1, bell.top() + 9, bell.left() + 1, bell.bottom() - 2);
-        painter.drawLine(bell.right() - 1, bell.top() + 9, bell.right() - 1, bell.bottom() - 2);
-        painter.drawLine(bell.left() - 1, bell.bottom() - 2, bell.right() + 1, bell.bottom() - 2);
-        painter.setBrush(QColor("#ff4e4e"));
-        painter.setPen(Qt::NoPen);
-        painter.drawEllipse(QPointF(27, 8), 6, 6);
-        painter.setPen(Qt::white);
-        QFont font = painter.font();
-        font.setPointSize(7);
-        font.setBold(true);
-        painter.setFont(font);
-        painter.drawText(QRectF(21, 1, 12, 13), Qt::AlignCenter, QStringLiteral("3"));
-    }
-};
-
 // Qt's scroll optimization can leave stale backing-store pixels on VMware's
 // virtual display driver.  Pages use this container to repaint the full
 // viewport after a scroll event instead of reusing a partially scrolled frame.
@@ -227,8 +183,6 @@ MainWindow::MainWindow(ChargingServer* server, QWidget* parent)
     connect(loginPage_, &AdminLoginPage::loginSubmitted, this, &MainWindow::handleLoginSubmitted);
     connect(server_, &ChargingServer::clientCountChanged, this, &MainWindow::updateClientCount);
     dashboardPage_->setClientCount(server_->clientCount());
-    statusBar()->hide();
-
     showLoginPage();
 }
 
@@ -240,10 +194,6 @@ QWidget* MainWindow::createManagementPage()
         "QWidget#managementPage, QWidget#contentWidget { background: #ffffff; color: #1d2c46;"
         " font-size: 14px; }"
         "QFrame#sidebar { background: #ffffff; border-right: 1px solid #e7edf5; }"
-        "QPushButton#footerButton { background: transparent; border: none; border-radius: 9px;"
-        " color: #34435b; padding: 0 24px; text-align: left; font-size: 15px;"
-        " font-weight: 600; }"
-        "QPushButton#footerButton:hover { background: #f6f8fc; }"
         "QFrame#contentCard, QFrame#summaryCard { background: #ffffff; border: 1px solid #edf2f7; border-radius: 14px; }"
         "QLineEdit, QComboBox { background: white; border: 1px solid #dfe6f0; border-radius: 9px;"
         " min-height: 40px; padding: 0 12px; font-size: 14px; }"
@@ -310,16 +260,6 @@ QWidget* MainWindow::createManagementPage()
     }
     sidebarLayout->addStretch();
 
-    auto* footerSeparator = new QFrame(sidebar_);
-    footerSeparator->setFrameShape(QFrame::HLine);
-    footerSeparator->setStyleSheet(QStringLiteral("color: #eef2f7;"));
-    sidebarLayout->addWidget(footerSeparator);
-    auto* announcementButton = createFooterButton(tr("系统公告  •"), sidebar_);
-    announcementButton->setAccessibleName(tr("系统公告，有未读消息"));
-    sidebarLayout->addWidget(announcementButton);
-    auto* settingsButton = createFooterButton(tr("设置"), sidebar_);
-    sidebarLayout->addWidget(settingsButton);
-
     auto* contentWidget = new QWidget(managementPage);
     contentWidget->setObjectName(QStringLiteral("contentWidget"));
     auto* contentLayout = new QVBoxLayout(contentWidget);
@@ -340,14 +280,6 @@ QWidget* MainWindow::createManagementPage()
     pageSubtitleLabel_->setStyleSheet(QStringLiteral("color: #77849a; font-size: 13px;"));
     titleLayout->addWidget(pageTitleLabel_);
     titleLayout->addWidget(pageSubtitleLabel_);
-    auto* searchLineEdit = new QLineEdit(topBar);
-    searchLineEdit->setObjectName(QStringLiteral("globalSearchLineEdit"));
-    searchLineEdit->setFixedWidth(272);
-    searchLineEdit->setPlaceholderText(tr("⌕  搜索电站 / 电桩 / 订单 / 用户"));
-    searchLineEdit->setAccessibleName(tr("全局搜索"));
-    auto* notificationButton = new NotificationButton(topBar);
-    notificationButton->setObjectName(QStringLiteral("notificationButton"));
-    notificationButton->setToolTip(tr("3 条未读通知"));
     auto* userBadge = new QLabel(tr("A"), topBar);
     userBadge->setAlignment(Qt::AlignCenter);
     userBadge->setFixedSize(34, 34);
@@ -357,10 +289,6 @@ QWidget* MainWindow::createManagementPage()
     userLabel->setStyleSheet(QStringLiteral("color: #34435b; font-size: 14px; font-weight: 600;"));
     topBarLayout->addLayout(titleLayout);
     topBarLayout->addStretch();
-    topBarLayout->addWidget(searchLineEdit);
-    topBarLayout->addSpacing(14);
-    topBarLayout->addWidget(notificationButton);
-    topBarLayout->addSpacing(8);
     topBarLayout->addWidget(userBadge);
     topBarLayout->addWidget(userLabel);
     contentLayout->addWidget(topBar);
@@ -397,9 +325,6 @@ QWidget* MainWindow::createManagementPage()
                 pageTitleLabel_->setText(navigationTitles.at(index));
                 pageSubtitleLabel_->setText(navigationDescriptions.at(index));
             });
-    connect(searchLineEdit, &QLineEdit::returnPressed, this, [this, searchLineEdit]() {
-        statusBar()->showMessage(tr("Mock 全局搜索：%1").arg(searchLineEdit->text()), 2500);
-    });
     navigationGroup->button(0)->setChecked(true);
 
 
@@ -439,11 +364,6 @@ void MainWindow::handleLoginSubmitted(const QString& username, const QString& pa
 
         loginPage_->showError(tr("账号或密码不正确。Mock 演示账号为 admin / 123456。"));
     });
-}
-
-void MainWindow::handleLogoutClicked()
-{
-    showLoginPage();
 }
 
 void MainWindow::updateClientCount(int count)
