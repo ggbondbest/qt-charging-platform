@@ -74,6 +74,17 @@ target_link_libraries(test_dashboard_repository PRIVATE
 )
 add_test(NAME dashboard_repository COMMAND test_dashboard_repository)
 
+add_executable(test_database_maintenance tst_database_maintenance.cpp)
+target_link_libraries(test_database_maintenance PRIVATE
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME database_maintenance COMMAND test_database_maintenance)
+
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE
     ChargingPlatform::Common
