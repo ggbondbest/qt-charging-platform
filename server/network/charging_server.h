@@ -10,18 +10,12 @@ class QTcpSocket;
 
 namespace charging::server {
 
-class RequestDispatcher;
-
 class ChargingServer final : public QObject
 {
     Q_OBJECT
 
 public:
     explicit ChargingServer(QObject* parent = nullptr);
-
-    // The dispatcher is application-owned and must outlive this server. It can
-    // only be set before listen() starts accepting connections.
-    void setRequestDispatcher(RequestDispatcher* dispatcher);
 
     bool listen(const QHostAddress& address, quint16 port);
     bool isListening() const;
@@ -41,7 +35,6 @@ private slots:
 private:
     QTcpServer tcpServer_;
     QSet<QTcpSocket*> clients_;
-    RequestDispatcher* dispatcher_ = nullptr;
 };
 
 } // namespace charging::server

@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/">
-        <file alias="qss/client_platform.qss">qss/client_platform.qss</file>
-    </qresource>
-</RCC>

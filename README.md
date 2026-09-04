@@ -2,10 +2,10 @@
 
 基于 Ubuntu 22.04、Qt Framework 6.2.4、C++17 和 SQLite 的电动汽车充电桩应用管理平台。
 
-> 当前状态：阶段 3 核心后端。手机号登录以及“预约 → 开始充电 → 实时计费
-> → 停止 → 待支付 → 支付 → 完成”已经实际经过 Client、TCP、Server、Service、
-> Repository 和 SQLite，并纳入自动集成测试。用户端业务页面、找站和管理后台等由
-> 对应成员继续并行开发；公共契约冻结仍需五人确认和 Review。
+> 当前状态：阶段 0/1 候选开发基线。Client/Server 可构建启动，公共模型、Socket 协议和
+> SQLite 候选 v1 已建立；登录与后续业务功能尚未实现，不应将占位界面视为已完成功能。
+> 候选契约需经五人确认，并通过 Ubuntu 22.04 + Qt 6.2.4 严格 CI 与最小登录闭环后，
+> 才放行全面接入真实接口。
 
 ## 第一阶段范围
 
@@ -27,13 +27,6 @@ SQLite
 - 公共 User/Station/Charger/Reservation/Order 等候选模型、状态和 JSON 转换。
 - TCP 4 字节大端长度帧、JSON v1 envelope、稳定动作名与错误码。
 - SQLite schema v1：8 张表、外键、CHECK、索引、活动业务唯一约束和可重复 seed。
-- 手机号登录/自动注册：Client 异步请求、Server 二次校验、SQLite 查询/创建和冻结拦截。
-- `NetworkManager` 和 `TcpServer` 统一入口，以及 `ClientSession` 会话身份和
-  `RequestDispatcher` 业务路由。
-- `ChargingService` / `OrderService` / `BillingService` 核心业务，显式充电状态机，
-  15 分钟预约过期和整数安全计费。
-- 预约、取消、开始、停止和支付的 SQLite 多表事务；重复停止/支付不会
-  重复累计或扣款。
 - QtTest、数据库完整性验证、Ubuntu 22.04 / Qt 6.2.4 GitHub Actions。
 - 五人分工、分支、Commit、PR、Code Review、命名和 Qt 兼容规范。
 
@@ -73,7 +66,7 @@ bash scripts/verify_database.sh
 就将它们变成全员的强制依赖。不得提交个人 `CMAKE_PREFIX_PATH`、Qt Creator
 `.user` 文件或任何本机绝对路径。
 
-## 启动应用
+## 启动骨架应用
 
 Ubuntu 普通 CMake 构建下：
 
@@ -82,10 +75,7 @@ Ubuntu 普通 CMake 构建下：
 ./build/client/charging-client
 ```
 
-先启动 Server，再启动 Client。Client 输入 11 位手机号后会通过真实 TCP 请求 Server；
-已有用户直接返回，新手机号自动注册，冻结用户会被拒绝。充电页面尚未接入，
-核心闭环可先通过 `charging_tcp_integration` 测试验证。Server 可使用
-`--database <path>` 指定 SQLite 文件；只有显式传入 `--demo-seed` 才加载演示数据。
+当前窗口用于验证项目装配与模块边界，尚未接入真实登录业务。
 
 ## 目录和依赖方向
 
@@ -141,22 +131,14 @@ git switch -c feature/client-station-list
 - [五人角色与协作流程](docs/team/roles_and_workflow.md)
 - [贡献指南](CONTRIBUTING.md)
 
-## 已打通的两条闭环
+## 下一个集成目标
 
-手机号登录：
+组长先在独立 feature 分支打通真实手机号登录闭环：
 
 ```text
 Client -> TCP frame -> Server -> UserService -> UserRepository -> SQLite -> Client
 ```
 
-充电业务：
-
-```text
-NetworkManager -> TcpServer -> ClientSession -> RequestDispatcher
-               -> ChargingService / OrderService / BillingService
-               -> ChargingRepository / OrderRepository -> SQLite
-```
-
-下一步可在各自目录并行实现站点/电桩查询、个人中心与充电/订单页面、管理端页面。
-公共契约冻结和跨模块真实联调仍以五人确认及严格 CI 为准；`common/`、
-`database/schema.sql` 和跨模块接口属于高冲突区域，修改前必须确认契约并通过 PR Review。
+在候选契约经五人确认、严格 CI 通过且该闭环验证 UI、Socket、协议、Service、Repository
+和 SQLite 前，成员只并行做 mock UI、数据库准备和基于候选接口的隔离开发，不得各自接入
+真实 Socket/SQL。组长记录放行结论后，再让五名成员全面并行接入真实接口。
