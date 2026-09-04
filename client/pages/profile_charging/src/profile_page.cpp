@@ -147,21 +147,8 @@ void ProfilePage::buildUi()
     moreTitle->setProperty("role", QStringLiteral("sectionTitle"));
     moreLayout->addWidget(moreTitle);
 
-    auto addPlaceholderRow = [&](const QString& name, const QString& owner) {
-        auto* row = new QWidget(moreCard);
-        auto* rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(0, 0, 0, 0);
-        auto* nameLabel = new QLabel(name, row);
-        nameLabel->setProperty("role", QStringLiteral("subtitle"));
-        auto* hintLabel = new QLabel(owner, row);
-        hintLabel->setProperty("role", QStringLiteral("caption"));
-        rowLayout->addWidget(nameLabel);
-        rowLayout->addStretch();
-        rowLayout->addWidget(hintLabel);
-        moreLayout->addWidget(row);
-    };
     // 电站列表入口已合并进壳层底部 Tab（成员 2 模块），此处只保留预约记录
-    // 入口；设置仍是占位，不做假功能。
+    // 与设置入口（成员 2 页面已由壳层路由承接）。
     auto* reservationsButton = new QPushButton(tr("📒  我的预约　›"), moreCard);
     reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
     reservationsButton->setCursor(Qt::PointingHandCursor);
@@ -171,7 +158,13 @@ void ProfilePage::buildUi()
             &ProfilePage::reservationRecordsRequested);
     moreLayout->addWidget(reservationsButton);
 
-    addPlaceholderRow(tr("设置"), tr("待开放"));
+    auto* settingsButton = new QPushButton(tr("⚙️  设置　›"), moreCard);
+    settingsButton->setObjectName(QStringLiteral("openSettingsButton"));
+    settingsButton->setCursor(Qt::PointingHandCursor);
+    settingsButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    settingsButton->setMinimumHeight(44);
+    connect(settingsButton, &QPushButton::clicked, this, &ProfilePage::settingsRequested);
+    moreLayout->addWidget(settingsButton);
     rootLayout->addWidget(moreCard);
 
     profileNotice_ = new NoticePanel(QStringLiteral("⚠"), tr("资料加载失败"), QString(),

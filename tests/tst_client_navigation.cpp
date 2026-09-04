@@ -145,11 +145,11 @@ void ClientNavigationTest::loginSuccessShowsHomeShell()
     // 底部 4 Tab 应完整可见，默认激活“找站”。
     auto* stationTab = homeShell->findChild<QPushButton*>(QStringLiteral("tab_station"));
     auto* orderTab = homeShell->findChild<QPushButton*>(QStringLiteral("tab_order"));
-    auto* rechargeTab = homeShell->findChild<QPushButton*>(QStringLiteral("tab_recharge"));
+    auto* chargingTab = homeShell->findChild<QPushButton*>(QStringLiteral("tab_charging"));
     auto* profileTab = homeShell->findChild<QPushButton*>(QStringLiteral("tab_profile"));
     QVERIFY(stationTab != nullptr);
     QVERIFY(orderTab != nullptr);
-    QVERIFY(rechargeTab != nullptr);
+    QVERIFY(chargingTab != nullptr);
     QVERIFY(profileTab != nullptr);
     QVERIFY(orderTab->isVisible());
 

@@ -7,6 +7,8 @@ add_library(charging_client_station_pages STATIC
     home_shell.h
     login_page.cpp
     login_page.h
+    navigation_page.cpp
+    navigation_page.h
     platform_theme.cpp
     platform_theme.h
     reservation_completed_page.cpp
@@ -17,6 +19,8 @@ add_library(charging_client_station_pages STATIC
     reservation_module_page.h
     reservation_order_page.cpp
     reservation_order_page.h
+    settings_page.cpp
+    settings_page.h
     station_detail_page.cpp
     station_detail_page.h
     station_home_page.cpp
@@ -37,6 +41,8 @@ target_link_libraries(charging_client_station_pages
     PUBLIC
     ChargingPlatform::ClientStationServices
     ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientSettingsServices
     ChargingPlatform::ClientProfileChargingPages
     ChargingPlatform::ClientProfileChargingServices
     ChargingPlatform::ClientWidgets

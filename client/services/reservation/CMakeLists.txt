@@ -11,6 +11,7 @@ target_include_directories(charging_client_reservation_services PUBLIC
 target_link_libraries(charging_client_reservation_services
     PUBLIC
     ChargingPlatform::ClientNetwork
+    ChargingPlatform::ClientSettingsServices
     ChargingPlatform::Common
     Qt6::Core
     PRIVATE

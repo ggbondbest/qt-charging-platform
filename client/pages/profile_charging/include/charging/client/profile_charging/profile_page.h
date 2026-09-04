@@ -46,6 +46,7 @@ signals:
     void waitingPaymentOrdersRequested();
     void completedOrdersRequested();
     void reservationRecordsRequested(); // 我的预约（成员 2 模块，壳路由）
+    void settingsRequested();           // 设置（成员 2 设置页，壳路由）
     void logoutRequested();
 
 private slots:

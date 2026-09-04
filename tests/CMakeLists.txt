@@ -161,6 +161,18 @@ set_tests_properties(station_map_panel PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+add_executable(test_map_geo_service tst_map_geo_service.cpp)
+target_link_libraries(test_map_geo_service PRIVATE
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ProjectOptions
+    Qt6::Network
+    Qt6::Test
+)
+add_test(NAME map_geo_service COMMAND test_map_geo_service)
+set_tests_properties(map_geo_service PROPERTIES
+    TIMEOUT 30
+)
+
 add_executable(test_station_query_service tst_station_query_service.cpp)
 target_link_libraries(test_station_query_service PRIVATE
     ChargingPlatform::ClientStationServices
@@ -182,6 +194,7 @@ add_executable(test_reservation_service tst_reservation_service.cpp)
 target_link_libraries(test_reservation_service PRIVATE
     ChargingPlatform::ClientReservationServices
     ChargingPlatform::ClientNetwork
+    ChargingPlatform::ClientSettingsServices
     ChargingPlatform::Common
     ChargingPlatform::ServerCore
     ChargingPlatform::ServerServices
@@ -198,6 +211,16 @@ add_test(NAME reservation_service COMMAND test_reservation_service)
 set_tests_properties(reservation_service PROPERTIES
     TIMEOUT 60
 )
+
+add_executable(test_settings_service tst_settings_service.cpp)
+target_link_libraries(test_settings_service PRIVATE
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME settings_service COMMAND test_settings_service)
 
 add_executable(test_client_navigation
     tst_client_navigation.cpp

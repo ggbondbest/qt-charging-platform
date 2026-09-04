@@ -2,12 +2,14 @@
 
 #include "charging/common/model/model_json.h"
 #include "network/client_connection.h"
+#include "services/settings/settings_service.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
 
 #include <algorithm>
+#include <utility>
 
 namespace charging::client::services::reservation {
 
@@ -15,6 +17,17 @@ namespace {
 
 // 模拟网络延迟：驱动提交/列表的加载状态；真实通道无此延迟。
 constexpr int kMockLatencyMs = 400;
+
+// 时间段预约业务参数（任务 #17 二次迭代）：
+// - 单段时长上限 45 分钟；
+// - 迟到宽限：超过“开始 + 15 分钟”仍未开始 → 自动取消；
+// - 推荐时段行驶时长估算（模拟）：出发准备 5 分钟 + 每 500 米 1 分钟，
+//   腾讯地图距离矩阵/路线规划 API 就绪后仅需替换本估算。
+constexpr int kMaxSlotMinutes = 45;
+constexpr int kLateGraceSecs = 15 * 60;
+constexpr int kTravelBaseMinutes = 5;
+constexpr int kTravelMetersPerMinute = 500;
+constexpr int kSlotAlignmentSecs = 15 * 60;
 
 using charging::model::Reservation;
 using charging::model::ReservationStatus;
@@ -38,24 +51,47 @@ Reservation makeCoreReservation(qint64 id, qint64 userId, qint64 chargerId,
     return reservation;
 }
 
-// 演示记录：覆盖 预约中 / 已完成 / 已取消 / 已过期 四种状态；距离为虚拟
-// 占位数据（预留对接后续导航模块）。默认“预约中”剩余约 50 分钟（倒计时
-// 绿色档），供预约订单页演示每秒刷新。
+// 演示记录：覆盖 预约中 / 已完成 / 已取消 / 已过期 四种状态，含时段与
+// 车辆上下文；距离为虚拟占位数据（预留对接后续导航模块）。默认“预约中”
+// 已开始约 2 分钟（45 分钟时段、剩余 43 分钟 → 倒计时绿色档），供预约
+// 订单页演示每秒刷新。
 ReservationList defaultMockRecords()
 {
+    const auto makeRecord = [](qint64 id, qint64 chargerId, ReservationStatus status,
+                               int startMinutesAgo, int durationMinutes, const QString& station,
+                               const QString& code, const QString& spec, const QString& plate,
+                               qint64 vehicleId, qint64 feeCents, int distanceMeters) {
+        ReservationRecord record;
+        record.reservation =
+            makeCoreReservation(id, 0, chargerId, status, startMinutesAgo, durationMinutes);
+        record.startAtUtc = record.reservation.reservedAtUtc;
+        record.stationName = station;
+        record.chargerCode = code;
+        record.chargerSpec = spec;
+        record.vehicleId = vehicleId;
+        record.vehiclePlate = plate;
+        record.durationMinutes = durationMinutes;
+        record.estimatedFeeCents = feeCents;
+        record.distanceMeters = distanceMeters;
+        return record;
+    };
     return {
-        {makeCoreReservation(9001, 0, 3007, ReservationStatus::Active, 10, 60),
-         QStringLiteral("南山智造充电站"), QStringLiteral("SZ-NSZ-03-07"),
-         QStringLiteral("直流快充 · 120kW"), 60, 98, 1250},
-        {makeCoreReservation(9002, 0, 5002, ReservationStatus::Fulfilled, 300, 90),
-         QStringLiteral("后海城市广场站"), QStringLiteral("SZ-HTC-05-02"),
-         QStringLiteral("直流快充 · 160kW"), 90, 158, 860},
-        {makeCoreReservation(9003, 0, 1005, ReservationStatus::Cancelled, 480, 30),
-         QStringLiteral("科技园充电驿站"), QStringLiteral("SZ-KEY-01-05"),
-         QStringLiteral("交流慢充 · 7kW"), 30, 60, 2400},
-        {makeCoreReservation(9004, 0, 2003, ReservationStatus::Expired, 1500, 120),
-         QStringLiteral("深大北门超充站"), QStringLiteral("SZ-SDU-02-03"),
-         QStringLiteral("直流快充 · 240kW"), 120, 276, 5100},
+        makeRecord(9001, 3007, ReservationStatus::Active, 2, 45,
+                   QStringLiteral("南山智造充电站"), QStringLiteral("SZ-NSZ-03-07"),
+                   QStringLiteral("直流快充 · 120kW"), QStringLiteral("粤B·DA1234"), 1, 73,
+                   1250),
+        makeRecord(9002, 5002, ReservationStatus::Fulfilled, 300, 30,
+                   QStringLiteral("后海城市广场站"), QStringLiteral("SZ-HTC-05-02"),
+                   QStringLiteral("直流快充 · 160kW"), QStringLiteral("粤B·DB5678"), 2, 79,
+                   860),
+        makeRecord(9003, 1005, ReservationStatus::Cancelled, 480, 15,
+                   QStringLiteral("科技园充电驿站"), QStringLiteral("SZ-KEY-01-05"),
+                   QStringLiteral("交流慢充 · 7kW"), QStringLiteral("粤B·DC9012"), 3, 15,
+                   2400),
+        makeRecord(9004, 2003, ReservationStatus::Expired, 1500, 45,
+                   QStringLiteral("深大北门超充站"), QStringLiteral("SZ-SDU-02-03"),
+                   QStringLiteral("直流快充 · 240kW"), QStringLiteral("粤B·DF1357"), 4, 207,
+                   5100),
     };
 }
 
@@ -102,6 +138,102 @@ void ReservationService::setUserId(qint64 userId)
     userId_ = userId;
 }
 
+int ReservationService::activeReservationCount() const
+{
+    // “未结束”= 状态为预约中且截止时间（expiresAtUtc）未到。真实通道下
+    // 本组方法仅作前端入口拦截的参考态，提交时服务端仍会独立校验。
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    int count = 0;
+    for (const auto& record : mockStore_) {
+        if (record.reservation.status == charging::model::ReservationStatus::Active
+            && record.reservation.expiresAtUtc > now) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int ReservationService::activeCountForVehicle(qint64 vehicleId) const
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    int count = 0;
+    for (const auto& record : mockStore_) {
+        if (record.vehicleId == vehicleId
+            && record.reservation.status == charging::model::ReservationStatus::Active
+            && record.reservation.expiresAtUtc > now) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int ReservationService::unfinishedSlotLimit() const
+{
+    // 名额制（任务 #17 二次迭代）：可预约时段数 = 车辆数；未注入车辆
+    // 服务时回退为单条约束（兼容独立测试与旧口径）。
+    return settings_ != nullptr ? qMax(0, settings_->vehicleCount()) : 1;
+}
+
+void ReservationService::submit(const charging::model::Charger& charger,
+                                const charging::model::Station& station, const QDateTime& startUtc,
+                                const QDateTime& endUtc, qint64 vehicleId, const QString& vehiclePlate,
+                                int distanceMeters)
+{
+    emit submitStarted(charger.id);
+
+    const int durationMinutes =
+        startUtc.isValid() && endUtc.isValid() ? int(startUtc.secsTo(endUtc) / 60) : 0;
+
+    ReservationRecord record;
+    record.reservation.chargerId = charger.id;
+    record.reservation.userId = userId_;
+    record.stationName = station.name;
+    record.chargerCode = charger.code;
+    record.chargerSpec = chargerSpecText(charger);
+    record.startAtUtc = startUtc;
+    record.vehicleId = vehicleId;
+    record.vehiclePlate = vehiclePlate;
+    record.durationMinutes = durationMinutes;
+    record.estimatedFeeCents =
+        station.priceCentsPerKwh * qMax(0, durationMinutes) / 60;
+    record.distanceMeters = distanceMeters;
+    // 站点坐标透传：导航页据此向腾讯路线规划接口寻址目的地（无坐标则保持模拟）。
+    record.hasStationLocation = station.latitude != 0.0 || station.longitude != 0.0;
+    record.stationLatitude = station.latitude;
+    record.stationLongitude = station.longitude;
+    pendingSubmitRecord_ = record;
+
+    if (durationMinutes <= 0) {
+        // 参数非法（时间段无效）：直接失败（真实通道同样先做本地校验）。
+        QTimer::singleShot(0, this, [this]() {
+            emit submitFailed(tr("预约时间段无效，请重新选择"));
+        });
+        return;
+    }
+    if (durationMinutes > kMaxSlotMinutes) {
+        // 规格约束：推荐时间段最大 45 分钟（UI 已行内拦截，此处 Service 兜底）。
+        QTimer::singleShot(0, this, [this]() {
+            emit submitFailed(tr("预约时间段不能超过 %1 分钟").arg(kMaxSlotMinutes));
+        });
+        return;
+    }
+
+    if (liveMode_ && connection_ != nullptr) {
+        QJsonObject data;
+        data.insert(QStringLiteral("chargerId"), QString::number(charger.id));
+        pendingSubmitRequestId_ = connection_->sendRequest(
+            QString::fromLatin1(charging::protocol::request_type::kReserveCharger), data);
+        return;
+    }
+
+    QTimer::singleShot(kMockLatencyMs, this, &ReservationService::finishMockSubmit);
+}
+
+void ReservationService::setSettingsService(settings::SettingsService* settings)
+{
+    settings_ = settings;
+}
+
 void ReservationService::setSimulateFailure(bool simulate)
 {
     simulateFailure_ = simulate;
@@ -129,55 +261,6 @@ void ReservationService::fetchList()
     }
 
     QTimer::singleShot(kMockLatencyMs, this, &ReservationService::finishMockList);
-}
-
-bool ReservationService::hasUnfinishedReservation() const
-{
-    // “未结束”= 状态为预约中且倒计时（expiresAtUtc）未归零。真实通道下
-    // 本方法仅作前端入口拦截的参考态，提交时服务端仍会独立校验。
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    for (const auto& record : mockStore_) {
-        if (record.reservation.status == charging::model::ReservationStatus::Active
-            && record.reservation.expiresAtUtc > now) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void ReservationService::submit(const charging::model::Charger& charger,
-                                const charging::model::Station& station, int durationMinutes,
-                                int distanceMeters)
-{
-    emit submitStarted(charger.id);
-
-    ReservationRecord record;
-    record.reservation.chargerId = charger.id;
-    record.reservation.userId = userId_;
-    record.stationName = station.name;
-    record.chargerCode = charger.code;
-    record.chargerSpec = chargerSpecText(charger);
-    record.durationMinutes = durationMinutes;
-    record.estimatedFeeCents = station.priceCentsPerKwh * durationMinutes / 60;
-    record.distanceMeters = distanceMeters;
-    pendingSubmitRecord_ = record;
-
-    if (durationMinutes <= 0) {
-        // 参数非法：直接失败（真实通道同样先做本地校验，避免无效请求）。
-        QTimer::singleShot(0, this,
-                           [this]() { emit submitFailed(tr("预约时长无效，请重新选择")); });
-        return;
-    }
-
-    if (liveMode_ && connection_ != nullptr) {
-        QJsonObject data;
-        data.insert(QStringLiteral("chargerId"), QString::number(charger.id));
-        pendingSubmitRequestId_ = connection_->sendRequest(
-            QString::fromLatin1(charging::protocol::request_type::kReserveCharger), data);
-        return;
-    }
-
-    QTimer::singleShot(kMockLatencyMs, this, &ReservationService::finishMockSubmit);
 }
 
 void ReservationService::cancel(qint64 reservationId)
@@ -239,19 +322,31 @@ void ReservationService::finishMockSubmit()
         return;
     }
 
-    // 业务约束（任务 #17 迭代）：同一用户同一时刻仅允许一条未结束预约。
-    // 即使前端入口被绕过，模拟通道在这里同样返回业务错误。
-    if (hasUnfinishedReservation()) {
-        emit submitFailed(tr("您当前尚有未结束的预约，请结束当前预约后再发起新预约"));
+    // 名额制业务约束（任务 #17 二次迭代）：车辆数 = 可同时持有的有效预约
+    // 上限，且每辆至多一条未结束预约。即使前端入口被绕过，模拟通道在这里
+    // 同样返回业务错误（真实通道以服务端校验为准）。
+    if (settings_ != nullptr) {
+        if (settings_->vehicleCount() <= 0) {
+            emit submitFailed(tr("请先在设置-车辆管理添加车辆，再发起预约"));
+            return;
+        }
+        if (activeCountForVehicle(requested.vehicleId) > 0) {
+            emit submitFailed(tr("该车辆已有未结束的预约，请更换车辆或先结束该车预约"));
+            return;
+        }
+    }
+    if (activeReservationCount() >= unfinishedSlotLimit()) {
+        emit submitFailed(tr("可预约名额已全部占用，请结束当前预约后再发起新预约"));
         return;
     }
 
     ReservationRecord created = requested;
     created.reservation.id = 9000 + mockStore_.size() + 1;
     created.reservation.status = charging::model::ReservationStatus::Active;
-    created.reservation.reservedAtUtc = QDateTime::currentDateTimeUtc();
+    // 时间段预约：开始时刻即预约生效时刻，倒计时数据源仍为 expiresAtUtc。
+    created.reservation.reservedAtUtc = created.startAtUtc;
     created.reservation.expiresAtUtc =
-        created.reservation.reservedAtUtc.addSecs(created.durationMinutes * 60);
+        created.startAtUtc.addSecs(created.durationMinutes * 60);
     mockStore_.append(created);
     emit submitSucceeded(created);
 }
@@ -297,6 +392,67 @@ void ReservationService::expireReservation(qint64 reservationId)
         }
     }
     emit reservationExpired(reservationId);
+}
+
+int ReservationService::cancelLateReservations()
+{
+    // 迟到自动取消（预约订单页每秒 tick 驱动）：已过“开始 + 15 分钟”
+    // 且时段仍在有效期内、状态“预约中” → 流转“已取消”并打迟到标记；
+    // 已过截止时间的记录交给倒计时归零的“已过期”流转处理，此处不抢状态。
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    QVector<qint64> cancelledIds;
+    for (auto& record : mockStore_) {
+        if (record.reservation.status != charging::model::ReservationStatus::Active
+            || !record.startAtUtc.isValid()) {
+            continue;
+        }
+        const bool late = record.startAtUtc.secsTo(now) > kLateGraceSecs;
+        const bool stillValid = record.reservation.expiresAtUtc > now;
+        if (late && stillValid) {
+            record.reservation.status = charging::model::ReservationStatus::Cancelled;
+            record.reservation.endedAtUtc = now;
+            record.lateCancelled = true;
+            cancelledIds.append(record.reservation.id);
+        }
+    }
+    // 先改完状态再统一发信号，避免刷新回调在迭代中读取半成品列表。
+    for (const qint64 id : std::as_const(cancelledIds)) {
+        emit reservationExpired(id);
+    }
+    return cancelledIds.size();
+}
+
+RecommendedSlot ReservationService::recommendSlot(int distanceMeters, const QDateTime& nowUtc)
+{
+    // 模拟估算：行驶时长 = 出发准备 5 分钟 + 距离向上取整每 500 米 1 分钟。
+    // 真实地图 API 就绪后由确认页改用 recommendSlotFromTravelMinutes
+    // （腾讯距离矩阵返回的真实 duration 换算分钟），本估算保持原口径兜底。
+    const int safeDistance = qMax(0, distanceMeters);
+    const int travelMinutes = kTravelBaseMinutes
+        + (safeDistance + kTravelMetersPerMinute - 1) / kTravelMetersPerMinute;
+    return recommendSlotFromTravelMinutes(travelMinutes, nowUtc);
+}
+
+RecommendedSlot ReservationService::recommendSlotFromTravelMinutes(int travelMinutes,
+                                                                   const QDateTime& nowUtc)
+{
+    // 开始时刻 = 现在 + 行驶时长，向上对齐本地整点 15 分钟刻度；
+    // 结束 = 开始 + 45 分钟（规格上限）。
+    const int safeMinutes = qMax(0, travelMinutes);
+
+    QDateTime local = nowUtc.toLocalTime().addSecs(safeMinutes * 60);
+    const QTime time = local.time();
+    const int secsOfDay = time.hour() * 3600 + time.minute() * 60 + time.second();
+    const int remainder = secsOfDay % kSlotAlignmentSecs;
+    if (remainder != 0) {
+        local = local.addSecs(kSlotAlignmentSecs - remainder);
+    }
+
+    RecommendedSlot slot;
+    slot.travelMinutes = safeMinutes;
+    slot.startUtc = local.toUTC();
+    slot.endUtc = slot.startUtc.addSecs(kMaxSlotMinutes * 60);
+    return slot;
 }
 
 void ReservationService::handleResponse(const charging::protocol::ResponseEnvelope& response)
@@ -386,6 +542,13 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
         ReservationRecord record = pendingSubmitRecord_;
         pendingSubmitRecord_ = ReservationRecord{};
         record.reservation = reservation;
+        // 服务端尚未支持时间段/车辆字段（协议扩展就绪前以服务端返回的
+        // 起止时刻为准，客户端仅带入车辆与站点展示上下文）。
+        if (reservation.reservedAtUtc.isValid() && reservation.expiresAtUtc.isValid()) {
+            record.startAtUtc = reservation.reservedAtUtc;
+            record.durationMinutes =
+                int(reservation.reservedAtUtc.secsTo(reservation.expiresAtUtc) / 60);
+        }
         emit submitSucceeded(record);
     } else {
         const qint64 reservationId = pendingCancelId_;
