@@ -42,11 +42,11 @@ QLabel#resultLabel {
     font-size: 12px;
 }
 QLabel#resultLabel[tone="error"] {
-    color: #D9363E;
+    color: #DC2626;
     font-weight: 600;
 }
 QLabel#resultLabel[tone="success"] {
-    color: #089E62;
+    color: #00A76D;
     font-weight: 600;
 }
 )";

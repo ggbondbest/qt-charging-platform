@@ -1,0 +1,38 @@
+#pragma once
+
+#include <QPixmap>
+#include <QString>
+#include <QVector>
+
+class QLabel;
+
+namespace charging::client {
+
+// 内置头像库：头像上传没有协议（TODO(contract)：UPDATE_USER_INFO 未冻结），
+// 可持久化的"换头像"能力 = 从内置库中选一个，选择结果以 avatarKey 随资料
+// 保存（models.h User.avatarKey 正是为此预留的契约字段）。
+// 渲染为确定性 QPainter 绘制（渐变圆底 + emoji 字形），不引入图片资源，
+// 离线可用，尺寸任意。key 为空或未知时返回空 pixmap——调用方回退到
+// "昵称首字"字母头像（全局 QSS 的 uiAvatar/uiAvatarHub 样式）。
+struct AvatarSpec
+{
+    QString key;      // 持久化进 User.avatarKey 的标识
+    QString glyph;    // emoji 字形
+    QRgb startRgb;    // 圆底渐变起点（左上）
+    QRgb endRgb;      // 圆底渐变终点（右下）
+};
+
+class AvatarLibrary
+{
+public:
+    static const QVector<AvatarSpec>& all();
+    static bool contains(const QString& key);
+    // sizePx 为逻辑像素；返回带 DPR=2 的清晰 pixmap。空/未知 key → 空 QPixmap。
+    static QPixmap render(const QString& key, int sizePx);
+    // 把 key 对应的头像（或 fallbackText 字母头像）应用到 QLabel：切
+    // hasAvatar 属性让 QSS 在 pixmap 态隐藏绿底圆，避免透出方角底色。
+    static void applyToLabel(QLabel* label, const QString& key, const QString& fallbackText,
+                             int sizePx);
+};
+
+} // namespace charging::client

@@ -138,14 +138,16 @@ void MockRequestTransport::seedDemoOrders()
     };
 
     // Oldest first; reversed below so orders_ ends up newest first.
+    // 种子时间刻意跨 3 个自然月（约 70/40 天前 + 本周），让列表的月度分组
+    // 表头在预览里始终可见；相对"今天"计算以免种子过期。
     orders_.append(makeOrder(12, charging::model::OrderStatus::Cancelled, 98, 0, 0,
                              0, 0, 0));
-    orders_[orders_.size() - 1].createdAtUtc = now.addDays(-7);
-    orders_[orders_.size() - 1].updatedAtUtc = now.addDays(-7);
+    orders_[orders_.size() - 1].createdAtUtc = now.addDays(-71);
+    orders_[orders_.size() - 1].updatedAtUtc = now.addDays(-71);
     orders_[orders_.size() - 1].amountCents = 0;
 
     orders_.append(makeOrder(11, charging::model::OrderStatus::Completed, 132, 24680, 5538,
-                             3 * 24 * 3600, 3 * 24 * 3600 - 5538, 3 * 24 * 3600 - 5538 - 60));
+                             40 * 24 * 3600, 40 * 24 * 3600 - 5538, 40 * 24 * 3600 - 5538 - 60));
     orders_.append(makeOrder(12, charging::model::OrderStatus::Completed, 98, 15200, 3300,
                              24 * 3600 + 3600, 24 * 3600, 24 * 3600 - 30));
     orders_.append(makeOrder(11, charging::model::OrderStatus::WaitingPayment, 132, 18500, 4210,
@@ -277,25 +279,38 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
 
     if (type == updateUserInfoType) {
         // TODO(contract): UPDATE_USER_INFO has no frozen payload yet; this
-        // mock accepts nickname only (the single field the user edits) and
-        // mirrors the schema CHECK bounds: trim(nickname) is 1..32 chars.
-        // Avatar uploads have no protocol at all, so the UI keeps them
-        // disabled until the leader confirms an endpoint.
+        // mock accepts nickname and/or avatarKey (the two fields the user
+        // edits) and mirrors the schema CHECK bounds: trim(nickname) is
+        // 1..32 chars. avatarKey is a built-in avatar-library key ("" =
+        // default initial avatar); real avatar uploads have no protocol.
         const QJsonValue nicknameValue = data.value(QStringLiteral("nickname"));
-        if (!nicknameValue.isString()) {
+        const QJsonValue avatarKeyValue = data.value(QStringLiteral("avatarKey"));
+        if (!nicknameValue.isString() && !avatarKeyValue.isString()) {
             callback(false, QJsonObject{},
                      mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                               QStringLiteral("nickname must be a string")));
+                               QStringLiteral("payload must carry nickname and/or avatarKey")));
             return;
         }
-        const QString nickname = nicknameValue.toString().trimmed();
-        if (nickname.isEmpty() || nickname.length() > 32) {
-            callback(false, QJsonObject{},
-                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                               QStringLiteral("nickname must be 1-32 characters")));
-            return;
+        if (nicknameValue.isString()) {
+            const QString nickname = nicknameValue.toString().trimmed();
+            if (nickname.isEmpty() || nickname.length() > 32) {
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                                   QStringLiteral("nickname must be 1-32 characters")));
+                return;
+            }
+            user_.nickname = nickname;
         }
-        user_.nickname = nickname;
+        if (avatarKeyValue.isString()) {
+            const QString avatarKey = avatarKeyValue.toString();
+            if (avatarKey.size() > 64) {
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
+                                   QStringLiteral("avatarKey too long")));
+                return;
+            }
+            user_.avatarKey = avatarKey;
+        }
         user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
         QJsonObject payload;
         payload.insert(QStringLiteral("user"), charging::model::toJson(user_));

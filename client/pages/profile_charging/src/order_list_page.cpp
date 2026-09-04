@@ -10,17 +10,34 @@
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
 
+#include <QDateTime>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace charging::client {
 
 namespace {
 
 constexpr int kFilterCount = 4;
+
+// 行内展示时间：与 buildOrderRow 一致，开始时间优先、回退创建时间。
+QDateTime orderDisplayTime(const charging::client::OrderSummary& summary)
+{
+    return summary.order.startedAtUtc.isValid() ? summary.order.startedAtUtc
+                                                : summary.order.createdAtUtc;
+}
+
+// 月度分组的月份键（本地时区 yyyy-MM）；无效时间归入空键组。
+QString monthKeyOf(const QDateTime& utcValue)
+{
+    const QDateTime local = utcValue.toLocalTime();
+    return local.isValid() ? local.toString(QStringLiteral("yyyy-MM")) : QString();
+}
 
 } // namespace
 
@@ -186,14 +203,19 @@ void OrderListPage::onOrdersLoaded(const QVector<charging::client::OrderSummary>
 
     const bool firstPage = loadingPage_ <= 1;
     if (firstPage) {
-        clearOrderRows();
         shownOrders_.clear();
     }
     for (const charging::client::OrderSummary& summary : orders) {
         shownOrders_.append(summary);
-        // Insert before the trailing stretch item.
-        listLayout_->insertWidget(listLayout_->count() - 1, buildOrderRow(summary));
     }
+    // TODO(contract): GET_ORDERS 尚未冻结排序字段，展示层统一按"显示时间"
+    // 倒序渲染（稳定排序，同刻保持服务端原顺序），月度分组表头因此连续。
+    std::stable_sort(shownOrders_.begin(), shownOrders_.end(),
+                     [](const charging::client::OrderSummary& a,
+                        const charging::client::OrderSummary& b) {
+                         return orderDisplayTime(a) > orderDisplayTime(b);
+                     });
+    rebuildMonthGroups();
     currentPage_ = loadingPage_;
     hasMoreOrders_ = hasMore;
 
@@ -240,9 +262,7 @@ QWidget* OrderListPage::buildOrderRow(const charging::client::OrderSummary& summ
     topRow->addStretch();
     topRow->addWidget(statusTag);
 
-    const QDateTime displayTime =
-        summary.order.startedAtUtc.isValid() ? summary.order.startedAtUtc
-                                             : summary.order.createdAtUtc;
+    const QDateTime displayTime = orderDisplayTime(summary);
     auto* metaLabel = new QLabel(
         tr("桩号 %1 · %2").arg(summary.chargerCode.isEmpty() ? QStringLiteral("--")
                                                              : summary.chargerCode,
@@ -281,6 +301,73 @@ void OrderListPage::clearOrderRows()
         }
         delete item;
     }
+}
+
+void OrderListPage::rebuildMonthGroups()
+{
+    clearOrderRows();
+
+    // shownOrders_ 已按时间倒序，同月订单连续：月变化时插一次表头。表头汇总
+    // 只是把该月可见行相加，服务端仍是唯一事实来源（TODO(contract) 无月度
+    // 汇总接口，客户端不加新协议）。
+    auto addBeforeStretch = [this](QWidget* widget) {
+        listLayout_->insertWidget(listLayout_->count() - 1, widget);
+    };
+    auto summaryText = [this](int count, qint64 cents, qint64 wh) {
+        return tr("%1 单 · ¥%2 · %3 kWh").arg(count).arg(formatCentsAsYuan(cents),
+                                                          formatEnergyWhAsKwh(wh));
+    };
+
+    QString currentMonth;
+    QLabel* monthSummaryLabel = nullptr;
+    int monthCount = 0;
+    qint64 monthAmountCents = 0;
+    qint64 monthEnergyWh = 0;
+
+    for (const charging::client::OrderSummary& summary : shownOrders_) {
+        const QString month = monthKeyOf(orderDisplayTime(summary));
+        if (month != currentMonth) {
+            if (monthSummaryLabel != nullptr) {
+                monthSummaryLabel->setText(summaryText(monthCount, monthAmountCents,
+                                                       monthEnergyWh));
+            }
+            currentMonth = month;
+            monthCount = 0;
+            monthAmountCents = 0;
+            monthEnergyWh = 0;
+            addBeforeStretch(buildMonthHeader(month, &monthSummaryLabel));
+        }
+        ++monthCount;
+        monthAmountCents += summary.order.amountCents;
+        monthEnergyWh += summary.order.energyWh;
+        addBeforeStretch(buildOrderRow(summary));
+    }
+    if (monthSummaryLabel != nullptr) {
+        monthSummaryLabel->setText(summaryText(monthCount, monthAmountCents, monthEnergyWh));
+    }
+}
+
+QWidget* OrderListPage::buildMonthHeader(const QString& monthKey, QLabel** summaryOut)
+{
+    const QDate date = QDate::fromString(monthKey, QStringLiteral("yyyy-MM"));
+    const QString title = date.isValid()
+                              ? QStringLiteral("%1年%2月").arg(date.year()).arg(date.month())
+                              : tr("更早"); // 时间无效的行兜底归组，正常情况下不出现。
+
+    auto* header = new QWidget(this);
+    header->setObjectName(QStringLiteral("uiMonthHeader"));
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(4, 8, 4, 0);
+    headerLayout->setSpacing(8);
+    auto* titleLabel = new QLabel(title, header);
+    titleLabel->setObjectName(QStringLiteral("uiMonthTitle"));
+    auto* summaryLabel = new QLabel(header); // 文本在整月行汇总完后回填。
+    summaryLabel->setObjectName(QStringLiteral("uiMonthSummary"));
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch();
+    headerLayout->addWidget(summaryLabel);
+    *summaryOut = summaryLabel;
+    return header;
 }
 
 void OrderListPage::showListNotice(const QString& glyph, const QString& title,

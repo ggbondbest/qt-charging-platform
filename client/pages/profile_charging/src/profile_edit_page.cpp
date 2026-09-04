@@ -1,6 +1,7 @@
 #include "charging/client/profile_charging/profile_edit_page.h"
 
 #include "charging/client/profile_charging/client_errors.h"
+#include "charging/client/profile_charging/avatar_library.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/loading_overlay.h"
@@ -9,9 +10,16 @@
 #include "charging/client/widgets/toast.h"
 #include "charging/common/protocol/protocol.h"
 
+#include <QAbstractButton>
+#include <QButtonGroup>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPixmap>
+#include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 namespace charging::client {
@@ -73,15 +81,62 @@ void ProfileEditPage::buildUi()
     identityPhoneLabel_->setProperty("role", QStringLiteral("caption"));
     identityLayout->addWidget(identityPhoneLabel_, 0, Qt::AlignHCenter);
 
-    avatarButton_ = new ActionButton(ActionButton::Variant::Ghost, tr("更换头像"), identityCard);
-    avatarButton_->setEnabled(false); // TODO(contract): avatar upload protocol undefined.
-    avatarButton_->setToolTip(tr("头像上传接口待与组长确认"));
-    identityLayout->addWidget(avatarButton_, 0, Qt::AlignHCenter);
-
-    auto* avatarCaption = new QLabel(tr("头像上传能力待与组长确认"), identityCard);
-    avatarCaption->setProperty("role", QStringLiteral("caption"));
+    // 头像上传没有协议（TODO(contract)），可用能力 = 内置头像库选择，
+    // 结果以 avatarKey 随资料持久化；"默"格=昵称首字字母头像。
+    auto* avatarCaption = new QLabel(tr("选择头像"), identityCard);
+    avatarCaption->setProperty("role", QStringLiteral("secondary"));
     avatarCaption->setAlignment(Qt::AlignCenter);
     identityLayout->addWidget(avatarCaption, 0, Qt::AlignHCenter);
+
+    avatarGroup_ = new QButtonGroup(this);
+    avatarGroup_->setExclusive(true);
+    auto* avatarGridHost = new QWidget(identityCard);
+    auto* avatarGrid = new QGridLayout(avatarGridHost);
+    avatarGrid->setContentsMargins(0, 0, 0, 0);
+    avatarGrid->setSpacing(10);
+    int avatarIndex = 0;
+    const auto addAvatarChoice = [&](const QString& key, const QString& tooltip) {
+        auto* choice = new QPushButton(avatarGridHost);
+        choice->setObjectName(QStringLiteral("uiAvatarChoice"));
+        choice->setFixedSize(52, 52);
+        choice->setCheckable(true);
+        choice->setCursor(Qt::PointingHandCursor);
+        choice->setToolTip(tooltip);
+        choice->setProperty("avatarKey", key);
+        const QPixmap pixmap = AvatarLibrary::render(key, 44);
+        if (pixmap.isNull()) {
+            choice->setText(QStringLiteral("默"));
+            choice->setProperty("defaultAvatar", true);
+        } else {
+            choice->setIcon(QIcon(pixmap));
+            choice->setIconSize(QSize(44, 44));
+        }
+        avatarGrid->addWidget(choice, avatarIndex / 4, avatarIndex % 4);
+        avatarGroup_->addButton(choice);
+        ++avatarIndex;
+    };
+    addAvatarChoice(QString(), tr("默认（昵称首字）"));
+    for (const AvatarSpec& spec : AvatarLibrary::all()) {
+        addAvatarChoice(spec.key, spec.glyph);
+    }
+    identityLayout->addWidget(avatarGridHost, 0, Qt::AlignHCenter);
+    connect(avatarGroup_, &QButtonGroup::buttonClicked, this, [this](QAbstractButton* button) {
+        if (!hasUser_ || avatarInFlight_ || saveInFlight_) {
+            syncAvatarSelection(); // Busy: snap back to the authoritative key.
+            return;
+        }
+        const QString key = button->property("avatarKey").toString();
+        if (key == user_.avatarKey) {
+            return;
+        }
+        avatarInFlight_ = true;
+        beginBusy();
+        service_->updateAvatar(key);
+    });
+    auto* avatarUploadCaption = new QLabel(tr("真实头像上传待协议冻结"), identityCard);
+    avatarUploadCaption->setProperty("role", QStringLiteral("caption"));
+    avatarUploadCaption->setAlignment(Qt::AlignCenter);
+    identityLayout->addWidget(avatarUploadCaption, 0, Qt::AlignHCenter);
     rootLayout->addWidget(identityCard);
 
     // Account card: editable nickname row plus read-only rows.
@@ -222,10 +277,26 @@ void ProfileEditPage::setEditingVisible(bool editing)
     nicknameEdit_->parentWidget()->setVisible(editing);
 }
 
-void ProfileEditPage::renderUser()
+void ProfileEditPage::syncAvatarSelection()
 {
-    const QString nickname = user_.nickname.isEmpty() ? tr("未设置") : user_.nickname;
-    avatarLabel_->setText(nickname.isEmpty() ? QStringLiteral("用") : QString(nickname.at(0)));
+    if (avatarGroup_ == nullptr) {
+        return;
+    }
+    const QSignalBlocker blocker(avatarGroup_);
+    for (QAbstractButton* button : avatarGroup_->buttons()) {
+        button->setEnabled(hasUser_);
+        button->setChecked(button->property("avatarKey").toString() == user_.avatarKey);
+    }
+}
+
+void ProfileEditPage::renderUser()
+{    const QString nickname = user_.nickname.isEmpty() ? tr("未设置") : user_.nickname;
+    // 头像：库内有 key 渲染图片，否则回退昵称首字字母头像。
+    AvatarLibrary::applyToLabel(avatarLabel_, user_.avatarKey,
+                                nickname.isEmpty() ? QStringLiteral("用")
+                                                   : QString(nickname.at(0)),
+                                64);
+    syncAvatarSelection();
     identityNameLabel_->setText(nickname);
     identityPhoneLabel_->setText(user_.phone);
     nicknameValueLabel_->setText(nickname);
@@ -252,6 +323,11 @@ void ProfileEditPage::onProfileLoaded(const charging::model::User& user)
         setEditingVisible(false);
         Toast::show(this, tr("昵称已更新"), StatusTag::Tone::Success);
     }
+    if (avatarInFlight_) {
+        avatarInFlight_ = false;
+        endBusy();
+        Toast::show(this, tr("头像已更新"), StatusTag::Tone::Success);
+    }
 }
 
 void ProfileEditPage::onOperationFailed(const QString& type,
@@ -267,6 +343,11 @@ void ProfileEditPage::onOperationFailed(const QString& type,
             saveButton_->setEnabled(true);
             cancelButton_->setEnabled(true);
             nicknameEdit_->setEnabled(true);
+        }
+        if (avatarInFlight_) {
+            avatarInFlight_ = false;
+            endBusy();
+            syncAvatarSelection(); // 勾回服务端权威 key
         }
         Toast::show(this, displayMessageForError(error), StatusTag::Tone::Danger);
         return;

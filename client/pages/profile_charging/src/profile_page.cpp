@@ -1,6 +1,7 @@
 #include "charging/client/profile_charging/profile_page.h"
 
 #include "charging/client/profile_charging/client_errors.h"
+#include "charging/client/profile_charging/avatar_library.h"
 #include "charging/client/profile_charging/presentation_format.h"
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
@@ -130,7 +131,7 @@ void ProfilePage::buildUi()
             &ProfilePage::allOrdersRequested);
     addCell(QStringLiteral("⚡"), tr("充电中"), QStringLiteral("success"), &chargingBadge_,
             &ProfilePage::chargingOrdersRequested);
-    addCell(QStringLiteral("¥"), tr("待支付"), QStringLiteral("danger"), &waitingPaymentBadge_,
+    addCell(QStringLiteral("¥"), tr("待支付"), QStringLiteral("warning"), &waitingPaymentBadge_,
             &ProfilePage::waitingPaymentOrdersRequested);
     addCell(QStringLiteral("✔"), tr("已完成"), QStringLiteral("neutral"), &completedBadge_,
             &ProfilePage::completedOrdersRequested);
@@ -273,7 +274,11 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
     hasUser_ = true;
 
     const QString nickname = user_.nickname.isEmpty() ? tr("未设置") : user_.nickname;
-    avatarLabel_->setText(nickname.isEmpty() ? QStringLiteral("用") : QString(nickname.at(0)));
+    // 内置头像库有 key 时渲染头像图，否则回退昵称首字字母头像。
+    AvatarLibrary::applyToLabel(avatarLabel_, user_.avatarKey,
+                                nickname.isEmpty() ? QStringLiteral("用")
+                                                   : QString(nickname.at(0)),
+                                56);
     identityNameLabel_->setText(nickname);
     identityPhoneLabel_->setText(user_.phone);
     balanceValueLabel_->setText(
@@ -283,7 +288,7 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
 void ProfilePage::onStatusCounts(int chargingCount, int waitingPaymentCount, int completedCount)
 {
     applyBadge(chargingBadge_, QStringLiteral("success"), chargingCount);
-    applyBadge(waitingPaymentBadge_, QStringLiteral("danger"), waitingPaymentCount);
+    applyBadge(waitingPaymentBadge_, QStringLiteral("warning"), waitingPaymentCount);
     applyBadge(completedBadge_, QStringLiteral("neutral"), completedCount);
 }
 

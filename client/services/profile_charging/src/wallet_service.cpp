@@ -35,6 +35,11 @@ bool WalletService::isUpdatingNickname() const
     return updatingNickname_;
 }
 
+bool WalletService::isUpdatingAvatar() const
+{
+    return updatingAvatar_;
+}
+
 bool WalletService::isRecharging() const
 {
     return recharging_;
@@ -117,6 +122,51 @@ void WalletService::updateNickname(const QString& nickname)
         [this](bool success, const QJsonObject& data,
                const charging::protocol::ProtocolError& error) {
             updatingNickname_ = false;
+            const QString updateType = QString::fromLatin1(
+                charging::protocol::request_type::kUpdateUserInfo);
+            if (!success) {
+                emit operationFailed(updateType, error);
+                return;
+            }
+            charging::model::User user;
+            QString parseError;
+            if (!charging::model::fromJson(data.value(QStringLiteral("user")).toObject(),
+                                           &user, &parseError)) {
+                emit operationFailed(
+                    updateType, makeLocalError(
+                                   charging::protocol::error_code::kInternalError,
+                                   QStringLiteral("invalid user payload: ") + parseError));
+                return;
+            }
+            emit profileLoaded(user);
+        });
+}
+
+void WalletService::updateAvatar(const QString& avatarKey)
+{
+    const QString type =
+        QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
+    if (updatingAvatar_ || updatingNickname_) {
+        return; // One profile write in flight at a time.
+    }
+    if (transport_ == nullptr) {
+        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInternalError,
+                                                  QStringLiteral("transport is not installed")));
+        return;
+    }
+
+    updatingAvatar_ = true;
+    QJsonObject payload;
+    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
+    // avatarKey-only shape below is what the mock understands. "上传头像"
+    // 没有协议——这里只能提交内置头像库的 key（models.h 的 avatarKey 字段），
+    // 空串=恢复默认（昵称首字）头像。
+    payload.insert(QStringLiteral("avatarKey"), avatarKey);
+    transport_->send(
+        type, payload,
+        [this](bool success, const QJsonObject& data,
+               const charging::protocol::ProtocolError& error) {
+            updatingAvatar_ = false;
             const QString updateType = QString::fromLatin1(
                 charging::protocol::request_type::kUpdateUserInfo);
             if (!success) {

@@ -1,8 +1,10 @@
 #include "charging/client/profile_charging/charging_page.h"
 #include "charging/client/profile_charging/order_detail_page.h"
 #include "charging/client/profile_charging/order_list_page.h"
+#include "charging/client/profile_charging/profile_edit_page.h"
 #include "charging/client/profile_charging/recharge_page.h"
 #include "charging/client/profile_charging/settlement_page.h"
+#include "charging/client/profile_charging/wallet_service.h"
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/top_nav_bar.h"
 #include "pages/station/home_shell.h"
@@ -231,6 +233,10 @@ private slots:
     void settlementDoneReturnsToFilteredOrderTab();
     void rechargeFromSettlementReturnsAndUnlocksPay();
     void emptyOrderListNoticeFillsListArea();
+    // —— 头像库回归：编辑资料页网格选择 → UPDATE_USER_INFO → 全站渲染 ——
+    void avatarChoicePersistsAndRendersLibraryAvatar();
+    // —— 订单月度分组：时间倒序 + 月表头（单数/金额/电量汇总） ——
+    void orderListGroupsRowsByMonthWithTotals();
 };
 
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
@@ -1216,6 +1222,116 @@ void HomeShellTest::emptyOrderListNoticeFillsListArea()
     emit orderService->ordersLoaded({}, 0, false);
     QCOMPARE(listStack->currentWidget(), static_cast<QWidget*>(notice));
     QVERIFY(notice->height() >= listStack->height() - 10); // 铺满而非缩在顶部
+}
+
+void HomeShellTest::avatarChoicePersistsAndRendersLibraryAvatar()
+{
+    // 头像库闭环回归：编辑资料页网格选择 → 服务层 UPDATE_USER_INFO →
+    // profileLoaded 权威回传 → 页内/Hub 头像标签切换到库内头像渲染。
+    qRegisterMetaType<charging::model::User>();
+
+    HomeShell shell(makeSampleUser());
+    shell.resize(420, 860);
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* editPage = shell.findChild<charging::client::ProfileEditPage*>();
+    auto* wallet = shell.findChild<charging::client::WalletService*>();
+    QVERIFY(editPage != nullptr);
+    QVERIFY(wallet != nullptr);
+
+    QSignalSpy loaded(wallet, &charging::client::WalletService::profileLoaded);
+    editPage->refresh();
+    for (int i = 0; i < 60 && loaded.isEmpty(); ++i) {
+        QTest::qWait(50);
+    }
+    QVERIFY(!loaded.isEmpty()); // 示例用户 avatarKey 为空 → 默认格勾选。
+
+    // 网格 = 默认"默" + 8 个内置头像。
+    QList<QPushButton*> choices;
+    const auto buttons = editPage->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->objectName() == QStringLiteral("uiAvatarChoice")) {
+            choices.append(button);
+        }
+    }
+    QCOMPARE(choices.size(), 9);
+
+    QPushButton* bolt = nullptr;
+    for (auto* button : choices) {
+        if (button->property("avatarKey").toString() == QStringLiteral("bolt")) {
+            bolt = button;
+        }
+    }
+    QVERIFY(bolt != nullptr);
+    QVERIFY(!bolt->isChecked());
+
+    bolt->click(); // 选"⚡" → 发 UPDATE_USER_INFO。
+    const int countBefore = loaded.count();
+    for (int i = 0; i < 60 && loaded.count() <= countBefore; ++i) {
+        QTest::qWait(50);
+    }
+    QVERIFY(loaded.count() > countBefore);
+    QVERIFY(bolt->isChecked());
+
+    // 页内头像标签切到头像图（hasAvatar 属性同时让 QSS 去掉字母底色）。
+    auto* avatarLabel = editPage->findChild<QLabel*>(QStringLiteral("uiAvatar"));
+    QVERIFY(avatarLabel != nullptr);
+    QVERIFY(avatarLabel->property("hasAvatar").toBool());
+    QVERIFY(!avatarLabel->pixmap().isNull());
+
+    // Hub 的头像也吃到同一份权威数据。
+    auto* hubAvatar = shell.findChild<QLabel*>(QStringLiteral("uiAvatarHub"));
+    QVERIFY(hubAvatar != nullptr);
+    QVERIFY(hubAvatar->property("hasAvatar").toBool());
+}
+
+void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
+{
+    // 月度分组回归：跨月订单应按月倒序分组，每月表头汇总单数/金额/电量。
+    // 汇总只是可见行相加（服务端仍是唯一事实来源），这里核对该算术与结构。
+    qRegisterMetaType<charging::client::OrderSummary>();
+    qRegisterMetaType<QVector<charging::client::OrderSummary>>();
+
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderService = shell.findChild<charging::client::OrderService*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(orderService != nullptr);
+
+    const auto makeOrder = [](qint64 id, const QDate& day, qint64 cents, qint64 wh) {
+        charging::client::OrderSummary summary;
+        summary.order.id = id;
+        summary.order.orderNo = QStringLiteral("T%1").arg(id);
+        summary.order.status = charging::model::OrderStatus::Completed;
+        summary.order.startedAtUtc = QDateTime(day, QTime(9, 0), Qt::UTC); // 月中，跨时区安全
+        summary.order.amountCents = cents;
+        summary.order.energyWh = wh;
+        summary.stationName = QStringLiteral("测试电站");
+        summary.chargerCode = QStringLiteral("A0");
+        return summary;
+    };
+
+    // 乱序喂入，验证页面自己按时间倒序分组。
+    QVector<charging::client::OrderSummary> orders;
+    orders << makeOrder(1, QDate(2026, 7, 20), 3258, 24680)
+           << makeOrder(2, QDate(2026, 8, 10), 100, 1000)
+           << makeOrder(3, QDate(2026, 8, 25), 220, 1670);
+    emit orderService->ordersLoaded(orders, orders.size(), false);
+
+    const auto titles = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthTitle"));
+    const auto summaries = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthSummary"));
+    QCOMPARE(titles.size(), 2);
+    QCOMPARE(summaries.size(), 2);
+    // 时间倒序：八月在前，七月在后。
+    QCOMPARE(titles.at(0)->text(), QStringLiteral("2026年8月"));
+    QCOMPARE(titles.at(1)->text(), QStringLiteral("2026年7月"));
+    // 八月合计 2 单 ¥3.20 (100+220) 2.67 kWh (1000+1670)；七月 1 单。
+    QCOMPARE(summaries.at(0)->text(), QStringLiteral("2 单 · ¥3.20 · 2.67 kWh"));
+    QCOMPARE(summaries.at(1)->text(), QStringLiteral("1 单 · ¥32.58 · 24.68 kWh"));
 }
 
 QTEST_MAIN(HomeShellTest)

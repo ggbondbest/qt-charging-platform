@@ -7,6 +7,7 @@
 
 class QLabel;
 class QLineEdit;
+class QButtonGroup;
 
 namespace charging::client {
 
@@ -16,11 +17,13 @@ class LoadingOverlay;
 class NoticePanel;
 
 // Profile edit page (编辑资料), opened from the ProfilePage hub: identity
-// block with an avatar placeholder and the editable nickname, plus read-only
-// account rows. The nickname is persisted by WalletService::updateNickname
-// and the page re-renders from the user the server returns; the client-side
-// length check is a guard, not the rule. Avatar upload has no protocol yet,
-// so its button stays disabled.
+// block with an avatar and the editable nickname, plus read-only account
+// rows. The nickname is persisted by WalletService::updateNickname and the
+// page re-renders from the user the server returns; the client-side length
+// check is a guard, not the rule. Avatar upload has no protocol, so the
+// identity block offers the built-in avatar library instead (selection is
+// persisted as User.avatarKey via UPDATE_USER_INFO; "" restores the
+// nickname-initial default).
 class ProfileEditPage final : public QWidget
 {
     Q_OBJECT
@@ -47,6 +50,7 @@ private:
     void saveEditing();
     void setEditingVisible(bool editing);
     void renderUser();
+    void syncAvatarSelection(); // 网格勾选态跟随 server 权威 avatarKey
     void beginBusy();
     void endBusy();
 
@@ -56,7 +60,8 @@ private:
     QLabel* identityNameLabel_ = nullptr;
     QLabel* identityPhoneLabel_ = nullptr;
     ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层时隐藏）
-    ActionButton* avatarButton_ = nullptr;
+    QButtonGroup* avatarGroup_ = nullptr; // 内置头像库网格（互斥选择）
+    bool avatarInFlight_ = false;         // 一次头像保存的进行中标记
 
     QLabel* nicknameValueLabel_ = nullptr;
     QLineEdit* nicknameEdit_ = nullptr;

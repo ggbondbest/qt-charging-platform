@@ -12,6 +12,7 @@ namespace charging::client {
 class ActionBar;
 class ActionButton;
 class Card;
+class ChargingPulse;
 class LoadingOverlay;
 class NoticePanel;
 class StatusTag;
@@ -60,6 +61,7 @@ private:
     QLabel* durationValueLabel_ = nullptr;
     QLabel* estimateValueLabel_ = nullptr;
     QLabel* updatedLabel_ = nullptr;
+    ChargingPulse* pulse_ = nullptr;
     Card* heroCard_ = nullptr;
     NoticePanel* statusNotice_ = nullptr;
     ActionButton* backButton_ = nullptr; // 页内返回（嵌入壳层时隐藏）
