@@ -5,6 +5,8 @@ add_library(charging_server_repositories STATIC
     charging_repository.h
     order_repository.cpp
     order_repository.h
+    recharge_repository.cpp
+    recharge_repository.h
     repository_row_mapper.h
     station_repository.cpp
     station_repository.h

@@ -10,6 +10,7 @@
 - `ChargerRepository`：按站点、状态、类型筛选并分页查询电桩；
 - `ChargingRepository`：预约、过期、取消、开始、状态和停止的多表事务；
 - `OrderRepository`：余额扣减与订单完成的单事务支付。
+- `RechargeRepository`：幂等充值、余额与充值记录原子写入、分页查询。
 
 写流程使用 `BEGIN IMMEDIATE`，每次状态更新都带旧状态条件并检查影响行数。Repository
 只返回领域错误和仅供日志使用的诊断文本，Service 不会把 SQLite 错误直接返回客户端。
