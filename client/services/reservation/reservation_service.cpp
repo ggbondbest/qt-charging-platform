@@ -38,18 +38,24 @@ Reservation makeCoreReservation(qint64 id, qint64 userId, qint64 chargerId,
     return reservation;
 }
 
-// 演示记录：覆盖 预约中 / 已完成 / 已取消 / 已过期 四种状态。
+// 演示记录：覆盖 预约中 / 已完成 / 已取消 / 已过期 四种状态；距离为虚拟
+// 占位数据（预留对接后续导航模块）。默认“预约中”剩余约 50 分钟（倒计时
+// 绿色档），供预约订单页演示每秒刷新。
 ReservationList defaultMockRecords()
 {
     return {
         {makeCoreReservation(9001, 0, 3007, ReservationStatus::Active, 10, 60),
-         QStringLiteral("南山智造充电站"), QStringLiteral("SZ-NSZ-03-07"), 60, 98},
+         QStringLiteral("南山智造充电站"), QStringLiteral("SZ-NSZ-03-07"),
+         QStringLiteral("直流快充 · 120kW"), 60, 98, 1250},
         {makeCoreReservation(9002, 0, 5002, ReservationStatus::Fulfilled, 300, 90),
-         QStringLiteral("后海城市广场站"), QStringLiteral("SZ-HTC-05-02"), 90, 158},
+         QStringLiteral("后海城市广场站"), QStringLiteral("SZ-HTC-05-02"),
+         QStringLiteral("直流快充 · 160kW"), 90, 158, 860},
         {makeCoreReservation(9003, 0, 1005, ReservationStatus::Cancelled, 480, 30),
-         QStringLiteral("科技园充电驿站"), QStringLiteral("SZ-KEY-01-05"), 30, 60},
+         QStringLiteral("科技园充电驿站"), QStringLiteral("SZ-KEY-01-05"),
+         QStringLiteral("交流慢充 · 7kW"), 30, 60, 2400},
         {makeCoreReservation(9004, 0, 2003, ReservationStatus::Expired, 1500, 120),
-         QStringLiteral("深大北门超充站"), QStringLiteral("SZ-SDU-02-03"), 120, 276},
+         QStringLiteral("深大北门超充站"), QStringLiteral("SZ-SDU-02-03"),
+         QStringLiteral("直流快充 · 240kW"), 120, 276, 5100},
     };
 }
 
@@ -125,8 +131,23 @@ void ReservationService::fetchList()
     QTimer::singleShot(kMockLatencyMs, this, &ReservationService::finishMockList);
 }
 
+bool ReservationService::hasUnfinishedReservation() const
+{
+    // “未结束”= 状态为预约中且倒计时（expiresAtUtc）未归零。真实通道下
+    // 本方法仅作前端入口拦截的参考态，提交时服务端仍会独立校验。
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const auto& record : mockStore_) {
+        if (record.reservation.status == charging::model::ReservationStatus::Active
+            && record.reservation.expiresAtUtc > now) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ReservationService::submit(const charging::model::Charger& charger,
-                                const charging::model::Station& station, int durationMinutes)
+                                const charging::model::Station& station, int durationMinutes,
+                                int distanceMeters)
 {
     emit submitStarted(charger.id);
 
@@ -135,8 +156,10 @@ void ReservationService::submit(const charging::model::Charger& charger,
     record.reservation.userId = userId_;
     record.stationName = station.name;
     record.chargerCode = charger.code;
+    record.chargerSpec = chargerSpecText(charger);
     record.durationMinutes = durationMinutes;
     record.estimatedFeeCents = station.priceCentsPerKwh * durationMinutes / 60;
+    record.distanceMeters = distanceMeters;
     pendingSubmitRecord_ = record;
 
     if (durationMinutes <= 0) {
@@ -190,6 +213,14 @@ void ReservationService::finishMockList()
     emit listSucceeded(sorted);
 }
 
+QString ReservationService::chargerSpecText(const charging::model::Charger& charger)
+{
+    const bool fast = charger.type == charging::model::ChargerType::Fast;
+    return QStringLiteral("%1 · %2kW")
+        .arg(fast ? QStringLiteral("直流快充") : QStringLiteral("交流慢充"))
+        .arg(charger.powerWatts / 1000);
+}
+
 void ReservationService::finishMockSubmit()
 {
     const ReservationRecord requested = pendingSubmitRecord_;
@@ -208,12 +239,11 @@ void ReservationService::finishMockSubmit()
         return;
     }
 
-    for (const auto& record : mockStore_) {
-        if (record.reservation.chargerId == requested.reservation.chargerId
-            && record.reservation.status == charging::model::ReservationStatus::Active) {
-            emit submitFailed(tr("预约冲突：您在该充电桩已有进行中的预约"));
-            return;
-        }
+    // 业务约束（任务 #17 迭代）：同一用户同一时刻仅允许一条未结束预约。
+    // 即使前端入口被绕过，模拟通道在这里同样返回业务错误。
+    if (hasUnfinishedReservation()) {
+        emit submitFailed(tr("您当前尚有未结束的预约，请结束当前预约后再发起新预约"));
+        return;
     }
 
     ReservationRecord created = requested;
@@ -251,6 +281,22 @@ void ReservationService::finishMockCancel()
         return;
     }
     emit cancelFailed(tr("预约记录不存在，请刷新后重试"));
+}
+
+void ReservationService::expireReservation(qint64 reservationId)
+{
+    // 倒计时归零的状态流转：预约订单页每秒刷新检测到剩余 ≤ 0 时调用。
+    // 幂等：仅对仍处于“预约中”的记录生效（真实通道以服务端流转为准，
+    // 本地同步收敛展示状态，命令就绪后 UI 零改动）。
+    for (auto& record : mockStore_) {
+        if (record.reservation.id == reservationId
+            && record.reservation.status == charging::model::ReservationStatus::Active) {
+            record.reservation.status = charging::model::ReservationStatus::Expired;
+            record.reservation.endedAtUtc = QDateTime::currentDateTimeUtc();
+            break;
+        }
+    }
+    emit reservationExpired(reservationId);
 }
 
 void ReservationService::handleResponse(const charging::protocol::ResponseEnvelope& response)

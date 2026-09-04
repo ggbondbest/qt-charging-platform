@@ -2,7 +2,6 @@
 
 #include "charging/common/model/models.h"
 
-#include <QPointer>
 #include <QWidget>
 
 class QLabel;
@@ -23,9 +22,7 @@ class ReservationService;
 
 namespace charging::client::pages::station {
 
-class ReservationDialog;
-
-// 站点详情页（成员 2，任务 #12/#17）。
+// 站点详情页（成员 2，任务 #12/#17/#17迭代）。
 //
 // 页面结构：站点基础信息卡（名称/地址/状态）→ 电价与距离 → 离线横幅
 // （站点 Inactive 时醒目提示）→ 充电桩卡片列表（编号/类型/功率/工作状态）。
@@ -39,9 +36,11 @@ class ReservationDialog;
 //
 // 模拟 ↔ 真实 Service 无缝：数据只经 StationQueryService 详情通道获取，
 // UI 不感知通道来源。导航复用全局 TopNavBar（返回按钮由宿主壳控制显隐），
-// 本页不重复实现导航代码。任务 #17：桩卡片“预约”按钮（非空闲置灰）打开
-// ReservationDialog 提交预约，成功后刷新当前充电桩状态；未登录点击经
-// reservationLoginRequired 交宿主拦截跳转登录。
+// 本页不重复实现导航代码。任务 #17 迭代：桩卡片“预约”按钮不再打开弹窗，
+// 满足条件（已登录 + 无未结束预约）时发 reservationConfirmRequested 由宿主
+// 路由至独立预约确认页面；存在未结束预约时发 reservationBlocked 由宿主
+// 提示拦截；未登录点击发 reservationLoginRequired 交宿主拦截跳登录。
+// 桩列表置于 QScrollArea，鼠标滚轮上下滚动。
 class StationDetailPage final : public QWidget
 {
     Q_OBJECT
@@ -59,13 +58,18 @@ public:
     // 非拥有：与列表页共用同一服务实例（HomeShell 注入）。
     void setService(charging::client::services::station::StationQueryService* service);
 
-    // 任务 #17：预约服务（提交预约经弹窗组件完成）与登录态透传（由
-    // HomeShell 注入，未登录时点击预约发 reservationLoginRequired 拦截）。
+    // 任务 #17 迭代：预约服务（入口拦截判断 + 确认页/模块共用同一实例）
+    // 与登录态透传（由 HomeShell 注入，未登录时点击预约发
+    // reservationLoginRequired 拦截）。
     void setReservationService(charging::client::services::reservation::ReservationService* service);
     void setLoggedIn(bool loggedIn);
 
     // 路由入口：携带站点快照与距离（ID 非法时服务将回友好错误）。
     void openStation(const charging::model::Station& station, int distanceMeters);
+
+    // 预约成功后由宿主回灌：刷新当前充电桩状态（模拟通道本地置为“已预约”
+    // 后重拉；真实通道以服务端数据为准），任务 #17 迭代自弹窗逻辑迁入。
+    void noteChargerReserved(qint64 chargerId);
 
     // 测试探针（isVisibleTo 语义：不依赖整页是否已被宿主显示）。
     DetailState viewState() const;
@@ -75,10 +79,17 @@ public:
 
 signals:
     void backRequested();
-    // 预约入口点击（任务 #17 起携带桩 ID，宿主/测试可观察）。
+    // 预约入口点击（携带桩 ID，宿主/测试可观察）。
     void reservationRequested(qint64 chargerId);
     // 未登录点击预约：宿主提示登录并跳转登录页。
     void reservationLoginRequired();
+    // 存在未结束预约被拦截（任务 #17 迭代业务约束）：宿主弹提示。
+    void reservationBlocked();
+    // 满足预约条件：宿主路由至独立预约确认页面（任务 #17 迭代，携带
+    // 站点快照 / 桩 / 虚拟导航距离）。
+    void reservationConfirmRequested(const charging::model::Station& station,
+                                     const charging::model::Charger& charger,
+                                     int distanceMeters);
 
 private:
     void setDetailState(DetailState state);
@@ -110,7 +121,6 @@ private:
     QWidget* chargerEmptyNotice_ = nullptr;
     QWidget* chargerListPage_ = nullptr;
     QVBoxLayout* chargerListLayout_ = nullptr;
-    QPointer<ReservationDialog> dialog_; // 非模态预约弹窗（show + setModal）
 
     charging::model::Station station_;
     int lastDistanceMeters_ = -1;

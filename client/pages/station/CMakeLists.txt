@@ -9,10 +9,14 @@ add_library(charging_client_station_pages STATIC
     login_page.h
     platform_theme.cpp
     platform_theme.h
-    reservation_dialog.cpp
-    reservation_dialog.h
-    reservation_list_page.cpp
-    reservation_list_page.h
+    reservation_completed_page.cpp
+    reservation_completed_page.h
+    reservation_confirm_page.cpp
+    reservation_confirm_page.h
+    reservation_module_page.cpp
+    reservation_module_page.h
+    reservation_order_page.cpp
+    reservation_order_page.h
     station_detail_page.cpp
     station_detail_page.h
     station_home_page.cpp

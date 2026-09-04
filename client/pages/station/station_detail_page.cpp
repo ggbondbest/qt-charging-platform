@@ -5,7 +5,6 @@
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/status_tag.h"
 #include "pages/station/platform_theme.h"
-#include "pages/station/reservation_dialog.h"
 #include "services/reservation/reservation_service.h"
 #include "services/station/station_query_service.h"
 
@@ -429,23 +428,25 @@ void StationDetailPage::handleReserveRequested(const charging::model::Charger& c
         return;
     }
 
-    // 非模态但独占的弹窗（setModal + show：阻塞交互但不阻塞事件循环）。
-    auto* dialog = new ReservationDialog(station_, charger, this);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setService(reservationService_);
-    connect(dialog, &ReservationDialog::reserved, this, [this](qint64 chargerId) {
-        // 预约成功 → 刷新当前充电桩状态（模拟通道本地置为已预约后重拉；
-        // 真实通道由服务端数据体现，override 仅作用于模拟结果）。
-        if (service_ != nullptr) {
-            service_->setMockChargerReserved(chargerId);
-            service_->fetchDetail(station_, lastDistanceMeters_);
-        }
-    });
-    if (dialog_ != nullptr) {
-        dialog_->close();
+    // 业务约束（任务 #17 迭代）：存在未结束预约时拦截新建，交宿主弹提示，
+    // 不进入预约确认页面（Service 层提交时仍会二次校验，防绕过）。
+    if (reservationService_ != nullptr && reservationService_->hasUnfinishedReservation()) {
+        emit reservationBlocked();
+        return;
     }
-    dialog_ = dialog;
-    dialog->show();
+
+    // 满足预约条件：交宿主路由至独立预约确认页面（不再使用弹窗）。
+    emit reservationConfirmRequested(station_, charger, lastDistanceMeters_);
+}
+
+void StationDetailPage::noteChargerReserved(qint64 chargerId)
+{
+    // 预约成功 → 刷新当前充电桩状态（模拟通道本地置为已预约后重拉；
+    // 真实通道由服务端数据体现，override 仅作用于模拟结果）。
+    if (service_ != nullptr) {
+        service_->setMockChargerReserved(chargerId);
+        service_->fetchDetail(station_, lastDistanceMeters_);
+    }
 }
 
 void StationDetailPage::clearChargerRows()
