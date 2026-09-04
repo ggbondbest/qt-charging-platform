@@ -164,6 +164,58 @@ private slots:
         QCOMPARE(loaded.at(0).at(2).toBool(), false);
         QCOMPARE(failed.count(), 0);
     }
+
+    void statusCountsMatchSeededStatuses()
+    {
+        MockRequestTransport transport;
+        OrderService service(&transport);
+
+        // Seed: 1 Charging, 1 WaitingPayment, 2 Completed (plus 1 Cancelled).
+        QSignalSpy counts(&service, &OrderService::statusCountsUpdated);
+        service.fetchStatusCounts();
+        QVERIFY(waitForSignal(counts));
+        QCOMPARE(counts.count(), 1); // One aggregated emission.
+        QCOMPARE(counts.at(0).at(0).toInt(), 1); // charging
+        QCOMPARE(counts.at(0).at(1).toInt(), 1); // waiting payment
+        QCOMPARE(counts.at(0).at(2).toInt(), 2); // completed
+        QVERIFY(!service.isFetchingStatusCounts());
+    }
+
+    void duplicateStatusCountFetchIsIgnoredWhileInFlight()
+    {
+        MockRequestTransport transport;
+        OrderService service(&transport);
+
+        QSignalSpy counts(&service, &OrderService::statusCountsUpdated);
+        service.fetchStatusCounts();
+        service.fetchStatusCounts(); // Swallowed by the in-flight guard.
+        QVERIFY(waitForSignal(counts));
+        QTest::qWait(600);
+        QCOMPARE(counts.count(), 1);
+    }
+
+    void statusCountFailureDegradesSilentlyAndReleasesGuard()
+    {
+        MockRequestTransport transport;
+        OrderService service(&transport);
+
+        // Consume exactly the three badge requests; no emission, no toast.
+        transport.setNextFailure(
+            QString::fromLatin1(charging::protocol::error_code::kConnectionError), 3);
+
+        QSignalSpy counts(&service, &OrderService::statusCountsUpdated);
+        QSignalSpy failed(&service, &OrderService::operationFailed);
+        service.fetchStatusCounts();
+        QTest::qWait(900); // Past one mock latency window.
+        QCOMPARE(counts.count(), 0);
+        QCOMPARE(failed.count(), 0);
+        QVERIFY(!service.isFetchingStatusCounts());
+
+        // A retry after the transient failure must publish fresh counts.
+        service.fetchStatusCounts();
+        QVERIFY(waitForSignal(counts));
+        QCOMPARE(counts.at(0).at(0).toInt(), 1);
+    }
 };
 
 QTEST_MAIN(TestOrderService)

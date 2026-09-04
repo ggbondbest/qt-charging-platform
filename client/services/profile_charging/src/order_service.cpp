@@ -30,6 +30,74 @@ bool OrderService::isFetchingOrders() const
     return fetchingOrders_;
 }
 
+bool OrderService::isFetchingStatusCounts() const
+{
+    return countingOrders_;
+}
+
+void OrderService::fetchStatusCounts()
+{
+    if (countingOrders_ || transport_ == nullptr) {
+        return; // In-flight guard; a missing transport degrades silently (see header).
+    }
+
+    countingOrders_ = true;
+    countRequestsFailed_ = false;
+    pendingCountRequests_ = 0;
+
+    // One page-1/pageSize-1 request per badge status; we only need `total`.
+    // TODO(contract): GET_ORDERS is not server-implemented yet and the
+    // status/page/pageSize/total names are still unfrozen; when the real
+    // transport lands this must parse exactly what GET_ORDERS returns.
+    const Filter filters[] = {
+        Filter::Charging,
+        Filter::WaitingPayment,
+        Filter::Completed,
+    };
+
+    for (const Filter filter : filters) {
+        ++pendingCountRequests_;
+        QJsonObject payload;
+        payload.insert(QStringLiteral("status"), filterToStatus(filter));
+        payload.insert(QStringLiteral("page"), 1);
+        payload.insert(QStringLiteral("pageSize"), 1);
+
+        transport_->send(
+            QString::fromLatin1(charging::protocol::request_type::kGetOrders), payload,
+            [this, filter](bool success, const QJsonObject& data,
+                           const charging::protocol::ProtocolError& /*error*/) {
+                if (success) {
+                    const int total = data.value(QStringLiteral("total")).toInt();
+                    switch (filter) {
+                    case Filter::Charging:
+                        chargingCount_ = total;
+                        break;
+                    case Filter::WaitingPayment:
+                        waitingPaymentCount_ = total;
+                        break;
+                    case Filter::Completed:
+                        completedCount_ = total;
+                        break;
+                    case Filter::All:
+                        break;
+                    }
+                } else {
+                    countRequestsFailed_ = true;
+                }
+                if (--pendingCountRequests_ > 0) {
+                    return; // Wait for the remaining badge queries.
+                }
+                countingOrders_ = false;
+                if (!countRequestsFailed_) {
+                    emit statusCountsUpdated(chargingCount_, waitingPaymentCount_,
+                                             completedCount_);
+                }
+                // On failure keep the previous badges: the counts are a
+                // decoration for the profile hub and must not toast.
+            });
+    }
+}
+
 QString OrderService::filterToStatus(Filter filter)
 {
     switch (filter) {

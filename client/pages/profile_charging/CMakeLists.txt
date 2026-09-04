@@ -3,6 +3,8 @@ add_library(charging_client_profile_charging_pages STATIC
     include/charging/client/profile_charging/order_detail_page.h
     include/charging/client/profile_charging/order_list_page.h
     include/charging/client/profile_charging/order_status_display.h
+    include/charging/client/profile_charging/profile_edit_page.h
+    include/charging/client/profile_charging/profile_page.h
     include/charging/client/profile_charging/recharge_page.h
     include/charging/client/profile_charging/settlement_page.h
     include/charging/client/profile_charging/wallet_page.h
@@ -10,6 +12,8 @@ add_library(charging_client_profile_charging_pages STATIC
     src/order_detail_page.cpp
     src/order_list_page.cpp
     src/order_status_display.cpp
+    src/profile_edit_page.cpp
+    src/profile_page.cpp
     src/recharge_page.cpp
     src/settlement_page.cpp
     src/wallet_page.cpp

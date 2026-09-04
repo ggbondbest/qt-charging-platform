@@ -91,8 +91,7 @@ void ChargingService::fetchStatusNow()
 
     fetchingStatus_ = true;
     QJsonObject payload;
-    // TODO(contract): request field name assumed as orderId (decimal string
-    // per the id convention); confirm with the leader before wiring.
+    // §8.4: request shape is frozen — {"orderId": "<decimal string>"}.
     payload.insert(QStringLiteral("orderId"), QString::number(trackedOrderId_));
 
     transport_->send(
@@ -106,8 +105,7 @@ void ChargingService::fetchStatusNow()
             }
             ChargingStatus status;
             QString parseError;
-            if (!parseStatus(data.value(QStringLiteral("status")).toObject(), &status,
-                             &parseError)) {
+            if (!parseStatus(data, &status, &parseError)) {
                 emit operationFailed(type,
                                      makeLocalError(charging::protocol::error_code::kInternalError,
                                                     QStringLiteral("invalid status payload: ") +
@@ -145,8 +143,7 @@ void ChargingService::stopCharging()
             }
             ChargingStatus status;
             QString parseError;
-            if (!parseStatus(data.value(QStringLiteral("status")).toObject(), &status,
-                             &parseError)) {
+            if (!parseStatus(data, &status, &parseError)) {
                 emit operationFailed(type,
                                      makeLocalError(charging::protocol::error_code::kInternalError,
                                                     QStringLiteral("invalid status payload: ") +
@@ -189,36 +186,49 @@ void ChargingService::payOrder(qint64 orderId)
                 emit operationFailed(type, error);
                 return;
             }
-            // TODO(contract): PAY_ORDER response fields assumed; the real
-            // settlement result is server-authoritative (BillingService).
-            const qint64 amountCents = jsonPositiveInt(data.value(QStringLiteral("amountCents")));
+            // §8.6: the settled order (source of amountCents) plus the
+            // post-payment authoritative balance under balanceCents.
+            const QJsonObject orderObject = data.value(QStringLiteral("order")).toObject();
+            QString parseError;
+            charging::model::Order paidOrder;
+            if (orderObject.isEmpty() ||
+                !charging::model::fromJson(orderObject, &paidOrder, &parseError)) {
+                emit operationFailed(type,
+                                     makeLocalError(charging::protocol::error_code::kInternalError,
+                                                    QStringLiteral("invalid payment payload: ") +
+                                                        (parseError.isEmpty()
+                                                             ? QStringLiteral(
+                                                                   "missing \"order\" object")
+                                                             : parseError)));
+                return;
+            }
             const qint64 balanceAfter =
-                jsonPositiveInt(data.value(QStringLiteral("balanceAfterCents")));
-            emit paymentCompleted(amountCents, balanceAfter);
+                jsonPositiveInt(data.value(QStringLiteral("balanceCents")));
+            emit paymentCompleted(paidOrder.amountCents, balanceAfter);
         });
 }
 
-bool ChargingService::parseStatus(const QJsonObject& object, ChargingStatus* outStatus,
+bool ChargingService::parseStatus(const QJsonObject& data, ChargingStatus* outStatus,
                                   QString* errorMessage)
 {
-    if (object.isEmpty()) {
+    // §8.4: the order travels under `order`; the live power sits beside it as
+    // `currentPowerWatts`. Absent power degrades the UI to "-- kW", never a
+    // guessed value.
+    const QJsonObject orderObject = data.value(QStringLiteral("order")).toObject();
+    if (orderObject.isEmpty()) {
         if (errorMessage != nullptr) {
-            *errorMessage = QStringLiteral("missing \"status\" object");
+            *errorMessage = QStringLiteral("missing \"order\" object");
         }
         return false;
     }
     ChargingStatus status;
-    if (!charging::model::fromJson(object, &status.order, errorMessage)) {
+    if (!charging::model::fromJson(orderObject, &status.order, errorMessage)) {
         return false;
     }
-    status.stationName = object.value(QStringLiteral("stationName")).toString();
-    status.chargerCode = object.value(QStringLiteral("chargerCode")).toString();
-    // TODO(contract): live power field name (powerWatts vs currentPowerWatts)
-    // is not frozen; absence degrades the UI to "-- kW", never a guess.
-    status.powerKnown = object.contains(QStringLiteral("powerWatts"));
-    status.powerWatts = jsonPositiveInt(object.value(QStringLiteral("powerWatts")));
-    status.estimatedAmountCents =
-        jsonPositiveInt(object.value(QStringLiteral("estimatedAmountCents")));
+    status.stationName = data.value(QStringLiteral("stationName")).toString();
+    status.chargerCode = data.value(QStringLiteral("chargerCode")).toString();
+    status.powerKnown = data.contains(QStringLiteral("currentPowerWatts"));
+    status.powerWatts = jsonPositiveInt(data.value(QStringLiteral("currentPowerWatts")));
     *outStatus = status;
     return true;
 }

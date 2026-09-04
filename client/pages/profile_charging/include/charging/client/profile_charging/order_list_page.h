@@ -29,6 +29,10 @@ public:
     // Re-fetch the first page for the current filter; called on entry.
     void refresh();
 
+    // Enter the list on a specific filter (used by the profile hub badge
+    // cells); switches the chip row and re-fetches.
+    void showFilter(OrderService::Filter filter);
+
 signals:
     void backRequested();
     void orderOpened(const charging::client::OrderSummary& order);
