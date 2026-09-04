@@ -5,9 +5,13 @@ add_library(charging_server_repositories STATIC
     charging_repository.h
     order_repository.cpp
     order_repository.h
+    operation_log_repository.cpp
+    operation_log_repository.h
     recharge_repository.cpp
     recharge_repository.h
     repository_row_mapper.h
+    reservation_query_repository.cpp
+    reservation_query_repository.h
     station_repository.cpp
     station_repository.h
     user_repository.cpp

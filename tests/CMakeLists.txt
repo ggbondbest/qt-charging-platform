@@ -50,6 +50,18 @@ target_link_libraries(test_user_order_recharge_queries PRIVATE
 )
 add_test(NAME user_order_recharge_queries COMMAND test_user_order_recharge_queries)
 
+add_executable(test_reservation_operation_logs tst_reservation_operation_logs.cpp)
+target_link_libraries(test_reservation_operation_logs PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_operation_logs COMMAND test_reservation_operation_logs)
+
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE
     ChargingPlatform::Common
