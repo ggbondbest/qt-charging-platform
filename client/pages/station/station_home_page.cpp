@@ -360,8 +360,10 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
     auto* availabilityTag = new StatusTag(
         item.station.availableChargers > 0
             ? tr("空闲 %1/%2").arg(item.station.availableChargers).arg(item.station.totalChargers)
+            // 满桩是"占用"（warning）不是"故障"（danger）——状态色 token
+            // 语义：空闲绿 / 占用黄 / 故障红 / 离线灰（见 client_platform.qss）。
             : tr("桩位已满"),
-        item.station.availableChargers > 0 ? StatusTag::Tone::Success : StatusTag::Tone::Danger,
+        item.station.availableChargers > 0 ? StatusTag::Tone::Success : StatusTag::Tone::Warning,
         card);
     titleRow->addWidget(nameLabel);
     titleRow->addStretch();

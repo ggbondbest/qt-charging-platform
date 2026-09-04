@@ -3,8 +3,20 @@
  * 设计 token（单一事实来源，与 C++ 代码保持一致）：
  *   页面底色   #F4F6F8      卡片     #FFFFFF  边框 #E5E9EF  圆角 16
  *   主色(电动绿) #00B578    按下     #009A66  禁用 #B7E5D2
- *   危险 #FA5151  警告 #FF9F2E  信息 #1989FA
  *   文本主 #1F2937  次 #6B7280  淡 #9CA3AF
+ *
+ * 状态色 token（语义 × 三形态，全站唯一定义，页面不得另调色值）：
+ *   success 空闲/成功   text #00A76D  soft #EAF9F2  solid #00B578
+ *   warning 占用/待支付 text #D97706  soft #FFF4E0  solid #D97706
+ *   danger  故障/失败   text #DC2626  soft #FDEBEB  solid #DC2626（按下 #B91C1C）
+ *   info    已预约      text #1971C2  soft #E8F3FE  solid #1971C2
+ *   neutral 离线/已完成 text #6B7280  soft #EEF2F6  solid #9CA3AF
+ *   语义映射（桩位）：空闲=success 占用充电中=warning 占用已预约=info
+ *                     故障=danger  离线=neutral。
+ *   刻意区分的双义"充电中"：桩的充电中=占用（warning）；自己订单的充电中
+ *   =进行中的正常会话（success）。两域语义不同，不算不一致。
+ *   soft 用于标签/横幅底色，text 用于浅底深字，solid 用于实心按钮/Toast/徽标
+ *   （配 #FFFFFF 文字）。
  */
 
 /* ---------- 页面容器 ---------- */
@@ -110,7 +122,10 @@ QLabel#balanceLabel {
     color: #FFFFFF;
 }
 QLabel#uiBadge[tone="danger"] {
-    background: #FA5151;
+    background: #DC2626;
+}
+QLabel#uiBadge[tone="warning"] {
+    background: #D97706;
 }
 QLabel#uiBadge[tone="success"] {
     background: #00B578;
@@ -214,12 +229,12 @@ QPushButton#openReservationsButton:pressed {
 QPushButton#logoutButton {
     background: transparent;
     border: none;
-    color: #FA5151;
+    color: #DC2626;
     font-size: 15px;
     font-weight: 600;
 }
 QPushButton#logoutButton:pressed {
-    color: #D9363E;
+    color: #B91C1C;
     background: #FDEBEB;
     border-radius: 12px;
 }
@@ -260,7 +275,7 @@ QPushButton#uiActionButton[variant="secondary"]:disabled {
 }
 
 QPushButton#uiActionButton[variant="danger"] {
-    background: #FA5151;
+    background: #DC2626;
     color: #FFFFFF;
     border: none;
     border-radius: 24px;
@@ -269,7 +284,7 @@ QPushButton#uiActionButton[variant="danger"] {
     font-weight: 700;
 }
 QPushButton#uiActionButton[variant="danger"]:pressed {
-    background: #D9363E;
+    background: #B91C1C;
 }
 QPushButton#uiActionButton[variant="danger"]:disabled {
     background: #F3B9BC;
@@ -317,8 +332,8 @@ QLabel#uiStatusTag[role="statusTag"] {
     color: #6B7280;
 }
 QLabel#uiStatusTag[tone="success"] {
-    background: #E2F7EC;
-    color: #089E62;
+    background: #EAF9F2;
+    color: #00A76D;
 }
 QLabel#uiStatusTag[tone="warning"] {
     background: #FFF4E0;
@@ -383,10 +398,10 @@ QFrame#uiToast {
     border-radius: 10px;
 }
 QFrame#uiToast[tone="success"] {
-    background: #089E62;
+    background: #00B578;
 }
 QFrame#uiToast[tone="danger"] {
-    background: #D9363E;
+    background: #DC2626;
 }
 QFrame#uiToast[tone="warning"] {
     background: #D97706;

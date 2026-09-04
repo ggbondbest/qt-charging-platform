@@ -130,7 +130,7 @@ void ProfilePage::buildUi()
             &ProfilePage::allOrdersRequested);
     addCell(QStringLiteral("⚡"), tr("充电中"), QStringLiteral("success"), &chargingBadge_,
             &ProfilePage::chargingOrdersRequested);
-    addCell(QStringLiteral("¥"), tr("待支付"), QStringLiteral("danger"), &waitingPaymentBadge_,
+    addCell(QStringLiteral("¥"), tr("待支付"), QStringLiteral("warning"), &waitingPaymentBadge_,
             &ProfilePage::waitingPaymentOrdersRequested);
     addCell(QStringLiteral("✔"), tr("已完成"), QStringLiteral("neutral"), &completedBadge_,
             &ProfilePage::completedOrdersRequested);
@@ -283,7 +283,7 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
 void ProfilePage::onStatusCounts(int chargingCount, int waitingPaymentCount, int completedCount)
 {
     applyBadge(chargingBadge_, QStringLiteral("success"), chargingCount);
-    applyBadge(waitingPaymentBadge_, QStringLiteral("danger"), waitingPaymentCount);
+    applyBadge(waitingPaymentBadge_, QStringLiteral("warning"), waitingPaymentCount);
     applyBadge(completedBadge_, QStringLiteral("neutral"), completedCount);
 }
 
