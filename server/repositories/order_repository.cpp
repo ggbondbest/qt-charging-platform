@@ -1,6 +1,7 @@
 #include "order_repository.h"
 
 #include "charging/common/model/models.h"
+#include "charging/common/model/enums.h"
 #include "repository_row_mapper.h"
 
 #include <QSqlError>
@@ -11,10 +12,18 @@ namespace charging::server {
 
 namespace {
 
+constexpr int kMaximumPageSize = 100;
+
 const QString kOrderColumns =
     QStringLiteral("id, order_no, user_id, charger_id, reservation_id, status, "
                    "unit_price_cents_per_kwh, energy_wh, duration_seconds, amount_cents, "
                    "created_at, started_at, stopped_at, paid_at, updated_at");
+
+const QString kQualifiedOrderColumns =
+    QStringLiteral("o.id, o.order_no, o.user_id, o.charger_id, o.reservation_id, o.status, "
+                   "o.unit_price_cents_per_kwh, o.energy_wh, o.duration_seconds, "
+                   "o.amount_cents, o.created_at, o.started_at, o.stopped_at, o.paid_at, "
+                   "o.updated_at");
 
 QString toStorageUtc(const QDateTime& value)
 {
@@ -154,6 +163,74 @@ bool reservationMatchesPayableOrder(const QSqlDatabase& database,
 } // namespace
 
 OrderRepository::OrderRepository(const QSqlDatabase& database) : database_(database) {}
+
+OrderQueryResult OrderRepository::list(const OrderQuery& value) const
+{
+    OrderQueryResult result;
+    if (!database_.isValid() || !database_.isOpen()) {
+        result.errorMessage = QStringLiteral("The SQLite connection is not open");
+        return result;
+    }
+    if (value.limit <= 0 || value.limit > kMaximumPageSize || value.offset < 0) {
+        result.errorMessage = QStringLiteral("Invalid pagination parameters");
+        return result;
+    }
+
+    QString filters = QStringLiteral(
+        " WHERE (o.order_no LIKE :keyword COLLATE NOCASE OR "
+        "u.phone LIKE :keyword COLLATE NOCASE OR u.nickname LIKE :keyword COLLATE NOCASE)");
+    if (value.status.has_value()) {
+        filters.append(QStringLiteral(" AND o.status = :status"));
+    }
+    const auto bindFilters = [&value](QSqlQuery* query) {
+        query->bindValue(QStringLiteral(":keyword"),
+                         QStringLiteral("%%1%").arg(value.keyword.trimmed()));
+        if (value.status.has_value()) {
+            query->bindValue(QStringLiteral(":status"), charging::model::toString(*value.status));
+        }
+    };
+    const QString joins = QStringLiteral(
+        " FROM orders o JOIN users u ON u.id = o.user_id "
+        "JOIN chargers c ON c.id = o.charger_id JOIN stations s ON s.id = c.station_id");
+
+    QSqlQuery countQuery(database_);
+    countQuery.prepare(QStringLiteral("SELECT COUNT(*)") + joins + filters);
+    bindFilters(&countQuery);
+    if (!countQuery.exec() || !countQuery.next()) {
+        result.errorMessage = countQuery.lastError().text();
+        return result;
+    }
+    result.totalCount = countQuery.value(0).toInt();
+
+    QSqlQuery dataQuery(database_);
+    dataQuery.prepare(QStringLiteral("SELECT %1, u.phone, u.nickname, s.name, c.code")
+                          .arg(kQualifiedOrderColumns)
+                      + joins + filters
+                      + QStringLiteral(" ORDER BY o.created_at DESC, o.id DESC "
+                                       "LIMIT :limit OFFSET :offset"));
+    bindFilters(&dataQuery);
+    dataQuery.bindValue(QStringLiteral(":limit"), value.limit);
+    dataQuery.bindValue(QStringLiteral(":offset"), value.offset);
+    if (!dataQuery.exec()) {
+        result.errorMessage = dataQuery.lastError().text();
+        return result;
+    }
+    while (dataQuery.next()) {
+        OrderListItem item;
+        if (!repository_detail::readOrder(dataQuery, &item.order)) {
+            result.errorMessage = QStringLiteral("The stored order row contains invalid data");
+            result.orders.clear();
+            return result;
+        }
+        item.userPhone = dataQuery.value(15).toString();
+        item.userNickname = dataQuery.value(16).toString();
+        item.stationName = dataQuery.value(17).toString();
+        item.chargerCode = dataQuery.value(18).toString();
+        result.orders.append(item);
+    }
+    result.ok = true;
+    return result;
+}
 
 OrderRepositoryResult OrderRepository::pay(qint64 userId, qint64 orderId,
                                            const QDateTime& paidAtUtc) const
