@@ -51,6 +51,11 @@ bool ChargingService::isStoppingCharging() const
     return stopping_;
 }
 
+bool ChargingService::isStarting() const
+{
+    return starting_;
+}
+
 bool ChargingService::isPaying() const
 {
     return paying_;
@@ -152,6 +157,47 @@ void ChargingService::stopCharging()
             }
             stopTracking();
             emit stopCompleted(status);
+        });
+}
+
+void ChargingService::startCharging(qint64 reservationId)
+{
+    const QString type = QString::fromLatin1(charging::protocol::request_type::kStartCharging);
+    if (starting_ || reservationId < 0) {
+        return; // Duplicate submission guard.
+    }
+    if (transport_ == nullptr) {
+        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInternalError,
+                                                  QStringLiteral("transport is not installed")));
+        return;
+    }
+
+    starting_ = true;
+    QJsonObject payload;
+    // The server dispatcher reads reservationId for START_CHARGING; the id
+    // travels as a decimal string like the other frozen request shapes.
+    payload.insert(QStringLiteral("reservationId"), QString::number(reservationId));
+
+    transport_->send(
+        type, payload,
+        [this, type](bool success, const QJsonObject& data,
+                     const charging::protocol::ProtocolError& error) {
+            starting_ = false;
+            if (!success) {
+                emit operationFailed(type, error);
+                return;
+            }
+            ChargingStatus status;
+            QString parseError;
+            if (!parseStatus(data, &status, &parseError)) {
+                emit operationFailed(type,
+                                     makeLocalError(charging::protocol::error_code::kInternalError,
+                                                    QStringLiteral("invalid start payload: ") +
+                                                        parseError));
+                return;
+            }
+            startTracking(status.order.id);
+            emit startCompleted(status);
         });
 }
 
