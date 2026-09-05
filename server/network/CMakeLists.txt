@@ -5,6 +5,8 @@ add_library(charging_server_core STATIC
     charging_server.h
     request_dispatcher.cpp
     request_dispatcher.h
+    server_runtime.cpp
+    server_runtime.h
     tcp_server.h
 )
 add_library(ChargingPlatform::ServerCore ALIAS charging_server_core)

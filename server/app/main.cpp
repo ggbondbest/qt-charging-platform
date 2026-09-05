@@ -1,16 +1,5 @@
-#include "billing_service.h"
-#include "charging_repository.h"
-#include "charging_server.h"
-#include "charging_service.h"
-#include "database_connection.h"
 #include "main_window.h"
-#include "order_repository.h"
-#include "order_service.h"
-#include "request_dispatcher.h"
-#include "user_repository.h"
-#include "user_service.h"
-#include "user_api_service.h"
-#include "user_api_repository.h"
+#include "server_runtime.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -76,39 +65,27 @@ int main(int argc, char* argv[])
         return 2;
     }
 
-    charging::server::DatabaseConnection databaseConnection;
-    QString databaseError;
-    const bool loadDemoSeed = parser.isSet(demoSeedOption);
-    if (!databaseConnection.open(parser.value(databaseOption), loadDemoSeed, &databaseError)) {
-        qCritical().noquote() << QCoreApplication::translate("main",
-                                                             "Unable to initialize database");
-        return 1;
-    }
-
-    charging::server::UserRepository userRepository(databaseConnection.database());
-    charging::server::ChargingRepository chargingRepository(databaseConnection.database());
-    charging::server::OrderRepository orderRepository(databaseConnection.database());
-    charging::server::UserService userService(&userRepository);
-    charging::server::UserApiRepository userApiRepository(databaseConnection.database());
-    charging::server::UserApiService userApiService(&userApiRepository);
-    charging::server::BillingService billingService;
-    charging::server::ChargingService chargingService(&chargingRepository, &billingService);
-    charging::server::OrderService orderService(&orderRepository);
-    charging::server::RequestDispatcher requestDispatcher(&userService, &chargingService,
-                                                          &orderService, &userApiService);
-
-    charging::server::ChargingServer server;
-    server.setRequestDispatcher(&requestDispatcher);
-    if (!server.listen(address, port)) {
-        qCritical().noquote() << QCoreApplication::translate("main", "Unable to start server:")
-                              << server.errorString();
-        return 1;
-    }
-
-    qInfo().noquote() << QCoreApplication::translate("main", "Server listening on")
-                      << address.toString() << ':' << server.serverPort();
-
+    charging::server::ServerRuntime server;
     charging::server::MainWindow window(&server);
+    // Closing the last window requests shutdown but keeps the GUI event loop
+    // alive until the worker has closed sockets, repositories and SQLite.
+    application.setQuitOnLastWindowClosed(false);
+    int exitCode = 0;
+    QObject::connect(&application, &QApplication::lastWindowClosed, &server,
+                     &charging::server::ServerRuntime::stop);
+    QObject::connect(&server, &charging::server::ServerRuntime::startupFailed, &application,
+                     [&](const QString& message) {
+                         exitCode = 1;
+                         qCritical().noquote() << message;
+                     });
+    QObject::connect(&server, &charging::server::ServerRuntime::stopped, &application,
+                     [&]() { application.exit(exitCode); });
+    QObject::connect(&server, &charging::server::ServerRuntime::listening, &application,
+                     [address](quint16 actualPort) {
+                         qInfo().noquote() << "Server listening on" << address.toString()
+                                           << ':' << actualPort;
+                     });
+    server.start(parser.value(databaseOption), parser.isSet(demoSeedOption), address, port);
     window.show();
     return application.exec();
 }

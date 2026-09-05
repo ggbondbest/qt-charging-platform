@@ -17,6 +17,16 @@ target_link_libraries(test_server_smoke PRIVATE
 )
 add_test(NAME server_smoke COMMAND test_server_smoke)
 
+add_executable(test_server_runtime tst_server_runtime.cpp)
+target_link_libraries(test_server_runtime PRIVATE
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME server_runtime COMMAND test_server_runtime)
+set_tests_properties(server_runtime PROPERTIES TIMEOUT 40)
+
 add_executable(test_database_resources tst_database_resources.cpp)
 target_link_libraries(test_database_resources PRIVATE
     ChargingPlatform::DatabaseResources

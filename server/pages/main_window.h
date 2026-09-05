@@ -11,7 +11,7 @@ class QStackedWidget;
 namespace charging::server {
 
 class AdminLoginPage;
-class ChargingServer;
+class ServerRuntime;
 class DashboardPage;
 
 class MainWindow final : public QMainWindow
@@ -19,7 +19,7 @@ class MainWindow final : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(ChargingServer* server, QWidget* parent = nullptr);
+    explicit MainWindow(ServerRuntime* server, QWidget* parent = nullptr);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -34,7 +34,7 @@ private:
     void updateClientCount(int count);
     void updateSidebarWidth();
 
-    ChargingServer* server_ = nullptr;
+    ServerRuntime* server_ = nullptr;
     QStackedWidget* rootStackedWidget_ = nullptr;
     QStackedWidget* pageStackedWidget_ = nullptr;
     AdminLoginPage* loginPage_ = nullptr;
