@@ -223,12 +223,26 @@ void ProfilePage::buildUi()
     serviceCaption->setProperty("role", QStringLiteral("sectionTitle"));
     wrapWithMargins(serviceCaption, 18, 22, 16, 8);
 
+    // 迭代 3：收藏入口（成员 2 收藏夹页，壳路由）。样式与“设置”行同规格：
+    // 同一全局 QSS 选择器组、同一 wrap 边距、同一行高。
+    auto* favoritesButton = new QPushButton(tr("⭐　收藏　›"), this);
+    favoritesButton->setObjectName(QStringLiteral("openFavoritesButton"));
+    favoritesButton->setCursor(Qt::PointingHandCursor);
+    favoritesButton->setMinimumHeight(52);
+    connect(favoritesButton, &QPushButton::clicked, this, &ProfilePage::favoritesRequested);
+
     auto* settingsButton = new QPushButton(tr("⚙️　设置　›"), this);
     settingsButton->setObjectName(QStringLiteral("openSettingsButton"));
     settingsButton->setCursor(Qt::PointingHandCursor);
     settingsButton->setMinimumHeight(52);
     connect(settingsButton, &QPushButton::clicked, this, &ProfilePage::settingsRequested);
-    wrapWithMargins(settingsButton, 16, 0, 16, 0);
+    auto* serviceList = new QWidget(this);
+    auto* serviceListLayout = new QVBoxLayout(serviceList);
+    serviceListLayout->setContentsMargins(0, 0, 0, 0);
+    serviceListLayout->setSpacing(8);
+    serviceListLayout->addWidget(favoritesButton);
+    serviceListLayout->addWidget(settingsButton);
+    wrapWithMargins(serviceList, 16, 0, 16, 0);
 
     profileNotice_ = new NoticePanel(QStringLiteral("⚠"), tr("资料加载失败"), QString(),
                                      tr("重试"), this);

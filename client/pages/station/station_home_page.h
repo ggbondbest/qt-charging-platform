@@ -1,7 +1,9 @@
 #pragma once
 
+#include "services/favorites/favorites_service.h"
 #include "services/station/station_query_service.h"
 
+#include <QPointer>
 #include <QWidget>
 
 class QButtonGroup;
@@ -18,6 +20,7 @@ class NoticePanel;
 namespace charging::client::pages::station {
 
 class StationMapPanel;
+class StationFilterDialog;
 
 // “找站”页（成员 2，任务 #7）：找站业务完整落地。
 //
@@ -59,6 +62,17 @@ public:
     QVector<qint64> visibleStationIds() const;
     QWidget* stationCardAt(int index) const;
 
+    // —— 迭代 3 · 收藏 + 高级筛选 ——
+    // 收藏服务注入（HomeShell 统一装配，与收藏夹页共用同一实例）；
+    // 未注入时页面懒建自用实例兜底（独立测试/降级：内存态、按访客隔离）。
+    void setFavoritesService(services::favorites::FavoritesService* service);
+    services::favorites::FavoritesService* favoritesService();
+
+    // 打开高级筛选弹窗（QPointer 去重）；“确定”经 setFilterCriteria 生效。
+    void openFilterDialog();
+    void setFilterCriteria(const services::station::StationFilterCriteria& criteria);
+    services::station::StationFilterCriteria filterCriteria() const;
+
 signals:
     // 点击站点卡片：请求跳转站点详情（任务 #12 页面，仅路由）。
     void stationSelected(const charging::model::Station& station, int distanceMeters);
@@ -70,13 +84,22 @@ private slots:
     void refreshFilteredCards();
     void retrySearch();
     void clearKeywordAndSearch();
+    // 收藏变化 → 只重画星星（不重建卡片列表，点击收藏不打断浏览位置）。
+    void refreshStarButtons();
+    // 空态操作按钮：筛选生效时“重置筛选”，否则“清空搜索”。
+    void handleEmptyAction();
 
 private:
     QWidget* createStationCard(const services::station::StationListItem& item);
     void setViewState(ViewState state);
+    // 星星视觉态回显（☆/★ + starred 属性驱动局部 QSS）。
+    void applyStarState(QPushButton* starButton, qint64 stationId) const;
 
     services::station::StationQueryService* service_ = nullptr;
     StationMapPanel* mapPanel_ = nullptr;
+    services::favorites::FavoritesService* favoritesService_ = nullptr;
+    QPointer<StationFilterDialog> filterDialog_;
+    services::station::StationFilterCriteria filterCriteria_;
 
     // 筛选栏。
     QButtonGroup* sortGroup_ = nullptr;

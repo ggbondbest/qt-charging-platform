@@ -21,12 +21,16 @@
 #include "charging/client/widgets/top_nav_bar.h"
 #include "network/client_connection.h"
 #include "pages/station/platform_theme.h"
+#include "pages/station/favorites_page.h"
 #include "pages/station/navigation_page.h"
+#include "pages/station/notification_page.h"
 #include "pages/station/reservation_confirm_page.h"
 #include "pages/station/reservation_module_page.h"
 #include "pages/station/settings_page.h"
 #include "pages/station/station_detail_page.h"
 #include "pages/station/station_home_page.h"
+#include "services/favorites/favorites_service.h"
+#include "services/favorites/notification_service.h"
 #include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
 #include "services/settings/settings_service.h"
@@ -147,6 +151,11 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     });
     // 任务 #12/#17：顶部导航“返回”按钮 → 按当前路由回上一级页面。
     connect(topBar_, &TopNavBar::backRequested, this, &HomeShell::leaveRoute);
+    // 迭代 3：顶部筛选按钮 → 找站页高级筛选弹窗（按钮仅在“找站”语境可见，
+    // 见 syncTopBar）；铃铛 → 消息通知页（未登录由 openNotifications 拦截）。
+    connect(topBar_, &TopNavBar::filterRequested, this,
+            [this]() { stationPage_->openFilterDialog(); });
+    connect(topBar_, &TopNavBar::notificationsRequested, this, &HomeShell::openNotifications);
 
     // 内容区：找站 / 订单 / 充电 / 我的。
     // 全端整合：登录态下三个占位 Tab 换成成员 3 真实页面；未登录保持
@@ -164,7 +173,17 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
         reservationService_->setUserId(user_.id);
     }
     reservationService_->setSettingsService(settingsService_);
+    // 迭代 3：收藏 / 通知服务壳内单实例——收藏状态必须全壳共享（首页星星、
+    // 收藏夹页读写同一份），通知服务吃设置服务做三开关过滤。按登录用户
+    // 键加载持久化收藏；未登录保持空键 = 内存态（不落盘不泄漏）。
+    favoritesService_ = new services::favorites::FavoritesService(this);
+    notificationService_ = new services::favorites::NotificationService(this);
+    notificationService_->setSettingsService(settingsService_);
+    if (hasUser_) {
+        favoritesService_->setCurrentUser(QString::number(user_.id));
+    }
     stationPage_ = new StationHomePage(pageStack_);
+    stationPage_->setFavoritesService(favoritesService_);
     pageStack_->addWidget(stationPage_);
     if (hasUser_) {
         // 双通道：真实登录（带 connection）走 NetworkRequestTransport，
@@ -223,14 +242,10 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     // 导航页追加在成员 3 路由页 7–11 之后（登录态 12/13）；登录态与用户 ID
     // 由壳透传。SettingsService 构造于壳内，作为车辆名额/默认车/通知开关的
     // 单一事实源。
-    reservationService_ = new services::reservation::ReservationService(this);
-    settingsService_ = new services::settings::SettingsService(this);
-    // 腾讯地图 WebService（key 经环境变量注入；无 key 时页面保持纯模拟）。
-    mapGeoService_ = new services::map::MapGeoService(this);
-    if (hasUser_) {
-        reservationService_->setUserId(user_.id);
-    }
-    reservationService_->setSettingsService(settingsService_);
+    // 迭代 3 修复：此处曾重复 new 同组三个服务并覆盖成员变量——先建的
+    // ChargingHomePage（构造于 Tab 区）捕获前一组实例，其后页面静默用后一组，
+    // 两实例数据互不相通（双通道状态/设置开关只生效一半）。服务统一在
+    // 壳顶部构造一次，此处只做注入。
     detailPage_->setReservationService(reservationService_);
     detailPage_->setSettingsService(settingsService_);
     detailPage_->setLoggedIn(hasUser_);
@@ -273,6 +288,37 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
         backTargets_.clear();
         syncTopBar();
     });
+
+    // 迭代 3：预约事件 → 通知中心桥接（后端通知接口未就绪，Service 层
+    // 模拟口径，见 notification_service.h TODO(contract)）。提交成功直接吃
+    // 信号载荷；取消/到期只有 ID，经 reservationRecord 反查展示上下文。
+    // 设置页三开关的过滤在 NotificationService 内统一做，这里无脑推送。
+    connect(reservationService_,
+            &services::reservation::ReservationService::submitSucceeded, this,
+            [this](const services::reservation::ReservationRecord& record) {
+                notificationService_->pushReservationSuccess(
+                    record.stationName, record.chargerCode, record.vehiclePlate,
+                    record.startAtUtc);
+            });
+    connect(reservationService_, &services::reservation::ReservationService::cancelSucceeded,
+            this, [this](qint64 reservationId) {
+                const auto* record = reservationService_->reservationRecord(reservationId);
+                if (record != nullptr) {
+                    notificationService_->pushReservationCancelled(record->stationName,
+                                                                   record->chargerCode);
+                }
+            });
+    connect(reservationService_, &services::reservation::ReservationService::reservationExpired,
+            this, [this](qint64 reservationId) {
+                const auto* record = reservationService_->reservationRecord(reservationId);
+                if (record != nullptr) {
+                    // lateCancelled = 迟到超时自动取消 → “到期提醒”口径里的
+                    // 迟到分支；倒计时归零 = 时段结束提醒。
+                    notificationService_->pushReservationExpired(record->stationName,
+                                                                record->chargerCode,
+                                                                record->lateCancelled);
+                }
+            });
 
     // 全端整合：成员 3 路由页（索引 7–11，追加在既有路由页之后，不影响
     // 成员 2 的 4–6 索引约定）与跨模块导航接线。充电中订单点击进入
@@ -351,6 +397,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
                 &HomeShell::openReservationModule);
         connect(profilePage_, &ProfilePage::settingsRequested, this,
                 &HomeShell::openSettings);
+        // 迭代 3：“我的 → 收藏”行 → 收藏夹路由页（未登录拦截在壳统一做）。
+        connect(profilePage_, &ProfilePage::favoritesRequested, this, &HomeShell::openFavorites);
         connect(profilePage_, &ProfilePage::logoutRequested, this,
                 [this]() { emit logoutRequested(); });
 
@@ -416,6 +464,19 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     if (walletPage_ != nullptr) {
         pageStack_->addWidget(walletPage_);
     }
+
+    // 迭代 3：消息通知页 + 收藏夹页追加在栈尾（登录态 15/16；未登录 9/10，
+    // 壳照常构建、入口点击时拦截提示登录）。复用全局顶部导航 + 底部 Tab，
+    // 数据服务与首页星星/设置开关共用壳内单实例。
+    notificationPage_ = new NotificationPage(pageStack_);
+    notificationPage_->setNotificationService(notificationService_);
+    pageStack_->addWidget(notificationPage_);
+    favoritesPage_ = new FavoritesPage(pageStack_);
+    favoritesPage_->setFavoritesService(favoritesService_);
+    pageStack_->addWidget(favoritesPage_);
+    // 收藏卡点击 → 站点详情（pushRoute 记录出发点为收藏页，返回链自然）。
+    connect(favoritesPage_, &FavoritesPage::stationSelected, this,
+            &HomeShell::openStationDetail);
 
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
@@ -587,6 +648,36 @@ void HomeShell::openSettings()
     syncTopBar();
 }
 
+void HomeShell::openNotifications()
+{
+    // 迭代 3：铃铛入口在“找站”语境；未登录拦截（规格：通知页登录门禁）。
+    if (!hasUser_) {
+        showFeatureLoginPrompt(tr("查看消息通知需要先登录账号。"),
+                               tr("登录后可接收预约成功 / 取消 / 到期提醒消息。"));
+        return;
+    }
+    notificationPage_->refresh();
+    backTargets_.clear();
+    backTargets_.push_back(BackTarget{nullptr, QStringLiteral("station")});
+    pageStack_->setCurrentWidget(notificationPage_);
+    syncTopBar();
+}
+
+void HomeShell::openFavorites()
+{
+    // 迭代 3：“我的 → 收藏”入口；未登录拦截（规格：收藏页登录门禁）。
+    if (!hasUser_) {
+        showFeatureLoginPrompt(tr("查看收藏夹需要先登录账号。"),
+                               tr("登录后收藏将同步到账号，并在收藏夹页集中管理。"));
+        return;
+    }
+    favoritesPage_->refresh();
+    backTargets_.clear();
+    backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
+    pageStack_->setCurrentWidget(favoritesPage_);
+    syncTopBar();
+}
+
 void HomeShell::openNavigation(const services::reservation::ReservationRecord& record)
 {
     // 导航页路由：展示到预约桩的模拟路线摘要。返回链固定为
@@ -638,14 +729,21 @@ void HomeShell::syncTopBar()
 
 void HomeShell::showReservationLoginPrompt()
 {
+    showFeatureLoginPrompt(tr("预约充电桩需要先登录账号。"),
+                           tr("登录后即可预约充电桩并查看我的预约记录。"));
+}
+
+void HomeShell::showFeatureLoginPrompt(const QString& text, const QString& informativeText)
+{
     // 登录拦截提示（任务 #17）：非模态确认框，“去登录”经全局 loginRequested
-    // 由宿主跳登录页；不重复实现登录逻辑。
+    // 由宿主跳登录页；不重复实现登录逻辑。迭代 3 起文案参数化，供
+    // 通知页/收藏夹页入口复用（对象名保持预约拦截锚点不变）。
     auto* prompt = new QMessageBox(this);
     prompt->setObjectName(QStringLiteral("reservationLoginPrompt"));
     prompt->setIcon(QMessageBox::Warning);
     prompt->setWindowTitle(tr("需要登录"));
-    prompt->setText(tr("预约充电桩需要先登录账号。"));
-    prompt->setInformativeText(tr("登录后即可预约充电桩并查看我的预约记录。"));
+    prompt->setText(text);
+    prompt->setInformativeText(informativeText);
     QPushButton* goLogin =
         prompt->addButton(tr("去登录"), QMessageBox::AcceptRole);
     goLogin->setObjectName(QStringLiteral("reservationGoLoginButton"));
@@ -760,6 +858,26 @@ ReservationModulePage* HomeShell::reservationModule() const
 services::settings::SettingsService* HomeShell::settingsService() const
 {
     return settingsService_;
+}
+
+services::favorites::FavoritesService* HomeShell::favoritesService() const
+{
+    return favoritesService_;
+}
+
+services::favorites::NotificationService* HomeShell::notificationService() const
+{
+    return notificationService_;
+}
+
+FavoritesPage* HomeShell::favoritesPage() const
+{
+    return favoritesPage_;
+}
+
+NotificationPage* HomeShell::notificationPage() const
+{
+    return notificationPage_;
 }
 
 QWidget* HomeShell::createOrderPage()
