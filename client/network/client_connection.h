@@ -24,6 +24,7 @@ public:
 
     QString sendRequest(const QString& type, const QJsonObject& data = {});
     bool isConnected() const;
+    void disconnectFromServer();
     QString hostName() const;
     quint16 port() const;
 

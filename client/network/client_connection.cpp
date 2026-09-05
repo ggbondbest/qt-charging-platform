@@ -79,6 +79,12 @@ bool ClientConnection::isConnected() const
     return socket_->state() == QAbstractSocket::ConnectedState;
 }
 
+void ClientConnection::disconnectFromServer()
+{
+    failAllRequests(connectionErrorCode(), tr("连接已关闭，请重新登录"));
+    socket_->abort();
+}
+
 QString ClientConnection::hostName() const
 {
     return hostName_;

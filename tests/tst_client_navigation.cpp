@@ -8,6 +8,9 @@
 #include "request_dispatcher.h"
 #include "user_repository.h"
 #include "user_service.h"
+#include "user_api_repository.h"
+#include "user_api_service.h"
+#include "charging/client/profile_charging/network_request_transport.h"
 
 #include <QDir>
 #include <QHostAddress>
@@ -45,13 +48,15 @@ public:
         }
         const QString databasePath =
             temporaryDirectory_.filePath(QStringLiteral("navigation-test.sqlite3"));
-        if (!database_.open(databasePath, false, errorMessage)) {
+        if (!database_.open(databasePath, true, errorMessage)) {
             return false;
         }
 
         repository_ = std::make_unique<charging::server::UserRepository>(database_.database());
         service_ = std::make_unique<charging::server::UserService>(repository_.get());
-        dispatcher_ = std::make_unique<charging::server::RequestDispatcher>(service_.get());
+        apiRepository_ = std::make_unique<charging::server::UserApiRepository>(database_.database());
+        apiService_ = std::make_unique<charging::server::UserApiService>(apiRepository_.get());
+        dispatcher_ = std::make_unique<charging::server::RequestDispatcher>(service_.get(), nullptr, nullptr, apiService_.get());
         server_ = std::make_unique<charging::server::ChargingServer>();
         server_->setRequestDispatcher(dispatcher_.get());
         if (!server_->listen(QHostAddress::LocalHost, 0)) {
@@ -71,6 +76,8 @@ private:
     charging::server::DatabaseConnection database_;
     std::unique_ptr<charging::server::UserRepository> repository_;
     std::unique_ptr<charging::server::UserService> service_;
+    std::unique_ptr<charging::server::UserApiRepository> apiRepository_;
+    std::unique_ptr<charging::server::UserApiService> apiService_;
     std::unique_ptr<charging::server::RequestDispatcher> dispatcher_;
     std::unique_ptr<charging::server::ChargingServer> server_;
 };
@@ -109,6 +116,7 @@ void ClientNavigationTest::loginSuccessShowsHomeShell()
     QTRY_VERIFY_WITH_TIMEOUT(
         window.findChild<charging::client::pages::station::HomeShell*>() != nullptr, 5000);
     auto* homeShell = window.findChild<charging::client::pages::station::HomeShell*>();
+    QVERIFY(homeShell->findChild<charging::client::NetworkRequestTransport*>() != nullptr);
 
     auto* pageStack = window.findChild<QStackedWidget*>(QStringLiteral("mainPageStack"));
     QVERIFY(pageStack != nullptr);
@@ -121,7 +129,7 @@ void ClientNavigationTest::loginSuccessShowsHomeShell()
     QVERIFY(avatarButton != nullptr);
     QVERIFY(!avatarButton->isHidden());
 
-    // 任务 #7：登录后找站页自动检索（模拟通道），最终渲染站点卡片列表。
+    // Real TCP+SQLite station data, not the preview mock.
     auto* stationPage =
         homeShell->findChild<charging::client::pages::station::StationHomePage*>();
     QVERIFY(stationPage != nullptr);
@@ -129,7 +137,7 @@ void ClientNavigationTest::loginSuccessShowsHomeShell()
         stationPage->viewState()
             == charging::client::pages::station::StationHomePage::ViewState::List,
         5000);
-    QVERIFY(stationPage->stationCardCount() > 0);
+    QCOMPARE(stationPage->stationCardCount(), 3);
 
     // 点击头像 → 个人中心（“我的”Tab），账户信息在此透传展示。
     avatarButton->click();

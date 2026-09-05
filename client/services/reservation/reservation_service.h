@@ -26,6 +26,7 @@ namespace charging::client::services::reservation {
 struct ReservationRecord
 {
     charging::model::Reservation reservation;
+    qint64 orderId = 0; // Real associated order; zero only when absent.
     QString stationName;
     QString chargerCode;
     QString chargerSpec; // 如“直流快充 · 120kW”（预约订单/历史详情展示）
@@ -171,6 +172,9 @@ private:
     qint64 pendingCancelId_ = 0;
     ReservationRecord pendingSubmitRecord_; // live 响应补齐展示上下文用
     ReservationList mockStore_;
+    ReservationList liveStore_;
+    ReservationList accumulatedList_;
+    int listPage_ = 1;
 };
 
 } // namespace charging::client::services::reservation

@@ -329,13 +329,26 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                                QStringLiteral("amountCents must be a positive integer")));
             return;
         }
+        const QString transactionNo = data.value("transactionNo").toString();
+        for (const auto& prior : records_) {
+            if (!transactionNo.isEmpty() && prior.transactionNo == transactionNo) {
+                if (prior.amountCents != amountCents) {
+                    callback(false, {}, mockError(charging::protocol::error_code::kIdempotencyConflict,
+                                                   QStringLiteral("transaction mismatch")));
+                    return;
+                }
+                callback(true, {{"record", charging::model::toJson(prior)},
+                                 {"balanceCents", double(user_.balanceCents)}, {"idempotent", true}}, {});
+                return;
+            }
+        }
         user_.balanceCents += amountCents;
         user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 
         charging::model::RechargeRecord record;
         record.id = nextRecordId_++;
-        record.transactionNo =
-            QStringLiteral("MOCKRCH%1").arg(nextTransactionSeq_++, 8, 10, QChar('0'));
+        record.transactionNo = transactionNo.isEmpty()
+            ? QStringLiteral("MOCKRCH%1").arg(nextTransactionSeq_++, 8, 10, QChar('0')) : transactionNo;
         record.userId = user_.id;
         record.amountCents = amountCents;
         record.balanceAfterCents = user_.balanceCents;
@@ -345,6 +358,9 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
 
         QJsonObject payload;
         payload.insert(QStringLiteral("amountCents"), amountCents);
+        payload.insert("record", charging::model::toJson(record));
+        payload.insert("balanceCents", double(user_.balanceCents));
+        payload.insert("idempotent", false);
         payload.insert(QStringLiteral("balanceAfterCents"), user_.balanceCents);
         payload.insert(QStringLiteral("transactionNo"), record.transactionNo);
         callback(true, payload, charging::protocol::ProtocolError{});

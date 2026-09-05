@@ -775,7 +775,8 @@ void ReservationServiceTest::liveSubmitAndCancelSucceedEndToEnd()
     QVERIFY(created.reservation.status == charging::model::ReservationStatus::Active);
     // 展示上下文由请求侧带入（与模拟数据同构）。
     QCOMPARE(created.stationName, QStringLiteral("测试充电站"));
-    QCOMPARE(created.vehiclePlate, QStringLiteral("粤B·D00001"));
+    QVERIFY(created.vehiclePlate.isEmpty()); // Server v1 does not persist a vehicle binding.
+    QVERIFY(created.orderId > 0);
     // 起止时刻以服务端返回收敛（reservedAt → start，差值为时长）。
     QVERIFY(created.startAtUtc.isValid());
     QCOMPARE(created.startAtUtc, created.reservation.reservedAtUtc);
