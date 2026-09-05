@@ -34,6 +34,11 @@ signals:
     void backRequested();
     void rechargeSucceeded(qint64 balanceAfterCents);
 
+protected:
+    // 每次进入页面刷新"结果未确认充值"提示条（上次会话超时留下的意图可能
+    // 已在服务端入账，契约 v1 §3：重试沿用原流水号幂等确认，不会重复入账）。
+    void showEvent(QShowEvent* event) override;
+
 private slots:
     void onConfirmClicked();
     void onRechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
@@ -44,11 +49,15 @@ private:
     void setSubmitting(bool submitting);
     // Returns selected amount in cents, or -1 when the selection is invalid.
     qint64 selectedAmountCents(QString* invalidReason) const;
+    void updatePendingRechargeNotice();
 
     WalletService* service_ = nullptr;
 
     ActionButton* backButton_ = nullptr;
     QLabel* balanceValueLabel_ = nullptr;
+    QWidget* pendingBar_ = nullptr; // 未确认充值恢复条，无 pending 意图时隐藏
+    QLabel* pendingNoticeLabel_ = nullptr;
+    ActionButton* retryButton_ = nullptr;
     QVector<ActionButton*> amountChips_;
     QVector<qint64> chipAmountsCents_;
     QLineEdit* customAmountEdit_ = nullptr;

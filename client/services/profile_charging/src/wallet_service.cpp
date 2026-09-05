@@ -23,6 +23,17 @@ charging::protocol::ProtocolError makeLocalError(const char* code, const QString
     return error;
 }
 
+// 本地预检与契约 v1 服务端校验同码同形：INVALID_ARGUMENT + details.field，
+// 页面经 displayMessageForError 按字段映射文案，本地/远端拒绝表现一致。
+charging::protocol::ProtocolError makeLocalFieldError(const QString& field)
+{
+    charging::protocol::ProtocolError error = makeLocalError(
+        charging::protocol::error_code::kInvalidArgument,
+        QStringLiteral("Invalid user API request: ") + field);
+    error.details.insert(QStringLiteral("field"), field);
+    return error;
+}
+
 } // namespace
 
 WalletService::WalletService(IRequestTransport* transport, QObject* parent)
@@ -109,10 +120,9 @@ void WalletService::updateNickname(const QString& nickname)
     }
     const QString trimmed = nickname.trimmed();
     if (trimmed.isEmpty() || trimmed.length() > 32) {
-        // Local pre-check mirrors the documented schema bound (1..32 chars);
-        // the server stays authoritative once real interfaces are released.
-        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
-                                                  QStringLiteral("昵称需为 1–32 个字符")));
+        // Local pre-check mirrors the frozen contract bound (trim(nickname)
+        // is 1..32, §3 UPDATE_USER_INFO); the server stays authoritative.
+        emit operationFailed(type, makeLocalFieldError(QStringLiteral("nickname")));
         return;
     }
 
@@ -200,11 +210,10 @@ void WalletService::recharge(qint64 amountCents)
                                                   QStringLiteral("transport is not installed")));
         return;
     }
-    if (amountCents <= 0 || amountCents > kMaximumRechargeCents) {
-        // Local pre-check only mirrors documented bounds; the server stays
-        // authoritative once real interfaces are released.
-        emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
-                                                  QStringLiteral("充值金额无效")));
+    if (amountCents < 1 || amountCents > kMaximumRechargeCents) {
+        // Local pre-check mirrors the frozen contract bound
+        // (1..10000000 cents, §3 RECHARGE); the server stays authoritative.
+        emit operationFailed(type, makeLocalFieldError(QStringLiteral("amountCents")));
         return;
     }
 
@@ -216,8 +225,11 @@ void WalletService::recharge(qint64 amountCents)
         payload = QJsonDocument::fromJson(settings.value(settingsKey).toByteArray()).object();
         if (payload.value("transactionNo").toString().isEmpty()
             || payload.value("amountCents").toDouble() != double(amountCents)) {
-            emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInvalidArgument,
-                tr("存在结果未确认的充值，请使用原金额重试，勿发起新交易")));
+            charging::protocol::ProtocolError error = makeLocalError(
+                charging::protocol::error_code::kInvalidArgument,
+                tr("存在结果未确认的充值，请使用原金额重试，勿发起新交易"));
+            error.details.insert(QStringLiteral("field"), QStringLiteral("pendingRecharge"));
+            emit operationFailed(type, error);
             return;
         }
     } else {
@@ -325,6 +337,25 @@ void WalletService::fetchRechargeRecords(int page)
             const int total = data.value(QStringLiteral("total")).toInt();
             emit rechargeRecordsLoaded(records, total, hasMore);
         });
+}
+
+qint64 WalletService::pendingRechargeAmount() const
+{
+    if (transport_ == nullptr) {
+        return 0;
+    }
+    const QString scope = transport_->persistenceScope();
+    if (scope.isEmpty()) {
+        return 0; // 预览/无连接通道不落盘意图，也就没有未确认状态。
+    }
+    QSettings settings;
+    const QByteArray raw = settings.value(QStringLiteral("pendingRecharge/") + scope)
+                               .toByteArray();
+    const QJsonObject intent = QJsonDocument::fromJson(raw).object();
+    if (intent.value(QStringLiteral("transactionNo")).toString().isEmpty()) {
+        return 0;
+    }
+    return static_cast<qint64>(intent.value(QStringLiteral("amountCents")).toDouble());
 }
 
 } // namespace charging::client

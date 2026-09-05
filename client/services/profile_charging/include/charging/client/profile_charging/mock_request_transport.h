@@ -34,8 +34,9 @@ public:
     void drainBalanceTo(qint64 cents);
     // Integrated shell: seed the mock session with the real logged-in user so
     // identity/balance shown by profile/wallet pages are the actual account.
-    // Orders and recharge records stay demo seeds until the server implements
-    // the wallet-family commands (TODO(contract)).
+    // Orders and recharge records stay demo seeds — the mock channel serves
+    // connection-less previews only; real logins get NetworkRequestTransport
+    // against the live wallet-family endpoints (contract v1).
     void setUser(const charging::model::User& user);
     // Client-side demo bridge: mirror a member-2 ReservationService submission
     // into this transport so START_CHARGING(reservationId) can resolve the
