@@ -23,6 +23,7 @@ class WalletPage;
 class OrderListPage;
 class OrderDetailPage;
 class ChargingPage;
+class ChargingHomePage;
 class SettlementPage;
 class RechargePage;
 class ProfileEditPage;
@@ -68,9 +69,11 @@ class NavigationPage;
 // 未登录点击提示登录。
 //
 // 全端整合（成员 3）：三个占位 Tab 换成成员 3 真实页面——订单 →
-// OrderListPage、充电 Tab（原“充值”）→ WalletPage、我的 → ProfilePage 中心页（含编辑资料/
-// 详情/结算/充值/充电过程路由页，索引 7–11；充电中订单点击进入 ChargingPage，
-// 停止 → 结算闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务暂走
+// OrderListPage、充电 Tab → ChargingHomePage（按充电生命周期状态展示：
+// 充电中/待支付/已有预约/无任务），钱包页降为路由页（入口在「我的」
+// 钱包卡）；我的 → ProfilePage 中心页（含编辑资料/详情/结算/充值/
+// 钱包/充电过程路由页；充电中订单点击进入 ChargingPage，停止 → 结算
+// 闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务暂走
 // 共享 mock 通道，服务端命令就绪后切换（TODO(contract)）。“我的预约”入口与
 // 退出登录按钮保留原测试锚点 objectName（openReservationsButton/logoutButton/
 // nicknameLabel/balanceLabel）。路由返回改为返回栈（backTargets_），支持
@@ -130,9 +133,12 @@ private:
     void openOrderDetail(const charging::client::OrderSummary& summary);
     void openSettlement();
     void openRecharge();
+    void openWallet();
     void openProfileEdit();
     void openNavigation(const services::reservation::ReservationRecord& record);
     void leaveRoute();
+    // 顶栏态与路由栈/当前 Tab 同步：返回按钮跟随路由栈，搜索框只留在「找站」。
+    void syncTopBar();
     void showReservationLoginPrompt();
     void showUnfinishedReservationPrompt();
     void showNoVehiclePrompt();
@@ -161,7 +167,8 @@ private:
     charging::client::OrderService* orderService_ = nullptr;
     charging::client::ChargingService* chargingService_ = nullptr;
     charging::client::ProfilePage* profilePage_ = nullptr;    // “我的”Tab（登录后）
-    charging::client::WalletPage* walletPage_ = nullptr;      // “充电”Tab（登录态内容：钱包/充值记录）
+    charging::client::WalletPage* walletPage_ = nullptr;      // 路由页（“我的”钱包卡进入）
+    charging::client::ChargingHomePage* chargingHomePage_ = nullptr; // “充电”Tab（状态首页）
     charging::client::OrderListPage* orderListPage_ = nullptr; // “订单”Tab
     charging::client::OrderDetailPage* orderDetailPage_ = nullptr; // 路由页 7
     charging::client::SettlementPage* settlementPage_ = nullptr;   // 路由页 8

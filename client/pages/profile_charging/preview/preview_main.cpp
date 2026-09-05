@@ -181,16 +181,6 @@ int main(int argc, char* argv[])
     };
     QObject::connect(profilePage, &charging::client::ProfilePage::allOrdersRequested,
                      [&]() { openFilteredOrders(charging::client::OrderService::Filter::All); });
-    QObject::connect(profilePage, &charging::client::ProfilePage::chargingOrdersRequested, [&]() {
-        openFilteredOrders(charging::client::OrderService::Filter::Charging);
-    });
-    QObject::connect(profilePage, &charging::client::ProfilePage::waitingPaymentOrdersRequested,
-                     [&]() {
-                         openFilteredOrders(charging::client::OrderService::Filter::WaitingPayment);
-                     });
-    QObject::connect(profilePage, &charging::client::ProfilePage::completedOrdersRequested, [&]() {
-        openFilteredOrders(charging::client::OrderService::Filter::Completed);
-    });
     QObject::connect(orderListPage, &charging::client::OrderListPage::backRequested, [&]() {
         landOn(ordersReturnPage);
     });

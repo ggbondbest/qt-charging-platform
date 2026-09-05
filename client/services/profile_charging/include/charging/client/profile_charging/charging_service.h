@@ -49,11 +49,19 @@ public:
 
     void stopCharging();        // STOP_CHARGING for the tracked order
     bool isStoppingCharging() const;
+    // START_CHARGING consumes a reservation: the server dispatcher reads
+    // {"reservationId": "<decimal string>"} for this type. reservationId 0 is
+    // a walk-up "scan" start — the server does not define that yet
+    // (TODO(contract)); only the mock transport accepts it, for demos.
+    // On success the service begins tracking the new order immediately.
+    void startCharging(qint64 reservationId);
+    bool isStarting() const;
     void payOrder(qint64 orderId); // PAY_ORDER (server re-validates balance)
     bool isPaying() const;
 
 signals:
     void statusLoaded(const charging::client::ChargingStatus& status);
+    void startCompleted(const charging::client::ChargingStatus& status);
     void stopCompleted(const charging::client::ChargingStatus& status);
     void paymentCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void operationFailed(const QString& type, const charging::protocol::ProtocolError& error);
@@ -71,6 +79,7 @@ private:
     QTimer* pollTimer_ = nullptr;
     qint64 trackedOrderId_ = 0;
     bool fetchingStatus_ = false;
+    bool starting_ = false;
     bool stopping_ = false;
     bool paying_ = false;
 };
