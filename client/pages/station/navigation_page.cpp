@@ -203,6 +203,11 @@ void NavigationPage::setMapService(services::map::MapGeoService* mapService)
             [this](quint64 requestId, services::map::MapError, const QString& message) {
                 handleRouteFailure(requestId, message);
             });
+    connect(mapService_, &services::map::MapGeoService::geocodeSucceeded, this,
+            [this](quint64 requestId, const QString& address) {
+                handleGeocodeResult(requestId, address);
+            });
+    // geocodeFailed 静默：可选接口，失败保持“站名·桩编号”模拟口径即可。
 }
 
 void NavigationPage::openRoute(const ReservationRecord& record)
@@ -232,13 +237,18 @@ void NavigationPage::openRoute(const ReservationRecord& record)
     appendStepRows(steps);
 
     // 真实路线（地图接入）：key 可用且预约记录带站点坐标时异步请求；
-    // 复位展示口径并记录代际，过期响应在回调里丢弃。
+    // 复位展示口径并记录代际，过期响应在回调里丢弃。请求在途 caption
+    // 显示 loading 态（任务书第 3 条），到达/失败后改为最终口径。
     usingRealRoute_ = false;
     captionLabel_->setText(defaultCaptionText_);
     routeGeneration_ = 0;
+    geocodeGeneration_ = 0;
     if (mapService_ != nullptr && mapService_->hasUsableKey() && record_.hasStationLocation) {
         routeGeneration_ = mapService_->requestDrivingRoute(
             mapService_->userLocation(),
+            {record_.stationLatitude, record_.stationLongitude});
+        captionLabel_->setText(tr("正在加载真实导航路线…"));
+        geocodeGeneration_ = mapService_->requestReverseGeocode(
             {record_.stationLatitude, record_.stationLongitude});
     }
 }
@@ -319,6 +329,21 @@ void NavigationPage::handleRouteFailure(quint64 requestId, const QString& messag
     captionLabel_->setText(tr("导航路线为模拟数据（接口异常：%1）").arg(message));
     Toast::show(window(), tr("地图服务暂不可用（%1），已展示模拟路线").arg(message),
                 charging::client::StatusTag::Tone::Warning);
+}
+
+void NavigationPage::handleGeocodeResult(quint64 requestId, const QString& address)
+{
+    if (requestId != geocodeGeneration_) {
+        return; // 已切页：过期地址响应作废
+    }
+    geocodeGeneration_ = 0;
+    if (address.isEmpty()) {
+        return;
+    }
+    // “前往”行追加真实地址（逆地理失败则保持站名模拟口径）。
+    targetLabel_->setText(tr("前往：%1 · %2（%3）｜%4")
+                              .arg(record_.stationName, record_.chargerCode,
+                                   record_.chargerSpec, address));
 }
 
 QString NavigationPage::distanceText() const

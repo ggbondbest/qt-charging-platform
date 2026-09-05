@@ -53,10 +53,13 @@ private:
     void handleRouteResult(quint64 requestId,
                            const charging::client::services::map::RouteResult& route);
     void handleRouteFailure(quint64 requestId, const QString& message);
+    // 逆地理（可选接口）：成功给“前往”行补真实地址，失败静默保持站名。
+    void handleGeocodeResult(quint64 requestId, const QString& address);
 
     charging::client::services::reservation::ReservationRecord record_;
     charging::client::services::map::MapGeoService* mapService_ = nullptr;
     quint64 routeGeneration_ = 0; // 过期路线响应过滤
+    quint64 geocodeGeneration_ = 0; // 过期逆地理响应过滤
     bool usingRealRoute_ = false;
     QString defaultCaptionText_;
 

@@ -22,17 +22,35 @@ const QByteArray kMatrixJson = R"({
     ]}]}
 })";
 
+// 真实响应结构（curl 实测）：路线在 result.routes[0]，duration 单位=分钟。
 const QByteArray kRouteJson = R"({
     "status": 0,
-    "message": "query ok",
-    "result": {"mode": {
+    "message": "Success",
+    "result": {"routes": [{
+        "mode": "DRIVING",
         "distance": 5120,
         "duration": 12,
+        "traffic_light_count": 3,
         "steps": [
             {"instruction": "沿滨海大道直行约2000米", "distance": 2000, "duration": 480},
             {"instruction": "在路口右转进入科苑北路", "distance": 800, "duration": 180},
             {"instruction": "到达目的地附近", "distance": 10, "duration": 5}
-        ]}}
+        ]}]}
+})";
+
+// 旧文档口径（result.mode）：解析器保留兼容回退。
+const QByteArray kRouteLegacyJson = R"({
+    "status": 0,
+    "result": {"mode": {"distance": 3000, "duration": 8,
+        "steps": [{"instruction": "直行", "distance": 3000}]}}
+})";
+
+const QByteArray kGeocodeJson = R"({
+    "status": 0,
+    "message": "Success",
+    "result": {"location": {"lat": 22.541, "lng": 113.943},
+        "address": "广东省深圳市南山区科兴路",
+        "address_component": {"city": "深圳市", "district": "南山区"}}
 })";
 
 } // namespace
@@ -45,21 +63,29 @@ private slots:
     void init()
     {
         // 默认无 key 无 SK（用例内按需覆盖，cleanup 统一清除，防泄漏）。
+        // 两个环境变量名都要清：新名 TENCENT_MAP_API_KEY + 旧兼容名。
+        qputenv("TENCENT_MAP_API_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_SECRET", "");
     }
     void cleanup()
     {
+        qputenv("TENCENT_MAP_API_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_SECRET", "");
     }
 
     void noKeyFailsAsyncWithoutAnyNetwork();
+    void envPrefersNewNameOverLegacy();
     void matrixParsesMultipleDestinations();
     void requestQueryMatchesTencentContract();
     void businessStatusMapsToTypedErrors();
     void transportFailuresMapToTypedErrors();
     void routeParsesDistanceDurationAndSteps();
+    void routeFallsBackToLegacyModeShape();
+    void geocodeParsesAddress();
     void requestIdsAreDistinctAndAscending();
 };
 
@@ -88,6 +114,20 @@ void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
     QCOMPARE(routeFailed.at(0).at(1).value<MapError>(), MapError::NoApiKey);
     // 零网络触达 = 无 key 时页面行为与接入前逐字节一致的前提。
     QCOMPARE(server.connectionCount(), 0);
+}
+
+void MapGeoServiceTest::envPrefersNewNameOverLegacy()
+{
+    // 任务书口径：TENCENT_MAP_API_KEY 优先；旧名仅作兼容回退。
+    qputenv("TENCENT_MAP_API_KEY", "new-name-key");
+    qputenv("CHARGING_TENCENT_MAP_KEY", "legacy-name-key");
+    QCOMPARE(MapGeoService::apiKeyFromEnvironment(), QStringLiteral("new-name-key"));
+
+    qputenv("TENCENT_MAP_API_KEY", "");
+    QCOMPARE(MapGeoService::apiKeyFromEnvironment(), QStringLiteral("legacy-name-key"));
+
+    qputenv("CHARGING_TENCENT_MAP_KEY", "");
+    QVERIFY(MapGeoService::apiKeyFromEnvironment().isEmpty());
 }
 
 void MapGeoServiceTest::matrixParsesMultipleDestinations()
@@ -260,6 +300,51 @@ void MapGeoServiceTest::routeParsesDistanceDurationAndSteps()
 
     QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/direction/v1/driving/")));
     QVERIFY(server.lastRequestTarget().contains(QStringLiteral("to=22.550000,113.950000")));
+}
+
+void MapGeoServiceTest::routeFallsBackToLegacyModeShape()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(kRouteLegacyJson);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestDrivingRoute({22.541, 113.943}, {22.55, 113.95});
+    QVERIFY(succeeded.wait(5000));
+    const RouteResult route = succeeded.at(0).at(1).value<RouteResult>();
+    QCOMPARE(route.distanceMeters, 3000);
+    QCOMPARE(route.durationMinutes, 8);
+    QCOMPARE(route.steps.size(), 1);
+}
+
+void MapGeoServiceTest::geocodeParsesAddress()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+
+    // 成功：result.address 直出。
+    server.setJsonResponse(kGeocodeJson);
+    QSignalSpy succeeded(&service, &MapGeoService::geocodeSucceeded);
+    QSignalSpy failed(&service, &MapGeoService::geocodeFailed);
+    const quint64 id = service.requestReverseGeocode({22.541, 113.943});
+    QVERIFY(succeeded.wait(5000));
+    QCOMPARE(succeeded.at(0).at(0).toULongLong(), id);
+    QCOMPARE(succeeded.at(0).at(1).toString(), QStringLiteral("广东省深圳市南山区科兴路"));
+    QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/geocoder/v1/")));
+    QVERIFY(server.lastRequestTarget().contains(QStringLiteral("location=22.541000,113.943000")));
+
+    // 缺 address 字段 → BadResponse（消费方回落模拟地址，不崩不卡）。
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 0, \"result\": {}}"));
+    service.requestReverseGeocode({22.55, 113.95});
+    QVERIFY(failed.wait(5000));
+    QCOMPARE(failed.at(0).at(1).value<MapError>(), MapError::BadResponse);
 }
 
 void MapGeoServiceTest::requestIdsAreDistinctAndAscending()

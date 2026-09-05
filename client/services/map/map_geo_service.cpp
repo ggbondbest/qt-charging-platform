@@ -72,13 +72,21 @@ MapGeoService::MapGeoService(QObject* parent)
 {
     apiKey_ = apiKeyFromEnvironment();
     // SK 仅当控制台开启签名校验时才需要；为空则请求不带 sig。
-    secretKey_ = qEnvironmentVariable("CHARGING_TENCENT_MAP_SECRET").trimmed();
+    secretKey_ = qEnvironmentVariable("TENCENT_MAP_SECRET_KEY").trimmed();
+    if (secretKey_.isEmpty()) {
+        secretKey_ = qEnvironmentVariable("CHARGING_TENCENT_MAP_SECRET").trimmed();
+    }
     hasKey_ = !apiKey_.isEmpty();
 }
 
 QString MapGeoService::apiKeyFromEnvironment()
 {
-    return qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
+    // 任务书口径：TENCENT_MAP_API_KEY；兼容早期约定的旧名。
+    QString key = qEnvironmentVariable("TENCENT_MAP_API_KEY").trimmed();
+    if (key.isEmpty()) {
+        key = qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
+    }
+    return key;
 }
 
 bool MapGeoService::hasUsableKey() const
@@ -116,6 +124,27 @@ quint64 MapGeoService::requestDrivingRoute(LatLng from, LatLng to)
     return startRequest(Kind::Route, {to}, from);
 }
 
+quint64 MapGeoService::requestReverseGeocode(LatLng location)
+{
+    return startRequest(Kind::Geocoder, {location}, location);
+}
+
+void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
+{
+    const QString message = mapErrorMessage(error);
+    switch (kind) {
+    case Kind::Matrix:
+        emit distanceMatrixFailed(requestId, error, message);
+        break;
+    case Kind::Route:
+        emit routeFailed(requestId, error, message);
+        break;
+    case Kind::Geocoder:
+        emit geocodeFailed(requestId, error, message);
+        break;
+    }
+}
+
 quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinations,
                                     LatLng origin)
 {
@@ -124,26 +153,14 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
     if (!hasKey_) {
         // 无密钥：绝不发起请求，异步回 NoApiKey，页面按模拟数据兜底。
         QTimer::singleShot(0, this, [this, requestId, kind] {
-            if (kind == Kind::Matrix) {
-                emit distanceMatrixFailed(requestId, MapError::NoApiKey,
-                                          mapErrorMessage(MapError::NoApiKey));
-            } else {
-                emit routeFailed(requestId, MapError::NoApiKey,
-                                 mapErrorMessage(MapError::NoApiKey));
-            }
+            emitFailure(requestId, kind, MapError::NoApiKey);
         });
         return requestId;
     }
 
     if (destinations.isEmpty()) {
         QTimer::singleShot(0, this, [this, requestId, kind] {
-            if (kind == Kind::Matrix) {
-                emit distanceMatrixFailed(requestId, MapError::BadResponse,
-                                          mapErrorMessage(MapError::BadResponse));
-            } else {
-                emit routeFailed(requestId, MapError::BadResponse,
-                                 mapErrorMessage(MapError::BadResponse));
-            }
+            emitFailure(requestId, kind, MapError::BadResponse);
         });
         return requestId;
     }
@@ -156,6 +173,11 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
 
     QMap<QString, QString> params; // QMap 按 key 升序，正好满足签名拼接口径
     params.insert(QStringLiteral("key"), apiKey_);
+    if (kind == Kind::Geocoder) {
+        params.insert(QStringLiteral("location"), destinationParts.first());
+        sendRequest(requestId, kind, QStringLiteral("/geocoder/v1/"), params);
+        return requestId;
+    }
     params.insert(QStringLiteral("mode"), QStringLiteral("driving"));
     if (kind == Kind::Matrix) {
         params.insert(QStringLiteral("from"), formatLatLng(origin));
@@ -225,12 +247,7 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             body = reply->readAll();
         }
         if (transportError != MapError::None) {
-            if (kind == Kind::Matrix) {
-                emit distanceMatrixFailed(requestId, transportError,
-                                          mapErrorMessage(transportError));
-            } else {
-                emit routeFailed(requestId, transportError, mapErrorMessage(transportError));
-            }
+            emitFailure(requestId, kind, transportError);
             return;
         }
 
@@ -238,26 +255,16 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
         const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
         const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            if (kind == Kind::Matrix) {
-                emit distanceMatrixFailed(requestId, MapError::BadResponse,
-                                          mapErrorMessage(MapError::BadResponse));
-            } else {
-                emit routeFailed(requestId, MapError::BadResponse,
-                                 mapErrorMessage(MapError::BadResponse));
-            }
+            emitFailure(requestId, kind, MapError::BadResponse);
             return;
         }
 
         const int status = root.value(QStringLiteral("status")).toInt(-1);
         if (status != 0) {
             // 业务错误：仅透出固定分类文案（message 字段可能是 key 相关提示，
-            // 不透传原文，避免敏感内容进 UI/日志）。
-            const MapError mapped = errorFromBusinessStatus(status);
-            if (kind == Kind::Matrix) {
-                emit distanceMatrixFailed(requestId, mapped, mapErrorMessage(mapped));
-            } else {
-                emit routeFailed(requestId, mapped, mapErrorMessage(mapped));
-            }
+            // 不透传原文，避免敏感内容进 UI/日志）。真实案例：status 121
+            // "此key每日调用量已达到上限" → RateLimited 兜底。
+            emitFailure(requestId, kind, errorFromBusinessStatus(status));
             return;
         }
 
@@ -266,8 +273,7 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             QVector<DistanceElement> elements;
             const QJsonArray rows = result.value(QStringLiteral("rows")).toArray();
             if (rows.isEmpty() || !rows.first().isObject()) {
-                emit distanceMatrixFailed(requestId, MapError::BadResponse,
-                                          mapErrorMessage(MapError::BadResponse));
+                emitFailure(requestId, kind, MapError::BadResponse);
                 return;
             }
             const QJsonArray items =
@@ -280,17 +286,31 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                     object.value(QStringLiteral("duration")).toInt(-1)});
             }
             emit distanceMatrixSucceeded(requestId, elements);
+        } else if (kind == Kind::Geocoder) {
+            const QString address = result.value(QStringLiteral("address")).toString();
+            if (address.isEmpty()) {
+                emitFailure(requestId, kind, MapError::BadResponse);
+                return;
+            }
+            emit geocodeSucceeded(requestId, address);
         } else {
-            const QJsonObject mode = result.value(QStringLiteral("mode")).toObject();
-            if (mode.isEmpty()) {
-                emit routeFailed(requestId, MapError::BadResponse,
-                                 mapErrorMessage(MapError::BadResponse));
+            // 真实响应结构为 result.routes[0]（含 distance/duration/steps[]，
+            // duration 单位=分钟）；旧文档口径 result.mode 保留兼容回退。
+            QJsonObject routeObject;
+            const QJsonArray routes = result.value(QStringLiteral("routes")).toArray();
+            if (!routes.isEmpty() && routes.first().isObject()) {
+                routeObject = routes.first().toObject();
+            } else {
+                routeObject = result.value(QStringLiteral("mode")).toObject();
+            }
+            if (routeObject.isEmpty()) {
+                emitFailure(requestId, kind, MapError::BadResponse);
                 return;
             }
             RouteResult route;
-            route.distanceMeters = mode.value(QStringLiteral("distance")).toInt(-1);
-            route.durationMinutes = mode.value(QStringLiteral("duration")).toInt(-1);
-            const QJsonArray steps = mode.value(QStringLiteral("steps")).toArray();
+            route.distanceMeters = routeObject.value(QStringLiteral("distance")).toInt(-1);
+            route.durationMinutes = routeObject.value(QStringLiteral("duration")).toInt(-1);
+            const QJsonArray steps = routeObject.value(QStringLiteral("steps")).toArray();
             route.steps.reserve(steps.size());
             for (const auto& item : steps) {
                 const QJsonObject object = item.toObject();
