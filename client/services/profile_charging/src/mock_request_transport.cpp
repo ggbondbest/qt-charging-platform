@@ -81,12 +81,15 @@ void MockRequestTransport::seedDemoData()
         QString createdAt;
         charging::model::RechargeStatus status;
     };
+    // 真实服务器 id 自增即时间序，"id 倒序"才等价"最新在前"；种子必须按时间
+    // 升序灌入让 id 与时间同向。余额快照链也要闭合：0+20=20、+50=70、+30=100，
+    // 末笔快照恰等于演示余额 100.00 元。
     const QVector<SeedRecord> seeds = {
-        {3000, 10000, QStringLiteral("2026-08-28T09:12:00.000Z"),
+        {2000, 2000, QStringLiteral("2026-08-05T07:55:00.000Z"),
          charging::model::RechargeStatus::Success},
         {5000, 7000, QStringLiteral("2026-08-20T12:41:00.000Z"),
          charging::model::RechargeStatus::Success},
-        {2000, 2000, QStringLiteral("2026-08-05T07:55:00.000Z"),
+        {3000, 10000, QStringLiteral("2026-08-28T09:12:00.000Z"),
          charging::model::RechargeStatus::Success},
     };
     for (const SeedRecord& seed : seeds) {

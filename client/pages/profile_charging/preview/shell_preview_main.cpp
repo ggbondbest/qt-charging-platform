@@ -23,11 +23,13 @@ constexpr int kPreviewHeight = 860;
 
 charging::model::User sampleUser()
 {
+    // 与 mock 种子账号（13800138000 / 余额 100.00）保持一致，预览截图里
+    // 顶栏、钱包头、充值记录三处余额才是同一个数。
     charging::model::User user;
-    user.id = 42;
-    user.phone = QStringLiteral("13912345678");
-    user.nickname = QStringLiteral("用户5678");
-    user.balanceCents = 12345;
+    user.id = 1;
+    user.phone = QStringLiteral("13800138000");
+    user.nickname = QStringLiteral("用户8000");
+    user.balanceCents = 10000;
     return user;
 }
 
