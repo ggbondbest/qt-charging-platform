@@ -33,6 +33,10 @@ public:
     // 更新电站标记；有地图时重渲染，降级时仅缓存。
     void setStations(const QVector<MapStationPoint>& stations);
 
+    // 路线折线（导航页）：按顺序连线绘制并自动缩放包住全线路；
+    // 传空 = 恢复站点视野（首页口径）。有地图时重渲染，降级时仅缓存。
+    void setRoutePoints(const QVector<MapStationPoint>& points);
+
 signals:
     // 降级提示里的“重试”被点击（由外层决定是否再次尝试加载）。
     void retryRequested();
@@ -48,6 +52,7 @@ private:
     QLabel* degradedBannerLabel_ = nullptr;
     QWidget* mapView_ = nullptr; // 可用时为 QWebEngineView，否则为空
     QVector<MapStationPoint> stations_;
+    QVector<MapStationPoint> routePoints_; // 导航路线折线（空=首页口径）
     bool degraded_ = true;
 };
 

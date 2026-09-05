@@ -278,14 +278,19 @@ const QByteArray kMapMatrixJson = QByteArrayLiteral(R"({
     "result": {"rows": [{"elements": [{"distance": 4321, "duration": 600}]}]}
 })");
 
-// 路线成功响应：5120 m / 12 min / 3 段（口径：路线 duration 为分钟）。
+// 路线成功响应（真实接口结构 result.routes[0]）：5120 m / 12 min / 3 段
+//（口径：路线 duration 为分钟）。
 const QByteArray kMapRouteJson = QByteArrayLiteral(R"({
     "status": 0,
-    "result": {"mode": {"distance": 5120, "duration": 12, "steps": [
-        {"instruction": "沿滨海大道直行约2000米", "distance": 2000},
-        {"instruction": "在路口右转进入科苑北路", "distance": 800},
-        {"instruction": "到达目的地附近", "distance": 10}
-    ]}}
+    "result": {"routes": [{
+        "mode": "DRIVING",
+        "distance": 5120,
+        "duration": 12,
+        "steps": [
+            {"instruction": "沿滨海大道直行约2000米", "distance": 2000},
+            {"instruction": "在路口右转进入科苑北路", "distance": 800},
+            {"instruction": "到达目的地附近", "distance": 10}
+        ]}]}
 })");
 
 } // namespace
@@ -296,15 +301,20 @@ class HomeShellTest final : public QObject
 
 private slots:
     // 地图接入用例会在用例内设置 key，统一在前后清除，保证所有用例
-    // 默认走“无 key = 纯模拟”口径（与 CI 环境一致，防用例间泄漏）。
+    // 默认走“无 key = 纯模拟”口径（与 CI 环境一致，防用例间泄漏；
+    // 两个环境变量名都要清，真机开发者通常已导出新名）。
     void init()
     {
+        qputenv("TENCENT_MAP_API_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_SECRET", "");
     }
     void cleanup()
     {
+        qputenv("TENCENT_MAP_API_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_SECRET", "");
     }
 
@@ -2058,13 +2068,20 @@ void HomeShellTest::navigationPageSwapsToRealRoute()
     QVERIFY(caption != nullptr);
     QVERIFY(!page.usingRealRoute());
     QVERIFY(page.distanceText().contains(QStringLiteral("850"))); // 模拟距离
-    QVERIFY(caption->text().contains(QStringLiteral("模拟数据")));
+    // key 可用 + 带坐标：caption 进入 loading 态（任务书第 3 条）。
+    QVERIFY(caption->text().contains(QStringLiteral("正在加载真实导航路线")));
     const int mockSteps = page.routeStepCount();
     QVERIFY(mockSteps >= 5);
 
-    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
-    QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/direction/v1/driving/")));
-    server.releasePending(kMapRouteJson);
+    // 本页在途有两条请求（路线规划 + 逆地理），driving 请求必在其中。
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestTargets().size() >= 2, 3000);
+    bool sawDrivingRequest = false;
+    for (const QString& target : server.requestTargets()) {
+        sawDrivingRequest = sawDrivingRequest
+            || target.startsWith(QStringLiteral("/ws/direction/v1/driving/"));
+    }
+    QVERIFY(sawDrivingRequest);
+    server.releasePending(kMapRouteJson); // 逆地理收到无 address 响应：静默回落
     QTRY_VERIFY_WITH_TIMEOUT(page.usingRealRoute(), 5000);
 
     QVERIFY(page.distanceText().contains(QStringLiteral("5.1"))); // 5120 m

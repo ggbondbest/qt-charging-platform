@@ -20,7 +20,7 @@ struct LatLng
 // 接口失败分类：页面兜底文案与提示按类型区分（密钥无效 / 网络不通 / 限流）。
 enum class MapError {
     None,
-    NoApiKey,     // 未配置 CHARGING_TENCENT_MAP_KEY（不发起任何请求）
+    NoApiKey,     // 未配置 TENCENT_MAP_API_KEY（含旧名；不发起任何请求）
     Network,      // DNS/连接/SSL 等传输层失败
     Timeout,      // 请求超时无响应
     RateLimited,  // 配额/并发限流（status 120/121、HTTP 429/403）
@@ -46,24 +46,31 @@ struct RouteStep
     int distanceMeters = 0;
 };
 
-// 路线规划结果：总距离（米）、总时长（分钟）、分段步骤。
+// 路线规划结果：总距离（米）、总时长（分钟）、分段步骤、坐标折线。
+// polyline 已由解析器完成增量解码（绝对经纬度，起点=from）；接口未给
+// 或解码失败时为空，消费方回落模拟折线。
 struct RouteResult
 {
     int distanceMeters = -1;
     int durationMinutes = -1;
     QVector<RouteStep> steps;
+    QVector<LatLng> polyline;
 };
 
 // 腾讯地图 WebService 请求工具类（成员 2，任务 #17 地图接入）。
 //
 // 设计口径（队友操作指引）：
-// - 密钥仅经环境变量 CHARGING_TENCENT_MAP_KEY 注入，绝不入库、绝不打印；
-//   若控制台开启签名校验，另配 CHARGING_TENCENT_MAP_SECRET（SK），本类自动
+// - 密钥仅经环境变量 TENCENT_MAP_API_KEY 注入（兼容旧名
+//   CHARGING_TENCENT_MAP_KEY），绝不入库、绝不打印；
+//   若控制台开启签名校验，另配 TENCENT_MAP_SECRET_KEY（旧名
+//   CHARGING_TENCENT_MAP_SECRET，SK），本类自动
 //   按官方规则附带 sig 参数。未配置 key 时**不发起任何请求**，异步回
 //   NoApiKey，由页面走模拟数据兜底——兜底策略归消费方（确认页推荐时段 /
 //   导航页模拟路线），本类只报告成败，不含预约业务语义。
 // - 接口对：距离矩阵 ws/distance/v1/matrix（用户→站点行驶距离/时长，
-//   供预约推荐时段）；驾车路线规划 ws/direction/v1/driving（导航页路线）。
+//   供预约推荐时段）；驾车路线规划 ws/direction/v1/driving（导航页路线，
+//   真实响应结构 result.routes[0]）；逆地理编码 ws/geocoder/v1（坐标转
+//   地址文本，可选）。
 // - 异步信号 + requestId 代际：调用方记录返回的 id，收到回调时丢弃过期
 //   响应（快速切换站点/页面时旧请求可能后到）。
 // - 测试接缝：setEndpointBaseForTesting() 指向进程内假 HTTP 服务，
@@ -75,7 +82,9 @@ class MapGeoService final : public QObject
 public:
     explicit MapGeoService(QObject* parent = nullptr);
 
-    static QString apiKeyFromEnvironment(); // 读环境变量并 trim（不落日志）
+    // 读环境变量并 trim（不落日志）：TENCENT_MAP_API_KEY 优先，
+    // 兼容旧名 CHARGING_TENCENT_MAP_KEY。
+    static QString apiKeyFromEnvironment();
     bool hasUsableKey() const;              // 构造时缓存；false = 纯模拟模式
 
     // 用户（出发）位置：与站点地图面板同口径的南山区演示中心；
@@ -86,6 +95,9 @@ public:
     // 发起请求（返回 requestId，自增，用于过滤过期回调）。
     quint64 requestDistanceMatrix(const QVector<LatLng>& destinations);
     quint64 requestDrivingRoute(LatLng from, LatLng to);
+    // 点位逆地理（任务书可选接口）：坐标 → 地址文本（如"广东省深圳市
+    // 南山区科兴路"）；失败由消费方回落站点名等模拟口径。
+    quint64 requestReverseGeocode(LatLng location);
 
     // 测试接缝（生产不调用）。
     void setEndpointBaseForTesting(const QString& base);
@@ -101,13 +113,17 @@ signals:
                         const charging::client::services::map::RouteResult& route);
     void routeFailed(quint64 requestId, charging::client::services::map::MapError error,
                      const QString& message);
+    void geocodeSucceeded(quint64 requestId, const QString& address);
+    void geocodeFailed(quint64 requestId, charging::client::services::map::MapError error,
+                       const QString& message);
 
 private:
-    enum class Kind { Matrix, Route };
+    enum class Kind { Matrix, Route, Geocoder };
 
     quint64 startRequest(Kind kind, const QVector<LatLng>& destinations, LatLng origin);
     void sendRequest(quint64 requestId, Kind kind, const QString& path,
                      const QMap<QString, QString>& params);
+    void emitFailure(quint64 requestId, Kind kind, MapError error);
     // 按官方签名规则：MD5(path + "?" + 参数按 key 排序拼接 + SK)，小写十六进制。
     QString makeSignature(const QString& path, const QMap<QString, QString>& params,
                           const QString& secretKey) const;

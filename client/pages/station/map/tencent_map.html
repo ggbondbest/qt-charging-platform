@@ -33,6 +33,23 @@
       title: stations[i][2]
     });
   }
+
+  // 导航路线折线：[[lat, lng], ...] 由客户端注入；空数组 = 首页口径不画线。
+  var route = %ROUTE_POINTS%;
+  if (route.length > 1) {
+    var path = route.map(function (p) { return new qq.maps.LatLng(p[0], p[1]); });
+    new qq.maps.Polyline({
+      map: map,
+      path: path,
+      strokeColor: '#00B578',
+      strokeWeight: 6,
+      strokeOpacity: 0.9
+    });
+    // 视野自动包住整条路线（含起终点）。
+    var bounds = new qq.maps.LatLngBounds();
+    for (var j = 0; j < path.length; ++j) { bounds.extend(path[j]); }
+    map.fitBounds(bounds);
+  }
 </script>
 </body>
 </html>
