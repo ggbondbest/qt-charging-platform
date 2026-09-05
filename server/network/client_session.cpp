@@ -10,6 +10,7 @@
 #include <QJsonValue>
 #include <QList>
 #include <QTcpSocket>
+#include <QThread>
 
 #include <exception>
 
@@ -79,6 +80,9 @@ void ClientSession::handleReadyRead()
     }
 
     for (const QByteArray& payload : completedPayloads) {
+        // Shutdown finishes the current transaction, not the rest of a pipelined
+        // batch. Unanswered writes are not automatically replayed by the client.
+        if (QThread::currentThread()->isInterruptionRequested()) return;
         handlePayload(payload);
         if (socket_ == nullptr || socket_->state() == QAbstractSocket::UnconnectedState) {
             return;

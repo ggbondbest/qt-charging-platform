@@ -213,19 +213,21 @@ Charger:     RESERVED -> AVAILABLE
 
 ## 7. 线程模型
 
-当前核心闭环使用异步 Socket，但 Service、Repository 和 SQLite 暂时与 Server 管理界面
-运行在同一线程，只适用于低并发实训联调。进行并发压力或规模化多客户端运行前，按以下目标迁移：
+生产入口现使用 `ServerRuntime` 分离界面和服务线程：
 
-- GUI 线程拥有管理界面、`QTcpServer` 和 `QTcpSocket`，只做非阻塞收发和轻量解析；
-- 一个专用 `QThread` 拥有 Service、Repository 和 SQLite connection；
-- 请求以 queued signal 投递到业务线程，结果以 queued signal 返回；
-- 只有拥有 `QTcpSocket` 的线程能调用其读写函数；
-- 采用 worker-object 模式，不通过覆写 `QThread::run()` 塞入业务；
-- 禁止在不同线程共享同一个 `QSqlDatabase` connection；创建、查询、关闭都在所属线程完成；
-- 所有 `QSqlQuery` 销毁后才能 `removeDatabase()`。
+- GUI 线程拥有管理页面与 ServerRuntime 门面，只接收监听状态、连接数量和安全错误；
+- 专用 QThread 在 `run()` 内创建完整服务对象图，然后进入 `exec()` 事件循环；
+- 工作线程拥有 QTcpServer、QTcpSocket、ClientSession、Dispatcher、Service、Repository 和 SQLite；
+- 网络收发、Session 身份更新、业务及 SQL 在同一工作线程执行，保持原有请求顺序和事务接口；
+- 工作线程通过显式 queued signal 通知 GUI，不向 GUI 传递 Socket、Repository 或 SQL handle；
+- QThread 对象本身仍属于 GUI，不在其槽中处理业务；`run()` 仅负责装配、事件循环和栈式释放；
+- 关闭时请求 interruption/quit，让当前操作结束，再依次销毁网络、业务、Repository、数据库；不调用 terminate；
+- SQLite 连接的创建、查询、关闭、removeDatabase 都在服务工作线程，且晚于 Repository 销毁。
 
-当前代码尚未完成上述 GUI/数据库线程分离。迁移时保持 Service、Repository 接口和协议
-不变，不能把已创建的 `QSqlDatabase` 连接直接移动到其他线程。
+这取代原先“Socket 留在 GUI、仅移动数据库”的候选方案，避免引入跨线程 Session 请求排队和
+身份竞争。当前是 GUI + 单服务线程，不是线程池；慢 SQL 不阻塞界面，但会延迟其他客户端请求。
+既有 ChargingServer 仍可在同线程测试夹具中使用；生产程序统一使用 ServerRuntime。
+具体生命周期、测试及后续管理端接入边界见 `docs/development/server_threading.md`。
 
 ## 8. SQLite 生命周期
 

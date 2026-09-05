@@ -11,6 +11,8 @@ namespace charging::server {
 
 namespace {
 
+constexpr int kMaximumPageSize = 100;
+
 bool readUser(const QSqlQuery& query, charging::model::User* user, QString* errorMessage)
 {
     bool idIsValid = false;
@@ -77,6 +79,65 @@ UserLookupResult UserRepository::findByPhone(const QString& phone) const
     }
     result.ok = true;
     result.found = true;
+    return result;
+}
+
+UserQueryResult UserRepository::list(const UserQuery& value) const
+{
+    UserQueryResult result;
+    if (!database_.isValid() || !database_.isOpen()) {
+        result.errorMessage = QStringLiteral("The SQLite connection is not open");
+        return result;
+    }
+    if (value.limit <= 0 || value.limit > kMaximumPageSize || value.offset < 0) {
+        result.errorMessage = QStringLiteral("Invalid pagination parameters");
+        return result;
+    }
+
+    QString filters = QStringLiteral(
+        " WHERE (phone LIKE :keyword COLLATE NOCASE OR nickname LIKE :keyword COLLATE NOCASE)");
+    if (value.status.has_value()) {
+        filters.append(QStringLiteral(" AND status = :status"));
+    }
+    const auto bindFilters = [&value](QSqlQuery* query) {
+        query->bindValue(QStringLiteral(":keyword"),
+                         QStringLiteral("%%1%").arg(value.keyword.trimmed()));
+        if (value.status.has_value()) {
+            query->bindValue(QStringLiteral(":status"), charging::model::toString(*value.status));
+        }
+    };
+
+    QSqlQuery countQuery(database_);
+    countQuery.prepare(QStringLiteral("SELECT COUNT(*) FROM users") + filters);
+    bindFilters(&countQuery);
+    if (!countQuery.exec() || !countQuery.next()) {
+        result.errorMessage = countQuery.lastError().text();
+        return result;
+    }
+    result.totalCount = countQuery.value(0).toInt();
+
+    QSqlQuery dataQuery(database_);
+    dataQuery.prepare(
+        QStringLiteral(
+            "SELECT id, phone, nickname, avatar_key, balance_cents, status, created_at, "
+            "updated_at FROM users")
+        + filters + QStringLiteral(" ORDER BY id ASC LIMIT :limit OFFSET :offset"));
+    bindFilters(&dataQuery);
+    dataQuery.bindValue(QStringLiteral(":limit"), value.limit);
+    dataQuery.bindValue(QStringLiteral(":offset"), value.offset);
+    if (!dataQuery.exec()) {
+        result.errorMessage = dataQuery.lastError().text();
+        return result;
+    }
+    while (dataQuery.next()) {
+        charging::model::User user;
+        if (!readUser(dataQuery, &user, &result.errorMessage)) {
+            result.users.clear();
+            return result;
+        }
+        result.users.append(user);
+    }
+    result.ok = true;
     return result;
 }
 

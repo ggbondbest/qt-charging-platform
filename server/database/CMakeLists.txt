@@ -1,6 +1,8 @@
 add_library(charging_server_database STATIC
     database_connection.cpp
     database_connection.h
+    database_maintenance.cpp
+    database_maintenance.h
 )
 add_library(ChargingPlatform::ServerDatabase ALIAS charging_server_database)
 

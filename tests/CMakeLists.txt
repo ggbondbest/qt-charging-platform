@@ -17,6 +17,16 @@ target_link_libraries(test_server_smoke PRIVATE
 )
 add_test(NAME server_smoke COMMAND test_server_smoke)
 
+add_executable(test_server_runtime tst_server_runtime.cpp)
+target_link_libraries(test_server_runtime PRIVATE
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME server_runtime COMMAND test_server_runtime)
+set_tests_properties(server_runtime PROPERTIES TIMEOUT 40)
+
 add_executable(test_database_resources tst_database_resources.cpp)
 target_link_libraries(test_database_resources PRIVATE
     ChargingPlatform::DatabaseResources
@@ -25,6 +35,65 @@ target_link_libraries(test_database_resources PRIVATE
     Qt6::Test
 )
 add_test(NAME database_resources COMMAND test_database_resources)
+
+add_executable(test_station_charger_repositories tst_station_charger_repositories.cpp)
+target_link_libraries(test_station_charger_repositories PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME station_charger_repositories COMMAND test_station_charger_repositories)
+
+add_executable(test_user_order_recharge_queries tst_user_order_recharge_queries.cpp)
+target_link_libraries(test_user_order_recharge_queries PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME user_order_recharge_queries COMMAND test_user_order_recharge_queries)
+
+add_executable(test_reservation_operation_logs tst_reservation_operation_logs.cpp)
+target_link_libraries(test_reservation_operation_logs PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_operation_logs COMMAND test_reservation_operation_logs)
+
+add_executable(test_dashboard_repository tst_dashboard_repository.cpp)
+target_link_libraries(test_dashboard_repository PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME dashboard_repository COMMAND test_dashboard_repository)
+
+add_executable(test_database_maintenance tst_database_maintenance.cpp)
+target_link_libraries(test_database_maintenance PRIVATE
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME database_maintenance COMMAND test_database_maintenance)
 
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE

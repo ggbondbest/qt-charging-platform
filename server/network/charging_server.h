@@ -18,6 +18,7 @@ class ChargingServer final : public QObject
 
 public:
     explicit ChargingServer(QObject* parent = nullptr);
+    ~ChargingServer() override;
 
     // The dispatcher is application-owned and must outlive this server. It can
     // only be set before listen() starts accepting connections.
