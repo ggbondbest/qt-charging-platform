@@ -17,7 +17,10 @@ namespace charging::client {
 struct ChargingStatus
 {
     charging::model::Order order;
-    QString stationName; // TODO(contract): join fields still pending the leader
+    // GET_ORDERS 的 join 字段已随契约 v1 §3 冻结，但 GET_CHARGING_STATUS 的
+    // stationName/chargerCode 兄弟字段仍未冻结（§8.4 形状不含它们，§4 列为
+    // 未冻结扩展），mock 先行携带。
+    QString stationName;
     QString chargerCode;
     qint64 powerWatts = 0;
     bool powerKnown = false; // false only if the envelope lacks currentPowerWatts
@@ -32,8 +35,8 @@ class ChargingService final : public QObject
 
 public:
     // Poll cadence is a client UX choice: 1s keeps the duration counter
-    // ticking like a stopwatch (server-side load preference still
-    // TODO(contract) once the leader's real endpoint is live).
+    // ticking like a stopwatch. The endpoint is live since PR #21; server
+    // guidance on a preferred polling interval is still open (TODO(contract)).
     static constexpr int kStatusPollIntervalMs = 1000;
 
     explicit ChargingService(IRequestTransport* transport, QObject* parent = nullptr);
@@ -51,8 +54,8 @@ public:
     bool isStoppingCharging() const;
     // START_CHARGING consumes a reservation: the server dispatcher reads
     // {"reservationId": "<decimal string>"} for this type. reservationId 0 is
-    // a walk-up "scan" start — the server does not define that yet
-    // (TODO(contract)); only the mock transport accepts it, for demos.
+    // a walk-up "scan" start — 契约 v1 §4 明确"扫码新动作不在本 PR 范围"
+    // （TODO(contract)：SCAN_START 形状待定）；只有 mock 通道接受 0，仅演示用。
     // On success the service begins tracking the new order immediately.
     void startCharging(qint64 reservationId);
     bool isStarting() const;

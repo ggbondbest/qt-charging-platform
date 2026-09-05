@@ -167,8 +167,9 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     stationPage_ = new StationHomePage(pageStack_);
     pageStack_->addWidget(stationPage_);
     if (hasUser_) {
-        // 共享 mock 通道：播种真实登录账号，钱包/资料/订单展示同一身份；
-        // 服务端补齐钱包族命令后经服务层切换（TODO(contract)）。
+        // 双通道：真实登录（带 connection）走 NetworkRequestTransport，
+        // 钱包/订单/充电按契约 v1 读写真实 TCP+SQLite；仅无连接的独立预览
+        // 用共享 mock 通道，并播种真实登录账号保持钱包/资料/订单同一身份。
         IRequestTransport* transport = nullptr;
         if (connection) {
             transport = new NetworkRequestTransport(connection, user_.id, this);
@@ -195,6 +196,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
         walletPage_ = new WalletPage(walletService_, pageStack_);
         chargingHomePage_ =
             new ChargingHomePage(chargingService_, orderService_, reservationService_, pageStack_);
+        // 模拟扫码只在 mock 预览通道有意义（契约 v1 §4 未定义扫码动作）。
+        chargingHomePage_->setScanDemoAvailable(mockTransport_ != nullptr);
         profilePage_ = new ProfilePage(walletService_, orderService_, pageStack_);
         // 同步渲染真实身份/余额，异步 fetch 回来后覆盖为服务端值。
         profilePage_->setIdentity(user_);
@@ -273,8 +276,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
 
     // 全端整合：成员 3 路由页（索引 7–11，追加在既有路由页之后，不影响
     // 成员 2 的 4–6 索引约定）与跨模块导航接线。充电中订单点击进入
-    // ChargingPage（停止充电 → 结算闭环，索引 11）；服务端命令就绪后
-    // 共享 mock 通道整体切换（TODO(contract)）。
+    // ChargingPage（停止充电 → 结算闭环，索引 11）；这些页面的服务在真实
+    // 登录时已走契约 v1 的 live 通道，无连接预览才用 mock。
     if (hasUser_) {
         orderDetailPage_ = new OrderDetailPage(pageStack_);
         pageStack_->addWidget(orderDetailPage_);      // 7

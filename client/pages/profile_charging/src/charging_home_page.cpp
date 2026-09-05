@@ -412,31 +412,47 @@ QWidget* ChargingHomePage::buildIdleView()
     glyph->setObjectName(QStringLiteral("uiHeroGlyph"));
     auto* title = new QLabel(tr("当前没有充电任务"), hero);
     title->setObjectName(QStringLiteral("uiHeroTitle"));
-    auto* caption = new QLabel(tr("找站或模拟扫码，开始一次充电"), hero);
-    caption->setObjectName(QStringLiteral("uiHeroCaption"));
+    heroCaptionLabel_ = new QLabel(tr("找站或模拟扫码，开始一次充电"), hero);
+    heroCaptionLabel_->setObjectName(QStringLiteral("uiHeroCaption"));
     layout->addWidget(glyph);
     layout->addWidget(title);
-    layout->addWidget(caption);
+    layout->addWidget(heroCaptionLabel_);
 
     auto* buttonRow = new QHBoxLayout();
     buttonRow->setSpacing(10);
     auto* findButton = new ActionButton(ActionButton::Variant::Primary, tr("去找站"), hero);
     connect(findButton, &ActionButton::clicked, this, [this]() { emit goFindStation(); });
-    auto* scanButton = new ActionButton(ActionButton::Variant::Secondary, tr("模拟扫码"), hero);
-    connect(scanButton, &ActionButton::clicked, this, [this]() {
+    scanButton_ = new ActionButton(ActionButton::Variant::Secondary, tr("模拟扫码"), hero);
+    scanButton_->setObjectName(QStringLiteral("simulatedScanButton"));
+    connect(scanButton_, &ActionButton::clicked, this, [this]() {
         if (startingScan_ || chargingService_->isStarting()) {
             return;
         }
         startingScan_ = true;
         Toast::show(this, tr("模拟扫码成功，正在启动充电…"), StatusTag::Tone::Success);
-        // reservationId 0 = walk-up scan（服务端尚未定义，TODO(contract)；mock 接受）。
+        // reservationId 0 = walk-up scan（契约 v1 §4 明确扫码动作不在协议范围，
+        // TODO(contract)：SCAN_START；仅 mock 通道接受，入口只在预览启用）。
         chargingService_->startCharging(0);
     });
     buttonRow->addWidget(findButton);
-    buttonRow->addWidget(scanButton);
+    buttonRow->addWidget(scanButton_);
     layout->addSpacing(10);
     layout->addLayout(buttonRow);
+    setScanDemoAvailable(scanDemoAvailable_); // 应用壳层在建卡前设置的通道能力。
     return hero;
+}
+
+void ChargingHomePage::setScanDemoAvailable(bool available)
+{
+    scanDemoAvailable_ = available;
+    if (scanButton_ == nullptr) {
+        return; // 建卡前调用，构造时再应用。
+    }
+    scanButton_->setVisible(available);
+    if (heroCaptionLabel_ != nullptr) {
+        heroCaptionLabel_->setText(available ? tr("找站或模拟扫码，开始一次充电")
+                                             : tr("去找站预约，桩就绪后开始充电"));
+    }
 }
 
 QWidget* ChargingHomePage::buildRecentRow(const charging::client::OrderSummary& summary)

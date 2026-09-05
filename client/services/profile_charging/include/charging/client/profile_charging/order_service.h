@@ -10,8 +10,8 @@ namespace charging::client {
 
 // A persisted order plus the station/charger display strings the detail and
 // list pages need. The Order model only carries chargerId; the joined display
-// fields are expected from the server response (see TODO(contract) below),
-// never by adding columns to the database.
+// fields arrive flat in the GET_ORDERS payload (frozen as OrderSummary in
+// docs/api/user_api_contract.md §3), never as extra database columns.
 struct OrderSummary
 {
     charging::model::Order order;
@@ -20,7 +20,7 @@ struct OrderSummary
 };
 
 // User-facing use cases for the order history list.
-// Wire action: GET_ORDERS (candidate-v1 registry).
+// Wire action: GET_ORDERS (contract v1 §3, live via NetworkRequestTransport).
 class OrderService final : public QObject
 {
     Q_OBJECT

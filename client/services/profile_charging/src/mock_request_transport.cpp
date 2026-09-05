@@ -3,6 +3,7 @@
 #include "charging/common/model/enums.h"
 #include "charging/common/model/model_json.h"
 #include "charging/common/protocol/protocol.h"
+#include "charging/common/protocol/user_api_contract.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -28,6 +29,18 @@ charging::protocol::ProtocolError mockError(const QString& code, const QString& 
     error.code = code;
     error.message = message;
     return error;
+}
+
+// 契约 v1 §3（UPDATE_USER_INFO）：非空 avatarKey 必须属于内置头像清单，格式校验
+// 之外由"服务端"做清单检查。此清单必须与 server/services/user_api_service.cpp 及
+// AvatarLibrary::all() 完全一致（tst_wallet_service 有对拍测试钉住三方）。
+bool isBuiltInAvatarKey(const QString& key)
+{
+    static const QStringList keys{QStringLiteral("bolt"), QStringLiteral("plug"),
+                                  QStringLiteral("car"), QStringLiteral("leaf"),
+                                  QStringLiteral("cat"), QStringLiteral("panda"),
+                                  QStringLiteral("moon"), QStringLiteral("rocket")};
+    return key.isEmpty() || keys.contains(key);
 }
 
 QDateTime isoUtc(const QString& text)
@@ -287,38 +300,31 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
     }
 
     if (type == updateUserInfoType) {
-        // TODO(contract): UPDATE_USER_INFO has no frozen payload yet; this
-        // mock accepts nickname and/or avatarKey (the two fields the user
-        // edits) and mirrors the schema CHECK bounds: trim(nickname) is
-        // 1..32 chars. avatarKey is a built-in avatar-library key ("" =
-        // default initial avatar); real avatar uploads have no protocol.
-        const QJsonValue nicknameValue = data.value(QStringLiteral("nickname"));
-        const QJsonValue avatarKeyValue = data.value(QStringLiteral("avatarKey"));
-        if (!nicknameValue.isString() && !avatarKeyValue.isString()) {
-            callback(false, QJsonObject{},
-                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                               QStringLiteral("payload must carry nickname and/or avatarKey")));
+        // 契约 v1 §3 已冻结：公共校验（至少一项、nickname trim 1..32、
+        // avatarKey [A-Za-z0-9_-]{0,64}、非法输入 INVALID_ARGUMENT + details.field）
+        // 直接复用服务端正源 normalizeRequestData，mock 不再自写规则；
+        // 清单成员检查按契约留给"Service"，mock 在此镜像服务端行为。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
             return;
         }
-        if (nicknameValue.isString()) {
-            const QString nickname = nicknameValue.toString().trimmed();
-            if (nickname.isEmpty() || nickname.length() > 32) {
-                callback(false, QJsonObject{},
-                         mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                                   QStringLiteral("nickname must be 1-32 characters")));
-                return;
-            }
-            user_.nickname = nickname;
+        const QJsonValue avatarKeyValue = normalized.value(QStringLiteral("avatarKey"));
+        if (avatarKeyValue.isString() && !isBuiltInAvatarKey(avatarKeyValue.toString())) {
+            charging::protocol::ProtocolError error =
+                mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidArgument),
+                          QStringLiteral("Invalid user API request: avatarKey"));
+            error.details.insert(QStringLiteral("field"), QStringLiteral("avatarKey"));
+            callback(false, QJsonObject{}, error);
+            return;
         }
         if (avatarKeyValue.isString()) {
-            const QString avatarKey = avatarKeyValue.toString();
-            if (avatarKey.size() > 64) {
-                callback(false, QJsonObject{},
-                         mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                                   QStringLiteral("avatarKey too long")));
-                return;
-            }
-            user_.avatarKey = avatarKey;
+            user_.avatarKey = avatarKeyValue.toString(); // "" = 默认首字头像
+        }
+        if (normalized.contains(QStringLiteral("nickname"))) {
+            user_.nickname = normalized.value(QStringLiteral("nickname")).toString();
         }
         user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
         QJsonObject payload;
@@ -328,36 +334,55 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
     }
 
     if (type == rechargeType) {
-        const qint64 amountCents = static_cast<qint64>(
-            data.value(QStringLiteral("amountCents")).toDouble());
-        if (amountCents < 1) {
-            // TODO(contract): the validation error code for a bad recharge
-            // amount is not frozen yet; INVALID_ENVELOPE is a stand-in.
-            callback(false, QJsonObject{},
-                     mockError(QString::fromLatin1(charging::protocol::error_code::kInvalidEnvelope),
-                               QStringLiteral("amountCents must be a positive integer")));
+        // 契约 v1 §3（RECHARGE）已冻结：amountCents ∈ [1, 100000 元]、
+        // transactionNo 必填且 [A-Za-z0-9_-]{1,40}，非法输入 INVALID_ARGUMENT +
+        // details.field；公共校验复用服务端正源 normalizeRequestData。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
             return;
         }
-        const QString transactionNo = data.value("transactionNo").toString();
+        const qint64 amountCents = static_cast<qint64>(
+            normalized.value(QStringLiteral("amountCents")).toDouble());
+        const QString transactionNo =
+            normalized.value(QStringLiteral("transactionNo")).toString();
+
         for (const auto& prior : records_) {
-            if (!transactionNo.isEmpty() && prior.transactionNo == transactionNo) {
-                if (prior.amountCents != amountCents) {
-                    callback(false, {}, mockError(charging::protocol::error_code::kIdempotencyConflict,
-                                                   QStringLiteral("transaction mismatch")));
-                    return;
-                }
-                callback(true, {{"record", charging::model::toJson(prior)},
-                                 {"balanceCents", double(user_.balanceCents)}, {"idempotent", true}}, {});
+            if (prior.transactionNo != transactionNo) {
+                continue;
+            }
+            if (prior.amountCents != amountCents) {
+                // 同流水号不同金额：冲突，不泄漏原记录。
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(
+                                       charging::protocol::error_code::kIdempotencyConflict),
+                                   QStringLiteral("transaction mismatch")));
                 return;
             }
+            if (prior.status != charging::model::RechargeStatus::Success) {
+                // 同用户同金额但旧流水 FAILED：明确失败，不入账也不转成功。
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(
+                                       charging::protocol::error_code::kRechargeFailed),
+                                   QStringLiteral("prior recharge failed")));
+                return;
+            }
+            // 成功重放：返回原入账记录 + 当前余额（两者可不同，§2 两种余额语义）。
+            callback(true, {{QStringLiteral("record"), charging::model::toJson(prior)},
+                            {QStringLiteral("balanceCents"), user_.balanceCents},
+                            {QStringLiteral("idempotent"), true}},
+                     charging::protocol::ProtocolError{});
+            return;
         }
+
         user_.balanceCents += amountCents;
         user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 
         charging::model::RechargeRecord record;
         record.id = nextRecordId_++;
-        record.transactionNo = transactionNo.isEmpty()
-            ? QStringLiteral("MOCKRCH%1").arg(nextTransactionSeq_++, 8, 10, QChar('0')) : transactionNo;
+        record.transactionNo = transactionNo;
         record.userId = user_.id;
         record.amountCents = amountCents;
         record.balanceAfterCents = user_.balanceCents;
@@ -366,19 +391,25 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         records_.prepend(record);
 
         QJsonObject payload;
-        payload.insert(QStringLiteral("amountCents"), amountCents);
-        payload.insert("record", charging::model::toJson(record));
-        payload.insert("balanceCents", double(user_.balanceCents));
-        payload.insert("idempotent", false);
-        payload.insert(QStringLiteral("balanceAfterCents"), user_.balanceCents);
-        payload.insert(QStringLiteral("transactionNo"), record.transactionNo);
+        payload.insert(QStringLiteral("record"), charging::model::toJson(record));
+        payload.insert(QStringLiteral("balanceCents"), user_.balanceCents);
+        payload.insert(QStringLiteral("idempotent"), false);
         callback(true, payload, charging::protocol::ProtocolError{});
         return;
     }
 
     if (type == getRecordsType) {
-        const int page = data.value(QStringLiteral("page")).toInt(1);
-        const int pageSize = data.value(QStringLiteral("pageSize")).toInt(10);
+        // 契约 v1 §3：分页参数校验（page ≥1、pageSize 1..100、默认 20）复用
+        // normalizeRequestData；越界返回 INVALID_ARGUMENT，不静默修正。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
         const int start = (page - 1) * pageSize;
 
         QJsonArray array;
@@ -396,7 +427,16 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
     }
 
     if (type == getOrdersType) {
-        const QString statusFilter = data.value(QStringLiteral("status")).toString();
+        // 契约 v1 §3：status 枚举与分页参数校验复用 normalizeRequestData；
+        // 排序冻结为 createdAt DESC, id DESC，mock 显式排序而非依赖存储顺序。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString statusFilter = normalized.value(QStringLiteral("status")).toString();
         QVector<const charging::model::Order*> matched;
         for (const charging::model::Order& order : orders_) {
             if (statusFilter.isEmpty() ||
@@ -404,22 +444,31 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                 matched.append(&order);
             }
         }
+        std::sort(matched.begin(), matched.end(),
+                  [](const charging::model::Order* a, const charging::model::Order* b) {
+                      if (a->createdAtUtc != b->createdAtUtc) {
+                          return a->createdAtUtc > b->createdAtUtc;
+                      }
+                      return a->id > b->id;
+                  });
 
-        const int page = data.value(QStringLiteral("page")).toInt(1);
-        const int pageSize = data.value(QStringLiteral("pageSize")).toInt(10);
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
         const int start = (page - 1) * pageSize;
 
         QJsonArray array;
         for (int index = start; index < matched.size() && index < start + pageSize; ++index) {
             const charging::model::Order& order = *matched.at(index);
             QJsonObject object = charging::model::toJson(order);
+            // 契约 v1 已冻结 OrderSummary = 平铺完整 Order + 必填
+            // stationName/chargerCode；未知映射回退空串也必须携带字段。
             const auto display = chargerDisplays_.constFind(order.chargerId);
-            // TODO(contract): server-side join is not frozen yet; the mock
-            // mirrors the expected stationName/chargerCode extra fields.
-            if (display != chargerDisplays_.constEnd()) {
-                object.insert(QStringLiteral("stationName"), display->first);
-                object.insert(QStringLiteral("chargerCode"), display->second);
-            }
+            object.insert(QStringLiteral("stationName"),
+                          display != chargerDisplays_.constEnd() ? display->first
+                                                                 : QStringLiteral(""));
+            object.insert(QStringLiteral("chargerCode"),
+                          display != chargerDisplays_.constEnd() ? display->second
+                                                                 : QStringLiteral(""));
             array.append(object);
         }
 

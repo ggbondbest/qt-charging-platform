@@ -17,8 +17,6 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
-#include <algorithm>
-
 namespace charging::client {
 
 namespace {
@@ -26,10 +24,11 @@ namespace {
 constexpr int kFilterCount = 4;
 
 // 行内展示时间：与 buildOrderRow 一致，开始时间优先、回退创建时间。
+// 契约 v1 §3 冻结 GET_ORDERS 为 createdAt DESC, id DESC，展示时间统一取
+// createdAt：与分页顺序、月度分组同一把尺，避免跨页拼接后再次乱序。
 QDateTime orderDisplayTime(const charging::client::OrderSummary& summary)
 {
-    return summary.order.startedAtUtc.isValid() ? summary.order.startedAtUtc
-                                                : summary.order.createdAtUtc;
+    return summary.order.createdAtUtc;
 }
 
 // 月度分组的月份键（本地时区 yyyy-MM）；无效时间归入空键组。
@@ -208,13 +207,9 @@ void OrderListPage::onOrdersLoaded(const QVector<charging::client::OrderSummary>
     for (const charging::client::OrderSummary& summary : orders) {
         shownOrders_.append(summary);
     }
-    // TODO(contract): GET_ORDERS 尚未冻结排序字段，展示层统一按"显示时间"
-    // 倒序渲染（稳定排序，同刻保持服务端原顺序），月度分组表头因此连续。
-    std::stable_sort(shownOrders_.begin(), shownOrders_.end(),
-                     [](const charging::client::OrderSummary& a,
-                        const charging::client::OrderSummary& b) {
-                         return orderDisplayTime(a) > orderDisplayTime(b);
-                     });
+    // 契约 v1 §3 已冻结服务端排序（createdAt DESC, id DESC），跨页拼接保持
+    // 服务端原序即可全局有序；客户端不得再排序（否则分页窗口错位的假象会
+    // 掩盖真实数据问题，月度分组表头也会随之乱序）。
     rebuildMonthGroups();
     currentPage_ = loadingPage_;
     hasMoreOrders_ = hasMore;
