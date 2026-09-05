@@ -1,5 +1,6 @@
 #include "order_management_page.h"
 
+#include "admin_request_gateway.h"
 #include "management_page_widgets.h"
 
 #include <QAbstractItemView>
@@ -21,6 +22,9 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 #include <QtMath>
+#include <QDateTime>
+#include <QJsonArray>
+#include <QJsonObject>
 
 namespace charging::server {
 
@@ -99,7 +103,7 @@ QLabel* createStatusTag(charging::model::OrderStatus status, QWidget* parent)
 QWidget* createCompactStatusTag(charging::model::OrderStatus status, QWidget* parent)
 {
     auto* label = createStatusTag(status, nullptr);
-    label->setFixedSize(label->text().size() >= 3 ? 54 : 46, 26);
+    label->setFixedSize(managementStatusTagWidth(label->text()), 26);
     return createManagementTableCell(label, parent);
 }
 
@@ -155,7 +159,7 @@ protected:
 OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("orderManagementPage"));
-    setMinimumWidth(1180);
+    setMinimumWidth(kManagementPageMinimumWidth);
     setMinimumHeight(760);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 4);
@@ -180,7 +184,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     auto* firstLine = new QHBoxLayout();
     firstLine->setSpacing(10);
     orderNumberLineEdit_ = new QLineEdit(toolbar);
-    orderNumberLineEdit_->setPlaceholderText(tr("请输入订单号"));
+    orderNumberLineEdit_->setPlaceholderText(tr("订单号、用户或手机号"));
     orderNumberLineEdit_->setMinimumWidth(142);
     userLineEdit_ = new QLineEdit(toolbar);
     userLineEdit_->setPlaceholderText(tr("请输入用户名"));
@@ -190,10 +194,13 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     phoneLineEdit_->setMinimumWidth(142);
     stationComboBox_ = new QComboBox(toolbar);
     stationComboBox_->addItems({tr("全部电站"), tr("未来科技城充电站"), tr("滨江智慧园充电站"),
-                                tr("城西西溪充电站"), tr("奥体中心充电站")});
+                                tr("城西银泰充电站"), tr("奥体中心充电站"),
+                                tr("萧山机场充电站"), tr("富阳智造港充电站")});
     chargerComboBox_ = new QComboBox(toolbar);
     chargerComboBox_->addItems({tr("全部电桩"), tr("CP10010086"), tr("CP10010123"), tr("CP10010205"),
-                                tr("CP10010218"), tr("CP10010267")});
+                                tr("CP10010218"), tr("CP10010267"), tr("CP10010345"),
+                                tr("CP10010378"), tr("CP10010402"), tr("CP10010495"),
+                                tr("CP10010533")});
     for (auto* comboBox : {stationComboBox_, chargerComboBox_}) {
         comboBox->setMinimumWidth(132);
         configureManagementComboBox(comboBox);
@@ -232,22 +239,27 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     resetButton->setObjectName(QStringLiteral("secondaryButton"));
     auto* queryButton = new QPushButton(tr("查询"), toolbar);
     queryButton->setObjectName(QStringLiteral("primaryButton"));
+    auto* refreshListButton = new QPushButton(tr("手动刷新"), toolbar);
+    refreshListButton->setObjectName(QStringLiteral("secondaryButton"));
     feedbackLabel_ = createTextLabel(tr("显示全部 12,845 笔订单"), QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
+    feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setToolTip(feedbackLabel_->text());
     secondLine->addWidget(createTextLabel(tr("订单状态"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
     secondLine->addWidget(statusComboBox_);
     secondLine->addWidget(createTextLabel(tr("时间范围"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
     secondLine->addWidget(dateRangeComboBox_);
+    secondLine->addWidget(feedbackLabel_);
     secondLine->addStretch();
     secondLine->addWidget(resetButton);
     secondLine->addWidget(queryButton);
-    secondLine->addWidget(feedbackLabel_);
+    secondLine->addWidget(refreshListButton);
     toolbarLayout->addLayout(secondLine);
     layout->addWidget(toolbar);
 
     auto* contentLayout = new QHBoxLayout();
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
-    tableCard->setMinimumWidth(830);
+    tableCard->setMinimumWidth(kManagementTableMinimumWidth);
     auto* tableLayout = new QVBoxLayout(tableCard);
     tableLayout->setContentsMargins(18, 18, 18, 16);
     tableLayout->setSpacing(12);
@@ -273,13 +285,11 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     tableWidget_->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(11, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(10, 64);
+    tableWidget_->setColumnWidth(10, kManagementStatusColumnWidth);
     tableWidget_->setColumnWidth(11, 72);
     tableLayout->addWidget(tableWidget_, 1);
-    emptyStateLabel_ = createTextLabel(tr("当前筛选条件下没有订单。请调整条件或点击“重置”。"),
-                                       QStringLiteral("color:#6f7d92; min-height:92px; font-size:14px;"), tableCard);
-    emptyStateLabel_->setAlignment(Qt::AlignCenter);
-    tableLayout->addWidget(emptyStateLabel_);
+    statePanel_ = new ManagementStatePanel(tableCard);
+    tableLayout->addWidget(statePanel_);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -297,8 +307,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("订单详情"), this);
-    detailCard->setMinimumWidth(294);
-    detailCard->setMaximumWidth(322);
+    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* titleRow = new QHBoxLayout();
     detailOrderNumberLabel_ = createTextLabel(QString(), QStringLiteral("color:#273751; font-size:14px; font-weight:700;"), detailCard);
@@ -328,8 +337,13 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     paymentHeading->addWidget(createTextLabel(tr("支付状态分布（今日）"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
     paymentHeading->addStretch();
     detailLayout->addLayout(paymentHeading);
-    auto* paymentRow = new QHBoxLayout();
-    paymentRow->addWidget(new PaymentDonutWidget(detailCard));
+    auto* paymentDistribution = new QWidget(detailCard);
+    paymentDistribution->setObjectName(QStringLiteral("mockPaymentDistribution"));
+    auto* paymentRow = new QHBoxLayout(paymentDistribution);
+    paymentRow->setContentsMargins(0, 0, 0, 0);
+    auto* paymentDonut = new PaymentDonutWidget(detailCard);
+    paymentDonut->setObjectName(QStringLiteral("mockPaymentDonut"));
+    paymentRow->addWidget(paymentDonut);
     auto* legend = new QVBoxLayout();
     const QList<QPair<QString, QColor>> payments = {{tr("已支付 82.21%"), QColor("#35c6ba")},
                                                      {tr("待支付 7.69%"), QColor("#ffad39")},
@@ -347,7 +361,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
         legend->addWidget(row);
     }
     paymentRow->addLayout(legend, 1);
-    detailLayout->addLayout(paymentRow);
+    detailLayout->addWidget(paymentDistribution);
     detailLayout->addStretch();
     refreshButton_ = new QPushButton(tr("刷新详情"), detailCard);
     refreshButton_->setObjectName(QStringLiteral("secondaryButton"));
@@ -357,7 +371,12 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(contentLayout, 1);
 
     connect(queryButton, &QPushButton::clicked, this, &OrderManagementPage::applyFilters);
+    connect(statePanel_, &ManagementStatePanel::resetRequested, this,
+            &OrderManagementPage::resetFilters);
+    connect(statePanel_, &ManagementStatePanel::retryRequested, this,
+            &OrderManagementPage::applyFilters);
     connect(resetButton, &QPushButton::clicked, this, &OrderManagementPage::resetFilters);
+    connect(refreshListButton, &QPushButton::clicked, this, &OrderManagementPage::refreshOrderList);
     connect(orderNumberLineEdit_, &QLineEdit::returnPressed, this, &OrderManagementPage::applyFilters);
     connect(userLineEdit_, &QLineEdit::returnPressed, this, &OrderManagementPage::applyFilters);
     connect(phoneLineEdit_, &QLineEdit::returnPressed, this, &OrderManagementPage::applyFilters);
@@ -376,20 +395,20 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
 
 void OrderManagementPage::createMockRecords()
 {
-    records_ = {
-        {tr("CP202506010001"), tr("张先生"), tr("138****5678"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), charging::model::OrderStatus::Charging, tr("2025-06-01 10:28:45"), tr("36分22秒"), 24160, 3462, 692, 0, tr("微信支付"), tr("待支付")},
-        {tr("CP202506010002"), tr("李女士"), tr("159****8899"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 09:56:13"), tr("1时48分"), 38240, 5478, 1096, 0, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010003"), tr("王先生"), tr("137****1122"), tr("城西西溪充电站"), tr("CP10010205"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 09:31:17"), tr("56分05秒"), 23580, 3186, 637, 0, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010004"), tr("陈女士"), tr("186****3344"), tr("奥体中心充电站"), tr("CP10010218"), tr("直流桩"), charging::model::OrderStatus::WaitingPayment, tr("2025-06-01 08:47:25"), tr("28分47秒"), 16720, 2257, 451, 0, tr("—"), tr("支付失败")},
-        {tr("CP202506010005"), tr("刘先生"), tr("152****7788"), tr("萧山机场充电站"), tr("CP10010267"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 07:55:41"), tr("32分06秒"), 18340, 2474, 495, 0, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010006"), tr("赵先生"), tr("139****9900"), tr("西溪湿地充电站"), tr("CP10010345"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 07:12:30"), tr("1时38分"), 32610, 4402, 880, 0, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010007"), tr("吴女士"), tr("158****2211"), tr("社区便民充电站"), tr("CP10010378"), tr("交流桩"), charging::model::OrderStatus::Cancelled, tr("2025-06-01 06:41:18"), tr("24分36秒"), 12480, 1685, 337, 2022, tr("支付宝"), tr("已取消")},
-        {tr("CP202506010008"), tr("孙先生"), tr("187****4455"), tr("下沙大学城充电站"), tr("CP10010402"), tr("交流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 06:15:56"), tr("45分12秒"), 20130, 2718, 544, 0, tr("微信支付"), tr("已支付")},
-        {tr("CP202506010009"), tr("周女士"), tr("150****6677"), tr("临平新城充电站"), tr("CP10010495"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-06-01 05:30:22"), tr("1时03分"), 28330, 3825, 765, 0, tr("支付宝"), tr("已支付")},
-        {tr("CP202506010010"), tr("黄先生"), tr("188****5566"), tr("富阳商旅充电站"), tr("CP10010533"), tr("交流桩"), charging::model::OrderStatus::WaitingPayment, tr("2025-06-01 05:05:11"), tr("24分18秒"), 10570, 1428, 285, 0, tr("—"), tr("待支付")},
-        {tr("CP202505310011"), tr("杨女士"), tr("136****3456"), tr("未来科技城充电站"), tr("CP10010086"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-05-31 23:42:11"), tr("54分36秒"), 26800, 3816, 763, 0, tr("微信支付"), tr("已支付")},
-        {tr("CP202505310012"), tr("何先生"), tr("131****8024"), tr("滨江智慧园充电站"), tr("CP10010123"), tr("直流桩"), charging::model::OrderStatus::Completed, tr("2025-05-31 22:17:40"), tr("48分10秒"), 21440, 3002, 600, 0, tr("支付宝"), tr("已支付")},
-    };
+    records_ = admin_mock::createOrderRecords();
+}
+
+void OrderManagementPage::showLatestOrders()
+{
+    orderNumberLineEdit_->clear();
+    userLineEdit_->clear();
+    phoneLineEdit_->clear();
+    stationComboBox_->setCurrentIndex(0);
+    chargerComboBox_->setCurrentIndex(0);
+    statusComboBox_->setCurrentIndex(0);
+    dateRangeComboBox_->setCurrentIndex(0);
+    applyFilters();
+    if (!realMode_) setFeedback(tr("正在显示演示日最新的 %1 笔本地 Mock 订单").arg(filteredRecordIndexes_.size()));
 }
 
 bool OrderManagementPage::recordMatchesFilters(const OrderRecord& record) const
@@ -411,6 +430,7 @@ bool OrderManagementPage::recordMatchesFilters(const OrderRecord& record) const
 
 void OrderManagementPage::applyFilters()
 {
+    if (realMode_) { currentPage_ = 0; requestList(); return; }
     filteredRecordIndexes_.clear();
     for (int index = 0; index < records_.size(); ++index) {
         if (recordMatchesFilters(records_.at(index))) {
@@ -433,15 +453,23 @@ void OrderManagementPage::resetFilters()
     statusComboBox_->setCurrentIndex(0);
     dateRangeComboBox_->setCurrentIndex(0);
     applyFilters();
-    setFeedback(tr("已重置筛选条件，显示全部本地 Mock 订单"));
+    if (!realMode_) setFeedback(tr("已重置筛选条件，显示全部本地 Mock 订单"));
+}
+
+void OrderManagementPage::refreshOrderList()
+{
+    if (realMode_) { requestList(); return; }
+    rebuildTable();
+    setFeedback(tr("已于 2025-06-01 10:30:00 刷新本地 Mock 订单；真实结果需等待 Service 返回。"));
 }
 
 void OrderManagementPage::rebuildTable()
 {
-    const int pageCount = qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
+    const int pageCount = realMode_ ? qMax(1, (totalRecords_ + kPageSize - 1) / kPageSize)
+                                    : qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
     currentPage_ = qBound(0, currentPage_, pageCount - 1);
-    const int begin = currentPage_ * kPageSize;
-    const int end = qMin(begin + kPageSize, filteredRecordIndexes_.size());
+    const int begin = realMode_ ? 0 : currentPage_ * kPageSize;
+    const int end = realMode_ ? filteredRecordIndexes_.size() : qMin(begin + kPageSize, filteredRecordIndexes_.size());
     tableWidget_->setRowCount(end - begin);
     for (int row = 0; row < end - begin; ++row) {
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
@@ -451,14 +479,14 @@ void OrderManagementPage::rebuildTable()
         const QList<QString> values = {record.orderNo, record.userName + tr("\n") + record.phone, record.station,
                                        record.charger + tr("\n") + record.chargerType, record.startAt,
                                        record.duration, formatKwh(record.energyWh),
-                                       tr("¥ %1").arg(formatCents(record.chargeFeeCents)),
-                                       tr("¥ %1").arg(formatCents(record.serviceFeeCents)),
+                                       realMode_ ? tr("—") : tr("¥ %1").arg(formatCents(record.chargeFeeCents)),
+                                       realMode_ ? tr("—") : tr("¥ %1").arg(formatCents(record.serviceFeeCents)),
                                        tr("¥ %1").arg(formatCents(totalCents)), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
             if (column == 10 || column == 11) {
                 continue;
             }
-            auto* item = new QTableWidgetItem(values.at(column));
+            auto* item = createManagementTableItem(values.at(column));
             item->setData(Qt::UserRole, recordIndex);
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
@@ -470,7 +498,7 @@ void OrderManagementPage::rebuildTable()
         connect(detailButton, &QPushButton::clicked, this, [this, recordIndex]() { showOrderDetails(recordIndex); });
         tableWidget_->setCellWidget(row, 11, createManagementTableCell(detailButton, tableWidget_));
     }
-    tableTitleLabel_->setText(tr("订单列表（共 %1 笔）").arg(filteredRecordIndexes_.size()));
+    tableTitleLabel_->setText(tr("订单列表（共 %1 笔）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
     paginationLabel_->setText(tr("第 %1 / %2 页").arg(currentPage_ + 1).arg(pageCount));
     previousPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ + 1 < pageCount);
@@ -484,6 +512,8 @@ void OrderManagementPage::rebuildTable()
         detailOrderNumberLabel_->setText(tr("暂无匹配订单"));
         detailCreatedAtLabel_->clear();
         detailStatusLabel_->setText(tr("未选择"));
+        detailStatusLabel_->setStyleSheet(QStringLiteral("background:#f1f4f8; color:#708096; border-radius:6px;"
+                                                         " padding:0 7px; font-size:12px; font-weight:600;"));
         chargingInfoLabel_->setText(tr("请调整筛选条件后再查看订单详情。"));
         feeInfoLabel_->clear();
         paymentInfoLabel_->clear();
@@ -494,7 +524,14 @@ void OrderManagementPage::rebuildTable()
 void OrderManagementPage::updateEmptyState()
 {
     const bool isEmpty = filteredRecordIndexes_.isEmpty();
-    emptyStateLabel_->setVisible(isEmpty);
+    const bool hasFilter = !orderNumberLineEdit_->text().trimmed().isEmpty()
+        || statusComboBox_->currentIndex() > 0 || dateRangeComboBox_->currentIndex() > 0;
+    const auto state = !isEmpty ? ManagementListState::Hidden
+        : realMode_ && !hasFilter ? ManagementListState::EmptyInitial
+        : ManagementListState::EmptyFiltered;
+    statePanel_->setState(state, realMode_ && !hasFilter
+                                     ? tr("服务端当前没有订单记录；用户完成一次充电支付后会显示在这里。")
+                                     : tr("当前筛选条件下没有订单。请调整条件或点击“重置”。"));
     tableWidget_->setVisible(!isEmpty);
     paginationLabel_->setVisible(!isEmpty);
     previousPageButton_->setVisible(!isEmpty);
@@ -508,12 +545,24 @@ void OrderManagementPage::showOrderDetails(int recordIndex)
     }
     selectedRecordIndex_ = recordIndex;
     const OrderRecord& record = records_.at(recordIndex);
+    if (realMode_ && gateway_) {
+        detailRequestId_ = gateway_->request(QStringLiteral("orders.get"), {{QStringLiteral("id"), record.serverId}}, this,
+                                             QStringLiteral("order-detail"));
+    }
     const qint64 totalCents = record.chargeFeeCents + record.serviceFeeCents
         - record.discountFeeCents;
     detailOrderNumberLabel_->setText(record.orderNo);
     detailStatusLabel_->setText(orderStatusText(record.status));
     detailStatusLabel_->setStyleSheet(orderStatusStyle(record.status));
     detailCreatedAtLabel_->setText(tr("创建时间：%1").arg(record.startAt));
+    if (realMode_) {
+        chargingInfoLabel_->setText(tr("电站名称　%1\n电桩编号　%2\n创建时间　%3\n时长　%4\n电量　%5 kWh\n开始/结束时间、SOC：契约按订单实际字段返回，当前列表未展示")
+                                        .arg(record.station, record.charger, record.startAt, record.duration, formatKwh(record.energyWh)));
+        feeInfoLabel_->setText(tr("订单金额　¥ %1\n电价快照、费用拆分：当前 DTO 不提供拆分字段").arg(formatCents(totalCents)));
+        paymentInfoLabel_->setText(tr("支付信息：契约未提供"));
+        refreshButton_->setEnabled(true);
+        return;
+    }
     chargingInfoLabel_->setText(
         tr("电站名称　%1\n电桩编号　%2（%3）\n启动时间　%4\n累计结束　%5\n已充时长　%6\n已充电量　%7 kWh\nSOC变化　　32% → 78%")
             .arg(record.station, record.charger, record.chargerType, record.startAt,
@@ -539,6 +588,7 @@ void OrderManagementPage::refreshSelectedOrder()
     if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) {
         return;
     }
+    if (realMode_) { requestList(); return; }
     showOrderDetails(selectedRecordIndex_);
     setFeedback(tr("已刷新 %1 的本地 Mock 详情；真实状态需等待 Service 返回。").arg(records_.at(selectedRecordIndex_).orderNo));
 }
@@ -549,17 +599,20 @@ void OrderManagementPage::showPreviousPage()
         return;
     }
     --currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
 
 void OrderManagementPage::showNextPage()
 {
-    const int pageCount = (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
+    const int pageCount = realMode_ ? (totalRecords_ + kPageSize - 1) / kPageSize
+                                    : (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
     if (currentPage_ + 1 >= pageCount) {
         return;
     }
     ++currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
@@ -567,6 +620,81 @@ void OrderManagementPage::showNextPage()
 void OrderManagementPage::setFeedback(const QString& text)
 {
     feedbackLabel_->setText(text);
+    feedbackLabel_->setToolTip(text);
+}
+
+void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
+{
+    gateway_ = gateway; realMode_ = gateway_ != nullptr;
+    if (!gateway_) return;
+    stationComboBox_->setEnabled(false); stationComboBox_->setToolTip(tr("当前契约需要站点 ID，列表尚未提供可选项"));
+    chargerComboBox_->setEnabled(false); chargerComboBox_->setToolTip(tr("当前契约需要电桩 ID，列表尚未提供可选项"));
+    userLineEdit_->setEnabled(false); userLineEdit_->setToolTip(tr("服务端使用统一关键字；请在订单关键字输入框中查询用户或手机号"));
+    phoneLineEdit_->setEnabled(false); phoneLineEdit_->setToolTip(tr("服务端使用统一关键字；请在订单关键字输入框中查询用户或手机号"));
+    dateRangeComboBox_->setItemText(1, tr("今日（UTC）"));
+    dateRangeComboBox_->setItemText(2, tr("近 7 天（UTC）"));
+    if (auto* donut = findChild<QWidget*>(QStringLiteral("mockPaymentDonut"))) {
+        donut->setVisible(false);
+        donut->setToolTip(tr("当前契约不提供支付方式或支付状态分布"));
+    }
+    if (auto* distribution = findChild<QWidget*>(QStringLiteral("mockPaymentDistribution"))) {
+        distribution->setVisible(false);
+        distribution->setToolTip(tr("当前契约不提供支付方式或支付状态分布"));
+    }
+    for (auto* label : findChildren<QLabel*>()) {
+        if (label->text() == tr("支付状态分布（今日）")) {
+            label->setText(tr("支付状态分布（契约未提供）"));
+        }
+    }
+    connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
+        if (id == listRequestId_) handleListResponse(response);
+        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
+            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+    });
+    connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
+        if (authenticated) requestList();
+    });
+    setManagementMetricCardsUnavailable(this, tr("当前契约未提供订单页汇总指标"));
+    requestList();
+}
+
+void OrderManagementPage::requestList()
+{
+    if (!gateway_ || !gateway_->isAuthenticated()) return;
+    QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
+    const QString keyword = orderNumberLineEdit_->text().trimmed();
+    if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    const QString statusText = statusComboBox_->currentText();
+    if (statusText == tr("充电中")) query.insert(QStringLiteral("status"), QStringLiteral("CHARGING"));
+    else if (statusText == tr("待支付")) query.insert(QStringLiteral("status"), QStringLiteral("WAITING_PAYMENT"));
+    else if (statusText == tr("已完成")) query.insert(QStringLiteral("status"), QStringLiteral("COMPLETED"));
+    else if (statusText == tr("已取消")) query.insert(QStringLiteral("status"), QStringLiteral("CANCELLED"));
+    if (dateRangeComboBox_->currentIndex() > 0) {
+        const auto now = QDateTime::currentDateTimeUtc(); QDate from = now.date();
+        if (dateRangeComboBox_->currentIndex() == 2) from = from.addDays(-6);
+        else if (dateRangeComboBox_->currentIndex() == 3) from = QDate(from.year(), from.month(), 1);
+        query.insert(QStringLiteral("createdAtFrom"), QDateTime(from, QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
+        query.insert(QStringLiteral("createdAtTo"), QDateTime(now.date().addDays(1), QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
+    }
+    listRequestId_ = gateway_->request(QStringLiteral("orders.list"), query, this, QStringLiteral("order-list")); setFeedback(tr("正在加载服务数据…"));
+}
+
+void OrderManagementPage::handleListResponse(const QJsonObject& response)
+{
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    if (!response.value(QStringLiteral("success")).toBool()) { totalRecords_ = 0; rebuildTable(); setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return; }
+    const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
+        const auto i = value.toObject(); const auto code = i.value(QStringLiteral("status")).toString();
+        const auto status = code == QStringLiteral("CHARGING") ? charging::model::OrderStatus::Charging : code == QStringLiteral("WAITING_PAYMENT") ? charging::model::OrderStatus::WaitingPayment : code == QStringLiteral("COMPLETED") ? charging::model::OrderStatus::Completed : code == QStringLiteral("CANCELLED") ? charging::model::OrderStatus::Cancelled : charging::model::OrderStatus::Reserved;
+        const qint64 amount = i.value(QStringLiteral("amountCents")).toInteger();
+        records_.append({i.value(QStringLiteral("orderNo")).toString(), i.value(QStringLiteral("nickname")).toString(), i.value(QStringLiteral("phone")).toString(),
+            i.value(QStringLiteral("stationName")).toString(), i.value(QStringLiteral("chargerCode")).toString(), tr("契约未提供"), status,
+            i.value(QStringLiteral("createdAt")).toString(), tr("%1 分钟").arg(i.value(QStringLiteral("durationSeconds")).toInt() / 60),
+            i.value(QStringLiteral("energyWh")).toInteger(), amount, 0, 0, tr("契约未提供"), tr("契约未提供"), i.value(QStringLiteral("id")).toString()});
+        filteredRecordIndexes_.append(records_.size() - 1);
+    }
+    rebuildTable(); setFeedback(totalRecords_ ? tr("已加载 %1 笔订单（服务端分页）").arg(totalRecords_) : tr("当前没有订单数据"));
 }
 
 } // namespace charging::server

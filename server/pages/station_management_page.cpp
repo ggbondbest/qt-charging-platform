@@ -1,5 +1,6 @@
 #include "station_management_page.h"
 
+#include "admin_request_gateway.h"
 #include "management_page_widgets.h"
 
 #include <QAbstractItemView>
@@ -8,24 +9,20 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QFrame>
-#include <QFont>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLinearGradient>
 #include <QList>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPair>
-#include <QPen>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
-#include <QtMath>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUuid>
 
 #include <cmath>
 
@@ -33,7 +30,7 @@ namespace charging::server {
 
 namespace {
 
-constexpr int kPageSize = 8;
+constexpr int kPageSize = 10;
 
 QString formatPriceCents(qint64 priceCents)
 {
@@ -107,7 +104,7 @@ QLabel* createStatusTag(const QString& status, QWidget* parent)
 QWidget* createCompactStatusTag(const QString& status, QWidget* parent)
 {
     auto* label = createStatusTag(status, nullptr);
-    label->setFixedSize(status.size() >= 3 ? 54 : 46, 26);
+    label->setFixedSize(managementStatusTagWidth(status), 26);
     return createManagementTableCell(label, parent);
 }
 
@@ -118,118 +115,12 @@ QFrame* createCompactCard(QWidget* parent)
     return card;
 }
 
-class StationPreviewWidget final : public QWidget
-{
-public:
-    explicit StationPreviewWidget(QWidget* parent = nullptr) : QWidget(parent)
-    {
-        setMinimumHeight(132);
-        setAccessibleName(QObject::tr("电站示意图"));
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        const QRectF canvas = rect().adjusted(0.5, 0.5, -0.5, -0.5);
-        QLinearGradient background(canvas.topLeft(), canvas.bottomRight());
-        background.setColorAt(0.0, QColor("#cce6ff"));
-        background.setColorAt(0.52, QColor("#eff7ff"));
-        background.setColorAt(0.53, QColor("#dfe9ef"));
-        background.setColorAt(1.0, QColor("#bdcbd4"));
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(background);
-        painter.drawRoundedRect(canvas, 10, 10);
-        painter.setBrush(QColor("#6d8e67"));
-        painter.drawEllipse(QRectF(canvas.left() + 13, canvas.top() + 36, 34, 41));
-        painter.drawEllipse(QRectF(canvas.right() - 50, canvas.top() + 29, 37, 48));
-        painter.setBrush(QColor("#ffffff"));
-        painter.drawRoundedRect(QRectF(canvas.left() + 53, canvas.top() + 48, canvas.width() - 105, 38), 3, 3);
-        painter.setBrush(QColor("#335c7b"));
-        QPainterPath roof;
-        roof.moveTo(canvas.left() + 41, canvas.top() + 47);
-        roof.lineTo(canvas.center().x(), canvas.top() + 22);
-        roof.lineTo(canvas.right() - 37, canvas.top() + 47);
-        roof.closeSubpath();
-        painter.drawPath(roof);
-        painter.setBrush(QColor("#2878f0"));
-        painter.drawRoundedRect(QRectF(canvas.left() + 65, canvas.top() + 57, 18, 28), 3, 3);
-        painter.drawRoundedRect(QRectF(canvas.right() - 83, canvas.top() + 57, 18, 28), 3, 3);
-        painter.setBrush(QColor("#42566d"));
-        painter.drawRoundedRect(QRectF(canvas.left() + 88, canvas.bottom() - 37, 55, 20), 8, 8);
-        painter.setBrush(QColor("#dce9f4"));
-        painter.drawRoundedRect(QRectF(canvas.left() + 97, canvas.bottom() - 33, 26, 7), 3, 3);
-    }
-};
-
-class UtilizationTrendWidget final : public QWidget
-{
-public:
-    explicit UtilizationTrendWidget(QWidget* parent = nullptr) : QWidget(parent)
-    {
-        setMinimumHeight(118);
-        setAccessibleName(QObject::tr("今日利用率趋势图"));
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        const QRectF chart = rect().adjusted(8, 10, -8, -22);
-        painter.setPen(QPen(QColor("#e9eef5"), 1));
-        for (int row = 0; row < 3; ++row) {
-            const qreal y = chart.top() + chart.height() * row / 2.0;
-            painter.drawLine(QPointF(chart.left(), y), QPointF(chart.right(), y));
-        }
-        const QList<qreal> values = {0.32, 0.46, 0.46, 0.60, 0.63, 0.60,
-                                     0.72, 0.66, 0.70, 0.78, 0.72, 0.75,
-                                     0.80, 0.77, 0.72, 0.75, 0.71};
-        QPainterPath line;
-        QPainterPath area;
-        for (int index = 0; index < values.size(); ++index) {
-            const qreal x = chart.left() + chart.width() * index / (values.size() - 1.0);
-            const qreal y = chart.bottom() - chart.height() * values.at(index);
-            if (index == 0) {
-                line.moveTo(x, y);
-                area.moveTo(x, chart.bottom());
-                area.lineTo(x, y);
-            } else {
-                line.lineTo(x, y);
-                area.lineTo(x, y);
-            }
-        }
-        area.lineTo(chart.right(), chart.bottom());
-        area.closeSubpath();
-        QLinearGradient fill(chart.topLeft(), chart.bottomLeft());
-        fill.setColorAt(0.0, QColor(40, 120, 240, 55));
-        fill.setColorAt(1.0, QColor(40, 120, 240, 3));
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(fill);
-        painter.drawPath(area);
-        painter.setPen(QPen(QColor("#2878f0"), 2));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawPath(line);
-        painter.setPen(QColor("#8795a9"));
-        QFont font = painter.font();
-        font.setPixelSize(11);
-        painter.setFont(font);
-        painter.drawText(QRectF(chart.left(), chart.bottom() + 5, 35, 13), Qt::AlignLeft,
-                         QObject::tr("00:00"));
-        painter.drawText(QRectF(chart.center().x() - 18, chart.bottom() + 5, 36, 13),
-                         Qt::AlignCenter, QObject::tr("12:00"));
-        painter.drawText(QRectF(chart.right() - 35, chart.bottom() + 5, 35, 13), Qt::AlignRight,
-                         QObject::tr("24:00"));
-    }
-};
-
 } // namespace
 
 StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("stationManagementPage"));
-    setMinimumWidth(1120);
+    setMinimumWidth(kManagementPageMinimumWidth);
     setMinimumHeight(760);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 4);
@@ -274,21 +165,23 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     addButton->setMinimumWidth(116);
     feedbackLabel_ = createTextLabel(tr("显示全部 328 座电站"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
-    feedbackLabel_->setMinimumWidth(138);
+    feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     toolbarLayout->addWidget(cityComboBox_);
     toolbarLayout->addWidget(districtComboBox_);
     toolbarLayout->addWidget(statusComboBox_);
+    toolbarLayout->addWidget(feedbackLabel_);
+    toolbarLayout->addStretch();
     toolbarLayout->addWidget(resetButton);
     toolbarLayout->addWidget(queryButton);
     toolbarLayout->addWidget(addButton);
-    toolbarLayout->addWidget(feedbackLabel_);
     layout->addWidget(toolbar);
 
     auto* contentLayout = new QHBoxLayout();
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
-    tableCard->setMinimumWidth(720);
+    tableCard->setMinimumWidth(kManagementTableMinimumWidth);
     auto* tableLayout = new QVBoxLayout(tableCard);
     tableLayout->setContentsMargins(18, 18, 18, 16);
     tableLayout->setSpacing(12);
@@ -314,15 +207,14 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     tableWidget_->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(8, 64);
+    // Four-character header “运营状态” also needs room for the header's own padding.
+    tableWidget_->setColumnWidth(8, 84);
     tableWidget_->setColumnWidth(9, 132);
     tableLayout->addWidget(tableWidget_, 1);
-    emptyStateLabel_ = createTextLabel(tr("当前筛选条件下没有电站。请调整条件或点击“重置”。"),
-                                       QStringLiteral("color:#6f7d92; min-height:92px; font-size:14px;"), tableCard);
-    emptyStateLabel_->setAlignment(Qt::AlignCenter);
-    tableLayout->addWidget(emptyStateLabel_);
+    statePanel_ = new ManagementStatePanel(tableCard);
+    tableLayout->addWidget(statePanel_);
     auto* pagerLayout = new QHBoxLayout();
-    pagerLayout->addWidget(createTextLabel(tr("每页 8 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
+    pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
     previousPageButton_ = new QPushButton(tr("‹"), tableCard);
     previousPageButton_->setObjectName(QStringLiteral("secondaryButton"));
@@ -338,8 +230,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("电站详情"), this);
-    detailCard->setMinimumWidth(298);
-    detailCard->setMaximumWidth(324);
+    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     detailNameLabel_ = createTextLabel(QString(), QStringLiteral("color:#1d2c46; font-size:17px; font-weight:700;"), detailCard);
     detailLayout->addWidget(detailNameLabel_);
@@ -351,7 +242,6 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     detailStateRow->addWidget(detailIdLabel_);
     detailStateRow->addStretch();
     detailLayout->addLayout(detailStateRow);
-    detailLayout->addWidget(new StationPreviewWidget(detailCard));
     detailLayout->addWidget(createTextLabel(tr("地址"), QStringLiteral("color:#6d7a90; font-size:13px; font-weight:600;"), detailCard));
     detailAddressLabel_ = createTextLabel(QString(), QStringLiteral("color:#55647c; font-size:13px;"), detailCard);
     detailAddressLabel_->setWordWrap(true);
@@ -371,12 +261,6 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     detailRealtimeLabel_ = createTextLabel(QString(), QStringLiteral("color:#53627b; font-size:13px;"), detailCard);
     detailRealtimeLabel_->setAlignment(Qt::AlignCenter);
     detailLayout->addWidget(detailRealtimeLabel_);
-    auto* trendHeading = new QHBoxLayout();
-    trendHeading->addWidget(createTextLabel(tr("今日利用率趋势"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
-    trendHeading->addStretch();
-    trendHeading->addWidget(createTextLabel(tr("68.4%"), QStringLiteral("color:#1d2c46; font-size:15px; font-weight:700;"), detailCard));
-    detailLayout->addLayout(trendHeading);
-    detailLayout->addWidget(new UtilizationTrendWidget(detailCard));
     detailLayout->addStretch();
     editButton_ = new QPushButton(tr("编辑电站"), detailCard);
     editButton_->setObjectName(QStringLiteral("primaryButton"));
@@ -388,6 +272,10 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(contentLayout, 1);
 
     connect(queryButton, &QPushButton::clicked, this, &StationManagementPage::applyFilters);
+    connect(statePanel_, &ManagementStatePanel::resetRequested, this,
+            &StationManagementPage::resetFilters);
+    connect(statePanel_, &ManagementStatePanel::retryRequested, this,
+            &StationManagementPage::applyFilters);
     connect(resetButton, &QPushButton::clicked, this, &StationManagementPage::resetFilters);
     connect(addButton, &QPushButton::clicked, this, &StationManagementPage::showAddStationDialog);
     connect(keywordLineEdit_, &QLineEdit::returnPressed, this, &StationManagementPage::applyFilters);
@@ -417,6 +305,7 @@ void StationManagementPage::createMockRecords()
         {tr("STN000334"), tr("下沙大学城充电站"), tr("杭州市"), tr("余杭区"), tr("学源街998号下沙大学城东区"), 30.3217, 120.3529, 125, tr("运营中"), 22, 14, 8, 46, 49, tr("朱琳"), tr("158 5814 7732")},
         {tr("STN000335"), tr("临平地铁站充电站"), tr("杭州市"), tr("余杭区"), tr("临平地铁站南广场地下停车场"), 30.4218, 120.3006, 130, tr("空闲"), 16, 8, 8, 32, 48, tr("孙洋"), tr("150 6810 1835")},
         {tr("STN000336"), tr("宁波东部新城充电站"), tr("宁波市"), tr("鄞州区"), tr("宁穿路1888号东部新城停车楼"), 29.8637, 121.6198, 140, tr("已停用"), 14, 10, 4, 0, 0, tr("吴峰"), tr("188 5726 1300")},
+        {tr("STN000337"), tr("宁波南部商务区充电站"), tr("宁波市"), tr("鄞州区"), tr("泰康中路558号南部商务区停车场"), 29.8264, 121.5502, 136, tr("运营中"), 20, 14, 6, 58, 63, tr("何静"), tr("189 5821 4650")},
     };
 }
 
@@ -433,6 +322,7 @@ bool StationManagementPage::recordMatchesFilters(const StationRecord& record) co
 
 void StationManagementPage::applyFilters()
 {
+    if (realMode_) { currentPage_ = 0; requestList(); return; }
     filteredRecordIndexes_.clear();
     for (int index = 0; index < records_.size(); ++index) {
         if (recordMatchesFilters(records_.at(index))) {
@@ -452,28 +342,32 @@ void StationManagementPage::resetFilters()
     districtComboBox_->setCurrentIndex(0);
     statusComboBox_->setCurrentIndex(0);
     applyFilters();
-    setFeedback(tr("已重置筛选条件，显示全部本地 Mock 电站"));
+    if (!realMode_) setFeedback(tr("已重置筛选条件，显示全部本地 Mock 电站"));
 }
 
 void StationManagementPage::rebuildTable()
 {
-    const int pageCount = qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
+    const int pageCount = realMode_ ? qMax(1, (totalRecords_ + kPageSize - 1) / kPageSize)
+                                    : qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
     currentPage_ = qBound(0, currentPage_, pageCount - 1);
-    const int begin = currentPage_ * kPageSize;
-    const int end = qMin(begin + kPageSize, filteredRecordIndexes_.size());
+    const int begin = realMode_ ? 0 : currentPage_ * kPageSize;
+    const int end = realMode_ ? filteredRecordIndexes_.size() : qMin(begin + kPageSize, filteredRecordIndexes_.size());
     tableWidget_->setRowCount(end - begin);
     for (int row = 0; row < end - begin; ++row) {
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
         const StationRecord& record = records_.at(recordIndex);
-        const QList<QString> values = {record.name, record.city + tr(" / ") + record.district, record.address,
-                                       QString::number(record.chargerCount), QString::number(record.fastChargerCount),
-                                       QString::number(record.slowChargerCount), QString::number(record.todayOrders),
-                                       QString::number(record.utilizationPercent) + tr("%"), QString(), QString()};
+        const QList<QString> values = {record.name,
+                                       realMode_ ? tr("契约未提供") : record.city + tr(" / ") + record.district,
+                                       record.address, QString::number(record.chargerCount),
+                                       realMode_ ? tr("—") : QString::number(record.fastChargerCount),
+                                       realMode_ ? tr("—") : QString::number(record.slowChargerCount),
+                                       realMode_ ? tr("—") : QString::number(record.todayOrders),
+                                       realMode_ ? tr("—") : QString::number(record.utilizationPercent) + tr("%"), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
             if (column == 8 || column == 9) {
                 continue;
             }
-            auto* item = new QTableWidgetItem(values.at(column));
+            auto* item = createManagementTableItem(values.at(column));
             item->setData(Qt::UserRole, recordIndex);
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
@@ -499,7 +393,7 @@ void StationManagementPage::rebuildTable()
         });
         tableWidget_->setCellWidget(row, 9, actions);
     }
-    tableTitleLabel_->setText(tr("电站列表（共 %1 座）").arg(filteredRecordIndexes_.size()));
+    tableTitleLabel_->setText(tr("电站列表（共 %1 座）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
     paginationLabel_->setText(tr("第 %1 / %2 页").arg(currentPage_ + 1).arg(pageCount));
     previousPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ + 1 < pageCount);
@@ -528,7 +422,14 @@ void StationManagementPage::rebuildTable()
 void StationManagementPage::updateEmptyState()
 {
     const bool isEmpty = filteredRecordIndexes_.isEmpty();
-    emptyStateLabel_->setVisible(isEmpty);
+    const bool hasFilter = !keywordLineEdit_->text().trimmed().isEmpty()
+        || statusComboBox_->currentIndex() > 0;
+    const auto state = !isEmpty ? ManagementListState::Hidden
+        : realMode_ && !hasFilter ? ManagementListState::EmptyInitial
+        : ManagementListState::EmptyFiltered;
+    statePanel_->setState(state, realMode_ && !hasFilter
+                                     ? tr("服务端当前没有电站记录。")
+                                     : tr("当前筛选条件下没有电站。请调整条件或点击“重置”。"));
     tableWidget_->setVisible(!isEmpty);
     paginationLabel_->setVisible(!isEmpty);
     previousPageButton_->setVisible(!isEmpty);
@@ -542,6 +443,10 @@ void StationManagementPage::showStationDetails(int recordIndex)
     }
     selectedRecordIndex_ = recordIndex;
     const StationRecord& record = records_.at(recordIndex);
+    if (realMode_ && gateway_) {
+        detailRequestId_ = gateway_->request(QStringLiteral("stations.get"), {{QStringLiteral("id"), record.serverId}}, this,
+                                             QStringLiteral("station-detail"));
+    }
     detailNameLabel_->setText(record.name);
     detailIdLabel_->setText(tr("电站ID：%1").arg(record.code));
     detailStatusLabel_->setText(record.status);
@@ -551,6 +456,17 @@ void StationManagementPage::showStationDetails(int recordIndex)
         + tr("\n坐标　%1, %2\n电价　¥ %3 / kWh")
               .arg(QString::number(record.latitude, 'f', 6),
                    QString::number(record.longitude, 'f', 6), formatPriceCents(record.priceCentsPerKwh)));
+    if (realMode_) {
+        detailAddressLabel_->setText(tr("地址　%1\n坐标　%2, %3\n电价　¥ %4 / kWh\n记录更新时间　%5")
+                                         .arg(record.address, QString::number(record.latitude, 'f', 6),
+                                              QString::number(record.longitude, 'f', 6), formatPriceCents(record.priceCentsPerKwh),
+                                              record.expectedUpdatedAt));
+        detailContactLabel_->setText(tr("负责人及营业时间：契约未提供"));
+        detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩数：由服务端列表摘要提供").arg(record.chargerCount));
+        detailRealtimeLabel_->setText(tr("快慢充分类、今日订单与利用率：契约未提供"));
+        updateDetailActions();
+        return;
+    }
     detailContactLabel_->setText(tr("营业时间　00:00 - 24:00\n负责人　　%1\n联系电话　%2")
                                      .arg(record.contactName, record.contactPhone));
     detailConfigurationLabel_->setText(tr("%1 台　　　 %2 台　　　 %3 台\n电桩总数　　 快充桩　　　慢充桩")
@@ -580,11 +496,15 @@ void StationManagementPage::updateDetailActions()
     }
     const bool isStopped = records_.at(selectedRecordIndex_).status == tr("已停用");
     toggleStatusButton_->setText(isStopped ? tr("恢复运营") : tr("暂停运营"));
-    toggleStatusButton_->setToolTip(tr("仅更新本地 Mock 状态"));
+    toggleStatusButton_->setToolTip(realMode_ ? tr("受控状态操作；遇到活动订单会由服务端拒绝") : tr("仅更新本地 Mock 状态"));
 }
 
 void StationManagementPage::showAddStationDialog()
 {
+    if (realMode_) {
+        QMessageBox::information(this, tr("当前不可用"), tr("本轮仅接入站点编辑和状态操作；新增站点暂不开放。"));
+        return;
+    }
     showStationDialog(-1);
 }
 
@@ -599,7 +519,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
 {
     const bool isEditing = recordIndex >= 0;
     QDialog dialog(this);
-    dialog.setWindowTitle(isEditing ? tr("编辑电站（Mock）") : tr("新增电站（Mock）"));
+    dialog.setWindowTitle(isEditing ? (realMode_ ? tr("编辑电站") : tr("编辑电站（Mock）")) : tr("新增电站（Mock）"));
     dialog.setMinimumWidth(460);
     dialog.setStyleSheet(QStringLiteral(
         "QDialog { background:#ffffff; color:#1d2c46; font-size:14px; }"
@@ -637,6 +557,16 @@ void StationManagementPage::showStationDialog(int recordIndex)
         priceLineEdit->setText(formatPriceCents(record.priceCentsPerKwh));
         contactLineEdit->setText(record.contactName);
         phoneLineEdit->setText(record.contactPhone);
+        if (realMode_) {
+            cityComboBox->setEnabled(false);
+            districtLineEdit->setEnabled(false);
+            contactLineEdit->setEnabled(false);
+            phoneLineEdit->setEnabled(false);
+            cityComboBox->setToolTip(tr("当前契约不支持此字段"));
+            districtLineEdit->setToolTip(tr("当前契约不支持此字段"));
+            contactLineEdit->setToolTip(tr("当前契约不支持此字段"));
+            phoneLineEdit->setToolTip(tr("当前契约不支持此字段"));
+        }
     } else {
         codeLineEdit->setPlaceholderText(tr("例如 STN000337"));
         nameLineEdit->setPlaceholderText(tr("例如 西湖文体中心充电站"));
@@ -655,6 +585,12 @@ void StationManagementPage::showStationDialog(int recordIndex)
     formLayout->addRow(tr("负责人 *"), contactLineEdit);
     formLayout->addRow(tr("联系电话 *"), phoneLineEdit);
     layout->addLayout(formLayout);
+    if (realMode_) {
+        auto* hint = createTextLabel(tr("本次保存只提交名称、地址、经纬度和电价；城市、区域与联系人字段尚无管理契约，已禁用。"),
+                                     QStringLiteral("color:#718098; font-size:13px;"), &dialog);
+        hint->setWordWrap(true);
+        layout->addWidget(hint);
+    }
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok, Qt::Horizontal, &dialog);
     buttons->button(QDialogButtonBox::Ok)->setText(isEditing ? tr("保存修改") : tr("确认新增"));
     buttons->button(QDialogButtonBox::Ok)->setObjectName(QStringLiteral("primaryButton"));
@@ -691,6 +627,19 @@ void StationManagementPage::showStationDialog(int recordIndex)
     Q_ASSERT(parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude));
     Q_ASSERT(parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude));
     Q_ASSERT(parsePriceCents(priceLineEdit->text(), &priceCents));
+    if (realMode_) {
+        const auto& record = records_.at(recordIndex);
+        writeRequestId_ = gateway_->request(QStringLiteral("station.edit"),
+            {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+             {QStringLiteral("id"), record.serverId},
+             {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
+             {QStringLiteral("name"), nameLineEdit->text().trimmed()},
+             {QStringLiteral("address"), addressLineEdit->text().trimmed()},
+             {QStringLiteral("latitude"), latitude}, {QStringLiteral("longitude"), longitude},
+             {QStringLiteral("priceCentsPerKwh"), priceCents}}, this, QStringLiteral("station-write"));
+        setFeedback(tr("正在提交电站编辑…"));
+        return;
+    }
     if (isEditing) {
         StationRecord& record = records_[recordIndex];
         record.name = nameLineEdit->text().trimmed();
@@ -734,9 +683,20 @@ void StationManagementPage::toggleSelectedStationStatus()
     const bool isStopped = record.status == tr("已停用");
     const auto choice = QMessageBox::question(
         this, isStopped ? tr("确认恢复运营") : tr("确认暂停运营"),
-        isStopped ? tr("确认恢复电站 %1 的运营吗？该操作仅更新本地 Mock 状态。\n真实操作需等待 Service 接口。").arg(record.name)
-                  : tr("确认暂停电站 %1 的运营吗？该操作仅更新本地 Mock 状态。\n真实操作需等待 Service 接口。").arg(record.name));
+        realMode_ ? (isStopped ? tr("确认恢复电站 %1 的运营吗？服务端会校验当前版本与业务占用。").arg(record.name)
+                               : tr("确认暂停电站 %1 的运营吗？服务端会校验活动预约、充电和当前版本。").arg(record.name))
+                  : (isStopped ? tr("确认恢复电站 %1 的运营吗？该操作仅更新本地 Mock 状态。\n真实操作需等待 Service 接口。").arg(record.name)
+                               : tr("确认暂停电站 %1 的运营吗？该操作仅更新本地 Mock 状态。\n真实操作需等待 Service 接口。").arg(record.name)));
     if (choice != QMessageBox::Yes) {
+        return;
+    }
+    if (realMode_) {
+        writeRequestId_ = gateway_->request(QStringLiteral("station.status"),
+            {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+             {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
+             {QStringLiteral("status"), isStopped ? QStringLiteral("ACTIVE") : QStringLiteral("INACTIVE")}}, this,
+            QStringLiteral("station-write"));
+        setFeedback(tr("正在提交电站状态更新…"));
         return;
     }
     record.status = isStopped ? tr("运营中") : tr("已停用");
@@ -751,17 +711,20 @@ void StationManagementPage::showPreviousPage()
         return;
     }
     --currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
 
 void StationManagementPage::showNextPage()
 {
-    const int pageCount = (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
+    const int pageCount = realMode_ ? (totalRecords_ + kPageSize - 1) / kPageSize
+                                    : (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
     if (currentPage_ + 1 >= pageCount) {
         return;
     }
     ++currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
@@ -769,6 +732,78 @@ void StationManagementPage::showNextPage()
 void StationManagementPage::setFeedback(const QString& text)
 {
     feedbackLabel_->setText(text);
+    feedbackLabel_->setToolTip(text);
+}
+
+void StationManagementPage::setAdminGateway(AdminRequestGateway* gateway)
+{
+    gateway_ = gateway; realMode_ = gateway_ != nullptr;
+    if (!gateway_) return;
+    cityComboBox_->setEnabled(false); cityComboBox_->setToolTip(tr("当前契约不支持按城市筛选"));
+    districtComboBox_->setEnabled(false); districtComboBox_->setToolTip(tr("当前契约不支持按区域筛选"));
+    statusComboBox_->removeItem(2); // "空闲" is not a station-status contract value.
+    for (auto* button : findChildren<QPushButton*>()) {
+        if (button->text() == tr("新增电站")) {
+            button->setEnabled(false);
+            button->setToolTip(tr("本轮仅接入站点编辑和状态操作；新增站点暂不开放。"));
+        }
+    }
+    setManagementMetricCardsUnavailable(this, tr("当前契约未提供电站页汇总指标"));
+    connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
+        if (id == listRequestId_) handleListResponse(response);
+        else if (id == writeRequestId_) handleWriteResponse(response);
+        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
+            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+    });
+    connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
+        if (authenticated) requestList();
+    });
+    requestList();
+}
+
+QString StationManagementPage::statusCode(const QString& display) const
+{
+    if (display == tr("运营中") || display == tr("空闲")) return QStringLiteral("ACTIVE");
+    if (display == tr("已停用")) return QStringLiteral("INACTIVE");
+    return {};
+}
+
+void StationManagementPage::requestList()
+{
+    if (!gateway_ || !gateway_->isAuthenticated()) return;
+    QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
+    const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
+    listRequestId_ = gateway_->request(QStringLiteral("stations.list"), query, this, QStringLiteral("station-list"));
+    setFeedback(tr("正在加载服务数据…"));
+}
+
+void StationManagementPage::handleListResponse(const QJsonObject& response)
+{
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        totalRecords_ = 0; rebuildTable();
+        setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return;
+    }
+    const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
+        const auto item = value.toObject(); const bool active = item.value(QStringLiteral("status")).toString() == QStringLiteral("ACTIVE");
+        records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("name")).toString(), tr("—"), tr("—"),
+            item.value(QStringLiteral("address")).toString(), item.value(QStringLiteral("latitude")).toDouble(), item.value(QStringLiteral("longitude")).toDouble(),
+            item.value(QStringLiteral("priceCentsPerKwh")).toInteger(), active ? tr("运营中") : tr("已停用"), item.value(QStringLiteral("totalChargers")).toInt(), 0, 0, 0, 0,
+            tr("契约未提供"), tr("—"), item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
+        filteredRecordIndexes_.append(records_.size() - 1);
+    }
+    rebuildTable();
+    setManagementMetricCardValue(this, 0, tr("%1 座").arg(totalRecords_),
+                                 tr("服务端分页总数（当前筛选）"));
+    setFeedback(totalRecords_ ? tr("已加载 %1 座电站（服务端分页）").arg(totalRecords_) : tr("当前没有电站数据"));
+}
+
+void StationManagementPage::handleWriteResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) { setFeedback(tr("操作未完成：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return; }
+    setFeedback(tr("操作已提交，正在刷新服务数据…")); requestList();
 }
 
 } // namespace charging::server

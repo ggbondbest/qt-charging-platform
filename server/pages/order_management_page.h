@@ -1,11 +1,12 @@
 #pragma once
 
-#include <charging/common/model/enums.h>
+#include "admin_mock_data.h"
 
 #include <QString>
 #include <QtGlobal>
 #include <QVector>
 #include <QWidget>
+#include <QJsonObject>
 
 class QComboBox;
 class QLabel;
@@ -15,38 +16,28 @@ class QTableWidget;
 
 namespace charging::server {
 
+class ManagementStatePanel;
+
 class OrderManagementPage final : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit OrderManagementPage(QWidget* parent = nullptr);
+    void setAdminGateway(class AdminRequestGateway* gateway);
+
+    void showLatestOrders();
 
 private slots:
     void applyFilters();
     void resetFilters();
+    void refreshOrderList();
     void refreshSelectedOrder();
     void showPreviousPage();
     void showNextPage();
 
 private:
-    struct OrderRecord {
-        QString orderNo;
-        QString userName;
-        QString phone;
-        QString station;
-        QString charger;
-        QString chargerType;
-        charging::model::OrderStatus status = charging::model::OrderStatus::Reserved;
-        QString startAt;
-        QString duration;
-        qint64 energyWh = 0;
-        qint64 chargeFeeCents = 0;
-        qint64 serviceFeeCents = 0;
-        qint64 discountFeeCents = 0;
-        QString paymentMethod;
-        QString paymentStatus;
-    };
+    using OrderRecord = admin_mock::OrderRecord;
 
     void createMockRecords();
     void rebuildTable();
@@ -54,11 +45,18 @@ private:
     void showOrderDetails(int recordIndex);
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const OrderRecord& record) const;
+    void requestList();
+    void handleListResponse(const QJsonObject& response);
 
     QVector<OrderRecord> records_;
     QVector<int> filteredRecordIndexes_;
     int selectedRecordIndex_ = -1;
     int currentPage_ = 0;
+    int totalRecords_ = 0;
+    bool realMode_ = false;
+    QString listRequestId_;
+    QString detailRequestId_;
+    class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* orderNumberLineEdit_ = nullptr;
     QLineEdit* userLineEdit_ = nullptr;
@@ -69,7 +67,7 @@ private:
     QComboBox* dateRangeComboBox_ = nullptr;
     QTableWidget* tableWidget_ = nullptr;
     QLabel* tableTitleLabel_ = nullptr;
-    QLabel* emptyStateLabel_ = nullptr;
+    ManagementStatePanel* statePanel_ = nullptr;
     QLabel* feedbackLabel_ = nullptr;
     QLabel* paginationLabel_ = nullptr;
     QLabel* detailOrderNumberLabel_ = nullptr;

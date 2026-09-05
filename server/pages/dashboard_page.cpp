@@ -1,10 +1,15 @@
 #include "dashboard_page.h"
 
+#include "admin_request_gateway.h"
 #include "dashboard_visual_widgets.h"
 #include "management_page_widgets.h"
 
 #include <QAbstractItemView>
+#include <QDateEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFrame>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -15,6 +20,9 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <QDateTime>
+#include <QJsonArray>
+#include <QJsonObject>
 
 namespace charging::server {
 
@@ -115,15 +123,25 @@ void setRow(QTableWidget* table, int row, const QStringList& values, int colored
 {
     table->insertRow(row);
     for (int column = 0; column < values.size(); ++column) {
-        auto* item = new QTableWidgetItem(values.at(column));
+        auto* item = createManagementTableItem(values.at(column));
         item->setForeground(column == coloredColumn ? color : QColor("#40506a"));
         item->setTextAlignment(Qt::AlignCenter);
         table->setItem(row, column, item);
     }
 }
 
+void setEmptyRow(QTableWidget* table, const QString& message)
+{
+    table->setRowCount(1);
+    table->setSpan(0, 0, 1, table->columnCount());
+    auto* item = createManagementTableItem(message);
+    item->setTextAlignment(Qt::AlignCenter);
+    item->setForeground(QColor("#718098"));
+    table->setItem(0, 0, item);
+}
+
 QFrame* createTableCard(const QString& title, const QString& badge, const QString& footer,
-                        QLabel** badgeLabel, QWidget* parent)
+                        QLabel** badgeLabel, QPushButton** footerButton, QWidget* parent)
 {
     auto* card = new QFrame(parent);
     card->setObjectName(QStringLiteral("contentCard"));
@@ -143,14 +161,18 @@ QFrame* createTableCard(const QString& title, const QString& badge, const QStrin
         }
     }
     header->addStretch();
-    header->addWidget(
-        makeLabel(QStringLiteral("⋮"), QStringLiteral("color:#2b4264; font-size:22px;"), card));
     layout->addLayout(header);
     if (!footer.isEmpty()) {
-        auto* footerLabel = makeLabel(
-            footer, QStringLiteral("color:#2878f0; font-size:13px;"), card);
-        footerLabel->setAlignment(Qt::AlignCenter);
-        layout->addWidget(footerLabel);
+        auto* link = new QPushButton(footer, card);
+        link->setFlat(true);
+        link->setCursor(Qt::PointingHandCursor);
+        link->setStyleSheet(QStringLiteral(
+            "QPushButton { color:#2878f0; border:none; padding:3px 6px; font-size:13px; }"
+            "QPushButton:hover { color:#1769e8; text-decoration:underline; }"));
+        if (footerButton != nullptr) {
+            *footerButton = link;
+        }
+        layout->addWidget(link, 0, Qt::AlignHCenter);
     }
     return card;
 }
@@ -166,18 +188,27 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
 
     auto* summaryLayout = new QHBoxLayout();
     summaryLayout->setSpacing(16);
+    auto* todayCard = createMetricCard(
+        tr("今日营收"), tr("¥ —"), QString(),
+        tr("服务数据加载后显示（UTC）"), QColor("#347cf6"), 0, this);
+    todayRevenueValue_ = todayCard->findChildren<QLabel*>().at(1);
+    summaryLayout->addWidget(todayCard);
+    auto* monthCard = createMetricCard(
+        tr("本月营收"), tr("¥ —"), QString(),
+        tr("服务数据加载后显示（UTC）"), QColor("#43c7bc"), 1, this);
+    monthRevenueValue_ = monthCard->findChildren<QLabel*>().at(1);
+    summaryLayout->addWidget(monthCard);
+    auto* onlineCard = createMetricCard(
+        tr("在线电桩"), tr("—"), QString(),
+        tr("在线率待加载"), QColor("#347cf6"), 2, this);
+    const auto onlineLabels = onlineCard->findChildren<QLabel*>();
+    onlineChargersValue_ = onlineLabels.at(1);
+    onlineChargersHint_ = onlineLabels.at(2);
+    summaryLayout->addWidget(onlineCard);
     summaryLayout->addWidget(createMetricCard(
-        tr("今日营收"), tr("¥ 128,560.00"), QString(),
-        tr("较昨日  <span style='color:#2878f0'>+12.6% ↑</span>"), QColor("#347cf6"), 0, this));
-    summaryLayout->addWidget(createMetricCard(
-        tr("本月营收"), tr("¥ 3,245,670.00"), QString(),
-        tr("较上月  <span style='color:#2878f0'>+8.4% ↑</span>"), QColor("#43c7bc"), 1, this));
-    summaryLayout->addWidget(createMetricCard(
-        tr("在线电桩"), tr("1,256"), tr(" 台"),
-        tr("在线率  <span style='color:#35bfb4'>82.4%</span>"), QColor("#347cf6"), 2, this));
-    summaryLayout->addWidget(createMetricCard(
-        tr("当前连接"), tr("512"), tr(" 辆"),
-        tr("较昨日  <span style='color:#35bfb4'>+9.7%</span>"), QColor("#43c7bc"), 3, this));
+        tr("当前连接"), tr("0"), tr(" 个"),
+        tr("服务连接数"), QColor("#43c7bc"), 3, this));
+    clientCountValue_ = summaryLayout->itemAt(3)->widget()->findChildren<QLabel*>().at(1);
     layout->addLayout(summaryLayout);
 
     auto* dataLayout = new QHBoxLayout();
@@ -194,19 +225,21 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         trendCard));
     trendHeader->addStretch();
     auto* todayButton = createPeriodButton(tr("今日"), false, trendCard);
-    auto* weekButton = createPeriodButton(tr("近7天"), false, trendCard);
-    auto* monthButton = createPeriodButton(tr("近30天"), true, trendCard);
+    auto* weekButton = createPeriodButton(tr("近7天"), true, trendCard);
+    auto* monthButton = createPeriodButton(tr("近30天"), false, trendCard);
     auto* customButton = createPeriodButton(tr("自定义"), false, trendCard);
+    todayButton->setEnabled(false);
+    todayButton->setToolTip(tr("当前契约仅提供近 7 天或近 30 天趋势"));
+    customButton->setEnabled(false);
+    customButton->setToolTip(tr("当前契约不提供自定义日期范围趋势"));
     trendHeader->addWidget(todayButton);
     trendHeader->addWidget(weekButton);
     trendHeader->addWidget(monthButton);
     trendHeader->addWidget(customButton);
-    trendHeader->addWidget(
-        makeLabel(tr("⋮"), QStringLiteral("color:#526179; font-size:22px;"), trendCard));
     trendLayout->addLayout(trendHeader);
     auto* measureTabs = new QHBoxLayout();
     auto* revenueTab = new QPushButton(tr("营收金额"), trendCard);
-    auto* orderTab = new QPushButton(tr("订单金额"), trendCard);
+    auto* orderTab = new QPushButton(tr("完成订单"), trendCard);
     setMetricTabActive(revenueTab, true);
     setMetricTabActive(orderTab, false);
     measureTabs->addWidget(revenueTab);
@@ -214,9 +247,11 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     measureTabs->addStretch();
     trendLayout->addLayout(measureTabs);
     auto* trendWidget = new RevenueTrendWidget(trendCard);
+    trendWidget_ = trendWidget;
+    trendWidget_->setServiceSeries({}, {}, {});
     trendLayout->addWidget(trendWidget, 1);
     const QList<QPushButton*> periodButtons = {todayButton, weekButton, monthButton, customButton};
-    for (int index = 0; index < periodButtons.size(); ++index) {
+    for (int index = 0; index < 3; ++index) {
         connect(periodButtons.at(index), &QPushButton::clicked, this,
                 [periodButtons, trendWidget, index]() {
                     for (int buttonIndex = 0; buttonIndex < periodButtons.size(); ++buttonIndex) {
@@ -225,6 +260,51 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
                     trendWidget->setPeriod(index);
                 });
     }
+    connect(weekButton, &QPushButton::clicked, this, [this] { refresh(7); });
+    connect(monthButton, &QPushButton::clicked, this, [this] { refresh(30); });
+    connect(customButton, &QPushButton::clicked, this, [this, periodButtons, trendWidget]() {
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("自定义营收趋势时间"));
+        dialog.setMinimumWidth(360);
+        auto* dialogLayout = new QVBoxLayout(&dialog);
+        auto* formLayout = new QFormLayout();
+        formLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        auto* startDateEdit = new QDateEdit(QDate(2025, 5, 18), &dialog);
+        auto* endDateEdit = new QDateEdit(QDate(2025, 5, 31), &dialog);
+        for (auto* dateEdit : {startDateEdit, endDateEdit}) {
+            dateEdit->setCalendarPopup(true);
+            dateEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
+            dateEdit->setDateRange(QDate(2025, 1, 1), QDate(2025, 12, 31));
+        }
+        formLayout->addRow(tr("开始日期："), startDateEdit);
+        formLayout->addRow(tr("结束日期："), endDateEdit);
+        dialogLayout->addLayout(formLayout);
+        auto* hint = makeLabel(tr("请选择 2 至 31 天；确认后图表会按每日数据重新绘制。"),
+                               QStringLiteral("color:#718098; font-size:13px;"), &dialog);
+        hint->setWordWrap(true);
+        dialogLayout->addWidget(hint);
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok, &dialog);
+        buttons->button(QDialogButtonBox::Ok)->setText(tr("应用"));
+        buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
+        dialogLayout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, startDateEdit, endDateEdit]() {
+            const int dayCount = startDateEdit->date().daysTo(endDateEdit->date()) + 1;
+            if (dayCount < 2 || dayCount > 31) {
+                QMessageBox::warning(&dialog, QObject::tr("日期范围无效"),
+                                     QObject::tr("请选择连续 2 至 31 天，且结束日期不得早于开始日期。"));
+                return;
+            }
+            dialog.accept();
+        });
+        if (dialog.exec() != QDialog::Accepted) {
+            return;
+        }
+        for (int buttonIndex = 0; buttonIndex < periodButtons.size(); ++buttonIndex) {
+            setPeriodButtonActive(periodButtons.at(buttonIndex), buttonIndex == 3);
+        }
+        trendWidget->setCustomDateRange(startDateEdit->date(), endDateEdit->date());
+    });
     connect(revenueTab, &QPushButton::clicked, this, [revenueTab, orderTab, trendWidget]() {
         setMetricTabActive(revenueTab, true);
         setMetricTabActive(orderTab, false);
@@ -247,17 +327,19 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         deviceCard));
     auto* distribution = new QHBoxLayout();
     distribution->setSpacing(12);
-    distribution->addWidget(new DeviceStatusWidget(deviceCard), 0, Qt::AlignCenter);
+    deviceStatusWidget_ = new DeviceStatusWidget(deviceCard);
+    distribution->addWidget(deviceStatusWidget_, 0, Qt::AlignCenter);
     auto* legend = new QVBoxLayout();
     const struct {
         const char* name;
         const char* data;
         const char* color;
     } statuses[] = {
-        {"在线", "1,256（82.4%）", "#43c7bc"},
-        {"离线", "178（11.7%）", "#aab4c2"},
-        {"故障", "88（5.8%）", "#f5a130"},
+        {"在线", "—", "#43c7bc"},
+        {"离线", "—", "#aab4c2"},
+        {"故障", "—", "#f5a130"},
     };
+    int statusIndex = 0;
     for (const auto& status : statuses) {
         auto* row = new QHBoxLayout();
         auto* dot = new QLabel(deviceCard);
@@ -268,19 +350,39 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         row->addWidget(makeLabel(QString::fromUtf8(status.name),
                                  QStringLiteral("color:#536178; font-size:13px;"), deviceCard));
         row->addStretch();
-        row->addWidget(makeLabel(QString::fromUtf8(status.data),
-                                 QStringLiteral("color:#3c4c67; font-size:13px;"), deviceCard));
+        auto* value = makeLabel(QString::fromUtf8(status.data),
+                                QStringLiteral("color:#3c4c67; font-size:13px;"), deviceCard);
+        if (statusIndex == 0) onlineLegendValue_ = value;
+        else if (statusIndex == 1) offlineLegendValue_ = value;
+        else faultLegendValue_ = value;
+        ++statusIndex;
+        row->addWidget(value);
         legend->addLayout(row);
     }
     legend->addStretch();
     distribution->addLayout(legend, 1);
     deviceLayout->addLayout(distribution, 1);
     auto* deviceFooter = new QHBoxLayout();
-    deviceFooter->addWidget(makeLabel(tr("总电桩数：1,522 台"),
-                                      QStringLiteral("color:#8490a4; font-size:13px;"), deviceCard));
+    totalChargersLabel_ = makeLabel(tr("总电桩数：—"),
+                                      QStringLiteral("color:#8490a4; font-size:13px;"), deviceCard);
+    deviceFooter->addWidget(totalChargersLabel_);
     deviceFooter->addStretch();
-    deviceFooter->addWidget(makeLabel(tr("刷新时间：06-01 10:30:00  ⟳"),
-                                      QStringLiteral("color:#8490a4; font-size:13px;"), deviceCard));
+    refreshedAtLabel_ = makeLabel(tr("刷新时间：等待服务响应"),
+                                       QStringLiteral("color:#8490a4; font-size:13px;"), deviceCard);
+    auto* refreshButton = new QPushButton(tr("刷新概览"), deviceCard);
+    refreshButton->setCursor(Qt::PointingHandCursor);
+    refreshButton->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#2878f0; border:1px solid #dfe6f0; border-radius:7px;"
+        " min-height:30px; padding:0 9px; font-size:13px; }"
+        "QPushButton:hover { background:#f6f9ff; }"));
+    refreshButton->setAccessibleName(tr("刷新运营概览"));
+    refreshButton_ = refreshButton;
+    // QPushButton::clicked carries a bool.  Passing it directly to refresh(int)
+    // turned a normal click into days=0/1, which the service correctly rejects.
+    connect(refreshButton, &QPushButton::clicked, this,
+            [this]() { refresh(requestedDays_); });
+    deviceFooter->addWidget(refreshedAtLabel_);
+    deviceFooter->addWidget(refreshButton);
     deviceLayout->addLayout(deviceFooter);
     dataLayout->addWidget(deviceCard, 3);
     layout->addLayout(dataLayout);
@@ -288,62 +390,29 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     auto* tableLayout = new QHBoxLayout();
     tableLayout->setSpacing(18);
     QLabel* exceptionCountBadge = nullptr;
+    QPushButton* exceptionListButton = nullptr;
     auto* exceptionCard = createTableCard(
-        tr("异常电桩"), tr("5"), tr("查看全部异常  ›"), &exceptionCountBadge, this);
+        tr("异常电桩"), tr("5"), tr("查看全部异常  ›"), &exceptionCountBadge,
+        &exceptionListButton, this);
     auto* exceptionLayout = qobject_cast<QVBoxLayout*>(exceptionCard->layout());
     auto* exceptionTable = createDashboardTable(
-        {tr("电桩编号"), tr("所属电站"), tr("异常类型"), tr("异常时间"), tr("操作")}, exceptionCard);
+        {tr("电桩编号"), tr("所属电站"), tr("异常类型"), tr("记录更新时间"), tr("操作")}, exceptionCard);
     exceptionTable->horizontalHeader()->setStretchLastSection(false);
     exceptionTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     exceptionTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
     exceptionTable->setColumnWidth(4, 84);
-    const QStringList exceptionRows[] = {
-        {tr("CP10010086"), tr("未来科技城充电站"), tr("充电枪通讯异常"), tr("2025-06-01 09:58"), tr("处理")},
-        {tr("CP10010123"), tr("滨江智慧园充电站"), tr("充电中断"), tr("2025-06-01 09:41"), tr("处理")},
-        {tr("CP10010205"), tr("城西银泰充电站"), tr("过温保护"), tr("2025-06-01 09:22"), tr("处理")},
-        {tr("CP10010218"), tr("奥体中心充电站"), tr("模块故障"), tr("2025-06-01 09:10"), tr("处理")},
-        {tr("CP10010267"), tr("萧山机场充电站"), tr("离线"), tr("2025-06-01 08:55"), tr("处理")},
-    };
-    for (int row = 0; row < 5; ++row) {
-        const QColor typeColor = row == 4 ? QColor("#748196")
-            : (row == 1 ? QColor("#f09b24") : QColor("#ff4b4b"));
-        setRow(exceptionTable, row, exceptionRows[row], 2, typeColor);
-        auto* action = new QPushButton(tr("处理"), exceptionTable);
-        action->setObjectName(QStringLiteral("tableActionButton"));
-        exceptionTable->setCellWidget(row, 4, createManagementTableCell(action, exceptionTable));
-        connect(action, &QPushButton::clicked, this,
-                [this, exceptionTable, exceptionCountBadge, action, row]() {
-                    const QString chargerCode = exceptionTable->item(row, 0)->text();
-                    const auto choice = QMessageBox::question(
-                        this, tr("确认处理异常"),
-                        tr("确认将电桩 %1 的异常标记为已处理吗？该操作仅更新本地 Mock 状态。")
-                            .arg(chargerCode));
-                    if (choice != QMessageBox::Yes) {
-                        return;
-                    }
-
-                    exceptionTable->item(row, 2)->setText(tr("已处理"));
-                    exceptionTable->item(row, 2)->setForeground(QColor("#6f7d90"));
-                    action->setText(tr("已处理"));
-                    action->setEnabled(false);
-                    int remainingCount = 0;
-                    for (int index = 0; index < exceptionTable->rowCount(); ++index) {
-                        auto* actionCell = exceptionTable->cellWidget(index, 4);
-                        auto* rowAction = actionCell == nullptr
-                            ? nullptr
-                            : actionCell->findChild<QPushButton*>();
-                        if (rowAction != nullptr && rowAction->isEnabled()) {
-                            ++remainingCount;
-                        }
-                    }
-                    exceptionCountBadge->setText(QString::number(remainingCount));
-                });
-    }
+    exceptionCountBadge->setText(QStringLiteral("—"));
+    exceptionCountBadge_ = exceptionCountBadge;
+    exceptionTable_ = exceptionTable;
+    exceptionListButton->setAccessibleName(tr("查看全部异常电桩"));
+    connect(exceptionListButton, &QPushButton::clicked, this,
+            [this]() { emit exceptionListRequested(); });
     exceptionLayout->insertWidget(1, exceptionTable, 1);
     tableLayout->addWidget(exceptionCard, 1);
 
+    QPushButton* latestOrdersButton = nullptr;
     auto* recentOrderCard = createTableCard(
-        tr("最新订单"), QString(), tr("查看全部订单  ›"), nullptr, this);
+        tr("最新订单"), QString(), tr("查看全部订单  ›"), nullptr, &latestOrdersButton, this);
     auto* orderLayout = qobject_cast<QVBoxLayout*>(recentOrderCard->layout());
     auto* orderTable = createDashboardTable(
         {tr("订单号"), tr("用户"), tr("电站"), tr("金额"), tr("状态"), tr("时间")}, recentOrderCard);
@@ -355,26 +424,32 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         orderTable->horizontalHeader()->setSectionResizeMode(column, QHeaderView::Stretch);
     }
     orderTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
-    orderTable->setColumnWidth(4, 64);
-    const QStringList orderRows[] = {
-        {tr("202506010001"), tr("浙A · D12345"), tr("未来科技城充电站"), tr("¥ 45.60"), tr("已支付"), tr("10:28")},
-        {tr("202506010002"), tr("浙A · B8C7D"), tr("滨江智慧园充电站"), tr("¥ 32.18"), tr("已支付"), tr("10:21")},
-        {tr("202506010003"), tr("浙A · F5566"), tr("城西银泰充电站"), tr("¥ 28.80"), tr("已支付"), tr("10:15")},
-        {tr("202506010004"), tr("浙A · E7788"), tr("奥体中心充电站"), tr("¥ 51.20"), tr("进行中"), tr("10:07")},
-        {tr("202506010005"), tr("浙A · G9H0I"), tr("萧山机场充电站"), tr("¥ 61.44"), tr("进行中"), tr("09:59")},
-    };
-    for (int row = 0; row < 5; ++row) {
-        setRow(orderTable, row, orderRows[row]);
-        auto* state = new QLabel(orderRows[row].at(4), orderTable);
+    orderTable->setColumnWidth(4, 76);
+    /*const auto latestOrders = admin_mock::createOrderRecords();
+    for (int row = 0; row < 5 && row < latestOrders.size(); ++row) {
+        const auto& record = latestOrders.at(row);
+        const qint64 amountCents = record.chargeFeeCents + record.serviceFeeCents
+            - record.discountFeeCents;
+        const QString statusText = dashboardOrderStatus(record.status);
+        setRow(orderTable, row,
+               {record.orderNo, record.userName, record.station,
+                tr("¥ %1").arg(formatCents(amountCents)), statusText,
+                record.startAt.mid(11, 5)});
+        auto* state = new QLabel(statusText, orderTable);
         state->setAlignment(Qt::AlignCenter);
-        state->setFixedSize(54, 26);
-        state->setStyleSheet(row < 3
+        state->setMinimumSize(62, 26);
+        state->setMaximumHeight(26);
+        state->setStyleSheet(record.status == charging::model::OrderStatus::Completed
                                  ? QStringLiteral("background:#e8f8f0; color:#28a86f; "
                                                   "border-radius:6px; padding:0 7px; font-size:12px;")
                                  : QStringLiteral("background:#eaf3ff; color:#2878f0; "
                                                   "border-radius:6px; padding:0 7px; font-size:12px;"));
         orderTable->setCellWidget(row, 4, createManagementTableCell(state, orderTable));
-    }
+    }*/
+    latestOrdersTable_ = orderTable;
+    latestOrdersButton->setAccessibleName(tr("查看最新订单"));
+    connect(latestOrdersButton, &QPushButton::clicked, this,
+            [this]() { emit latestOrdersRequested(); });
     orderLayout->insertWidget(1, orderTable, 1);
     tableLayout->addWidget(recentOrderCard, 1);
     layout->addLayout(tableLayout);
@@ -382,8 +457,88 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
 
 void DashboardPage::setClientCount(int count)
 {
-    Q_UNUSED(count);
-    // The reference card is a deterministic Mock value until a dedicated dashboard DTO is approved.
+    if (clientCountValue_ != nullptr) clientCountValue_->setText(QString::number(count) + tr(" 个"));
+}
+
+void DashboardPage::setAdminGateway(AdminRequestGateway* gateway)
+{
+    gateway_ = gateway;
+    if (gateway_ == nullptr) return;
+    connect(gateway_, &AdminRequestGateway::finished, this,
+            [this](const QString& id, const QJsonObject& response) {
+                if (id == requestId_) handleDashboardResponse(response);
+            });
+    if (gateway_->isAuthenticated()) refresh();
+}
+
+void DashboardPage::refresh(int days)
+{
+    if (gateway_ == nullptr) return;
+    requestedDays_ = days;
+    refreshButton_->setEnabled(false);
+    refreshedAtLabel_->setText(tr("刷新时间：正在加载服务数据…"));
+    requestId_ = gateway_->request(QStringLiteral("dashboard.get"), {{QStringLiteral("days"), days}}, this,
+                                   QStringLiteral("dashboard"));
+}
+
+void DashboardPage::handleDashboardResponse(const QJsonObject& response)
+{
+    refreshButton_->setEnabled(true);
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        refreshedAtLabel_->setText(tr("刷新失败：%1").arg(response.value("error").toObject().value("message").toString()));
+        return;
+    }
+    const auto data = response.value(QStringLiteral("data")).toObject();
+    const auto cents = [](qint64 value) { return QStringLiteral("¥ %1.%2").arg(value / 100).arg(value % 100, 2, 10, QLatin1Char('0')); };
+    todayRevenueValue_->setText(cents(data.value("todayRevenueCents").toInteger()));
+    monthRevenueValue_->setText(cents(data.value("monthRevenueCents").toInteger()));
+    const qint64 online = data.value("availableChargers").toInteger() + data.value("reservedChargers").toInteger() + data.value("chargingChargers").toInteger();
+    onlineChargersValue_->setText(QString::number(online) + tr(" 台"));
+    onlineChargersHint_->setText(tr("在线率 %1%（UTC 快照）").arg(data.value("onlineRatio").toDouble() * 100, 0, 'f', 1));
+    const int offline = data.value("offlineChargers").toInt();
+    const int fault = data.value("faultChargers").toInt();
+    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(online, offline, fault);
+    const int total = data.value("totalChargers").toInt();
+    const auto legend = [total](int count) { return total ? QObject::tr("%1（%2%）").arg(count).arg(100.0 * count / total, 0, 'f', 1) : QObject::tr("0（0.0%）"); };
+    if (onlineLegendValue_) onlineLegendValue_->setText(legend(online));
+    if (offlineLegendValue_) offlineLegendValue_->setText(legend(offline));
+    if (faultLegendValue_) faultLegendValue_->setText(legend(fault));
+    totalChargersLabel_->setText(tr("总电桩数：%1 台").arg(data.value("totalChargers").toInteger()));
+    refreshedAtLabel_->setText(tr("刷新时间：%1（UTC）").arg(data.value("observedAt").toString()));
+    QStringList dates; QVector<qint64> revenue; QVector<int> orders;
+    for (const auto& pointValue : data.value("trend").toArray()) {
+        const auto point = pointValue.toObject();
+        dates << point.value("date").toString();
+        revenue << point.value("revenueCents").toInteger();
+        orders << point.value("completedOrderCount").toInt();
+    }
+    trendWidget_->setServiceSeries(dates, revenue, orders);
+    const auto abnormalities = data.value("abnormalChargers").toObject();
+    exceptionCountBadge_->setText(QString::number(abnormalities.value("total").toInteger()));
+    exceptionTable_->setRowCount(0);
+    const auto abnormalItems = abnormalities.value("items").toArray();
+    for (const auto& value : abnormalItems) {
+        const auto item = value.toObject(); const int row = exceptionTable_->rowCount();
+        const auto exception = item.value("exceptionType").toString() == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
+        setRow(exceptionTable_, row, {item.value("code").toString(), item.value("stationName").toString(),
+               exception, item.value("updatedAt").toString(), tr("请至电桩管理处理")});
+    }
+    if (abnormalItems.isEmpty()) {
+        setEmptyRow(exceptionTable_, tr("当前没有异常电桩（服务端实时数据）"));
+    }
+    latestOrdersTable_->setRowCount(0);
+    const auto latestOrderItems = data.value("latestOrders").toObject().value("items").toArray();
+    for (const auto& value : latestOrderItems) {
+        const auto item = value.toObject(); const int row = latestOrdersTable_->rowCount();
+        const auto code = item.value("status").toString();
+        const auto status = code == QStringLiteral("CHARGING") ? tr("充电中") : code == QStringLiteral("WAITING_PAYMENT") ? tr("待支付") : code == QStringLiteral("COMPLETED") ? tr("已完成") : code == QStringLiteral("CANCELLED") ? tr("已取消") : tr("已预约");
+        setRow(latestOrdersTable_, row, {item.value("orderNo").toString(), item.value("phone").toString(),
+               item.value("stationName").toString(), cents(item.value("amountCents").toInteger()),
+               status, item.value("createdAt").toString()});
+    }
+    if (latestOrderItems.isEmpty()) {
+        setEmptyRow(latestOrdersTable_, tr("当前数据库暂无订单；完成一次用户端充电支付后会显示在这里"));
+    }
 }
 
 } // namespace charging::server

@@ -4,6 +4,7 @@
 #include <QtGlobal>
 #include <QVector>
 #include <QWidget>
+#include <QJsonObject>
 
 class QComboBox;
 class QLabel;
@@ -13,12 +14,15 @@ class QTableWidget;
 
 namespace charging::server {
 
+class ManagementStatePanel;
+
 class StationManagementPage final : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit StationManagementPage(QWidget* parent = nullptr);
+    void setAdminGateway(class AdminRequestGateway* gateway);
 
 private slots:
     void applyFilters();
@@ -47,6 +51,8 @@ private:
         int utilizationPercent = 0;
         QString contactName;
         QString contactPhone;
+        QString serverId{};
+        QString expectedUpdatedAt{};
     };
 
     void createMockRecords();
@@ -57,11 +63,21 @@ private:
     void showStationDialog(int recordIndex);
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const StationRecord& record) const;
+    void requestList();
+    void handleListResponse(const QJsonObject& response);
+    void handleWriteResponse(const QJsonObject& response);
+    QString statusCode(const QString& display) const;
 
     QVector<StationRecord> records_;
     QVector<int> filteredRecordIndexes_;
     int selectedRecordIndex_ = -1;
     int currentPage_ = 0;
+    int totalRecords_ = 0;
+    bool realMode_ = false;
+    QString listRequestId_;
+    QString writeRequestId_;
+    QString detailRequestId_;
+    class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
     QComboBox* cityComboBox_ = nullptr;
@@ -69,7 +85,7 @@ private:
     QComboBox* statusComboBox_ = nullptr;
     QTableWidget* tableWidget_ = nullptr;
     QLabel* tableTitleLabel_ = nullptr;
-    QLabel* emptyStateLabel_ = nullptr;
+    ManagementStatePanel* statePanel_ = nullptr;
     QLabel* feedbackLabel_ = nullptr;
     QLabel* paginationLabel_ = nullptr;
     QLabel* detailNameLabel_ = nullptr;
