@@ -1,0 +1,96 @@
+[
+  {
+    "type": "GET_STATIONS",
+    "requestData": {"keyword": "示范", "page": 1, "pageSize": 20},
+    "responseData": {
+      "stations": [{
+        "id": "1", "code": "ST001", "name": "示范充电站", "address": "示范路 1 号",
+        "latitude": 22.54, "longitude": 113.93, "priceCentsPerKwh": 120,
+        "status": "ACTIVE", "totalChargers": 2, "availableChargers": 1, "distanceMeters": -1
+      }],
+      "page": 1, "pageSize": 20, "total": 1
+    }
+  },
+  {
+    "type": "GET_CHARGERS",
+    "requestData": {"stationId": "1", "page": 1, "pageSize": 20},
+    "responseData": {
+      "chargers": [{
+        "id": "2", "stationId": "1", "code": "CP002", "type": "FAST",
+        "powerWatts": 60000, "status": "AVAILABLE", "totalChargeCount": 0,
+        "totalChargeSeconds": 0, "createdAt": "2026-09-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z"
+      }],
+      "page": 1, "pageSize": 20, "total": 1
+    }
+  },
+  {
+    "type": "GET_RESERVATIONS",
+    "requestData": {"status": "ACTIVE", "page": 1, "pageSize": 20},
+    "responseData": {
+      "reservations": [{
+        "id": "3", "userId": "1", "chargerId": "1", "status": "ACTIVE",
+        "reservedAt": "2026-09-05T08:00:00.000Z", "expiresAt": "2026-09-05T08:15:00.000Z",
+        "endedAt": null, "stationName": "示范充电站", "chargerCode": "CP001", "orderId": "4"
+      }],
+      "page": 1, "pageSize": 20, "total": 1
+    }
+  },
+  {
+    "type": "GET_USER_INFO",
+    "requestData": {},
+    "responseData": {"user": {
+      "id": "1", "phone": "13800138000", "nickname": "用户8000", "avatarKey": "",
+      "balanceCents": 10000, "status": "ACTIVE", "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z"
+    }}
+  },
+  {
+    "type": "UPDATE_USER_INFO",
+    "requestData": {"nickname": "小明", "avatarKey": ""},
+    "responseData": {"user": {
+      "id": "1", "phone": "13800138000", "nickname": "小明", "avatarKey": "",
+      "balanceCents": 10000, "status": "ACTIVE", "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-05T08:00:00.000Z"
+    }}
+  },
+  {
+    "type": "RECHARGE",
+    "requestData": {"amountCents": 5000, "transactionNo": "8c30695c-1934-4b24-a79e-4c00ab0ee704"},
+    "responseData": {
+      "record": {
+        "id": "5", "transactionNo": "8c30695c-1934-4b24-a79e-4c00ab0ee704", "userId": "1",
+        "amountCents": 5000, "balanceAfterCents": 15000, "status": "SUCCESS",
+        "createdAt": "2026-09-05T08:00:00.000Z"
+      },
+      "balanceCents": 15000, "idempotent": false
+    }
+  },
+  {
+    "type": "GET_RECHARGE_RECORDS",
+    "requestData": {"page": 1, "pageSize": 20},
+    "responseData": {
+      "records": [{
+        "id": "5", "transactionNo": "8c30695c-1934-4b24-a79e-4c00ab0ee704", "userId": "1",
+        "amountCents": 5000, "balanceAfterCents": 15000, "status": "SUCCESS",
+        "createdAt": "2026-09-05T08:00:00.000Z"
+      }],
+      "page": 1, "pageSize": 20, "total": 1
+    }
+  },
+  {
+    "type": "GET_ORDERS",
+    "requestData": {"status": "RESERVED", "page": 1, "pageSize": 20},
+    "responseData": {
+      "orders": [{
+        "id": "4", "orderNo": "ORDER-20260905-4", "userId": "1", "chargerId": "1",
+        "reservationId": "3", "status": "RESERVED", "unitPriceCentsPerKwh": 120,
+        "energyWh": 0, "durationSeconds": 0, "amountCents": 0,
+        "createdAt": "2026-09-05T08:00:00.000Z", "startedAt": null, "stoppedAt": null,
+        "paidAt": null, "updatedAt": "2026-09-05T08:00:00.000Z",
+        "stationName": "示范充电站", "chargerCode": "CP001"
+      }],
+      "page": 1, "pageSize": 20, "total": 1
+    }
+  }
+]

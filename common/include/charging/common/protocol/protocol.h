@@ -16,6 +16,7 @@ namespace request_type {
 inline constexpr char kUserLogin[] = "USER_LOGIN";
 inline constexpr char kGetStations[] = "GET_STATIONS";
 inline constexpr char kGetChargers[] = "GET_CHARGERS";
+inline constexpr char kGetReservations[] = "GET_RESERVATIONS";
 inline constexpr char kReserveCharger[] = "RESERVE_CHARGER";
 inline constexpr char kCancelReservation[] = "CANCEL_RESERVATION";
 inline constexpr char kStartCharging[] = "START_CHARGING";
@@ -41,6 +42,9 @@ inline constexpr char kInvalidFrame[] = "INVALID_FRAME";
 inline constexpr char kPayloadTooLarge[] = "PAYLOAD_TOO_LARGE";
 inline constexpr char kInvalidJson[] = "INVALID_JSON";
 inline constexpr char kInvalidEnvelope[] = "INVALID_ENVELOPE";
+inline constexpr char kInvalidArgument[] = "INVALID_ARGUMENT";
+inline constexpr char kIdempotencyConflict[] = "IDEMPOTENCY_CONFLICT";
+inline constexpr char kRechargeFailed[] = "RECHARGE_FAILED";
 inline constexpr char kUnsupportedProtocolVersion[] = "UNSUPPORTED_PROTOCOL_VERSION";
 inline constexpr char kUnknownRequestType[] = "UNKNOWN_REQUEST_TYPE";
 inline constexpr char kInvalidPhone[] = "INVALID_PHONE";

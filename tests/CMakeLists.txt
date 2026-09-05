@@ -34,6 +34,17 @@ target_link_libraries(test_protocol PRIVATE
 )
 add_test(NAME protocol COMMAND test_protocol)
 
+add_executable(test_user_api_contract tst_user_api_contract.cpp)
+target_link_libraries(test_user_api_contract PRIVATE
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+target_compile_definitions(test_user_api_contract PRIVATE
+    USER_API_EXAMPLES_PATH="${PROJECT_SOURCE_DIR}/docs/api/user_api_examples.json"
+)
+add_test(NAME user_api_contract COMMAND test_user_api_contract)
+
 add_executable(test_model_json tst_model_json.cpp)
 target_link_libraries(test_model_json PRIVATE
     ChargingPlatform::Common
