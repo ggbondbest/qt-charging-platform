@@ -5,6 +5,7 @@ add_library(charging_client_widgets STATIC
     include/charging/client/widgets/card.h
     include/charging/client/widgets/clickable_card.h
     include/charging/client/widgets/loading_overlay.h
+    include/charging/client/widgets/motion.h
     include/charging/client/widgets/notice_panel.h
     include/charging/client/widgets/status_tag.h
     include/charging/client/widgets/toast.h
@@ -15,6 +16,7 @@ add_library(charging_client_widgets STATIC
     src/card.cpp
     src/clickable_card.cpp
     src/loading_overlay.cpp
+    src/motion.cpp
     src/notice_panel.cpp
     src/status_tag.cpp
     src/toast.cpp

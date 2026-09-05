@@ -1,5 +1,7 @@
 #include "charging/client/widgets/toast.h"
 
+#include "charging/client/widgets/motion.h"
+
 #include <QFont>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
@@ -64,13 +66,25 @@ void Toast::show(QWidget* anchor, const QString& text, StatusTag::Tone tone)
     frame->setGraphicsEffect(effect);
 
     frame->adjustSize();
-    frame->move((host->width() - frame->width()) / 2, 28);
+    const QPoint target((host->width() - frame->width()) / 2, 28);
+    if (motion::animationsEnabled()) {
+        // 下滑入场：从落点上方 12px 淡入并落到位（toast 非布局管理，pos 动画安全）。
+        frame->move(target + QPoint(0, -12));
+        auto* slide = new QPropertyAnimation(frame, "pos", frame);
+        slide->setDuration(motion::duration::enter);
+        slide->setStartValue(target + QPoint(0, -12));
+        slide->setEndValue(target);
+        slide->setEasingCurve(QEasingCurve::OutCubic);
+        slide->start(QAbstractAnimation::DeleteWhenStopped);
+    } else {
+        frame->move(target);
+    }
     frame->show();
     frame->raise();
     activeToast = frame;
 
     auto* fadeIn = new QPropertyAnimation(effect, "opacity", frame);
-    fadeIn->setDuration(140);
+    fadeIn->setDuration(motion::animationsEnabled() ? motion::duration::enter : 140);
     fadeIn->setStartValue(0.0);
     fadeIn->setEndValue(1.0);
     fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
