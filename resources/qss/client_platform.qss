@@ -307,8 +307,10 @@ QLabel[role="cellChevron"] {
     font-weight: 600;
     color: #C3CBD6;
 }
-/* 分组列表行：设置（单行成卡，设置页路由由壳承接） */
-QPushButton#openSettingsButton {
+/* 分组列表行：收藏 / 设置（单行成卡，对应路由页由壳承接；迭代 3 收藏行
+   与设置行共用同一选择器组，保证圆角/边距/配色完全一致） */
+QPushButton#openSettingsButton,
+QPushButton#openFavoritesButton {
     background: #FFFFFF;
     border: 1px solid #E5E9EF;
     border-radius: 16px;
@@ -318,7 +320,8 @@ QPushButton#openSettingsButton {
     font-weight: 600;
     padding: 2px 16px;
 }
-QPushButton#openSettingsButton:pressed {
+QPushButton#openSettingsButton:pressed,
+QPushButton#openFavoritesButton:pressed {
     background: #F2F5F8;
 }
 /* 退出登录：置底独立白卡行，全页唯一危险动作 */

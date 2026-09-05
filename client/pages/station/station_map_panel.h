@@ -4,6 +4,7 @@
 #include <QWidget>
 
 class QLabel;
+class QSplitter;
 
 namespace charging::client::pages::station {
 
@@ -27,6 +28,10 @@ class StationMapPanel final : public QWidget
 public:
     explicit StationMapPanel(QWidget* parent = nullptr);
 
+    // 真实地图的推荐初始展示高度（px）：找站页与导航页的分栏初始尺寸统一
+    // 取此值（降级横幅口径另行按行高收小），保证两页地图观感一致。
+    static constexpr int kPreferredInitialHeight = 420;
+
     // 地图是否处于降级状态（未渲染真实地图）。
     bool isDegraded() const;
 
@@ -37,9 +42,19 @@ public:
     // 传空 = 恢复站点视野（首页口径）。有地图时重渲染，降级时仅缓存。
     void setRoutePoints(const QVector<MapStationPoint>& points);
 
+    // 分栏助手：调用时本面板必须已是 splitter 的第 0 个子件。先按当前
+    // 状态给初始尺寸（降级 56 / 真地图 kPreferredInitialHeight，列表半区
+    // listPaneInitial），并在地图异步渲染成功时把地图半区升档到推荐高度
+    // ——用户手动拖过分栏则不再覆盖（尊重手动选择）。找站页/导航页共用。
+    void attachToSplitter(QSplitter* splitter, int listPaneInitial = 300);
+
 signals:
     // 降级提示里的“重试”被点击（由外层决定是否再次尝试加载）。
     void retryRequested();
+
+    // 地图首次渲染成功（异步回调，只发一次）。构造期无法预判是否降级，
+    // 外层分栏据此把初始高度从降级值升档到 kPreferredInitialHeight。
+    void mapReady();
 
 private:
     static QString mapKey(); // 仅从环境读取；不硬编码进仓库
@@ -54,6 +69,7 @@ private:
     QVector<MapStationPoint> stations_;
     QVector<MapStationPoint> routePoints_; // 导航路线折线（空=首页口径）
     bool degraded_ = true;
+    bool mapReadyEmitted_ = false; // mapReady 只在首次渲染成功时发一次
 };
 
 } // namespace charging::client::pages::station

@@ -7,8 +7,11 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QPushButton>
+#include <QSplitter>
 #include <QtGlobal>
 #include <QVBoxLayout>
+
+#include <memory>
 
 #ifdef CHARGING_PLATFORM_HAS_WEBENGINE
 #include <QWebEngineView>
@@ -117,6 +120,33 @@ void StationMapPanel::setRoutePoints(const QVector<MapStationPoint>& points)
     setStations(stations_);
 }
 
+void StationMapPanel::attachToSplitter(QSplitter* splitter, int listPaneInitial)
+{
+    // 构造期地图必然还在异步加载（degraded_ 初值 true），直接按降级口径
+    // 起步；mapReady 到达后再升档，修复"初始小地图"观感（用户反馈）。
+    constexpr int kDegradedSplitHeight = 56; // 一行降级横幅的贴合高度
+    splitter->setSizes({degraded_ ? kDegradedSplitHeight : kPreferredInitialHeight,
+                        listPaneInitial});
+    auto dragged = std::make_shared<bool>(false);
+    connect(splitter, &QSplitter::splitterMoved, splitter,
+            [dragged]() { *dragged = true; });
+    connect(this, &StationMapPanel::mapReady, this,
+            [this, splitter, dragged, kDegradedSplitHeight]() {
+                if (*dragged) {
+                    return; // 用户手动调过分栏，尊重其选择
+                }
+                const QList<int> sizes = splitter->sizes();
+                if (sizes.size() != 2) {
+                    return;
+                }
+                const int grow = kPreferredInitialHeight - sizes.at(0);
+                if (grow > 0) {
+                    splitter->setSizes({kPreferredInitialHeight,
+                                        qMax(kDegradedSplitHeight, sizes.at(1) - grow)});
+                }
+            });
+}
+
 QString StationMapPanel::mapKey()
 {
     return qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
@@ -162,6 +192,11 @@ void StationMapPanel::tryBuildMapView()
         }
         degraded_ = false;
         degradedBanner_->setVisible(false);
+        if (!mapReadyEmitted_) {
+            // setStations 每次重渲染都会回到这里，升档信号只发首次。
+            mapReadyEmitted_ = true;
+            emit mapReady();
+        }
     });
     auto* panelLayout = static_cast<QVBoxLayout*>(layout());
     // 功能修正：构造尾部有一根占位 stretch（降级横幅态撑位用），若不摘除，

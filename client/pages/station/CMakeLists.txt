@@ -5,10 +5,14 @@ find_package(Qt6 QUIET COMPONENTS WebEngineWidgets)
 add_library(charging_client_station_pages STATIC
     home_shell.cpp
     home_shell.h
+    favorites_page.cpp
+    favorites_page.h
     login_page.cpp
     login_page.h
     navigation_page.cpp
     navigation_page.h
+    notification_page.cpp
+    notification_page.h
     platform_theme.cpp
     platform_theme.h
     reservation_completed_page.cpp
@@ -23,6 +27,8 @@ add_library(charging_client_station_pages STATIC
     settings_page.h
     station_detail_page.cpp
     station_detail_page.h
+    station_filter_dialog.cpp
+    station_filter_dialog.h
     station_home_page.cpp
     station_home_page.h
     station_map_panel.cpp
@@ -43,6 +49,7 @@ target_link_libraries(charging_client_station_pages
     ChargingPlatform::ClientReservationServices
     ChargingPlatform::ClientMapServices
     ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientFavoritesServices
     ChargingPlatform::ClientProfileChargingPages
     ChargingPlatform::ClientProfileChargingServices
     ChargingPlatform::ClientWidgets

@@ -107,6 +107,10 @@ public:
     int activeCountForVehicle(qint64 vehicleId) const;
     int unfinishedSlotLimit() const;
 
+    // 迭代 3：按 ID 只读回查记录（取消/到期信号只带 ID，通知桥接取站名/桩号
+    // 展示上下文用）。不存在返回 nullptr；指针在列表变更前保持有效。
+    const ReservationRecord* reservationRecord(qint64 reservationId) const;
+
     // 提交预约（时间段版）：站点/桩/起始时刻/车辆来自预约确认页上下文；
     // 时长 = end - start（上限 45 分钟，Service 兜底校验）；
     // distanceMeters 为展示用虚拟导航距离（对接导航模块）。

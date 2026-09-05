@@ -315,6 +315,26 @@ target_link_libraries(test_settings_service PRIVATE
 )
 add_test(NAME settings_service COMMAND test_settings_service)
 
+add_executable(test_favorites_service tst_favorites_service.cpp)
+target_link_libraries(test_favorites_service PRIVATE
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME favorites_service COMMAND test_favorites_service)
+
+add_executable(test_notification_service tst_notification_service.cpp)
+target_link_libraries(test_notification_service PRIVATE
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME notification_service COMMAND test_notification_service)
+
 add_executable(test_client_navigation
     tst_client_navigation.cpp
     ../client/app/main_window.cpp
