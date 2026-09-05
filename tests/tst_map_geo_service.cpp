@@ -23,6 +23,7 @@ const QByteArray kMatrixJson = R"({
 })";
 
 // 真实响应结构（curl 实测）：路线在 result.routes[0]，duration 单位=分钟。
+// polyline 为增量压缩口径：[lat,lng] 成对、每对相对上一点增量 ×1e6（首点绝对）。
 const QByteArray kRouteJson = R"({
     "status": 0,
     "message": "Success",
@@ -31,6 +32,7 @@ const QByteArray kRouteJson = R"({
         "distance": 5120,
         "duration": 12,
         "traffic_light_count": 3,
+        "polyline": [22541000, 113943000, 1000, 2000, 500, -3000],
         "steps": [
             {"instruction": "沿滨海大道直行约2000米", "distance": 2000, "duration": 480},
             {"instruction": "在路口右转进入科苑北路", "distance": 800, "duration": 180},
@@ -84,6 +86,8 @@ private slots:
     void businessStatusMapsToTypedErrors();
     void transportFailuresMapToTypedErrors();
     void routeParsesDistanceDurationAndSteps();
+    void routePolylineOutOfRegionIsIgnored();
+    void routePolylineAcceptsDegreesFirstPoint();
     void routeFallsBackToLegacyModeShape();
     void geocodeParsesAddress();
     void requestIdsAreDistinctAndAscending();
@@ -298,8 +302,43 @@ void MapGeoServiceTest::routeParsesDistanceDurationAndSteps()
     QCOMPARE(route.steps.at(0).instruction, QStringLiteral("沿滨海大道直行约2000米"));
     QCOMPARE(route.steps.at(1).distanceMeters, 800);
 
+    // 增量解码：首点绝对/1e6，其后逐对累加。
+    QCOMPARE(route.polyline.size(), 3);
+    QVERIFY(qAbs(route.polyline.at(0).latitude - 22.541) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(0).longitude - 113.943) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(1).latitude - 22.542) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(1).longitude - 113.945) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(2).latitude - 22.5425) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(2).longitude - 113.942) < 1e-9);
+
     QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/direction/v1/driving/")));
     QVERIFY(server.lastRequestTarget().contains(QStringLiteral("to=22.550000,113.950000")));
+}
+
+void MapGeoServiceTest::routePolylineAcceptsDegreesFirstPoint()
+{
+    // 官方 JS 示例口径（guide-polyline）：前两个元素是首点绝对**度数**，
+    // 索引 2 起为整数微度增量：coors[i] = coors[i-2] + coors[i]/1e6。
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral(R"({"status": 0, "result": {"routes": [{
+        "distance": 1000, "duration": 3,
+        "polyline": [22.541000, 113.943000, -345, -1828, 19867, -26154]}]}})"));
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestDrivingRoute({22.541, 113.943}, {22.56, 113.95});
+    QVERIFY(succeeded.wait(5000));
+    const RouteResult route = succeeded.at(0).at(1).value<RouteResult>();
+    QCOMPARE(route.polyline.size(), 3);
+    QVERIFY(qAbs(route.polyline.at(0).latitude - 22.541) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(0).longitude - 113.943) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(1).latitude - (22.541 - 0.000345)) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(1).longitude - (113.943 - 0.001828)) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(2).latitude - (22.541 - 0.000345 + 0.019867)) < 1e-9);
+    QVERIFY(qAbs(route.polyline.at(2).longitude - (113.943 - 0.001828 - 0.026154)) < 1e-9);
 }
 
 void MapGeoServiceTest::routeFallsBackToLegacyModeShape()
@@ -318,6 +357,24 @@ void MapGeoServiceTest::routeFallsBackToLegacyModeShape()
     QCOMPARE(route.distanceMeters, 3000);
     QCOMPARE(route.durationMinutes, 8);
     QCOMPARE(route.steps.size(), 1);
+    QVERIFY(route.polyline.isEmpty()); // 无 polyline 字段：空折线（消费方回落模拟）
+}
+
+void MapGeoServiceTest::routePolylineOutOfRegionIsIgnored()
+{
+    // 解码越界（口径变化/脏数据）时折线整体置空而非画出飞线，页面回落模拟。
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral(R"({"status": 0, "result": {"routes": [{
+        "distance": 100, "duration": 1, "polyline": [999000000, 0]}]}})"));
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestDrivingRoute({22.541, 113.943}, {22.55, 113.95});
+    QVERIFY(succeeded.wait(5000));
+    QVERIFY(succeeded.at(0).at(1).value<RouteResult>().polyline.isEmpty());
 }
 
 void MapGeoServiceTest::geocodeParsesAddress()

@@ -317,6 +317,41 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                 route.steps.append(RouteStep{object.value(QStringLiteral("instruction")).toString(),
                                              object.value(QStringLiteral("distance")).toInt(0)});
             }
+            // 坐标折线（官方口径）：前两个元素是首点**绝对度数**（如
+            // 50.243916，无需缩放）；其后为整数微度增量，规则
+            // coors[i] = coors[i-2] + coors[i]/1e6。部分版本首点也按微度
+            // 返回，按量级归一。解码越出中国范围视为脏数据整体置空
+            //（防飞线），消费方回落模拟折线。
+            const QJsonArray encoded = routeObject.value(QStringLiteral("polyline")).toArray();
+            QVector<LatLng> decoded;
+            bool polylineSane = true;
+            if (encoded.size() >= 2) {
+                decoded.reserve(encoded.size() / 2);
+                double latitude = encoded.at(0).toDouble();
+                double longitude = encoded.at(1).toDouble();
+                if (qAbs(latitude) > 1000.0 || qAbs(longitude) > 1000.0) {
+                    latitude /= 1e6;
+                    longitude /= 1e6;
+                }
+                polylineSane = latitude >= 15.0 && latitude <= 55.0
+                    && longitude >= 73.0 && longitude <= 136.0;
+                if (polylineSane) {
+                    decoded.append(LatLng{latitude, longitude});
+                }
+                for (qsizetype i = 2; polylineSane && i + 1 < encoded.size(); i += 2) {
+                    latitude += encoded.at(i).toDouble() / 1e6;
+                    longitude += encoded.at(i + 1).toDouble() / 1e6;
+                    if (latitude < 15.0 || latitude > 55.0 || longitude < 73.0 || longitude > 136.0) {
+                        polylineSane = false;
+                        break;
+                    }
+                    decoded.append(LatLng{latitude, longitude});
+                }
+                if (!polylineSane) {
+                    decoded.clear();
+                }
+            }
+            route.polyline = std::move(decoded);
             emit routeSucceeded(requestId, route);
         }
     });

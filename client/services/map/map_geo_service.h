@@ -20,7 +20,7 @@ struct LatLng
 // 接口失败分类：页面兜底文案与提示按类型区分（密钥无效 / 网络不通 / 限流）。
 enum class MapError {
     None,
-    NoApiKey,     // 未配置 CHARGING_TENCENT_MAP_KEY（不发起任何请求）
+    NoApiKey,     // 未配置 TENCENT_MAP_API_KEY（含旧名；不发起任何请求）
     Network,      // DNS/连接/SSL 等传输层失败
     Timeout,      // 请求超时无响应
     RateLimited,  // 配额/并发限流（status 120/121、HTTP 429/403）
@@ -46,12 +46,15 @@ struct RouteStep
     int distanceMeters = 0;
 };
 
-// 路线规划结果：总距离（米）、总时长（分钟）、分段步骤。
+// 路线规划结果：总距离（米）、总时长（分钟）、分段步骤、坐标折线。
+// polyline 已由解析器完成增量解码（绝对经纬度，起点=from）；接口未给
+// 或解码失败时为空，消费方回落模拟折线。
 struct RouteResult
 {
     int distanceMeters = -1;
     int durationMinutes = -1;
     QVector<RouteStep> steps;
+    QVector<LatLng> polyline;
 };
 
 // 腾讯地图 WebService 请求工具类（成员 2，任务 #17 地图接入）。

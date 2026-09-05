@@ -6,6 +6,8 @@
 #include "pages/station/platform_theme.h"
 #include "services/station/auth_service.h"
 
+#include <QGuiApplication>
+#include <QScreen>
 #include <QStackedWidget>
 #include <QStatusBar>
 
@@ -32,8 +34,14 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
     // 版本叙事：v0.7 预约改版（成员 2）→ v0.8 全端整合（成员 3 页面并入壳层）。
     setWindowTitle(tr("电动汽车充电桩应用管理平台 v0.8 · 全端整合"));
     // 移动端优先：默认按主流手机视口尺寸打开（预览/截图同为 420×860）；
-    // 仍可自由缩放，桌面演示不受限。
-    resize(420, 860);
+    // 仍可自由缩放，桌面演示不受限。屏幕可视高度不足时按可用区收钳，
+    // 保证底部 Tab 栏与页面底部操作按钮（如"确认预约"）始终可达。
+    int preferredHeight = 860;
+    if (const auto* screen = QGuiApplication::primaryScreen()) {
+        preferredHeight = qMin(preferredHeight, screen->availableGeometry().height() - 48);
+    }
+    // 下限交给 Qt 的 minimumSizeHint 兜底（布局自身保证可达）。
+    resize(420, preferredHeight);
 
     connection_ = new network::ClientConnection(hostName, port, this);
     authService_ = new services::station::AuthService(connection_, this);
