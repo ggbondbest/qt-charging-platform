@@ -4,6 +4,7 @@
 #include "user_repository.h"
 
 #include <QSqlQuery>
+#include <QSqlError>
 #include <QtTest>
 
 class UserOrderRechargeQueriesTest final : public QObject
@@ -16,6 +17,7 @@ private slots:
     void userListSupportsKeywordStatusAndPagination();
     void orderListReturnsJoinedDisplayFields();
     void rechargeIsAtomicAndIdempotent();
+    void failedRechargeIsNotReportedAsIdempotentSuccess();
     void rechargeListSupportsPagination();
     void invalidQueriesFail();
 
@@ -115,6 +117,32 @@ void UserOrderRechargeQueriesTest::rechargeIsAtomicAndIdempotent()
         repository.recharge(1, QStringLiteral("RECHARGE-QUERY-001"), 3000, now);
     QVERIFY(!conflicting.ok);
     QCOMPARE(userBalance(), before + 2500);
+}
+
+void UserOrderRechargeQueriesTest::failedRechargeIsNotReportedAsIdempotentSuccess()
+{
+    const qint64 before = userBalance();
+    QSqlQuery insert(databaseConnection_.database());
+    insert.prepare(QStringLiteral(
+        "INSERT INTO recharge_records "
+        "(transaction_no, user_id, amount_cents, balance_after_cents, status, created_at) "
+        "VALUES ('RECHARGE-FAILED-001', 1, 100, :balance, 'FAILED', "
+        "'2026-09-04T10:10:00.000Z')"));
+    insert.bindValue(QStringLiteral(":balance"), before);
+    QVERIFY2(insert.exec(), qPrintable(insert.lastError().text()));
+
+    charging::server::RechargeRepository repository(databaseConnection_.database());
+    const auto result = repository.recharge(
+        1, QStringLiteral("RECHARGE-FAILED-001"), 100,
+        QDateTime::fromString(QStringLiteral("2026-09-04T10:11:00.000Z"), Qt::ISODateWithMs));
+    QVERIFY(!result.ok);
+    QVERIFY(!result.idempotent);
+    QVERIFY(result.error == charging::server::RepositoryError::InvalidStateTransition);
+    QCOMPARE(userBalance(), before);
+
+    QSqlQuery cleanup(databaseConnection_.database());
+    QVERIFY(cleanup.exec(QStringLiteral(
+        "DELETE FROM recharge_records WHERE transaction_no = 'RECHARGE-FAILED-001'")));
 }
 
 void UserOrderRechargeQueriesTest::rechargeListSupportsPagination()

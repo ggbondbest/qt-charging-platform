@@ -98,6 +98,12 @@ RechargeResult RechargeRepository::recharge(qint64 userId, const QString& transa
         return result;
     }
     if (found) {
+        if (result.record.status != charging::model::RechargeStatus::Success) {
+            rollback();
+            result.error = RepositoryError::InvalidStateTransition;
+            result.diagnostic = QStringLiteral("The previous recharge attempt failed");
+            return result;
+        }
         if (result.record.userId != userId || result.record.amountCents != amountCents) {
             rollback();
             result.error = RepositoryError::InvalidInput;
