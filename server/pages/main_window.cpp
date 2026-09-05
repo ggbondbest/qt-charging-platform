@@ -2,7 +2,7 @@
 
 #include "admin_login_page.h"
 #include "charger_management_page.h"
-#include "charging_server.h"
+#include "server_runtime.h"
 #include "dashboard_page.h"
 #include "order_management_page.h"
 #include "station_management_page.h"
@@ -165,7 +165,7 @@ private:
 
 } // namespace
 
-MainWindow::MainWindow(ChargingServer* server, QWidget* parent)
+MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     : QMainWindow(parent), server_(server)
 {
     Q_ASSERT(server != nullptr);
@@ -181,7 +181,7 @@ MainWindow::MainWindow(ChargingServer* server, QWidget* parent)
     setCentralWidget(rootStackedWidget_);
 
     connect(loginPage_, &AdminLoginPage::loginSubmitted, this, &MainWindow::handleLoginSubmitted);
-    connect(server_, &ChargingServer::clientCountChanged, this, &MainWindow::updateClientCount);
+    connect(server_, &ServerRuntime::clientCountChanged, this, &MainWindow::updateClientCount);
     dashboardPage_->setClientCount(server_->clientCount());
     showLoginPage();
 }

@@ -13,6 +13,20 @@ ChargingServer::ChargingServer(QObject* parent) : QObject(parent)
     connect(&tcpServer_, &QTcpServer::newConnection, this, &ChargingServer::handleNewConnections);
 }
 
+ChargingServer::~ChargingServer()
+{
+    tcpServer_.close();
+    // Delete sessions while their dispatcher and this object's members still
+    // exist. Avoid disconnected callbacks during QObject base destruction.
+    const auto clients = clients_;
+    clients_.clear();
+    for (QTcpSocket* socket : clients) {
+        socket->disconnect(this);
+        socket->abort();
+        delete socket;
+    }
+}
+
 void ChargingServer::setRequestDispatcher(RequestDispatcher* dispatcher)
 {
     Q_ASSERT(!tcpServer_.isListening());
