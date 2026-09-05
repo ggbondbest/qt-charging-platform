@@ -113,9 +113,7 @@ void WalletService::updateNickname(const QString& nickname)
 
     updatingNickname_ = true;
     QJsonObject payload;
-    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
-    // nickname-only shape below is what the mock understands. Avatar uploads
-    // have no protocol at all and are not sent from this client.
+    // Frozen in docs/api/user_api_contract.md; real transport is still pending.
     payload.insert(QStringLiteral("nickname"), trimmed);
     transport_->send(
         type, payload,
@@ -157,10 +155,8 @@ void WalletService::updateAvatar(const QString& avatarKey)
 
     updatingAvatar_ = true;
     QJsonObject payload;
-    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
-    // avatarKey-only shape below is what the mock understands. "上传头像"
-    // 没有协议——这里只能提交内置头像库的 key（models.h 的 avatarKey 字段），
-    // 空串=恢复默认（昵称首字）头像。
+    // Frozen avatarKey patch: built-in keys only; empty restores the default.
+    // Image upload is not part of docs/api/user_api_contract.md.
     payload.insert(QStringLiteral("avatarKey"), avatarKey);
     transport_->send(
         type, payload,
@@ -209,6 +205,8 @@ void WalletService::recharge(qint64 amountCents)
 
     recharging_ = true;
     QJsonObject payload;
+    // TODO(integration): add a persisted transactionNo reused on uncertain
+    // retries, and parse balanceCents. This remains the legacy mock contract.
     payload.insert(QStringLiteral("amountCents"), amountCents);
     transport_->send(
         type, payload,
@@ -243,9 +241,7 @@ void WalletService::fetchRechargeRecords(int page)
 
     fetchingRecords_ = true;
     QJsonObject payload;
-    // TODO(contract): page/pageSize/total naming is not frozen in
-    // docs/api/socket_protocol.md yet; align with the leader before wiring
-    // the real transport.
+    // Pagination names are frozen in docs/api/user_api_contract.md.
     payload.insert(QStringLiteral("page"), safePage);
     payload.insert(QStringLiteral("pageSize"), kRechargePageSize);
     transport_->send(

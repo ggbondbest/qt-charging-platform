@@ -1,6 +1,7 @@
 #include "services/reservation/reservation_service.h"
 
 #include "charging/common/model/model_json.h"
+#include "charging/common/protocol/protocol.h"
 #include "network/client_connection.h"
 #include "services/settings/settings_service.h"
 
@@ -95,8 +96,8 @@ ReservationList defaultMockRecords()
     };
 }
 
-// 协议尚未定义预约列表查询命令；就绪后替换为 protocol 常量即可（UI 不变）。
-const QString kGetReservationsType = QStringLiteral("GET_RESERVATIONS");
+const QString kGetReservationsType =
+    QString::fromLatin1(charging::protocol::request_type::kGetReservations);
 
 } // namespace
 
@@ -255,7 +256,7 @@ void ReservationService::fetchList()
 
     if (liveMode_ && connection_ != nullptr) {
         QJsonObject data;
-        data.insert(QStringLiteral("userId"), QString::number(userId_));
+        // User identity belongs to the authenticated TCP Session.
         pendingListRequestId_ = connection_->sendRequest(kGetReservationsType, data);
         return;
     }

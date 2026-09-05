@@ -46,9 +46,8 @@ void OrderService::fetchStatusCounts()
     pendingCountRequests_ = 0;
 
     // One page-1/pageSize-1 request per badge status; we only need `total`.
-    // TODO(contract): GET_ORDERS is not server-implemented yet and the
-    // status/page/pageSize/total names are still unfrozen; when the real
-    // transport lands this must parse exactly what GET_ORDERS returns.
+    // status/page/pageSize/total are frozen in docs/api/user_api_contract.md.
+    // TODO(integration): replace mock transport after Server implementation.
     const Filter filters[] = {
         Filter::Charging,
         Filter::WaitingPayment,
@@ -128,10 +127,8 @@ void OrderService::fetchOrders(Filter filter, int page)
 
     fetchingOrders_ = true;
     QJsonObject payload;
-    // TODO(contract): status/page/pageSize/total names are not frozen in
-    // docs/api/socket_protocol.md yet; align with the leader before wiring
-    // the real transport. Display fields stationName/chargerCode are read
-    // from the same object as the order payload (server-side join expected).
+    // Frozen contract: pagination plus flat Order + stationName/chargerCode.
+    // Server-side user-scoped joins and real transport are still pending.
     const QString status = filterToStatus(filter);
     if (!status.isEmpty()) {
         payload.insert(QStringLiteral("status"), status);
