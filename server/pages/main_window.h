@@ -11,6 +11,7 @@ class QStackedWidget;
 namespace charging::server {
 
 class AdminLoginPage;
+class AdminRequestGateway;
 class ServerRuntime;
 class DashboardPage;
 
@@ -20,6 +21,7 @@ class MainWindow final : public QMainWindow
 
 public:
     explicit MainWindow(ServerRuntime* server, QWidget* parent = nullptr);
+    AdminRequestGateway* adminGateway() const { return adminGateway_; }
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -35,6 +37,8 @@ private:
     void updateSidebarWidth();
 
     ServerRuntime* server_ = nullptr;
+    AdminRequestGateway* adminGateway_ = nullptr;
+    QString loginRequestId_;
     QStackedWidget* rootStackedWidget_ = nullptr;
     QStackedWidget* pageStackedWidget_ = nullptr;
     AdminLoginPage* loginPage_ = nullptr;

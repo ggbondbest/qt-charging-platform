@@ -1,3 +1,25 @@
+add_executable(test_admin_service tst_admin_service.cpp)
+target_link_libraries(test_admin_service PRIVATE
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME admin_service COMMAND test_admin_service)
+
+add_executable(test_admin_gateway tst_admin_gateway.cpp)
+target_link_libraries(test_admin_gateway PRIVATE
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME admin_gateway COMMAND test_admin_gateway)
+add_executable(test_admin_login tst_admin_login.cpp)
+target_link_libraries(test_admin_login PRIVATE ChargingPlatform::ServerPages
+    ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME admin_login COMMAND test_admin_login)
+set_tests_properties(admin_service admin_gateway admin_login PROPERTIES TIMEOUT 40)
+
 add_executable(test_qt_baseline tst_qt_baseline.cpp)
 target_link_libraries(test_qt_baseline PRIVATE
     ChargingPlatform::ProjectOptions

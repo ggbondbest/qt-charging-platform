@@ -189,6 +189,6 @@ qint64 UserOrderRechargeQueriesTest::userBalance() const
     return query.value(0).toLongLong();
 }
 
-QTEST_APPLESS_MAIN(UserOrderRechargeQueriesTest)
+QTEST_GUILESS_MAIN(UserOrderRechargeQueriesTest)
 
 #include "tst_user_order_recharge_queries.moc"
