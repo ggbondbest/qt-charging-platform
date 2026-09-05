@@ -203,7 +203,7 @@ private slots:
         QVERIFY(!loaded.isEmpty());
         QCOMPARE(loaded.first().amountCents, qint64(5000));
         QCOMPARE(loaded.first().balanceAfterCents, qint64(15000));
-        QVERIFY(loaded.first().transactionNo.startsWith(QStringLiteral("MOCKRCH")));
+    QCOMPARE(loaded.first().transactionNo.size(), 36); // Client-generated UUID, also used by Mock.
     }
 
     void duplicateRechargeIsIgnoredWhileInFlight()

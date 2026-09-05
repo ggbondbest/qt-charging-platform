@@ -9,12 +9,13 @@ namespace charging::server {
 class ChargingService;
 class OrderService;
 class UserService;
+class UserApiService;
 
 class RequestDispatcher final
 {
 public:
     explicit RequestDispatcher(UserService* userService, ChargingService* chargingService = nullptr,
-                               OrderService* orderService = nullptr);
+                               OrderService* orderService = nullptr, UserApiService* userApiService = nullptr);
 
     charging::protocol::ResponseEnvelope
     dispatch(const charging::protocol::RequestEnvelope& request,
@@ -22,6 +23,7 @@ public:
 
 private:
     UserService* userService_ = nullptr;
+    UserApiService* userApiService_ = nullptr;
     ChargingService* chargingService_ = nullptr;
     OrderService* orderService_ = nullptr;
 };

@@ -9,6 +9,8 @@
 #include "request_dispatcher.h"
 #include "user_repository.h"
 #include "user_service.h"
+#include "user_api_service.h"
+#include "user_api_repository.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -87,11 +89,13 @@ int main(int argc, char* argv[])
     charging::server::ChargingRepository chargingRepository(databaseConnection.database());
     charging::server::OrderRepository orderRepository(databaseConnection.database());
     charging::server::UserService userService(&userRepository);
+    charging::server::UserApiRepository userApiRepository(databaseConnection.database());
+    charging::server::UserApiService userApiService(&userApiRepository);
     charging::server::BillingService billingService;
     charging::server::ChargingService chargingService(&chargingRepository, &billingService);
     charging::server::OrderService orderService(&orderRepository);
     charging::server::RequestDispatcher requestDispatcher(&userService, &chargingService,
-                                                          &orderService);
+                                                          &orderService, &userApiService);
 
     charging::server::ChargingServer server;
     server.setRequestDispatcher(&requestDispatcher);

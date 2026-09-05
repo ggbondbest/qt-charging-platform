@@ -10,6 +10,8 @@ add_library(charging_server_services STATIC
     service_clock.h
     user_service.cpp
     user_service.h
+    user_api_service.cpp
+    user_api_service.h
 )
 add_library(ChargingPlatform::ServerServices ALIAS charging_server_services)
 

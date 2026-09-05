@@ -95,6 +95,10 @@ void ClientSession::handlePayload(const QByteArray& payload)
         return;
     }
 
+    if (request.type == QString::fromLatin1(charging::protocol::request_type::kUserLogin)) {
+        authenticatedUserId_ = 0;
+        role_ = SessionRole::Anonymous;
+    }
     qint64 userId = authenticatedUserId_;
     charging::protocol::ResponseEnvelope response;
     try {

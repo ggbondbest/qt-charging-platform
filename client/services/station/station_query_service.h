@@ -94,6 +94,9 @@ private:
     QString pendingDetailRequestId_;
     QString pendingKeyword_;
     StationDetail pendingDetail_;
+    StationList accumulatedStations_;
+    int stationPage_ = 1;
+    int chargerPage_ = 1;
     QHash<qint64, charging::model::ChargerStatus> mockChargerOverrides_;
 };
 

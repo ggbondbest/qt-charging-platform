@@ -5,6 +5,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include "network/page_validation.h"
 
 namespace charging::client {
 
@@ -47,7 +48,7 @@ void OrderService::fetchStatusCounts()
 
     // One page-1/pageSize-1 request per badge status; we only need `total`.
     // status/page/pageSize/total are frozen in docs/api/user_api_contract.md.
-    // TODO(integration): replace mock transport after Server implementation.
+    // Production HomeShell injects NetworkRequestTransport; previews use Mock.
     const Filter filters[] = {
         Filter::Charging,
         Filter::WaitingPayment,
@@ -61,11 +62,12 @@ void OrderService::fetchStatusCounts()
         payload.insert(QStringLiteral("page"), 1);
         payload.insert(QStringLiteral("pageSize"), 1);
 
-        transport_->send(
+        transport_->sendFor(this,
             QString::fromLatin1(charging::protocol::request_type::kGetOrders), payload,
             [this, filter](bool success, const QJsonObject& data,
                            const charging::protocol::ProtocolError& /*error*/) {
-                if (success) {
+                bool more = false;
+                if (success && network::readPage(data, "orders", 1, 1, &more)) {
                     const int total = data.value(QStringLiteral("total")).toInt();
                     switch (filter) {
                     case Filter::Charging:
@@ -128,7 +130,7 @@ void OrderService::fetchOrders(Filter filter, int page)
     fetchingOrders_ = true;
     QJsonObject payload;
     // Frozen contract: pagination plus flat Order + stationName/chargerCode.
-    // Server-side user-scoped joins and real transport are still pending.
+    // Server joins are user-scoped; pages do not query SQL.
     const QString status = filterToStatus(filter);
     if (!status.isEmpty()) {
         payload.insert(QStringLiteral("status"), status);
@@ -136,7 +138,7 @@ void OrderService::fetchOrders(Filter filter, int page)
     payload.insert(QStringLiteral("page"), safePage);
     payload.insert(QStringLiteral("pageSize"), kOrdersPageSize);
 
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, safePage](bool success, const QJsonObject& data,
                          const charging::protocol::ProtocolError& error) {
@@ -148,6 +150,12 @@ void OrderService::fetchOrders(Filter filter, int page)
                 return;
             }
 
+            bool hasMore = false;
+            if (!network::readPage(data, "orders", safePage, kOrdersPageSize, &hasMore)) {
+                emit operationFailed(ordersType, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
+                                                               QStringLiteral("订单分页响应无效")));
+                return;
+            }
             QVector<charging::client::OrderSummary> orders;
             const QJsonArray array = data.value(QStringLiteral("orders")).toArray();
             for (const QJsonValue& value : array) {
@@ -167,7 +175,6 @@ void OrderService::fetchOrders(Filter filter, int page)
             }
 
             const int total = data.value(QStringLiteral("total")).toInt();
-            const bool hasMore = safePage * kOrdersPageSize < total;
             emit ordersLoaded(orders, total, hasMore);
         });
 }

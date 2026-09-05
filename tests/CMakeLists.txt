@@ -45,6 +45,19 @@ target_compile_definitions(test_user_api_contract PRIVATE
 )
 add_test(NAME user_api_contract COMMAND test_user_api_contract)
 
+add_executable(test_user_api_integration tst_user_api_integration.cpp)
+target_link_libraries(test_user_api_integration PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME user_api_integration COMMAND test_user_api_integration)
+set_tests_properties(user_api_integration PROPERTIES TIMEOUT 60)
+
 add_executable(test_model_json tst_model_json.cpp)
 target_link_libraries(test_model_json PRIVATE
     ChargingPlatform::Common
