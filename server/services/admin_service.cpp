@@ -214,7 +214,7 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
         if (operation == QStringLiteral("list") || operation == QStringLiteral("get")) {
             require(QStringList{QStringLiteral("stations"), QStringLiteral("chargers"),
                                 QStringLiteral("users"), QStringLiteral("orders"),
-                                QStringLiteral("recharges")}
+                                QStringLiteral("recharges"), QStringLiteral("operation_logs")}
                         .contains(entity));
             if (operation == QStringLiteral("get")) {
                 fields(p, {QStringLiteral("id")});
@@ -227,8 +227,17 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     allowed << QStringLiteral("stationId") << QStringLiteral("type")
                             << QStringLiteral("abnormalOnly");
                 if (entity == QStringLiteral("orders"))
-                    allowed << QStringLiteral("stationId") << QStringLiteral("chargerId")
-                            << QStringLiteral("createdAtFrom") << QStringLiteral("createdAtTo");
+                    allowed << QStringLiteral("stationId") << QStringLiteral("chargerId");
+                const bool timed = entity == QStringLiteral("orders") ||
+                                   entity == QStringLiteral("recharges") ||
+                                   entity == QStringLiteral("operation_logs");
+                if (timed)
+                    allowed << QStringLiteral("createdAtFrom") << QStringLiteral("createdAtTo");
+                if (entity == QStringLiteral("operation_logs")) {
+                    allowed.removeAll(QStringLiteral("status"));
+                    allowed << QStringLiteral("adminId") << QStringLiteral("action")
+                            << QStringLiteral("targetType") << QStringLiteral("targetId");
+                }
                 if (entity == QStringLiteral("orders") || entity == QStringLiteral("recharges"))
                     allowed << QStringLiteral("userId");
                 fields(p, allowed);
@@ -240,7 +249,7 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     integer(p, QStringLiteral("pageSize"), 1, 100);
                 if (p.contains(QStringLiteral("sort"))) {
                     QStringList sorts{QStringLiteral("idAsc"), QStringLiteral("idDesc")};
-                    if (entity == QStringLiteral("orders"))
+                    if (timed)
                         sorts << QStringLiteral("createdAtDesc");
                     if (entity == QStringLiteral("chargers"))
                         sorts << QStringLiteral("updatedAtDesc");
@@ -257,9 +266,14 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     require(p.value(QStringLiteral("createdAtFrom")).toString() <
                             p.value(QStringLiteral("createdAtTo")).toString());
                 for (const auto& key : {QStringLiteral("stationId"), QStringLiteral("userId"),
-                                        QStringLiteral("chargerId")})
+                                        QStringLiteral("chargerId"), QStringLiteral("adminId")})
                     if (p.contains(key))
                         id(p, key);
+                for (const auto& key : {QStringLiteral("action"), QStringLiteral("targetId")})
+                    if (p.contains(key))
+                        textField(p, key, 1, 64);
+                if (p.contains(QStringLiteral("targetType")))
+                    textField(p, QStringLiteral("targetType"), 1, 32);
                 if (p.contains(QStringLiteral("type")))
                     choice(p, QStringLiteral("type"),
                            {QStringLiteral("FAST"), QStringLiteral("SLOW")});

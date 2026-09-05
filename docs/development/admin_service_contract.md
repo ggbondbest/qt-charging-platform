@@ -74,21 +74,35 @@ requestId_ = gateway->request("stations.list",
 | chargers.list / get | 通用条件，可加 stationId、type、abnormalOnly / id | 分页电桩 / item，含站名、功率、累计数据、updatedAt、exceptionType |
 | users.list / get | 通用条件 / id | 安全用户列表 / item，含订单数、未完成订单数、充值次数 |
 | orders.list / get | 通用条件，可加 userId、stationId、chargerId、createdAtFrom、createdAtTo / id | 只读订单、计费快照、时间、站点 ID/名称、桩号、脱敏用户 |
-| recharges.list / get | 通用条件，可加 userId / id | 全局或指定用户充值记录、安全用户摘要 |
+| recharges.list / get | 通用条件，可加 userId、createdAtFrom、createdAtTo / id | 全局或指定用户充值记录、安全用户摘要 |
+| operation_logs.list / get | 分页、keyword、sort、adminId、action、targetType、targetId、createdAtFrom、createdAtTo / id | 只读审计元数据列表 / item |
 
 列表输入：keyword（最多 64 字）、可选合法 status、page（1–1000000）、pageSize（1–100）、
-sort（默认 idAsc；所有列表允许 idAsc / idDesc，订单额外允许 createdAtDesc，电桩额外允许
+sort（默认 idAsc；所有列表允许 idAsc / idDesc，订单、充值、操作日志额外允许 createdAtDesc，电桩额外允许
 updatedAtDesc）。时间倒序相同时按 idDesc 打破平局，保证稳定分页，不用 ID 大小代替创建时间。
 默认 page=1、pageSize=20；不接受任意 SQL 排序或不适用于该实体的排序。
 输出 `{items,total,page,pageSize}`；详情输出 `{item}`。类型、枚举、未知字段都严格校验。
 站点 ACTIVE/INACTIVE；桩 AVAILABLE/RESERVED/CHARGING/FAULT/OFFLINE；用户 ACTIVE/FROZEN；
 订单 RESERVED/CHARGING/WAITING_PAYMENT/COMPLETED/CANCELLED；充值 SUCCESS/FAILED。
 
-订单时间筛选作用于 createdAt，而非 startedAt / paidAt；范围为 `[createdAtFrom, createdAtTo)`，
+订单、充值、操作日志的时间筛选均作用于 createdAt，而非 startedAt / paidAt；范围为 `[createdAtFrom, createdAtTo)`，
 两端均可单独提供，同时提供时 From 必须早于 To。格式固定为 UTC
 `yyyy-MM-ddTHH:mm:ss.zzzZ`，例如 `2026-09-05T00:00:00.000Z`；页面选择本地日期后先换算成
 对应 UTC 边界，不直接上传本地日期或带偏移字符串。站点、电桩、用户、状态、关键词及时间
 条件按 AND 组合，items 与 total 使用完全相同的筛选和读事务。
+
+操作日志只允许管理员通过同一个 AdminRequestGateway 查询，不新增客户端 TCP 权限。
+`operation_logs.list` 不接受 status；adminId 是正十进制字符串，action（1–64 字）、
+targetType（1–32 字）、targetId（1–64 字）为精确匹配。keyword 在 action、targetType、
+targetId 中模糊匹配。所有条件按 AND 组合，支持通用分页及 UTC 时间范围。
+`operation_logs.get {id}` 不接受列表筛选，不存在返回 NOT_FOUND。
+列表和详情共用 DTO：id、adminId（管理员已删除或系统日志可为 null）、action、targetType、
+targetId、createdAt。字段名保留数据库含义：ADMIN_COMMAND 的 targetId 是幂等 operationId，
+不是电站或用户的实体 ID。为避免泄露任意日志内容、操作指纹及重放结果，不直接返回
+details_json。该接口只读，不提供日志删除或编辑操作。
+
+示例：`operation_logs.list {page:1,pageSize:20,sort:"createdAtDesc",adminId:"1",action:"station.edit"}`；
+`recharges.list {page:1,pageSize:20,sort:"createdAtDesc",userId:"1",createdAtFrom:"2026-09-05T00:00:00.000Z",createdAtTo:"2026-09-06T00:00:00.000Z"}`。
 
 Dashboard 复用现有仓储的 UTC 日/月口径，并在读事务中获取一致统计快照：只汇总
 COMPLETED 订单 amountCents，以 paidAt 归属日期，充值不是营收。趋势缺失日期补零。

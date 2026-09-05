@@ -153,6 +153,13 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         from = QStringLiteral("recharge_records s JOIN users u ON u.id=s.user_id");
         search = QStringLiteral("(s.transaction_no LIKE ? OR u.phone LIKE ? OR u.nickname LIKE ?)");
         statusColumn = QStringLiteral("s.status");
+    } else if (entity == QStringLiteral("operation_logs")) {
+        // Public audit metadata only: arbitrary details_json may contain secrets
+        // or replay payloads and is intentionally not exposed to the UI.
+        select = QStringLiteral("s.id,s.admin_id AS adminId,s.action,s.target_type AS "
+                                "targetType,s.target_id AS targetId,s.created_at AS createdAt");
+        from = QStringLiteral("operation_logs s");
+        search = QStringLiteral("(s.action LIKE ? OR s.target_type LIKE ? OR s.target_id LIKE ?)");
     } else
         throw AdminFailure("INVALID_ARGUMENT");
     QString where = QStringLiteral(" WHERE 1=1");
@@ -190,6 +197,9 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             where += QStringLiteral(" AND s.charger_id=?");
             bindings << p.value(QStringLiteral("chargerId")).toString();
         }
+    }
+    if (entity == QStringLiteral("orders") || entity == QStringLiteral("recharges") ||
+        entity == QStringLiteral("operation_logs")) {
         if (p.contains(QStringLiteral("createdAtFrom"))) {
             where += QStringLiteral(" AND s.created_at>=?");
             bindings << p.value(QStringLiteral("createdAtFrom")).toString();
@@ -197,6 +207,19 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         if (p.contains(QStringLiteral("createdAtTo"))) {
             where += QStringLiteral(" AND s.created_at<?");
             bindings << p.value(QStringLiteral("createdAtTo")).toString();
+        }
+    }
+    if (entity == QStringLiteral("operation_logs")) {
+        const QList<QPair<QString, QString>> filters{
+            {QStringLiteral("adminId"), QStringLiteral("s.admin_id")},
+            {QStringLiteral("action"), QStringLiteral("s.action")},
+            {QStringLiteral("targetType"), QStringLiteral("s.target_type")},
+            {QStringLiteral("targetId"), QStringLiteral("s.target_id")}};
+        for (const auto& filter : filters) {
+            if (p.contains(filter.first)) {
+                where += QStringLiteral(" AND ") + filter.second + QStringLiteral("=?");
+                bindings << p.value(filter.first).toString();
+            }
         }
     }
     if ((entity == QStringLiteral("orders") || entity == QStringLiteral("recharges")) &&
@@ -215,7 +238,9 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         orderBy = QStringLiteral("s.id ASC");
     else if (sort == QStringLiteral("idDesc"))
         orderBy = QStringLiteral("s.id DESC");
-    else if (sort == QStringLiteral("createdAtDesc") && entity == QStringLiteral("orders"))
+    else if (sort == QStringLiteral("createdAtDesc") &&
+             (entity == QStringLiteral("orders") || entity == QStringLiteral("recharges") ||
+              entity == QStringLiteral("operation_logs")))
         orderBy = QStringLiteral("s.created_at DESC,s.id DESC");
     else if (sort == QStringLiteral("updatedAtDesc") && entity == QStringLiteral("chargers"))
         orderBy = QStringLiteral("s.updated_at DESC,s.id DESC");

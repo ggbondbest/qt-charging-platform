@@ -95,7 +95,7 @@ private slots:
     {
         for (const auto& action :
              {"dashboard.get", "stations.list", "users.get", "orders.list", "recharges.list",
-              "station.create", "user.status", "charger.restart"})
+              "operation_logs.list", "operation_logs.get", "station.create", "user.status", "charger.restart"})
             QCOMPARE(code(service_->handle(action, {}, "forged")), QString("UNAUTHORIZED"));
         QCOMPARE(
             code(service_->handle("auth.login", {{"username", "admin"}, {"password", "wrong"}})),
@@ -132,7 +132,7 @@ private slots:
     }
     void queriesValidateAndMask()
     {
-        for (const auto& entity : {"stations", "chargers", "users", "orders", "recharges"}) {
+        for (const auto& entity : {"stations", "chargers", "users", "orders", "recharges", "operation_logs"}) {
             const QString list = QString(entity) + ".list";
             QVERIFY(ok(call(list)));
             QCOMPARE(code(call(list, {{"page", 0}})), QString("INVALID_ARGUMENT"));
@@ -158,6 +158,79 @@ private slots:
         const auto descending = data(call("stations.list", {{"pageSize", 1}, {"sort", "idDesc"}}));
         QCOMPARE(descending.value("items").toArray().size(), 1);
         QVERIFY(descending.value("total").toInt() >= 1);
+    }
+    void auditQueriesAndRechargeTimeRanges()
+    {
+        QSqlQuery q(db_.database());
+        QVERIFY(q.exec("DELETE FROM operation_logs"));
+        QVERIFY(q.exec("DELETE FROM recharge_records"));
+        QCOMPARE(data(call("operation_logs.list")).value("total").toInt(), 0);
+        for (int i = 1; i <= 4; ++i) {
+            const QString time = i == 1 ? "2026-09-06T00:00:00.000Z" :
+                                 i == 4 ? "2026-09-04T23:59:59.999Z" :
+                                          "2026-09-05T00:00:00.000Z";
+            q.prepare("INSERT INTO recharge_records(id,transaction_no,user_id,amount_cents,"
+                      "balance_after_cents,status,created_at) VALUES(?,?,1,100,100,'SUCCESS',?)");
+            q.addBindValue(i);
+            q.addBindValue(QString("TIME-%1").arg(i));
+            q.addBindValue(time);
+            QVERIFY(q.exec());
+            q.prepare("INSERT INTO operation_logs(id,admin_id,action,target_type,target_id,"
+                      "details_json,created_at) VALUES(?,1,'station.edit','ADMIN_COMMAND',?,"
+                      "'{\"password\":\"secret\",\"phone\":\"13800138000\"}',?)");
+            q.addBindValue(i);
+            q.addBindValue(QString("operation-%1").arg(i));
+            q.addBindValue(time);
+            QVERIFY(q.exec());
+        }
+        for (const auto& entity : {QString("recharges"), QString("operation_logs")}) {
+            const QString action = entity + ".list";
+            QJsonObject filter{{"createdAtFrom", "2026-09-05T00:00:00.000Z"},
+                               {"createdAtTo", "2026-09-06T00:00:00.000Z"},
+                               {"sort", "createdAtDesc"}, {"pageSize", 1}};
+            if (entity == "recharges") {
+                filter.insert("userId", "1");
+                filter.insert("status", "SUCCESS");
+                filter.insert("keyword", "TIME-");
+            } else {
+                filter.insert("adminId", "1");
+                filter.insert("action", "station.edit");
+                filter.insert("targetType", "ADMIN_COMMAND");
+                filter.insert("keyword", "operation-");
+            }
+            auto result = call(action, filter);
+            QVERIFY(ok(result));
+            QCOMPARE(data(result).value("total").toInt(), 2);
+            QCOMPARE(data(result).value("items").toArray().first().toObject().value("id").toString(), QString("3"));
+            filter.insert("page", 2);
+            result = call(action, filter);
+            QCOMPARE(data(result).value("items").toArray().first().toObject().value("id").toString(), QString("2"));
+            filter.insert("page", 3);
+            QVERIFY(data(call(action, filter)).value("items").toArray().isEmpty());
+            QCOMPARE(data(call(action, {{"sort", "createdAtDesc"}})).value("items").toArray().first().toObject().value("id").toString(), QString("1"));
+            QCOMPARE(data(call(action, {{"createdAtTo", "2026-09-05T00:00:00.000Z"}})).value("total").toInt(), 1);
+            QCOMPARE(data(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"}})).value("total").toInt(), 1);
+            for (const auto& invalid : {QJsonValue("2026-09-05"), QJsonValue("bad"), QJsonValue(123), QJsonValue("2026-09-05T00:00:00+08:00")})
+                QCOMPARE(code(call(action, {{"createdAtFrom", invalid}})), QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"}, {"createdAtTo", "2026-09-05T00:00:00.000Z"}})), QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-05T00:00:00.000Z"}, {"createdAtTo", "2026-09-05T00:00:00.000Z"}})), QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"sort", "createdAtDesc;DELETE"}})), QString("INVALID_ARGUMENT"));
+            QVERIFY(!QJsonDocument(call(action)).toJson().contains("13800138000"));
+        }
+        const auto logs = data(call("operation_logs.list", {{"targetId", "operation-2"}}));
+        QCOMPARE(logs.value("total").toInt(), 1);
+        QCOMPARE(logs.value("items").toArray().first().toObject(), item(call("operation_logs.get", {{"id", "2"}})));
+        QVERIFY(!QJsonDocument(logs).toJson().contains("secret"));
+        QVERIFY(!item(call("operation_logs.get", {{"id", "2"}})).contains("details"));
+        QCOMPARE(data(call("operation_logs.list", {{"action", "' OR 1=1 --"}})).value("total").toInt(), 0);
+        QCOMPARE(code(call("operation_logs.list", {{"adminId", 1}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("operation_logs.list", {{"targetType", QString(33, 'x')}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("operation_logs.get", {{"id", "2"}, {"keyword", "x"}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("operation_logs.edit", {{"id", "2"}})), QString("INVALID_ARGUMENT"));
+        QVERIFY(q.exec("UPDATE operation_logs SET admin_id=NULL WHERE id=2"));
+        QVERIFY(item(call("operation_logs.get", {{"id", "2"}})).value("adminId").isNull());
+        QVERIFY(ok(call("station.create", newStation())));
+        QCOMPARE(data(call("operation_logs.list", {{"action", "station.create"}})).value("total").toInt(), 1);
     }
     void stationWritesConflictAndDurableReplay()
     {
