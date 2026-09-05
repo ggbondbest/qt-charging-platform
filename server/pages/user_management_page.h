@@ -4,6 +4,7 @@
 #include <QtGlobal>
 #include <QVector>
 #include <QWidget>
+#include <QJsonObject>
 
 class QComboBox;
 class QLabel;
@@ -13,12 +14,15 @@ class QTableWidget;
 
 namespace charging::server {
 
+class ManagementStatePanel;
+
 class UserManagementPage final : public QWidget
 {
     Q_OBJECT
 
 public:
     explicit UserManagementPage(QWidget* parent = nullptr);
+    void setAdminGateway(class AdminRequestGateway* gateway);
 
 private slots:
     void applyFilters();
@@ -40,6 +44,8 @@ private:
         int totalOrders = 0;
         bool isRiskFocused = false;
         bool isRecentRegistration = false;
+        QString serverId{};
+        QString expectedUpdatedAt{};
     };
 
     void createMockRecords();
@@ -49,11 +55,21 @@ private:
     void updateDetailActions();
     void setFeedback(const QString& text, bool isError = false);
     bool recordMatchesFilters(const UserRecord& record) const;
+    void requestList();
+    void handleListResponse(const QJsonObject& response);
+    void handleWriteResponse(const QJsonObject& response);
+    QString statusCode(const QString& display) const;
 
     QVector<UserRecord> records_;
     QVector<int> filteredRecordIndexes_;
     int selectedRecordIndex_ = -1;
     int currentPage_ = 0;
+    int totalRecords_ = 0;
+    bool realMode_ = false;
+    QString listRequestId_;
+    QString writeRequestId_;
+    QString detailRequestId_;
+    class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
     QComboBox* statusComboBox_ = nullptr;
@@ -62,7 +78,7 @@ private:
     QLineEdit* maximumBalanceLineEdit_ = nullptr;
     QTableWidget* tableWidget_ = nullptr;
     QLabel* tableTitleLabel_ = nullptr;
-    QLabel* emptyStateLabel_ = nullptr;
+    ManagementStatePanel* statePanel_ = nullptr;
     QLabel* feedbackLabel_ = nullptr;
     QLabel* paginationLabel_ = nullptr;
     QLabel* avatarLabel_ = nullptr;

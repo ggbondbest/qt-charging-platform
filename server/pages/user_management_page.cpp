@@ -1,5 +1,6 @@
 #include "user_management_page.h"
 
+#include "admin_request_gateway.h"
 #include "management_page_widgets.h"
 
 #include <QAbstractItemView>
@@ -23,6 +24,9 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QUuid>
 #include <QtMath>
 
 #include <limits>
@@ -89,7 +93,7 @@ QLabel* createStatusTag(const QString& status, QWidget* parent)
 QWidget* createCompactStatusTag(const QString& status, QWidget* parent)
 {
     auto* label = createStatusTag(status, nullptr);
-    label->setFixedSize(46, 26);
+    label->setFixedSize(managementStatusTagWidth(status), 26);
     return createManagementTableCell(label, parent);
 }
 
@@ -172,7 +176,7 @@ protected:
 UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("userManagementPage"));
-    setMinimumWidth(1120);
+    setMinimumWidth(kManagementPageMinimumWidth);
     setMinimumHeight(760);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 4);
@@ -220,22 +224,24 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     queryButton->setObjectName(QStringLiteral("primaryButton"));
     feedbackLabel_ = createTextLabel(tr("显示全部 36,842 位用户"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
-    feedbackLabel_->setMinimumWidth(142);
+    feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     toolbarLayout->addWidget(statusComboBox_);
     toolbarLayout->addWidget(registrationComboBox_);
     toolbarLayout->addWidget(minimumBalanceLineEdit_);
     toolbarLayout->addWidget(createTextLabel(tr("~"), QStringLiteral("color:#718098; font-size:15px;"), toolbar));
     toolbarLayout->addWidget(maximumBalanceLineEdit_);
+    toolbarLayout->addWidget(feedbackLabel_);
+    toolbarLayout->addStretch();
     toolbarLayout->addWidget(resetButton);
     toolbarLayout->addWidget(queryButton);
-    toolbarLayout->addWidget(feedbackLabel_);
     layout->addWidget(toolbar);
 
     auto* contentLayout = new QHBoxLayout();
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
-    tableCard->setMinimumWidth(730);
+    tableCard->setMinimumWidth(kManagementTableMinimumWidth);
     auto* tableLayout = new QVBoxLayout(tableCard);
     tableLayout->setContentsMargins(18, 18, 18, 16);
     tableLayout->setSpacing(12);
@@ -262,14 +268,12 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(7, 60);
+    tableWidget_->setColumnWidth(7, kManagementStatusColumnWidth);
     tableWidget_->setColumnWidth(8, 68);
     tableWidget_->setColumnWidth(9, 64);
     tableLayout->addWidget(tableWidget_, 1);
-    emptyStateLabel_ = createTextLabel(tr("当前筛选条件下没有用户。请调整条件或点击“重置”。"),
-                                       QStringLiteral("color:#6f7d92; min-height:92px; font-size:14px;"), tableCard);
-    emptyStateLabel_->setAlignment(Qt::AlignCenter);
-    tableLayout->addWidget(emptyStateLabel_);
+    statePanel_ = new ManagementStatePanel(tableCard);
+    tableLayout->addWidget(statePanel_);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -287,8 +291,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("用户详情"), this);
-    detailCard->setMinimumWidth(292);
-    detailCard->setMaximumWidth(318);
+    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* profileRow = new QHBoxLayout();
     avatarLabel_ = new QLabel(detailCard);
@@ -317,7 +320,9 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     riskHeading->addWidget(riskTagLabel_);
     detailLayout->addLayout(riskHeading);
     detailLayout->addWidget(createTextLabel(tr("用户增长趋势（近 7 日）"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
-    detailLayout->addWidget(new UserGrowthTrendWidget(detailCard));
+    auto* userGrowthTrend = new UserGrowthTrendWidget(detailCard);
+    userGrowthTrend->setObjectName(QStringLiteral("mockUserGrowthTrend"));
+    detailLayout->addWidget(userGrowthTrend);
     detailLayout->addStretch();
     freezeButton_ = new QPushButton(detailCard);
     freezeButton_->setObjectName(QStringLiteral("primaryButton"));
@@ -329,6 +334,10 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(contentLayout, 1);
 
     connect(queryButton, &QPushButton::clicked, this, &UserManagementPage::applyFilters);
+    connect(statePanel_, &ManagementStatePanel::resetRequested, this,
+            &UserManagementPage::resetFilters);
+    connect(statePanel_, &ManagementStatePanel::retryRequested, this,
+            &UserManagementPage::applyFilters);
     connect(resetButton, &QPushButton::clicked, this, &UserManagementPage::resetFilters);
     connect(keywordLineEdit_, &QLineEdit::returnPressed, this, &UserManagementPage::applyFilters);
     connect(previousPageButton_, &QPushButton::clicked, this, &UserManagementPage::showPreviousPage);
@@ -388,6 +397,7 @@ bool UserManagementPage::recordMatchesFilters(const UserRecord& record) const
 
 void UserManagementPage::applyFilters()
 {
+    if (realMode_) { currentPage_ = 0; requestList(); return; }
     bool minimumOk = true;
     bool maximumOk = true;
     const QString minimumText = minimumBalanceLineEdit_->text().trimmed();
@@ -424,15 +434,16 @@ void UserManagementPage::resetFilters()
     minimumBalanceLineEdit_->clear();
     maximumBalanceLineEdit_->clear();
     applyFilters();
-    setFeedback(tr("已重置筛选条件，显示全部本地 Mock 用户"));
+    if (!realMode_) setFeedback(tr("已重置筛选条件，显示全部本地 Mock 用户"));
 }
 
 void UserManagementPage::rebuildTable()
 {
-    const int pageCount = qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
+    const int pageCount = realMode_ ? qMax(1, (totalRecords_ + kPageSize - 1) / kPageSize)
+                                    : qMax(1, (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize);
     currentPage_ = qBound(0, currentPage_, pageCount - 1);
-    const int begin = currentPage_ * kPageSize;
-    const int end = qMin(begin + kPageSize, filteredRecordIndexes_.size());
+    const int begin = realMode_ ? 0 : currentPage_ * kPageSize;
+    const int end = realMode_ ? filteredRecordIndexes_.size() : qMin(begin + kPageSize, filteredRecordIndexes_.size());
     tableWidget_->setRowCount(end - begin);
     for (int row = 0; row < end - begin; ++row) {
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
@@ -444,7 +455,7 @@ void UserManagementPage::rebuildTable()
             if (column == 7 || column == 8 || column == 9) {
                 continue;
             }
-            auto* item = new QTableWidgetItem(values.at(column));
+            auto* item = createManagementTableItem(values.at(column));
             item->setData(Qt::UserRole, recordIndex);
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
@@ -452,6 +463,8 @@ void UserManagementPage::rebuildTable()
         tableWidget_->setCellWidget(row, 7, createCompactStatusTag(record.status, tableWidget_));
         auto* riskButton = new QPushButton(record.isRiskFocused ? tr("已关注") : tr("关注"), tableWidget_);
         riskButton->setObjectName(QStringLiteral("tableActionButton"));
+        riskButton->setEnabled(!realMode_);
+        if (realMode_) riskButton->setToolTip(tr("当前管理员契约不支持风控关注"));
         riskButton->setAccessibleName(tr("切换 %1 的风控关注").arg(record.nickname));
         riskButton->setStyleSheet(record.isRiskFocused
                                       ? QStringLiteral("QPushButton { background:#fff5e7; color:#ed9b22; border:0;"
@@ -469,7 +482,7 @@ void UserManagementPage::rebuildTable()
         connect(detailButton, &QPushButton::clicked, this, [this, recordIndex]() { showUserDetails(recordIndex); });
         tableWidget_->setCellWidget(row, 9, createManagementTableCell(detailButton, tableWidget_));
     }
-    tableTitleLabel_->setText(tr("用户列表（共 %1 人）").arg(filteredRecordIndexes_.size()));
+    tableTitleLabel_->setText(tr("用户列表（共 %1 人）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
     paginationLabel_->setText(tr("第 %1 / %2 页").arg(currentPage_ + 1).arg(pageCount));
     previousPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ + 1 < pageCount);
@@ -495,7 +508,14 @@ void UserManagementPage::rebuildTable()
 void UserManagementPage::updateEmptyState()
 {
     const bool isEmpty = filteredRecordIndexes_.isEmpty();
-    emptyStateLabel_->setVisible(isEmpty);
+    const bool hasFilter = !keywordLineEdit_->text().trimmed().isEmpty()
+        || statusComboBox_->currentIndex() > 0;
+    const auto state = !isEmpty ? ManagementListState::Hidden
+        : realMode_ && !hasFilter ? ManagementListState::EmptyInitial
+        : ManagementListState::EmptyFiltered;
+    statePanel_->setState(state, realMode_ && !hasFilter
+                                     ? tr("服务端当前没有用户记录。")
+                                     : tr("当前筛选条件下没有用户。请调整条件或点击“重置”。"));
     tableWidget_->setVisible(!isEmpty);
     paginationLabel_->setVisible(!isEmpty);
     previousPageButton_->setVisible(!isEmpty);
@@ -509,10 +529,22 @@ void UserManagementPage::showUserDetails(int recordIndex)
     }
     selectedRecordIndex_ = recordIndex;
     const UserRecord& record = records_.at(recordIndex);
+    if (realMode_ && gateway_) {
+        detailRequestId_ = gateway_->request(QStringLiteral("users.get"), {{QStringLiteral("id"), record.serverId}}, this,
+                                             QStringLiteral("user-detail"));
+    }
     avatarLabel_->setText(record.nickname.left(1));
     detailNameLabel_->setText(record.nickname + tr("   ·   ") + record.status);
     detailIdLabel_->setText(tr("用户ID：%1").arg(record.id));
     detailPhoneLabel_->setText(tr("手机号：%1").arg(record.phone));
+    if (realMode_) {
+        detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n用户状态　%3\n记录更新时间　%4\n实名认证、登录轨迹和常用电站：契约未提供")
+                                         .arg(formatCents(record.balanceCents)).arg(record.totalOrders).arg(record.status, record.expectedUpdatedAt));
+        riskTagLabel_->setText(tr("契约未提供"));
+        riskTagLabel_->setStyleSheet(QStringLiteral("background:#f1f4f8; color:#708096; border-radius:5px; padding:4px 7px; font-size:12px; font-weight:600;"));
+        updateDetailActions();
+        return;
+    }
     detailAccountLabel_->setText(
         tr("实名认证　已实名\n累计消费　¥ 2,586.80\n账户余额　¥ %1\n最近登录　2025-06-01 09:58:12\n常用电站　未来科技城充电站、滨江时代广场充电站")
             .arg(formatCents(record.balanceCents)));
@@ -536,7 +568,7 @@ void UserManagementPage::updateDetailActions()
 {
     const bool hasSelection = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size();
     freezeButton_->setEnabled(hasSelection);
-    riskButton_->setEnabled(hasSelection);
+    riskButton_->setEnabled(!realMode_ && hasSelection);
     if (!hasSelection) {
         freezeButton_->setText(tr("冻结用户"));
         riskButton_->setText(tr("加入风控关注"));
@@ -544,7 +576,8 @@ void UserManagementPage::updateDetailActions()
     }
     const UserRecord& record = records_.at(selectedRecordIndex_);
     freezeButton_->setText(record.status == tr("冻结") ? tr("解冻用户") : tr("冻结用户"));
-    riskButton_->setText(record.isRiskFocused ? tr("移出风控关注") : tr("加入风控关注"));
+    riskButton_->setText(realMode_ ? tr("风控关注（契约未支持）") : (record.isRiskFocused ? tr("移出风控关注") : tr("加入风控关注")));
+    if (realMode_) riskButton_->setToolTip(tr("当前管理员契约不支持风控标签写入"));
 }
 
 void UserManagementPage::toggleSelectedUserStatus()
@@ -557,10 +590,20 @@ void UserManagementPage::toggleSelectedUserStatus()
     const QString action = isFrozen ? tr("解冻") : tr("冻结");
     const auto choice = QMessageBox::question(
         this, tr("确认%1").arg(action),
-        tr("确认要%1用户 %2（手机号后四位 %3）吗？该操作仅更新本地 Mock 状态。")
-            .arg(action, record.nickname, record.phone.right(4)));
+        realMode_ ? tr("确认要%1用户 %2（手机号后四位 %3）吗？服务端会校验活动订单和当前版本。")
+                        .arg(action, record.nickname, record.phone.right(4))
+                  : tr("确认要%1用户 %2（手机号后四位 %3）吗？该操作仅更新本地 Mock 状态。")
+                        .arg(action, record.nickname, record.phone.right(4)));
     if (choice != QMessageBox::Yes) {
         return;
+    }
+    if (realMode_) {
+        writeRequestId_ = gateway_->request(QStringLiteral("user.status"),
+            {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+             {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
+             {QStringLiteral("status"), isFrozen ? QStringLiteral("ACTIVE") : QStringLiteral("FROZEN")}}, this,
+            QStringLiteral("user-write"));
+        setFeedback(tr("正在提交用户状态更新…")); return;
     }
     record.status = isFrozen ? tr("正常") : tr("冻结");
     const int recordIndex = selectedRecordIndex_;
@@ -571,6 +614,7 @@ void UserManagementPage::toggleSelectedUserStatus()
 
 void UserManagementPage::toggleSelectedRiskFocus()
 {
+    if (realMode_) return;
     if (selectedRecordIndex_ < 0) {
         return;
     }
@@ -595,17 +639,20 @@ void UserManagementPage::showPreviousPage()
         return;
     }
     --currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
 
 void UserManagementPage::showNextPage()
 {
-    const int pageCount = (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
+    const int pageCount = realMode_ ? (totalRecords_ + kPageSize - 1) / kPageSize
+                                    : (filteredRecordIndexes_.size() + kPageSize - 1) / kPageSize;
     if (currentPage_ + 1 >= pageCount) {
         return;
     }
     ++currentPage_;
+    if (realMode_) { requestList(); return; }
     rebuildTable();
     setFeedback(tr("已切换到第 %1 页").arg(currentPage_ + 1));
 }
@@ -613,8 +660,82 @@ void UserManagementPage::showNextPage()
 void UserManagementPage::setFeedback(const QString& text, bool isError)
 {
     feedbackLabel_->setText(text);
+    feedbackLabel_->setToolTip(text);
     feedbackLabel_->setStyleSheet(isError ? QStringLiteral("color:#ee5757; font-size:13px; font-weight:600;")
                                            : QStringLiteral("color:#6f7d92; font-size:13px;"));
+}
+
+void UserManagementPage::setAdminGateway(AdminRequestGateway* gateway)
+{
+    gateway_ = gateway; realMode_ = gateway_ != nullptr;
+    if (!gateway_) return;
+    registrationComboBox_->setEnabled(false); registrationComboBox_->setToolTip(tr("当前契约不支持注册时间筛选"));
+    minimumBalanceLineEdit_->setEnabled(false); minimumBalanceLineEdit_->setToolTip(tr("当前契约不支持余额筛选"));
+    maximumBalanceLineEdit_->setEnabled(false); maximumBalanceLineEdit_->setToolTip(tr("当前契约不支持余额筛选"));
+    if (auto* trend = findChild<QWidget*>(QStringLiteral("mockUserGrowthTrend"))) {
+        trend->setVisible(false);
+        trend->setToolTip(tr("当前契约不提供用户增长趋势"));
+    }
+    for (auto* label : findChildren<QLabel*>()) {
+        if (label->text() == tr("用户增长趋势（近 7 日）")) {
+            label->setText(tr("用户增长趋势（契约未提供）"));
+        }
+    }
+    setManagementMetricCardsUnavailable(this, tr("当前契约未提供用户页汇总指标"));
+    connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
+        if (id == listRequestId_) handleListResponse(response);
+        else if (id == writeRequestId_) handleWriteResponse(response);
+        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
+            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true);
+    });
+    connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
+        if (authenticated) requestList();
+    });
+    requestList();
+}
+
+QString UserManagementPage::statusCode(const QString& display) const
+{
+    if (display == tr("正常")) return QStringLiteral("ACTIVE");
+    if (display == tr("冻结")) return QStringLiteral("FROZEN");
+    return {};
+}
+
+void UserManagementPage::requestList()
+{
+    if (!gateway_ || !gateway_->isAuthenticated()) return;
+    QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
+    const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
+    listRequestId_ = gateway_->request(QStringLiteral("users.list"), query, this, QStringLiteral("user-list"));
+    setFeedback(tr("正在加载服务数据…"));
+}
+
+void UserManagementPage::handleListResponse(const QJsonObject& response)
+{
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        totalRecords_ = 0; rebuildTable(); setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return;
+    }
+    const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
+        const auto item = value.toObject();
+        records_.append({item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("nickname")).toString(), item.value(QStringLiteral("phone")).toString(),
+            item.value(QStringLiteral("balanceCents")).toInteger(), item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常"),
+            tr("契约未提供"), tr("契约未提供"), item.value(QStringLiteral("orderCount")).toInt(), false, false,
+            item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
+        filteredRecordIndexes_.append(records_.size() - 1);
+    }
+    rebuildTable();
+    setManagementMetricCardValue(this, 0, tr("%1 人").arg(totalRecords_),
+                                 tr("服务端分页总数（当前筛选）"));
+    setFeedback(totalRecords_ ? tr("已加载 %1 位用户（服务端分页）").arg(totalRecords_) : tr("当前没有用户数据"));
+}
+
+void UserManagementPage::handleWriteResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) { setFeedback(tr("操作未完成：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return; }
+    setFeedback(tr("操作已提交，正在刷新服务数据…")); requestList();
 }
 
 } // namespace charging::server
