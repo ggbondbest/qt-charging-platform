@@ -16,6 +16,7 @@ class ActionButton;
 class Card;
 class LoadingOverlay;
 class NoticePanel;
+class PullToRefreshArea;
 
 // Wallet page: current balance, recharge entry and recharge record list.
 // Pure presentation: every number shown here comes from WalletService.
@@ -65,7 +66,7 @@ private:
     ActionButton* profileButton_ = nullptr; // 页内跳转（嵌入壳层时隐藏）
     NoticePanel* profileNotice_ = nullptr;
 
-    QScrollArea* recordsScroll_ = nullptr;
+    PullToRefreshArea* recordsScroll_ = nullptr;
     QVBoxLayout* recordsListLayout_ = nullptr;
     ActionButton* loadMoreButton_ = nullptr;
     NoticePanel* recordsNotice_ = nullptr;

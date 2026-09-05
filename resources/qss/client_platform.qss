@@ -546,3 +546,13 @@ QBusyIndicator {
     color: #00B578;
     background: transparent;
 }
+
+/* ---------- 下拉刷新状态胶囊（PullToRefreshArea） ---------- */
+QLabel#uiPullPill {
+    background: rgba(255, 255, 255, 0.92);
+    color: #4B5563;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 12px;
+}

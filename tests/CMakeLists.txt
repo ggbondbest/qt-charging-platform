@@ -254,6 +254,16 @@ set_tests_properties(station_map_panel PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+add_executable(test_pull_to_refresh tst_pull_to_refresh.cpp)
+target_link_libraries(test_pull_to_refresh PRIVATE
+    ChargingPlatform::ClientWidgets
+    Qt6::Test
+)
+add_test(NAME pull_to_refresh COMMAND test_pull_to_refresh)
+set_tests_properties(pull_to_refresh PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 add_executable(test_map_geo_service tst_map_geo_service.cpp)
 target_link_libraries(test_map_geo_service PRIVATE
     ChargingPlatform::ClientMapServices

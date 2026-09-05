@@ -7,6 +7,7 @@ add_library(charging_client_widgets STATIC
     include/charging/client/widgets/loading_overlay.h
     include/charging/client/widgets/motion.h
     include/charging/client/widgets/notice_panel.h
+    include/charging/client/widgets/pull_to_refresh_area.h
     include/charging/client/widgets/status_tag.h
     include/charging/client/widgets/toast.h
     include/charging/client/widgets/top_nav_bar.h
@@ -18,6 +19,7 @@ add_library(charging_client_widgets STATIC
     src/loading_overlay.cpp
     src/motion.cpp
     src/notice_panel.cpp
+    src/pull_to_refresh_area.cpp
     src/status_tag.cpp
     src/toast.cpp
     src/top_nav_bar.cpp

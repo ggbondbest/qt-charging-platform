@@ -6,7 +6,9 @@
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/clickable_card.h"
 #include "charging/client/widgets/loading_overlay.h"
+#include "charging/client/widgets/motion.h"
 #include "charging/client/widgets/notice_panel.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
 
@@ -97,7 +99,7 @@ void OrderListPage::buildUi()
     applyingFilter_ = false;
     rootLayout->addLayout(filterRow);
 
-    listScroll_ = new QScrollArea(this);
+    listScroll_ = new PullToRefreshArea(this);
     listScroll_->setObjectName(QStringLiteral("uiRecordsScroll"));
     listScroll_->setWidgetResizable(true);
     listScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -107,7 +109,16 @@ void OrderListPage::buildUi()
     listLayout_->setContentsMargins(0, 0, 0, 0);
     listLayout_->setSpacing(8);
     listLayout_->addStretch();
-    listScroll_->setWidget(listContainer);
+    listScroll_->setPullContent(listContainer);
+    // 下拉刷新只重拉第一页；反馈由胶囊承担，不再压 LoadingOverlay 全屏遮罩。
+    connect(listScroll_, &PullToRefreshArea::refreshRequested, this, [this]() {
+        if (service_->isFetchingOrders()) {
+            listScroll_->setRefreshing(false);
+            return;
+        }
+        loadingPage_ = 1;
+        service_->fetchOrders(currentFilter_, loadingPage_);
+    });
 
     listNotice_ = new NoticePanel(QStringLiteral("—"), tr("暂无订单"), QString(), QString(), this);
     connect(listNotice_, &NoticePanel::actionTriggered, this, &OrderListPage::refresh);
@@ -199,8 +210,10 @@ void OrderListPage::onOrdersLoaded(const QVector<charging::client::OrderSummary>
                                    int total, bool hasMore)
 {
     endBusy();
+    listScroll_->setRefreshing(false); // 下拉刷新路径在此收起（普通路径为空操作）。
 
     const bool firstPage = loadingPage_ <= 1;
+    const int previousCount = shownOrders_.count(); // 追加入场动效的分界。
     if (firstPage) {
         shownOrders_.clear();
     }
@@ -210,6 +223,7 @@ void OrderListPage::onOrdersLoaded(const QVector<charging::client::OrderSummary>
     // 契约 v1 §3 已冻结服务端排序（createdAt DESC, id DESC），跨页拼接保持
     // 服务端原序即可全局有序；客户端不得再排序（否则分页窗口错位的假象会
     // 掩盖真实数据问题，月度分组表头也会随之乱序）。
+    animateRowsFrom_ = firstPage ? 0 : previousCount;
     rebuildMonthGroups();
     currentPage_ = loadingPage_;
     hasMoreOrders_ = hasMore;
@@ -228,6 +242,7 @@ void OrderListPage::onOperationFailed(const QString& type,
                                       const charging::protocol::ProtocolError& error)
 {
     endBusy();
+    listScroll_->setRefreshing(false); // 失败也要收起胶囊，不能卡在"正在刷新"。
     Toast::show(this, displayMessageForError(error), StatusTag::Tone::Danger);
 
     const QString ordersType =
@@ -288,13 +303,22 @@ QWidget* OrderListPage::buildOrderRow(const charging::client::OrderSummary& summ
 
 void OrderListPage::clearOrderRows()
 {
-    // Remove every widget except the trailing stretch item.
+    // Remove every widget except the trailing stretch item. 下拉刷新的垫块
+    // 占用 0 位，重建前先摘出、重建后原样插回（它是布局项不是"行"）。
+    QLayoutItem* spacerItem = nullptr;
+    if (QLayoutItem* first = listLayout_->itemAt(0);
+        first != nullptr && first->widget() == listScroll_->pullSpacer()) {
+        spacerItem = listLayout_->takeAt(0);
+    }
     while (listLayout_->count() > 1) {
         QLayoutItem* item = listLayout_->takeAt(0);
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
         delete item;
+    }
+    if (spacerItem != nullptr) {
+        listLayout_->insertItem(0, spacerItem);
     }
 }
 
@@ -316,6 +340,7 @@ void OrderListPage::rebuildMonthGroups()
     QString currentMonth;
     QLabel* monthSummaryLabel = nullptr;
     int monthCount = 0;
+    int rowIndex = 0;
     qint64 monthAmountCents = 0;
     qint64 monthEnergyWh = 0;
 
@@ -330,12 +355,24 @@ void OrderListPage::rebuildMonthGroups()
             monthCount = 0;
             monthAmountCents = 0;
             monthEnergyWh = 0;
-            addBeforeStretch(buildMonthHeader(month, &monthSummaryLabel));
+            QWidget* header = buildMonthHeader(month, &monthSummaryLabel);
+            if (animateRowsFrom_ == 0) {
+                motion::fadeIn(header, motion::duration::enter); // 整屏重进时表头同批入场。
+            }
+            addBeforeStretch(header);
         }
         ++monthCount;
         monthAmountCents += summary.order.amountCents;
         monthEnergyWh += summary.order.energyWh;
-        addBeforeStretch(buildOrderRow(summary));
+        QWidget* row = buildOrderRow(summary);
+        if (rowIndex >= animateRowsFrom_) {
+            // "长出来"而不是"刷出来"：逐卡 40ms 级联，超 8 卡不再排队。
+            motion::fadeIn(row, motion::duration::enter,
+                           qMin(rowIndex - animateRowsFrom_, motion::staggerMax) *
+                               motion::staggerStep);
+        }
+        ++rowIndex;
+        addBeforeStretch(row);
     }
     if (monthSummaryLabel != nullptr) {
         monthSummaryLabel->setText(summaryText(monthCount, monthAmountCents, monthEnergyWh));
