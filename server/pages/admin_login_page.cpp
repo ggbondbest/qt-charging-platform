@@ -574,11 +574,15 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
     usernameLineEdit_->setPlaceholderText(tr("管理员账号"));
     usernameLineEdit_->setAccessibleName(tr("管理员账号"));
     auto* usernameShell = createInputShell(usernameLineEdit_, tr("♙"), card);
+    // Keep the stable object name used by the admin login integration test.
+    usernameLineEdit_->setObjectName(QStringLiteral("usernameLineEdit"));
     passwordLineEdit_ = new QLineEdit(card);
     passwordLineEdit_->setPlaceholderText(tr("密码"));
     passwordLineEdit_->setEchoMode(QLineEdit::Password);
     passwordLineEdit_->setAccessibleName(tr("管理员密码"));
     auto* passwordShell = createInputShell(passwordLineEdit_, tr("♧"), card);
+    // Keep the stable object name used by the admin login integration test.
+    passwordLineEdit_->setObjectName(QStringLiteral("passwordLineEdit"));
     auto* passwordShellLayout = qobject_cast<QHBoxLayout*>(passwordShell->layout());
     auto* visibilityButton = new QPushButton(tr("显示"), passwordShell);
     visibilityButton->setObjectName(QStringLiteral("passwordVisibilityButton"));
