@@ -4,6 +4,7 @@
 #include "charging/client/profile_charging/charging_home_page.h"
 #include "charging/client/profile_charging/charging_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
+#include "charging/client/profile_charging/network_request_transport.h"
 #include "charging/client/profile_charging/order_detail_page.h"
 #include "charging/client/profile_charging/order_list_page.h"
 #include "charging/client/profile_charging/profile_edit_page.h"
@@ -103,7 +104,12 @@ HomeShell::HomeShell(QWidget* parent) : HomeShell(nullptr, parent)
 {
 }
 
-HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidget(parent)
+HomeShell::HomeShell(const charging::model::User& user,
+                     charging::client::network::ClientConnection* connection, QWidget* parent)
+    : HomeShell(&user, parent, connection) {}
+
+HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
+                     charging::client::network::ClientConnection* connection) : QWidget(parent)
 {
     // 页面可能在测试/预览中独立构造；主题安装是幂等的。
     installPlatformTheme();
@@ -163,12 +169,18 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     if (hasUser_) {
         // 共享 mock 通道：播种真实登录账号，钱包/资料/订单展示同一身份；
         // 服务端补齐钱包族命令后经服务层切换（TODO(contract)）。
-        mockTransport_ = new MockRequestTransport();
-        mockTransport_->setParent(this);
-        mockTransport_->setUser(user_);
-        walletService_ = new WalletService(mockTransport_, this);
-        orderService_ = new OrderService(mockTransport_, this);
-        chargingService_ = new ChargingService(mockTransport_, this);
+        IRequestTransport* transport = nullptr;
+        if (connection) {
+            transport = new NetworkRequestTransport(connection, user_.id, this);
+        } else {
+            mockTransport_ = new MockRequestTransport();
+            mockTransport_->setParent(this);
+            mockTransport_->setUser(user_);
+            transport = mockTransport_;
+        }
+        walletService_ = new WalletService(transport, this);
+        orderService_ = new OrderService(transport, this);
+        chargingService_ = new ChargingService(transport, this);
         lastKnownBalanceCents_ = user_.balanceCents;
         connect(walletService_, &WalletService::profileLoaded, this,
                 [this](const charging::model::User& profile) {
@@ -421,6 +433,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     connect(tabBar_, &BottomTabBar::tabChanged, this, &HomeShell::showTab);
     // 默认激活“找站”（首页）。
     tabBar_->setCurrentTab(QStringLiteral("station"));
+    if (connection) setConnection(connection);
 }
 
 void HomeShell::showTab(const QString& id)
@@ -723,13 +736,12 @@ void HomeShell::showGoChargePrompt(const services::reservation::ReservationRecor
 
 void HomeShell::setConnection(charging::client::network::ClientConnection* connection)
 {
-    // 页面构造时无需连接即可用模拟数据渲染；注入后保留真实接口通道，
-    // 服务端 GET_STATIONS 就绪时开启 liveMode 即无缝切换（UI 逻辑不变）。
-    // 全端整合：成员 3 的钱包/订单/充电服务目前仍走共享 mock 通道——
-    // 服务端请求分发器尚未实现 GET_USER_INFO/RECHARGE/GET_ORDERS 等命令
-    // （TODO(contract)，与负责人对齐后再接同一 ClientConnection）。
+    // Profile/wallet transport is chosen at construction; previews stay mock.
     stationPage_->service()->setConnection(connection);
     reservationService_->setConnection(connection);
+    stationPage_->service()->setLiveMode(connection != nullptr);
+    reservationService_->setLiveMode(connection != nullptr);
+    if (connection) stationPage_->service()->search();
 }
 
 StationHomePage* HomeShell::stationPage() const

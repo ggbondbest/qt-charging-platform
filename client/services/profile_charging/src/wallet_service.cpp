@@ -5,6 +5,11 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonDocument>
+#include <QSettings>
+#include <QUuid>
+#include <cmath>
+#include "network/page_validation.h"
 
 namespace charging::client {
 
@@ -63,7 +68,7 @@ void WalletService::fetchProfile()
     }
 
     fetchingProfile_ = true;
-    transport_->send(QString::fromLatin1(charging::protocol::request_type::kGetUserInfo),
+    transport_->sendFor(this, QString::fromLatin1(charging::protocol::request_type::kGetUserInfo),
                      QJsonObject{},
                      [this](bool success, const QJsonObject& data,
                             const charging::protocol::ProtocolError& error) {
@@ -113,11 +118,9 @@ void WalletService::updateNickname(const QString& nickname)
 
     updatingNickname_ = true;
     QJsonObject payload;
-    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
-    // nickname-only shape below is what the mock understands. Avatar uploads
-    // have no protocol at all and are not sent from this client.
+    // Frozen in docs/api/user_api_contract.md; production uses the live adapter.
     payload.insert(QStringLiteral("nickname"), trimmed);
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this](bool success, const QJsonObject& data,
                const charging::protocol::ProtocolError& error) {
@@ -157,12 +160,10 @@ void WalletService::updateAvatar(const QString& avatarKey)
 
     updatingAvatar_ = true;
     QJsonObject payload;
-    // TODO(contract): UPDATE_USER_INFO payload shape is not frozen yet; the
-    // avatarKey-only shape below is what the mock understands. "上传头像"
-    // 没有协议——这里只能提交内置头像库的 key（models.h 的 avatarKey 字段），
-    // 空串=恢复默认（昵称首字）头像。
+    // Frozen avatarKey patch: built-in keys only; empty restores the default.
+    // Image upload is not part of docs/api/user_api_contract.md.
     payload.insert(QStringLiteral("avatarKey"), avatarKey);
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this](bool success, const QJsonObject& data,
                const charging::protocol::ProtocolError& error) {
@@ -207,22 +208,64 @@ void WalletService::recharge(qint64 amountCents)
         return;
     }
 
-    recharging_ = true;
+    const QString scope = transport_->persistenceScope();
+    const QString settingsKey = QStringLiteral("pendingRecharge/") + scope;
+    QSettings settings;
     QJsonObject payload;
-    payload.insert(QStringLiteral("amountCents"), amountCents);
-    transport_->send(
+    if (!scope.isEmpty() && settings.contains(settingsKey)) {
+        payload = QJsonDocument::fromJson(settings.value(settingsKey).toByteArray()).object();
+        if (payload.value("transactionNo").toString().isEmpty()
+            || payload.value("amountCents").toDouble() != double(amountCents)) {
+            emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInvalidArgument,
+                tr("存在结果未确认的充值，请使用原金额重试，勿发起新交易")));
+            return;
+        }
+    } else {
+        payload.insert("amountCents", static_cast<double>(amountCents));
+        payload.insert("transactionNo", QUuid::createUuid().toString(QUuid::WithoutBraces));
+        if (!scope.isEmpty()) {
+            settings.setValue(settingsKey, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+            settings.sync();
+            if (settings.status() != QSettings::NoError) {
+                emit operationFailed(type, makeLocalError(charging::protocol::error_code::kInternalError,
+                                                          tr("无法保存充值流水，未发送充值请求")));
+                return;
+            }
+        }
+    }
+    recharging_ = true;
+    transport_->sendFor(this,
         type, payload,
-        [this, amountCents](bool success, const QJsonObject& data,
+        [this, amountCents, scope, settingsKey, payload](bool success, const QJsonObject& data,
                             const charging::protocol::ProtocolError& error) {
             recharging_ = false;
             const QString rechargeType =
                 QString::fromLatin1(charging::protocol::request_type::kRecharge);
             if (!success) {
+                // A transport failure is an unknown outcome, not a failed recharge.
+                if (!scope.isEmpty() && (error.code == QLatin1String(charging::protocol::error_code::kRechargeFailed)
+                    || error.code == QLatin1String(charging::protocol::error_code::kIdempotencyConflict)
+                    || error.code == QLatin1String(charging::protocol::error_code::kInvalidArgument))) {
+                    QSettings saved; saved.remove(settingsKey); saved.sync();
+                }
                 emit operationFailed(rechargeType, error);
                 return;
             }
-            const qint64 balanceAfterCents =
-                data.value(QStringLiteral("balanceAfterCents")).toDouble();
+            const QJsonValue balance = data.value("balanceCents");
+            const double number = balance.toDouble(-1);
+            charging::model::RechargeRecord record;
+            const bool validRecord = charging::model::fromJson(data.value("record").toObject(), &record);
+            if (!balance.isDouble() || number < 0 || !std::isfinite(number)
+                || std::floor(number) != number || number > double(charging::model::kMaximumJsonSafeInteger)
+                || !validRecord || record.status != charging::model::RechargeStatus::Success
+                || record.amountCents != amountCents || record.transactionNo != payload.value("transactionNo").toString()
+                || !data.value("idempotent").isBool()) {
+                emit operationFailed(rechargeType, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
+                    tr("充值结果格式错误，请使用原金额重试确认")));
+                return;
+            }
+            if (!scope.isEmpty()) { QSettings saved; saved.remove(settingsKey); saved.sync(); }
+            const qint64 balanceAfterCents = static_cast<qint64>(number);
             emit rechargeCompleted(amountCents, balanceAfterCents);
         });
 }
@@ -243,12 +286,10 @@ void WalletService::fetchRechargeRecords(int page)
 
     fetchingRecords_ = true;
     QJsonObject payload;
-    // TODO(contract): page/pageSize/total naming is not frozen in
-    // docs/api/socket_protocol.md yet; align with the leader before wiring
-    // the real transport.
+    // Pagination names are frozen in docs/api/user_api_contract.md.
     payload.insert(QStringLiteral("page"), safePage);
     payload.insert(QStringLiteral("pageSize"), kRechargePageSize);
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, safePage](bool success, const QJsonObject& data,
                          const charging::protocol::ProtocolError& error) {
@@ -260,6 +301,12 @@ void WalletService::fetchRechargeRecords(int page)
                 return;
             }
 
+            bool hasMore = false;
+            if (!network::readPage(data, "records", safePage, kRechargePageSize, &hasMore)) {
+                emit operationFailed(recordsType, makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
+                                                                 tr("充值记录分页响应无效")));
+                return;
+            }
             QVector<charging::model::RechargeRecord> records;
             const QJsonArray array = data.value(QStringLiteral("records")).toArray();
             for (const QJsonValue& value : array) {
@@ -276,7 +323,6 @@ void WalletService::fetchRechargeRecords(int page)
             }
 
             const int total = data.value(QStringLiteral("total")).toInt();
-            const bool hasMore = safePage * kRechargePageSize < total;
             emit rechargeRecordsLoaded(records, total, hasMore);
         });
 }

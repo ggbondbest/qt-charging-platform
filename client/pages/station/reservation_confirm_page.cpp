@@ -476,6 +476,18 @@ void ReservationConfirmPage::updateSlotValidity()
     }
     const int minutes = selectedMinutes();
 
+    if (service_ && service_->liveMode()) {
+        startEdit_->setEnabled(false);
+        endEdit_->setEnabled(false);
+        recommendedButton_->setEnabled(false);
+        vehicleComboBox_->setEnabled(false);
+        messageLabel_->setText(tr("真实预约：立即生效，保留 15 分钟；暂不支持未来时段和车辆绑定。"));
+        messageLabel_->show();
+        feeLabel_->setText(tr("费用以实际充电和服务器结算为准"));
+        confirmButton_->setEnabled(true);
+        return;
+    }
+
     // 车辆前置条件：预约名额由车辆决定，无车辆则无法发起预约。
     if (vehicleComboBox_->count() == 0) {
         messageLabel_->setStyleSheet(QStringLiteral("color: #D48806;"));
@@ -525,7 +537,7 @@ void ReservationConfirmPage::handleSubmit()
         messageLabel_->show();
         return;
     }
-    if (vehicleComboBox_->count() == 0) {
+    if (!service_->liveMode() && vehicleComboBox_->count() == 0) {
         return; // 无车辆：入口已置灰并提示，此处兜底
     }
     messageLabel_->hide();

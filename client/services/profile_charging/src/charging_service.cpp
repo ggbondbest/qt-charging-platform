@@ -99,7 +99,7 @@ void ChargingService::fetchStatusNow()
     // §8.4: request shape is frozen — {"orderId": "<decimal string>"}.
     payload.insert(QStringLiteral("orderId"), QString::number(trackedOrderId_));
 
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, type](bool success, const QJsonObject& data,
                      const charging::protocol::ProtocolError& error) {
@@ -137,7 +137,7 @@ void ChargingService::stopCharging()
     QJsonObject payload;
     payload.insert(QStringLiteral("orderId"), QString::number(trackedOrderId_));
 
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, type](bool success, const QJsonObject& data,
                      const charging::protocol::ProtocolError& error) {
@@ -223,7 +223,7 @@ void ChargingService::payOrder(qint64 orderId)
     QJsonObject payload;
     payload.insert(QStringLiteral("orderId"), QString::number(orderId));
 
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, type](bool success, const QJsonObject& data,
                      const charging::protocol::ProtocolError& error) {

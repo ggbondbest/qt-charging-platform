@@ -2,6 +2,7 @@
 
 #include "charging/common/model/model_json.h"
 #include "network/client_connection.h"
+#include "network/page_validation.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -176,8 +177,12 @@ void StationQueryService::search(const QString& keyword)
     emit queryStarted();
 
     if (liveMode_ && connection_ != nullptr) {
+        stationPage_ = 1;
+        accumulatedStations_.clear();
         QJsonObject data;
         data.insert(QStringLiteral("keyword"), pendingKeyword_);
+        data.insert("page", stationPage_);
+        data.insert("pageSize", 100);
         pendingRequestId_ = connection_->sendRequest(
             QString::fromLatin1(charging::protocol::request_type::kGetStations), data);
         return;
@@ -205,8 +210,11 @@ void StationQueryService::fetchDetail(const charging::model::Station& station,
     }
 
     if (liveMode_ && connection_ != nullptr) {
+        chargerPage_ = 1;
         QJsonObject data;
         data.insert(QStringLiteral("stationId"), QString::number(station.id));
+        data.insert("page", chargerPage_);
+        data.insert("pageSize", 100);
         pendingDetailRequestId_ = connection_->sendRequest(
             QString::fromLatin1(charging::protocol::request_type::kGetChargers), data);
         return;
@@ -217,6 +225,7 @@ void StationQueryService::fetchDetail(const charging::model::Station& station,
 
 void StationQueryService::finishMockQuery()
 {
+    if (liveMode_) return;
     const QString keyword = pendingKeyword_;
     pendingKeyword_.clear();
 
@@ -241,6 +250,7 @@ void StationQueryService::setMockChargerReserved(qint64 chargerId)
 
 void StationQueryService::finishMockDetail()
 {
+    if (liveMode_) return;
     const StationDetail requested = pendingDetail_;
 
     if (simulateFailure_) {
@@ -295,6 +305,10 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
             emit detailFailed(message);
             return;
         }
+        bool more = false;
+        if (!network::readPage(response.data, "chargers", chargerPage_, 100, &more)) {
+            emit detailFailed(tr("电桩分页响应无效")); return;
+        }
         StationDetail result = pendingDetail_;
         const QJsonArray chargers = response.data.value(QStringLiteral("chargers")).toArray();
         for (const auto& value : chargers) {
@@ -305,6 +319,12 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
                 return;
             }
             result.chargers.append(charger);
+        }
+        pendingDetail_ = result;
+        if (more) {
+            pendingDetailRequestId_ = connection_->sendRequest(charging::protocol::request_type::kGetChargers,
+                {{"stationId", QString::number(result.station.id)}, {"page", ++chargerPage_}, {"pageSize", 100}});
+            return;
         }
         result.hasChargerData = true;
         emit detailSucceeded(result);
@@ -321,7 +341,11 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
         return;
     }
 
-    StationList results;
+    bool more = false;
+    if (!network::readPage(response.data, "stations", stationPage_, 100, &more)) {
+        emit queryFailed(tr("站点分页响应无效")); return;
+    }
+    StationList results = accumulatedStations_;
     const QJsonArray stations = response.data.value(QStringLiteral("stations")).toArray();
     for (const auto& value : stations) {
         const QJsonObject object = value.toObject();
@@ -335,6 +359,12 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
         const int distanceMeters =
             object.value(QStringLiteral("distanceMeters")).toInt(-1);
         results.append(StationListItem{station, distanceMeters});
+    }
+    accumulatedStations_ = results;
+    if (more) {
+        pendingRequestId_ = connection_->sendRequest(charging::protocol::request_type::kGetStations,
+            {{"keyword", pendingKeyword_}, {"page", ++stationPage_}, {"pageSize", 100}});
+        return;
     }
     emit querySucceeded(results);
 }

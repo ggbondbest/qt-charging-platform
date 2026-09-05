@@ -3,6 +3,7 @@ add_library(charging_common STATIC
     src/model/model_json.cpp
     src/protocol/frame_codec.cpp
     src/protocol/protocol.cpp
+    src/protocol/user_api_contract.cpp
 )
 
 add_library(ChargingPlatform::Common ALIAS charging_common)

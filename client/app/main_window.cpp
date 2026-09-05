@@ -50,6 +50,7 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
             &MainWindow::showHomePage);
     connect(connection_, &network::ClientConnection::connectionStateChanged, this,
             [this](bool connected) {
+                if (!connected && homeShell_ != nullptr) showLoginPage();
                 statusBar()->showMessage(
                     connected ? tr("已连接服务端 %1:%2")
                                     .arg(connection_->hostName())
@@ -62,10 +63,7 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
 void MainWindow::showHomePage(const charging::model::User& user)
 {
     if (homeShell_ == nullptr) {
-        homeShell_ = new pages::station::HomeShell(user, pageStack_);
-        // 真实站点接口（服务端 GET_STATIONS）就绪后，仅需在此开启 liveMode，
-        // 页面 UI 逻辑零改动；当前保持模拟数据通道渲染。
-        homeShell_->setConnection(connection_);
+        homeShell_ = new pages::station::HomeShell(user, connection_, pageStack_);
         pageStack_->addWidget(homeShell_);
         connect(homeShell_, &pages::station::HomeShell::logoutRequested, this,
                 &MainWindow::showLoginPage);
@@ -79,6 +77,12 @@ void MainWindow::showHomePage(const charging::model::User& user)
 
 void MainWindow::showLoginPage()
 {
+    if (homeShell_ != nullptr) {
+        pageStack_->removeWidget(homeShell_);
+        homeShell_->deleteLater();
+        homeShell_ = nullptr;
+    }
+    connection_->disconnectFromServer();
     pageStack_->setCurrentWidget(loginPage_);
     loginPage_->resetState();
     statusBar()->show();

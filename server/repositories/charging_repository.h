@@ -7,6 +7,12 @@
 
 namespace charging::server {
 
+namespace repository_detail {
+// Caller owns an active transaction; shared by workflow and user queries.
+bool expireReservationsInTransaction(const QSqlDatabase& database, const QDateTime& nowUtc,
+                                     QString* diagnostic);
+}
+
 class ChargingRepository final
 {
 public:

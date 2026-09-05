@@ -9,6 +9,8 @@ add_library(charging_client_profile_charging_services STATIC
     src/charging_service.cpp
     src/client_errors.cpp
     src/mock_request_transport.cpp
+    src/network_request_transport.cpp
+    include/charging/client/profile_charging/network_request_transport.h
     src/order_service.cpp
     src/presentation_format.cpp
     src/wallet_service.cpp

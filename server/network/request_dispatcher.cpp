@@ -5,6 +5,7 @@
 #include "charging_service.h"
 #include "order_service.h"
 #include "user_service.h"
+#include "user_api_service.h"
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -91,8 +92,8 @@ bool isChargingAction(const QString& type)
 } // namespace
 
 RequestDispatcher::RequestDispatcher(UserService* userService, ChargingService* chargingService,
-                                     OrderService* orderService)
-    : userService_(userService), chargingService_(chargingService), orderService_(orderService)
+                                     OrderService* orderService, UserApiService* userApiService)
+    : userService_(userService), userApiService_(userApiService), chargingService_(chargingService), orderService_(orderService)
 {
     Q_ASSERT(userService_ != nullptr);
 }
@@ -118,6 +119,15 @@ RequestDispatcher::dispatch(const charging::protocol::RequestEnvelope& request,
         responseData.insert(QStringLiteral("created"), login.created);
         responseData.insert(QStringLiteral("user"), charging::model::toJson(login.user));
         return charging::protocol::makeSuccessResponse(request, responseData);
+    }
+
+    if (UserApiService::handles(request.type)) {
+        if (userApiService_ == nullptr)
+            return charging::protocol::makeErrorResponse(request, serviceUnavailableError());
+        const auto result = userApiService_->handle(request.type, request.data,
+                                                    authenticatedUserId ? *authenticatedUserId : 0);
+        return result.success ? charging::protocol::makeSuccessResponse(request, result.data)
+                              : charging::protocol::makeErrorResponse(request, result.error);
     }
 
     const bool payAction = request.type == QString::fromLatin1(kPayOrder);

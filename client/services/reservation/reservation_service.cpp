@@ -1,7 +1,9 @@
 #include "services/reservation/reservation_service.h"
 
 #include "charging/common/model/model_json.h"
+#include "charging/common/protocol/protocol.h"
 #include "network/client_connection.h"
+#include "network/page_validation.h"
 #include "services/settings/settings_service.h"
 
 #include <QJsonArray>
@@ -95,8 +97,8 @@ ReservationList defaultMockRecords()
     };
 }
 
-// 协议尚未定义预约列表查询命令；就绪后替换为 protocol 常量即可（UI 不变）。
-const QString kGetReservationsType = QStringLiteral("GET_RESERVATIONS");
+const QString kGetReservationsType =
+    QString::fromLatin1(charging::protocol::request_type::kGetReservations);
 
 } // namespace
 
@@ -144,7 +146,7 @@ int ReservationService::activeReservationCount() const
     // 本组方法仅作前端入口拦截的参考态，提交时服务端仍会独立校验。
     const QDateTime now = QDateTime::currentDateTimeUtc();
     int count = 0;
-    for (const auto& record : mockStore_) {
+    for (const auto& record : (liveMode_ ? liveStore_ : mockStore_)) {
         if (record.reservation.status == charging::model::ReservationStatus::Active
             && record.reservation.expiresAtUtc > now) {
             ++count;
@@ -155,6 +157,7 @@ int ReservationService::activeReservationCount() const
 
 int ReservationService::activeCountForVehicle(qint64 vehicleId) const
 {
+    if (liveMode_) return 0; // Server v1 does not bind reservations to vehicles.
     const QDateTime now = QDateTime::currentDateTimeUtc();
     int count = 0;
     for (const auto& record : mockStore_) {
@@ -169,6 +172,7 @@ int ReservationService::activeCountForVehicle(qint64 vehicleId) const
 
 int ReservationService::unfinishedSlotLimit() const
 {
+    if (liveMode_) return 1;
     // 名额制（任务 #17 二次迭代）：可预约时段数 = 车辆数；未注入车辆
     // 服务时回退为单条约束（兼容独立测试与旧口径）。
     return settings_ != nullptr ? qMax(0, settings_->vehicleCount()) : 1;
@@ -251,11 +255,14 @@ void ReservationService::setMockRecords(const ReservationList& records)
 
 void ReservationService::fetchList()
 {
+    if (liveMode_ && !pendingListRequestId_.isEmpty()) return;
     emit listStarted();
 
     if (liveMode_ && connection_ != nullptr) {
-        QJsonObject data;
-        data.insert(QStringLiteral("userId"), QString::number(userId_));
+        listPage_ = 1;
+        accumulatedList_.clear();
+        QJsonObject data{{"page", listPage_}, {"pageSize", 100}};
+        // User identity belongs to the authenticated TCP Session.
         pendingListRequestId_ = connection_->sendRequest(kGetReservationsType, data);
         return;
     }
@@ -281,6 +288,7 @@ void ReservationService::cancel(qint64 reservationId)
 
 void ReservationService::finishMockList()
 {
+    if (liveMode_) return;
     if (simulateFailure_) {
         simulateFailure_ = false;
         emit listFailed(tr("预约记录加载失败，请稍后重试"));
@@ -490,7 +498,11 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
     if (isList) {
         pendingListRequestId_.clear();
         // 真实列表命令就绪后的解析路径：data["reservations"] → 记录列表。
-        ReservationList records;
+        bool more = false;
+        if (!network::readPage(response.data, "reservations", listPage_, 100, &more)) {
+            emit listFailed(tr("预约分页响应无效")); return;
+        }
+        ReservationList records = accumulatedList_;
         const QJsonArray items = response.data.value(QStringLiteral("reservations")).toArray();
         for (const auto& value : items) {
             Reservation reservation;
@@ -501,8 +513,21 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             }
             ReservationRecord record;
             record.reservation = reservation;
+            const QJsonObject item = value.toObject();
+            record.stationName = item.value("stationName").toString();
+            record.chargerCode = item.value("chargerCode").toString();
+            record.orderId = item.value("orderId").toString().toLongLong();
+            record.startAtUtc = reservation.reservedAtUtc;
+            record.durationMinutes = int(reservation.reservedAtUtc.secsTo(reservation.expiresAtUtc) / 60);
             records.append(record);
         }
+        accumulatedList_ = records;
+        if (more) {
+            pendingListRequestId_ = connection_->sendRequest(kGetReservationsType,
+                {{"page", ++listPage_}, {"pageSize", 100}});
+            return;
+        }
+        liveStore_ = records;
         emit listSucceeded(records);
         return;
     }
@@ -542,6 +567,10 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
         ReservationRecord record = pendingSubmitRecord_;
         pendingSubmitRecord_ = ReservationRecord{};
         record.reservation = reservation;
+        record.orderId = response.data.value("order").toObject().value("id").toString().toLongLong();
+        record.vehicleId = 0;
+        record.vehiclePlate.clear();
+        record.estimatedFeeCents = 0;
         // 服务端尚未支持时间段/车辆字段（协议扩展就绪前以服务端返回的
         // 起止时刻为准，客户端仅带入车辆与站点展示上下文）。
         if (reservation.reservedAtUtc.isValid() && reservation.expiresAtUtc.isValid()) {
@@ -549,12 +578,14 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             record.durationMinutes =
                 int(reservation.reservedAtUtc.secsTo(reservation.expiresAtUtc) / 60);
         }
+        liveStore_.prepend(record);
         emit submitSucceeded(record);
     } else {
         const qint64 reservationId = pendingCancelId_;
         pendingCancelRequestId_.clear();
         pendingCancelId_ = 0;
-        Q_UNUSED(reservation)
+        for (auto& record : liveStore_)
+            if (record.reservation.id == reservationId) record.reservation = reservation;
         emit cancelSucceeded(reservationId);
     }
 }

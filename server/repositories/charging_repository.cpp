@@ -394,6 +394,13 @@ bool finishTransaction(ImmediateTransaction* transaction, ChargingRepositoryResu
 
 } // namespace
 
+bool repository_detail::expireReservationsInTransaction(const QSqlDatabase& database,
+                                                        const QDateTime& nowUtc,
+                                                        QString* diagnostic)
+{
+    return expireDueReservations(database, nowUtc, diagnostic);
+}
+
 ChargingRepository::ChargingRepository(const QSqlDatabase& database) : database_(database) {}
 
 ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 chargerId,

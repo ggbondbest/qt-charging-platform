@@ -465,7 +465,8 @@ void StationDetailPage::handleReserveRequested(const charging::model::Charger& c
 
     // 任务 #17 二次迭代：预约名额由车辆决定——账号下无车辆时无法发起
     // 预约，交宿主提示引导去「设置 - 车辆管理」添加。
-    if (settings_ != nullptr && settings_->vehicleCount() <= 0) {
+    if (settings_ != nullptr && settings_->vehicleCount() <= 0
+        && !(reservationService_ && reservationService_->liveMode())) {
         emit reservationVehicleRequired();
         return;
     }

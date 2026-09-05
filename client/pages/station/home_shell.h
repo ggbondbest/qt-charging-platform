@@ -88,11 +88,13 @@ class HomeShell final : public QWidget
 public:
     // 已登录：user 透传给导航组件。
     explicit HomeShell(const charging::model::User& user, QWidget* parent = nullptr);
+    HomeShell(const charging::model::User& user,
+              charging::client::network::ClientConnection* connection, QWidget* parent);
     // 未登录：首页仍可渲染，右上角显示登录按钮。
     explicit HomeShell(QWidget* parent = nullptr);
 
-    // 注入网络层：站点查询服务保留真实接口通道（服务端 GET_STATIONS
-    // 就绪后开启 setLiveMode(true) 即可切换，页面 UI 逻辑不变）。
+    // 注入并开启站点/预约真实通道。生产入口必须使用带 connection 的构造函数，
+    // 以便个人/订单/钱包服务也在构造时选择真实适配器。
     void setConnection(charging::client::network::ClientConnection* connection);
 
     StationHomePage* stationPage() const;
@@ -111,7 +113,8 @@ signals:
     void loginRequested();
 
 private:
-    explicit HomeShell(const charging::model::User* user, QWidget* parent);
+    explicit HomeShell(const charging::model::User* user, QWidget* parent,
+                       charging::client::network::ClientConnection* connection = nullptr);
 
     // 路由返回栈条目：回 Tab 页记 tabId（切 Tab 顺带清路由态），
     // 回路由页记 page（保持返回按钮可见，支持多级返回）。

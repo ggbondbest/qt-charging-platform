@@ -161,8 +161,9 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 | type | 用途 | 登录要求 | 首版主要 data |
 | --- | --- | --- | --- |
 | `USER_LOGIN` | 手机号免密登录/自动注册 | 匿名 | `phone` |
-| `GET_STATIONS` | 查询附近/指定区域电站 | 用户 | 位置、筛选、分页 |
-| `GET_CHARGERS` | 查询站内电桩 | 用户 | `stationId` |
+| `GET_STATIONS` | 查询电站 | 用户 | `keyword`、`page`、`pageSize`，见用户接口契约 |
+| `GET_CHARGERS` | 查询站内电桩 | 用户 | `stationId`、`page`、`pageSize` |
+| `GET_RESERVATIONS` | 查询本人预约 | 用户 | `status`、`page`、`pageSize` |
 | `RESERVE_CHARGER` | 预约空闲电桩 | 用户 | `chargerId` |
 | `CANCEL_RESERVATION` | 取消本人有效预约 | 用户 | `reservationId` |
 | `START_CHARGING` | 从有效预约开始充电 | 用户 | `reservationId` |
@@ -170,8 +171,8 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 | `STOP_CHARGING` | 停止本人充电订单 | 用户 | `orderId` |
 | `PAY_ORDER` | 支付待结算订单 | 用户 | `orderId` |
 | `GET_USER_INFO` | 刷新本人资料 | 用户 | `{}` |
-| `UPDATE_USER_INFO` | 修改昵称/头像 key | 用户 | 待详细接口冻结 |
-| `RECHARGE` | 钱包模拟充值 | 用户 | `amountCents` |
+| `UPDATE_USER_INFO` | 修改昵称/头像 key | 用户 | `nickname` / `avatarKey`，至少一项 |
+| `RECHARGE` | 钱包模拟充值 | 用户 | `amountCents`、`transactionNo` |
 | `GET_RECHARGE_RECORDS` | 查询本人充值记录 | 用户 | 分页参数 |
 | `GET_ORDERS` | 查询本人订单 | 用户 | 状态、分页参数 |
 
@@ -189,8 +190,14 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 
 动作名集中在 `protocol.h` 的 `request_type` namespace。当前 Dispatcher 已实现
 `USER_LOGIN`、`RESERVE_CHARGER`、`CANCEL_RESERVATION`、`START_CHARGING`、
-`GET_CHARGING_STATUS`、`STOP_CHARGING` 和 `PAY_ORDER`。表中其他动作是已预留的公共名称，
+`GET_CHARGING_STATUS`、`STOP_CHARGING`、`PAY_ORDER`，以及用户业务服务中的
+`GET_STATIONS`、`GET_CHARGERS`、`GET_RESERVATIONS`、`GET_USER_INFO`、`UPDATE_USER_INFO`、
+`RECHARGE`、`GET_RECHARGE_RECORDS`、`GET_ORDERS`。表中其他动作是已预留的公共名称，
 在对应成员实现并注册前会返回 `UNKNOWN_REQUEST_TYPE`。
+
+上述八个查询/资料/充值接口的详细字段、错误、示例、接入分工及实现状态已在
+[用户接口契约](user_api_contract.md) 冻结，并已在后续业务分支接入 Dispatcher。
+独立预览 Mock 不等同于真实服务；以下七个业务动作的报文形状保持不变。
 
 ## 7. USER_LOGIN 详细契约
 
