@@ -44,6 +44,16 @@ constexpr qint64 kChargingOrderId = 5;
 // The mock seeds exactly one WAITING_PAYMENT order (chargerId 11, "MOCKORD...0004").
 constexpr qint64 kWaitingOrderId = 4;
 
+void stopSeededChargingOrder(ChargingService& service)
+{
+    // 种子数据里有一笔充电中订单；启动新充电前必须先停掉它，
+    // 否则 mock 以 kInvalidStateTransition 拒绝（与服务端单会话约束一致）。
+    QSignalSpy stopped(&service, &ChargingService::stopCompleted);
+    service.startTracking(kChargingOrderId);
+    service.stopCharging();
+    QVERIFY(waitForSignal(stopped));
+}
+
 } // namespace
 
 class TestChargingService final : public QObject
@@ -218,6 +228,92 @@ private slots:
         QVERIFY(waitForSignal(failed));
         QCOMPARE(failed.at(0).at(1).value<charging::protocol::ProtocolError>().code,
                  QString::fromLatin1(charging::protocol::error_code::kNotFound));
+    }
+
+    // ---------- START_CHARGING（「充电」Tab 的启动入口） ----------
+
+    void startChargingWalkUpCreatesChargingOrder()
+    {
+        MockRequestTransport transport;
+        ChargingService service(&transport);
+        stopSeededChargingOrder(service);
+
+        QSignalSpy started(&service, &ChargingService::startCompleted);
+        service.startCharging(0); // reservationId 0 = 模拟扫码（TODO(contract)）
+        QVERIFY(waitForSignal(started));
+
+        const ChargingStatus status = qvariant_cast<ChargingStatus>(started.at(0).at(0));
+        QCOMPARE(charging::model::toString(status.order.status),
+                 charging::model::toString(charging::model::OrderStatus::Charging));
+        QCOMPARE(status.stationName, QStringLiteral("云杉科技园区充电站"));
+        QCOMPARE(status.chargerCode, QStringLiteral("A05"));
+        // 启动成功后服务立即跟踪新订单（充电状态首页据此渲染实时卡）。
+        QVERIFY(service.isTracking());
+        QVERIFY(!service.isStarting());
+        service.stopTracking();
+    }
+
+    void startChargingWithRegisteredReservationUsesReservedCharger()
+    {
+        MockRequestTransport transport;
+        transport.registerMockReservation(777, 21, QStringLiteral("万达广场地库充电站"),
+                                          QStringLiteral("C02"));
+        ChargingService service(&transport);
+        stopSeededChargingOrder(service);
+
+        QSignalSpy started(&service, &ChargingService::startCompleted);
+        service.startCharging(777);
+        QVERIFY(waitForSignal(started));
+
+        const ChargingStatus status = qvariant_cast<ChargingStatus>(started.at(0).at(0));
+        QCOMPARE(status.order.reservationId, qint64(777));
+        QCOMPARE(status.stationName, QStringLiteral("万达广场地库充电站"));
+        QCOMPARE(status.chargerCode, QStringLiteral("C02"));
+        service.stopTracking();
+    }
+
+    void startChargingUnknownReservationFailsNotFound()
+    {
+        MockRequestTransport transport;
+        ChargingService service(&transport);
+        stopSeededChargingOrder(service);
+
+        QSignalSpy failed(&service, &ChargingService::operationFailed);
+        QSignalSpy started(&service, &ChargingService::startCompleted);
+        service.startCharging(4242);
+        QVERIFY(waitForSignal(failed));
+        QCOMPARE(failed.at(0).at(1).value<charging::protocol::ProtocolError>().code,
+                 QString::fromLatin1(charging::protocol::error_code::kNotFound));
+        QCOMPARE(started.count(), 0);
+        QVERIFY(!service.isStarting()); // 失败后守卫释放，可重试
+    }
+
+    void startChargingRejectedWhileAnotherOrderIsCharging()
+    {
+        MockRequestTransport transport; // 种子订单 5 仍在充电中
+        ChargingService service(&transport);
+
+        QSignalSpy failed(&service, &ChargingService::operationFailed);
+        service.startCharging(0);
+        QVERIFY(waitForSignal(failed));
+        QCOMPARE(failed.at(0).at(1).value<charging::protocol::ProtocolError>().code,
+                 QString::fromLatin1(charging::protocol::error_code::kInvalidStateTransition));
+    }
+
+    void doubleStartIsIgnoredWhileInFlight()
+    {
+        MockRequestTransport transport;
+        ChargingService service(&transport);
+        stopSeededChargingOrder(service);
+
+        QSignalSpy started(&service, &ChargingService::startCompleted);
+        service.startCharging(0);
+        QVERIFY(service.isStarting());
+        service.startCharging(0); // 在途守卫吞掉第二次
+        QVERIFY(waitForSignal(started));
+        QTest::qWait(600);
+        QCOMPARE(started.count(), 1);
+        service.stopTracking();
     }
 };
 

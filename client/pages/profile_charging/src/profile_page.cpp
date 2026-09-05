@@ -1,14 +1,15 @@
 #include "charging/client/profile_charging/profile_page.h"
 
-#include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/avatar_library.h"
+#include "charging/client/profile_charging/client_errors.h"
 #include "charging/client/profile_charging/presentation_format.h"
-#include "charging/client/widgets/action_button.h"
-#include "charging/client/widgets/card.h"
-#include "charging/client/widgets/clickable_card.h"
 #include "charging/client/widgets/notice_panel.h"
+#include "charging/client/widgets/status_tag.h"
 #include "charging/common/protocol/protocol.h"
 
+#include <QColor>
+#include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -30,216 +31,217 @@ ProfilePage::ProfilePage(WalletService* walletService, OrderService* orderServic
 void ProfilePage::buildUi()
 {
     auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(20, 20, 20, 20);
-    rootLayout->setSpacing(14);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
 
-    auto* titleLabel = new QLabel(tr("我的"), this);
-    titleLabel->setProperty("role", QStringLiteral("pageTitle"));
-    rootLayout->addWidget(titleLabel);
+    // ---------- 渐变头图：头像/昵称/手机号，整块点击进编辑资料 ----------
+    auto* heroButton = new QPushButton(this);
+    heroButton->setObjectName(QStringLiteral("uiProfileHeroButton"));
+    heroButton->setCursor(Qt::PointingHandCursor);
+    heroButton->setMinimumHeight(150);
+    connect(heroButton, &QPushButton::clicked, this, &ProfilePage::profileEditRequested);
 
-    // ---------- 身份头部（点击进入编辑资料页） ----------
-    auto* identityCard = new ClickableCard(this);
-    connect(identityCard, &ClickableCard::clicked, this, &ProfilePage::profileEditRequested);
+    auto* heroLayout = new QHBoxLayout(heroButton);
+    heroLayout->setContentsMargins(22, 28, 20, 26);
+    heroLayout->setSpacing(14);
 
-    // Mainstream "我的" header: one horizontal row — avatar left, name and
-    // phone stacked in the middle, the edit affordance on the right.
-    auto* identityRow = new QHBoxLayout();
-    identityRow->setSpacing(14);
-
-    avatarLabel_ = new QLabel(QStringLiteral("用"), identityCard);
+    avatarLabel_ = new QLabel(QStringLiteral("用"), heroButton);
     avatarLabel_->setObjectName(QStringLiteral("uiAvatarHub"));
-    avatarLabel_->setFixedSize(56, 56);
+    avatarLabel_->setFixedSize(64, 64);
     avatarLabel_->setAlignment(Qt::AlignCenter);
-    identityRow->addWidget(avatarLabel_);
+    heroLayout->addWidget(avatarLabel_);
 
     auto* identityText = new QVBoxLayout();
-    identityText->setSpacing(2);
-    identityNameLabel_ = new QLabel(tr("未登录"), identityCard);
-    // objectName 沿用壳层测试锚点（QSS 选择器同步更名）。
+    identityText->setSpacing(4);
+    identityNameLabel_ = new QLabel(tr("未登录"), heroButton);
+    // objectName 沿用壳层测试锚点（QSS 在头图内覆写为白色）。
     identityNameLabel_->setObjectName(QStringLiteral("nicknameLabel"));
-    identityPhoneLabel_ = new QLabel(QStringLiteral("--"), identityCard);
-    identityPhoneLabel_->setProperty("role", QStringLiteral("caption"));
+    identityPhoneLabel_ = new QLabel(QStringLiteral("--"), heroButton);
+    identityPhoneLabel_->setProperty("role", QStringLiteral("heroPhone"));
     identityText->addWidget(identityNameLabel_);
     identityText->addWidget(identityPhoneLabel_);
-    identityRow->addLayout(identityText);
+    heroLayout->addLayout(identityText);
+    heroLayout->addStretch();
 
-    identityRow->addStretch();
+    auto* editHint = new QLabel(tr("编辑资料 ›"), heroButton);
+    editHint->setProperty("role", QStringLiteral("heroHint"));
+    heroLayout->addWidget(editHint);
+    rootLayout->addWidget(heroButton);
 
-    auto* editHint = new QLabel(tr("编辑资料 ›"), identityCard);
-    editHint->setProperty("role", QStringLiteral("secondary"));
-    identityRow->addWidget(editHint);
-    identityCard->bodyLayout()->addLayout(identityRow);
-    rootLayout->addWidget(identityCard);
+    // ---------- 钱包卡：余额/充值/充值记录三列，紧贴头图下沿 ----------
+    auto* walletWrap = new QWidget(this);
+    auto* walletWrapLayout = new QVBoxLayout(walletWrap);
+    walletWrapLayout->setContentsMargins(16, 12, 16, 0);
+    walletWrapLayout->setSpacing(0);
 
-    // ---------- 钱包（在订单上方，余额直接显示在大圆内） ----------
-    auto* walletCard = new Card(this);
-    auto* walletLayout = walletCard->bodyLayout();
+    auto* walletCard = new QWidget(walletWrap);
+    walletCard->setObjectName(QStringLiteral("uiWalletCard"));
+    walletCard->setAttribute(Qt::WA_StyledBackground, true);
+    // 浮卡投影：轻、低透明度，只强调层级不抢焦点。
+    auto* walletShadow = new QGraphicsDropShadowEffect(walletCard);
+    walletShadow->setBlurRadius(24);
+    walletShadow->setOffset(0, 6);
+    walletShadow->setColor(QColor(31, 41, 55, 22));
+    walletCard->setGraphicsEffect(walletShadow);
 
-    auto* walletTitle = new QLabel(tr("钱包"), walletCard);
-    walletTitle->setProperty("role", QStringLiteral("sectionTitle"));
-    walletLayout->addWidget(walletTitle);
+    auto* walletLayout = new QHBoxLayout(walletCard);
+    walletLayout->setContentsMargins(8, 14, 8, 14);
+    walletLayout->setSpacing(0);
 
-    // Balance banner: WeChat-wallet style rectangle — label top-left, amount
-    // below it, stretched across the card instead of a circle.
-    auto* balancePanel = new QWidget(walletCard);
-    balancePanel->setObjectName(QStringLiteral("uiBalancePanel"));
-    balancePanel->setAttribute(Qt::WA_StyledBackground, true);
-    auto* balanceLayout = new QVBoxLayout(balancePanel);
-    balanceLayout->setContentsMargins(18, 14, 18, 14);
-    balanceLayout->setSpacing(2);
-    balanceCaptionLabel_ = new QLabel(tr("当前余额（元）"), balancePanel);
-    balanceCaptionLabel_->setObjectName(QStringLiteral("uiBalanceCaption"));
-    balanceValueLabel_ = new QLabel(QStringLiteral("¥ --"), balancePanel);
+    // 余额列：值为服务端权威余额，点击进钱包页。
+    auto* balanceButton = new QPushButton(walletCard);
+    balanceButton->setProperty("role", QStringLiteral("walletStat"));
+    balanceButton->setCursor(Qt::PointingHandCursor);
+    connect(balanceButton, &QPushButton::clicked, this, &ProfilePage::walletRequested);
+    auto* balanceLayout = new QVBoxLayout(balanceButton);
+    balanceLayout->setSpacing(4);
+    balanceValueLabel_ = new QLabel(QStringLiteral("¥ --"), balanceButton);
     balanceValueLabel_->setObjectName(QStringLiteral("balanceLabel"));
-    balanceLayout->addWidget(balanceCaptionLabel_);
+    balanceValueLabel_->setAlignment(Qt::AlignCenter);
+    auto* balanceCaption = new QLabel(tr("余额（元）"), balanceButton);
+    balanceCaption->setProperty("role", QStringLiteral("walletStatCaption"));
+    balanceCaption->setAlignment(Qt::AlignCenter);
     balanceLayout->addWidget(balanceValueLabel_);
-    walletLayout->addWidget(balancePanel);
+    balanceLayout->addWidget(balanceCaption);
+    walletLayout->addWidget(balanceButton, 1);
 
-    auto* walletActionRow = new QHBoxLayout();
-    walletActionRow->addStretch();
-    auto* rechargeButton = new ActionButton(ActionButton::Variant::Primary, tr("充值"), walletCard);
-    connect(rechargeButton, &ActionButton::clicked, this, &ProfilePage::rechargeRequested);
-    auto* recordsButton =
-        new ActionButton(ActionButton::Variant::Secondary, tr("充值记录"), walletCard);
-    connect(recordsButton, &ActionButton::clicked, this, &ProfilePage::walletRequested);
-    walletActionRow->addWidget(rechargeButton);
-    walletActionRow->addWidget(recordsButton);
-    walletActionRow->addStretch();
-    walletLayout->addLayout(walletActionRow);
-    rootLayout->addWidget(walletCard);
-
-    // ---------- 我的订单（入口格子带状态数量角标） ----------
-    auto* ordersCard = new Card(this);
-    auto* ordersLayout = ordersCard->bodyLayout();
-
-    // 标题独占一行："全部订单"就是第一个格子，不再在标题旁重复放跳转按钮。
-    auto* ordersTitle = new QLabel(tr("我的订单"), ordersCard);
-    ordersTitle->setProperty("role", QStringLiteral("sectionTitle"));
-    ordersLayout->addWidget(ordersTitle);
-
-    auto* gridRow = new QHBoxLayout();
-    gridRow->setSpacing(10);
-
-    auto addCell = [&](const QString& glyph, const QString& caption, const QString& tone,
-                       QLabel** badgeOut, void (ProfilePage::*signal)()) {
-        auto* cell = buildGridCell(glyph, caption, tone, badgeOut);
-        connect(cell, &ClickableCard::clicked, this, signal);
-        gridRow->addWidget(cell, 1);
+    auto addDivider = [&walletLayout]() {
+        auto* divider = new QFrame();
+        divider->setProperty("role", QStringLiteral("walletDivider"));
+        divider->setFixedWidth(1);
+        divider->setFixedHeight(40);
+        walletLayout->addWidget(divider, 0, Qt::AlignVCenter);
     };
-    QLabel* allBadge = nullptr;
-    addCell(QStringLiteral("☰"), tr("全部订单"), QString(), &allBadge,
-            &ProfilePage::allOrdersRequested);
-    addCell(QStringLiteral("⚡"), tr("充电中"), QStringLiteral("success"), &chargingBadge_,
-            &ProfilePage::chargingOrdersRequested);
-    addCell(QStringLiteral("¥"), tr("待支付"), QStringLiteral("warning"), &waitingPaymentBadge_,
-            &ProfilePage::waitingPaymentOrdersRequested);
-    addCell(QStringLiteral("✔"), tr("已完成"), QStringLiteral("neutral"), &completedBadge_,
-            &ProfilePage::completedOrdersRequested);
-    Q_UNUSED(allBadge); // 全部订单不带角标：总数没有独立接口。
-    ordersLayout->addLayout(gridRow);
-    rootLayout->addWidget(ordersCard);
 
-    // ---------- 账号与服务（预约 / 设置；退出登录独立置底） ----------
-    auto* moreCard = new Card(this);
-    auto* moreLayout = moreCard->bodyLayout();
+    auto addStatGlyph = [&](const QString& glyph, const QString& caption,
+                            void (ProfilePage::*signal)()) {
+        addDivider();
+        auto* button = new QPushButton(walletCard);
+        button->setProperty("role", QStringLiteral("walletStat"));
+        button->setCursor(Qt::PointingHandCursor);
+        connect(button, &QPushButton::clicked, this, signal);
+        auto* layout = new QVBoxLayout(button);
+        layout->setSpacing(4);
+        auto* glyphLabel = new QLabel(glyph, button);
+        glyphLabel->setProperty("role", QStringLiteral("walletGlyph"));
+        glyphLabel->setAlignment(Qt::AlignCenter);
+        auto* captionLabel = new QLabel(caption, button);
+        captionLabel->setProperty("role", QStringLiteral("walletStatCaption"));
+        captionLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(glyphLabel);
+        layout->addWidget(captionLabel);
+        walletLayout->addWidget(button, 1);
+    };
+    addStatGlyph(QStringLiteral("💳"), tr("充值"), &ProfilePage::rechargeRequested);
+    addStatGlyph(QStringLiteral("🧾"), tr("充值记录"), &ProfilePage::walletRequested);
 
-    auto* moreTitle = new QLabel(tr("账号与服务"), moreCard);
-    moreTitle->setProperty("role", QStringLiteral("sectionTitle"));
-    moreLayout->addWidget(moreTitle);
+    walletWrapLayout->addWidget(walletCard);
+    rootLayout->addWidget(walletWrap);
 
-    // 电站列表入口已合并进壳层底部 Tab（成员 2 模块），此处只保留预约记录
-    // 与设置入口（成员 2 页面已由壳层路由承接）。
-    auto* reservationsButton = new QPushButton(tr("📒  我的预约　›"), moreCard);
-    reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
-    reservationsButton->setCursor(Qt::PointingHandCursor);
-    reservationsButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    reservationsButton->setMinimumHeight(44);
-    connect(reservationsButton, &QPushButton::clicked, this,
+    // ---------- 双格入口：我的订单（带待支付角标）/ 我的预约 ----------
+    auto* cellsRow = new QHBoxLayout();
+    cellsRow->setContentsMargins(16, 14, 16, 0);
+    cellsRow->setSpacing(12);
+
+    auto* ordersCell = new QPushButton(this);
+    ordersCell->setProperty("role", QStringLiteral("profileCell"));
+    ordersCell->setCursor(Qt::PointingHandCursor);
+    connect(ordersCell, &QPushButton::clicked, this, &ProfilePage::allOrdersRequested);
+    auto* ordersLayout = new QHBoxLayout(ordersCell);
+    ordersLayout->setContentsMargins(16, 16, 14, 16);
+    ordersLayout->setSpacing(12);
+    auto* ordersIcon = new QLabel(QStringLiteral("📋"), ordersCell);
+    ordersIcon->setProperty("role", QStringLiteral("cellIcon"));
+    ordersLayout->addWidget(ordersIcon);
+    auto* ordersText = new QVBoxLayout();
+    ordersText->setSpacing(3);
+    auto* ordersTitleRow = new QHBoxLayout();
+    ordersTitleRow->setSpacing(6);
+    auto* ordersTitle = new QLabel(tr("我的订单"), ordersCell);
+    ordersTitle->setProperty("role", QStringLiteral("cellTitle"));
+    ordersTitleRow->addWidget(ordersTitle);
+    ordersTitleRow->addStretch();
+    ordersText->addLayout(ordersTitleRow);
+    auto* ordersCaption = new QLabel(tr("全部充电订单"), ordersCell);
+    ordersCaption->setProperty("role", QStringLiteral("cellCaption"));
+    ordersText->addWidget(ordersCaption);
+    ordersLayout->addLayout(ordersText);
+    ordersLayout->addStretch();
+    // 待支付角标：纯数字圆点钉右侧（隐藏时不占位）；不再另放 chevron，
+    // 避免标题被挤断。
+    waitingBadge_ = new StatusTag(QStringLiteral("0"), StatusTag::Tone::Warning, ordersCell);
+    waitingBadge_->setVisible(false);
+    waitingBadge_->setToolTip(tr("待支付订单"));
+    ordersLayout->addWidget(waitingBadge_);
+    cellsRow->addWidget(ordersCell, 1);
+
+    auto* reservationsCell = new QPushButton(this);
+    // objectName 沿用壳层测试锚点；样式走 role=profileCell。
+    reservationsCell->setObjectName(QStringLiteral("openReservationsButton"));
+    reservationsCell->setProperty("role", QStringLiteral("profileCell"));
+    reservationsCell->setCursor(Qt::PointingHandCursor);
+    connect(reservationsCell, &QPushButton::clicked, this,
             &ProfilePage::reservationRecordsRequested);
-    moreLayout->addWidget(reservationsButton);
+    auto* reservationsLayout = new QHBoxLayout(reservationsCell);
+    reservationsLayout->setContentsMargins(16, 16, 14, 16);
+    reservationsLayout->setSpacing(12);
+    auto* reservationsIcon = new QLabel(QStringLiteral("📒"), reservationsCell);
+    reservationsIcon->setProperty("role", QStringLiteral("cellIcon"));
+    reservationsLayout->addWidget(reservationsIcon);
+    auto* reservationsText = new QVBoxLayout();
+    reservationsText->setSpacing(3);
+    auto* reservationsTitle = new QLabel(tr("我的预约"), reservationsCell);
+    reservationsTitle->setProperty("role", QStringLiteral("cellTitle"));
+    auto* reservationsCaption = new QLabel(tr("时段预约记录"), reservationsCell);
+    reservationsCaption->setProperty("role", QStringLiteral("cellCaption"));
+    reservationsText->addWidget(reservationsTitle);
+    reservationsText->addWidget(reservationsCaption);
+    reservationsLayout->addLayout(reservationsText);
+    reservationsLayout->addStretch();
+    auto* reservationsChevron = new QLabel(QStringLiteral("›"), reservationsCell);
+    reservationsChevron->setProperty("role", QStringLiteral("cellChevron"));
+    reservationsLayout->addWidget(reservationsChevron);
+    cellsRow->addWidget(reservationsCell, 1);
+    rootLayout->addLayout(cellsRow);
 
-    auto* settingsButton = new QPushButton(tr("⚙️  设置　›"), moreCard);
+    // ---------- 账号与服务（分组列表：设置；成员 2 页面由壳路由承接） ----------
+    // root 边距为 0（头图要顶边），以下各段用包裹容器手动留白。
+    auto wrapWithMargins = [this, &rootLayout](QWidget* child, int left, int top, int right,
+                                               int bottom) {
+        auto* wrap = new QWidget(this);
+        auto* layout = new QVBoxLayout(wrap);
+        layout->setContentsMargins(left, top, right, bottom);
+        layout->setSpacing(0);
+        layout->addWidget(child);
+        rootLayout->addWidget(wrap);
+    };
+
+    auto* serviceCaption = new QLabel(tr("账号与服务"), this);
+    serviceCaption->setProperty("role", QStringLiteral("sectionTitle"));
+    wrapWithMargins(serviceCaption, 18, 22, 16, 8);
+
+    auto* settingsButton = new QPushButton(tr("⚙️　设置　›"), this);
     settingsButton->setObjectName(QStringLiteral("openSettingsButton"));
     settingsButton->setCursor(Qt::PointingHandCursor);
-    settingsButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    settingsButton->setMinimumHeight(44);
+    settingsButton->setMinimumHeight(52);
     connect(settingsButton, &QPushButton::clicked, this, &ProfilePage::settingsRequested);
-    moreLayout->addWidget(settingsButton);
-    rootLayout->addWidget(moreCard);
+    wrapWithMargins(settingsButton, 16, 0, 16, 0);
 
     profileNotice_ = new NoticePanel(QStringLiteral("⚠"), tr("资料加载失败"), QString(),
                                      tr("重试"), this);
     profileNotice_->setVisible(false);
     connect(profileNotice_, &NoticePanel::actionTriggered, this, &ProfilePage::refresh);
-    rootLayout->addWidget(profileNotice_);
+    wrapWithMargins(profileNotice_, 16, 14, 16, 0);
 
     rootLayout->addStretch();
 
-    // 退出登录是全页唯一危险动作：移出卡片、贴底、通栏弱化为文字行，
-    // 与日常入口在视觉上拉开层级。
+    // 退出登录独立成一行白卡，置底并与日常入口拉开层级。
     auto* logoutButton = new QPushButton(tr("退出登录"), this);
     logoutButton->setObjectName(QStringLiteral("logoutButton"));
     logoutButton->setCursor(Qt::PointingHandCursor);
-    logoutButton->setMinimumHeight(48);
+    logoutButton->setMinimumHeight(50);
     connect(logoutButton, &QPushButton::clicked, this, &ProfilePage::logoutRequested);
-    rootLayout->addWidget(logoutButton);
-}
-
-ClickableCard* ProfilePage::buildGridCell(const QString& glyph, const QString& caption,
-                                          const QString& badgeTone, QLabel** badgeOut)
-{
-    auto* cell = new ClickableCard(this);
-    auto* body = cell->bodyLayout();
-    body->setSpacing(4);
-
-    // Fixed-height badge row so the icon stays aligned whether or not a
-    // count is shown.
-    auto* badgeRow = new QWidget(cell);
-    auto* badgeRowLayout = new QHBoxLayout(badgeRow);
-    badgeRowLayout->setContentsMargins(0, 0, 0, 0);
-    badgeRow->setFixedHeight(18);
-    auto* badge = new QLabel(badgeRow);
-    badge->setObjectName(QStringLiteral("uiBadge"));
-    badge->setProperty("tone", badgeTone.isEmpty() ? QStringLiteral("neutral") : badgeTone);
-    badge->setAlignment(Qt::AlignCenter);
-    badge->setVisible(false);
-    badgeRowLayout->addStretch();
-    badgeRowLayout->addWidget(badge);
-    body->addWidget(badgeRow);
-
-    auto* iconLabel = new QLabel(glyph, cell);
-    iconLabel->setProperty("role", QStringLiteral("gridIcon"));
-    iconLabel->setAlignment(Qt::AlignCenter);
-    body->addWidget(iconLabel, 0, Qt::AlignHCenter);
-
-    auto* captionLabel = new QLabel(caption, cell);
-    captionLabel->setProperty("role", QStringLiteral("gridCaption"));
-    captionLabel->setAlignment(Qt::AlignCenter);
-    body->addWidget(captionLabel, 0, Qt::AlignHCenter);
-
-    *badgeOut = badge;
-    return cell;
-}
-
-QString ProfilePage::badgeText(int count)
-{
-    if (count <= 0) {
-        return QString();
-    }
-    return count > 99 ? QStringLiteral("99+") : QString::number(count);
-}
-
-void ProfilePage::applyBadge(QLabel* badge, const QString& badgeTone, int count)
-{
-    const QString text = badgeText(count);
-    badge->setText(text);
-    badge->setVisible(!text.isEmpty());
-    badge->setProperty("tone", badgeTone);
-    if (!text.isEmpty()) {
-        // Round dot for one digit, pill as it grows; keep the glyph centred.
-        const int width = text.length() <= 1 ? 18 : text.length() == 2 ? 22 : 30;
-        badge->setFixedSize(width, 18);
-    }
+    wrapWithMargins(logoutButton, 16, 10, 16, 20);
 }
 
 void ProfilePage::refresh()
@@ -271,7 +273,7 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
     AvatarLibrary::applyToLabel(avatarLabel_, user_.avatarKey,
                                 nickname.isEmpty() ? QStringLiteral("用")
                                                    : QString(nickname.at(0)),
-                                56);
+                                64);
     identityNameLabel_->setText(nickname);
     identityPhoneLabel_->setText(user_.phone);
     balanceValueLabel_->setText(
@@ -280,9 +282,11 @@ void ProfilePage::renderIdentity(const charging::model::User& user)
 
 void ProfilePage::onStatusCounts(int chargingCount, int waitingPaymentCount, int completedCount)
 {
-    applyBadge(chargingBadge_, QStringLiteral("success"), chargingCount);
-    applyBadge(waitingPaymentBadge_, QStringLiteral("warning"), waitingPaymentCount);
-    applyBadge(completedBadge_, QStringLiteral("neutral"), completedCount);
+    // 双格版式只保留“待支付”这一个必须处理的提醒角标（数字圆点）。
+    Q_UNUSED(chargingCount);
+    Q_UNUSED(completedCount);
+    waitingBadge_->setText(QString::number(waitingPaymentCount));
+    waitingBadge_->setVisible(waitingPaymentCount > 0);
 }
 
 void ProfilePage::onOperationFailed(const QString& type,
@@ -295,8 +299,7 @@ void ProfilePage::onOperationFailed(const QString& type,
                                    displayMessageForError(error), tr("重试"));
         profileNotice_->setVisible(true);
     }
-    // Badge-count failures never surface here (OrderService degrades them
-    // silently); failures of other pages' traffic are those pages' business.
+    // 角标数量失败由 OrderService 静默降级，不上页面。
 }
 
 } // namespace charging::client

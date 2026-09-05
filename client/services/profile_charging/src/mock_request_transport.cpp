@@ -184,6 +184,13 @@ void MockRequestTransport::setUser(const charging::model::User& user)
     user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 }
 
+void MockRequestTransport::registerMockReservation(qint64 reservationId, qint64 chargerId,
+                                                   const QString& stationName,
+                                                   const QString& chargerCode)
+{
+    mockReservations_.insert(reservationId, {chargerId, {stationName, chargerCode}});
+}
+
 charging::model::Order* MockRequestTransport::findOrder(qint64 orderId)
 {
     for (charging::model::Order& order : orders_) {
@@ -267,6 +274,8 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kGetChargingStatus);
     const QString stopChargingType =
         QString::fromLatin1(charging::protocol::request_type::kStopCharging);
+    const QString startChargingType =
+        QString::fromLatin1(charging::protocol::request_type::kStartCharging);
     const QString payOrderType =
         QString::fromLatin1(charging::protocol::request_type::kPayOrder);
 
@@ -549,6 +558,60 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         order->updatedAtUtc = now;
 
         callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == startChargingType) {
+        // Server shape: {"reservationId": "<decimal string>"}; the mock also
+        // accepts 0 = walk-up "scan" start, which the server does not define
+        // yet (TODO(contract)) — demo-only.
+        const qint64 reservationId =
+            data.value(QStringLiteral("reservationId")).toString().toLongLong();
+        for (const charging::model::Order& existing : orders_) {
+            if (existing.status == charging::model::OrderStatus::Charging) {
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(
+                                       charging::protocol::error_code::kInvalidStateTransition),
+                                   QStringLiteral("an order is already charging")));
+                return;
+            }
+        }
+
+        qint64 chargerId = 0;
+        if (reservationId <= 0) {
+            chargerId = 22; // the demo walk-up charger.
+            chargerDisplays_.insert(chargerId,
+                                    {QStringLiteral("云杉科技园区充电站"), QStringLiteral("A05")});
+        } else {
+            const auto known = mockReservations_.constFind(reservationId);
+            if (known == mockReservations_.constEnd()) {
+                callback(false, QJsonObject{},
+                         mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
+                                   QStringLiteral("reservation not found")));
+                return;
+            }
+            chargerId = known->first;
+            chargerDisplays_.insert(chargerId, known->second);
+        }
+
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        charging::model::Order order;
+        order.id = nextOrderId_++;
+        order.orderNo = QStringLiteral("MOCKORD%1%2")
+                            .arg(now.toUTC().toString(QStringLiteral("yyyyMMdd")),
+                                 QString::number(order.id));
+        order.userId = user_.id;
+        order.chargerId = chargerId;
+        order.reservationId = reservationId > 0 ? reservationId : 0;
+        order.status = charging::model::OrderStatus::Charging;
+        order.unitPriceCentsPerKwh = 150;
+        order.createdAtUtc = now;
+        order.startedAtUtc = now;
+        order.updatedAtUtc = now;
+        orders_.prepend(order); // keep newest first
+
+        callback(true, buildStatusPayload(order, kMockLivePowerWatts, 0, 0),
+                 charging::protocol::ProtocolError{});
         return;
     }
 

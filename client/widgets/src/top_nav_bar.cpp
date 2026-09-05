@@ -149,9 +149,7 @@ void TopNavBar::setUser(const charging::model::User& user)
     nicknameLabel_->show();
     avatarButton_->show();
     loginButton_->hide();
-    // 窄窗口下品牌名与搜索、身份区互相挤占：已登录时让位给"搜索 + 头像昵称"。
-    logoLabel_->hide();
-    nameLabel_->hide();
+    refreshVisibility();
 }
 
 void TopNavBar::clearUser()
@@ -161,8 +159,7 @@ void TopNavBar::clearUser()
     nicknameLabel_->hide();
     avatarButton_->hide();
     loginButton_->show();
-    logoLabel_->show();
-    nameLabel_->show();
+    refreshVisibility();
 }
 
 bool TopNavBar::hasUser() const
@@ -172,15 +169,35 @@ bool TopNavBar::hasUser() const
 
 void TopNavBar::setBackVisible(bool visible)
 {
-    backButton_->setVisible(visible);
-    // 二级页面：未登录时"返回 + 平台名"成为主视觉；已登录时品牌区让位给搜索。
-    logoLabel_->setVisible(!visible && !hasUser_);
-    nameLabel_->setVisible(!hasUser_);
+    backVisible_ = visible;
+    refreshVisibility();
 }
 
 bool TopNavBar::isBackVisible() const
 {
     return backButton_->isVisible();
+}
+
+void TopNavBar::setSearchVisible(bool visible)
+{
+    searchVisible_ = visible;
+    refreshVisibility();
+}
+
+bool TopNavBar::isSearchVisible() const
+{
+    return searchLineEdit_->isVisible();
+}
+
+void TopNavBar::refreshVisibility()
+{
+    backButton_->setVisible(backVisible_);
+    searchLineEdit_->setVisible(searchVisible_);
+    // 品牌区：二级页面隐藏；已登录时只在搜索框可见的页面让位——
+    // 搜索收起的页面（订单/充电/我的）恢复品牌区平衡左侧版式。
+    const bool brandVisible = !backVisible_ && (!hasUser_ || !searchVisible_);
+    logoLabel_->setVisible(brandVisible);
+    nameLabel_->setVisible(!hasUser_ || !searchVisible_);
 }
 
 QString TopNavBar::searchText() const

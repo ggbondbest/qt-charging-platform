@@ -3,6 +3,8 @@
  * 设计 token（单一事实来源，与 C++ 代码保持一致）：
  *   页面底色   #F4F6F8      卡片     #FFFFFF  边框 #E5E9EF  圆角 16
  *   主色(电动绿) #00B578    按下     #009A66  禁用 #B7E5D2
+ *   「我的」头图渐变 #00A46C → #2BC98A（按下 #00905F → #20B27A）
+ *   「充电」无任务 hero 浅渐变 #EAF9F2 → #E8F3FE
  *   文本主 #1F2937  次 #6B7280  淡 #9CA3AF
  *
  * 状态色 token（语义 × 三形态，全站唯一定义，页面不得另调色值）：
@@ -120,30 +122,22 @@ QPushButton#uiAvatarChoice[defaultAvatar="true"] {
     font-size: 16px;
     font-weight: 800;
 }
-/* 个人中心 Hub：较小的头像、余额大圆、订单角标 */
+/* 个人中心头图：头像（64 圆）压深色渐变底，文字由头图内规则覆写 */
 QLabel#uiAvatarHub {
-    font-size: 24px;
+    font-size: 26px;
     font-weight: 800;
     color: #FFFFFF;
     background: #00B578;
-    border-radius: 28px;
+    border-radius: 32px;
 }
 QLabel#uiAvatarHub[hasAvatar="true"] {
     background: transparent;
 }
-QWidget#uiBalancePanel {
-    background: #00B578;
-    border-radius: 12px;
-}
-QLabel#uiBalanceCaption {
-    font-size: 12px;
-    font-weight: 600;
-    color: #D6F5E8;
-}
+/* 钱包浮卡内的余额数字：白卡深字（旧版绿底白字横幅已移除） */
 QLabel#balanceLabel {
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 800;
-    color: #FFFFFF;
+    color: #1F2937;
 }
 QLabel#uiBadge[tone="danger"] {
     background: #DC2626;
@@ -168,14 +162,6 @@ QLabel#nicknameLabel {
     font-size: 17px;
     font-weight: 800;
     color: #1F2937;
-}
-QLabel[role="gridIcon"] {
-    font-size: 26px;
-    color: #1F2937;
-}
-QLabel[role="gridCaption"] {
-    font-size: 12px;
-    color: #6B7280;
 }
 QLineEdit#uiNicknameEdit {
     font-size: 15px;
@@ -236,31 +222,137 @@ QFrame#uiRecordSeparator {
     border: none;
 }
 
-/* ---------- 个人中心：账号服务行 / 退出登录（贴底弱化为文字行） ---------- */
-QPushButton#openReservationsButton {
+/* ---------- 「我的」页：渐变头图 + 钱包浮卡 + 双格 + 分组列表 ---------- */
+/* 头图整块是一个透明内容的大按钮：电动绿对角渐变，按下加深 */
+QPushButton#uiProfileHeroButton {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #00A46C, stop: 1 #2BC98A);
+    border: none;
+    border-radius: 0px;
+    text-align: left;
+}
+QPushButton#uiProfileHeroButton:pressed {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #00905F, stop: 1 #20B27A);
+}
+/* 头图内文字覆写（白字系，层次靠透明度拉开） */
+QPushButton#uiProfileHeroButton QLabel#nicknameLabel {
+    color: #FFFFFF;
+    font-size: 19px;
+    font-weight: 800;
+}
+QLabel[role="heroPhone"] {
+    color: #D9F3E7;
+    font-size: 12px;
+}
+QLabel[role="heroHint"] {
+    color: #EAFBF3;
+    font-size: 12px;
+    font-weight: 600;
+}
+/* 钱包卡：白底圆角紧贴头图下沿（投影在 C++ 侧用效果完成） */
+QWidget#uiWalletCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QPushButton[role="walletStat"] {
     background: transparent;
     border: none;
-    border-bottom: 1px solid #EEF2F6;
+    border-radius: 12px;
+    padding: 6px 4px;
+    /* 样式表按钮的 sizeHint 不算子布局：用 min-height 顶起请求高度 */
+    min-height: 64px;
+}
+QPushButton[role="walletStat"]:pressed {
+    background: #F2F5F8;
+}
+QLabel[role="walletGlyph"] {
+    font-size: 21px;
+}
+QLabel[role="walletStatCaption"] {
+    font-size: 12px;
+    color: #6B7280;
+}
+QFrame[role="walletDivider"] {
+    background: #EEF2F6;
+    border: none;
+}
+/* 双格入口卡（我的订单 / 我的预约） */
+QPushButton[role="profileCell"] {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+    text-align: left;
+    /* 样式表按钮的 sizeHint 不算子布局：用 min-height 顶起请求高度 */
+    min-height: 76px;
+}
+QPushButton[role="profileCell"]:pressed {
+    background: #F2F5F8;
+}
+QLabel[role="cellIcon"] {
+    font-size: 26px;
+}
+QLabel[role="cellTitle"] {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1F2937;
+}
+QLabel[role="cellCaption"] {
+    font-size: 12px;
+    color: #9CA3AF;
+}
+QLabel[role="cellChevron"] {
+    font-size: 18px;
+    font-weight: 600;
+    color: #C3CBD6;
+}
+/* 分组列表行：设置（单行成卡，设置页路由由壳承接） */
+QPushButton#openSettingsButton {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
     text-align: left;
     color: #1F2937;
     font-size: 14px;
     font-weight: 600;
-    padding: 2px 0px;
+    padding: 2px 16px;
 }
-QPushButton#openReservationsButton:pressed {
-    color: #00B578;
+QPushButton#openSettingsButton:pressed {
+    background: #F2F5F8;
 }
+/* 退出登录：置底独立白卡行，全页唯一危险动作 */
 QPushButton#logoutButton {
-    background: transparent;
-    border: none;
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
     color: #DC2626;
     font-size: 15px;
     font-weight: 600;
 }
 QPushButton#logoutButton:pressed {
-    color: #B91C1C;
     background: #FDEBEB;
-    border-radius: 12px;
+    color: #B91C1C;
+}
+
+/* ---------- 「充电」Tab 状态首页：无任务引导（浅渐变 hero） ---------- */
+QWidget#uiChargingHero {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #EAF9F2, stop: 1 #E8F3FE);
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QLabel#uiHeroGlyph {
+    font-size: 34px;
+}
+QLabel#uiHeroTitle {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1F2937;
+}
+QLabel#uiHeroCaption {
+    font-size: 12px;
+    color: #6B7280;
 }
 
 /* ---------- 按钮 ---------- */
