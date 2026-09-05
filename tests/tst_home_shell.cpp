@@ -6,6 +6,7 @@
 #include "charging/client/profile_charging/recharge_page.h"
 #include "charging/client/profile_charging/settlement_page.h"
 #include "charging/client/profile_charging/wallet_service.h"
+#include "charging/client/profile_charging/avatar_library.h"
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/top_nav_bar.h"
 #include "pages/station/home_shell.h"
@@ -1647,6 +1648,20 @@ void HomeShellTest::avatarChoicePersistsAndRendersLibraryAvatar()
     }
     QCOMPARE(choices.size(), 9);
 
+    // 契约 v1 §3 冻结内置头像清单，三方各持一份字面量：UI 库（此处）、
+    // 服务端 user_api_service.cpp 的 QSet、mock 侧 isBuiltInAvatarKey
+    // （由 tst_wallet_service 的 mockAcceptsEveryFrozenAvatarKeyAndRejectsUnknown
+    // 逐 key 验证）。这里把 UI 库钉死在契约清单上，改一处必红两处。
+    const QStringList frozen{QStringLiteral("bolt"), QStringLiteral("plug"),
+                             QStringLiteral("car"), QStringLiteral("leaf"),
+                             QStringLiteral("cat"), QStringLiteral("panda"),
+                             QStringLiteral("moon"), QStringLiteral("rocket")};
+    QStringList libraryKeys;
+    for (const charging::client::AvatarSpec& spec : charging::client::AvatarLibrary::all()) {
+        libraryKeys.append(spec.key);
+    }
+    QCOMPARE(libraryKeys, frozen);
+
     QPushButton* bolt = nullptr;
     for (auto* button : choices) {
         if (button->property("avatarKey").toString() == QStringLiteral("bolt")) {
@@ -1697,7 +1712,7 @@ void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
         summary.order.id = id;
         summary.order.orderNo = QStringLiteral("T%1").arg(id);
         summary.order.status = charging::model::OrderStatus::Completed;
-        summary.order.startedAtUtc = QDateTime(day, QTime(9, 0), Qt::UTC); // 月中，跨时区安全
+        summary.order.createdAtUtc = QDateTime(day, QTime(9, 0), Qt::UTC); // 月中，跨时区安全
         summary.order.amountCents = cents;
         summary.order.energyWh = wh;
         summary.stationName = QStringLiteral("测试电站");
@@ -1705,11 +1720,13 @@ void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
         return summary;
     };
 
-    // 乱序喂入，验证页面自己按时间倒序分组。
+    // 契约 v1 §3：服务端 createdAt DESC 是唯一排序事实来源，页面不再自排、
+    // 分组与展示共用同一时钟（§5"时间分组与 createdAt 分页顺序对齐"）。
+    // 按服务端序喂入，跨月订单应按月倒序分组。
     QVector<charging::client::OrderSummary> orders;
-    orders << makeOrder(1, QDate(2026, 7, 20), 3258, 24680)
+    orders << makeOrder(3, QDate(2026, 8, 25), 220, 1670)
            << makeOrder(2, QDate(2026, 8, 10), 100, 1000)
-           << makeOrder(3, QDate(2026, 8, 25), 220, 1670);
+           << makeOrder(1, QDate(2026, 7, 20), 3258, 24680);
     emit orderService->ordersLoaded(orders, orders.size(), false);
 
     const auto titles = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthTitle"));
