@@ -95,6 +95,6 @@ void DashboardRepositoryTest::invalidInputsFail()
     QVERIFY(!repository.revenueTrend(QDate(2026, 8, 1), QDate(2026, 9, 4)).ok);
 }
 
-QTEST_APPLESS_MAIN(DashboardRepositoryTest)
+QTEST_GUILESS_MAIN(DashboardRepositoryTest)
 
 #include "tst_dashboard_repository.moc"

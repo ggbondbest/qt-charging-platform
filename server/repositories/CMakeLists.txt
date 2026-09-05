@@ -1,4 +1,6 @@
 add_library(charging_server_repositories STATIC
+    admin_repository.cpp
+    admin_repository.h
     charger_repository.cpp
     charger_repository.h
     dashboard_repository.cpp

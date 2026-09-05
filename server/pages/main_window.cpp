@@ -1,6 +1,7 @@
 #include "main_window.h"
 
 #include "admin_login_page.h"
+#include "admin_request_gateway.h"
 #include "charger_management_page.h"
 #include "server_runtime.h"
 #include "dashboard_page.h"
@@ -14,6 +15,8 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenuBar>
+#include <QAction>
 #include <QPainter>
 #include <QPalette>
 #include <QPushButton>
@@ -169,6 +172,7 @@ MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     : QMainWindow(parent), server_(server)
 {
     Q_ASSERT(server != nullptr);
+    adminGateway_ = new AdminRequestGateway(server, this);
 
     setWindowTitle(tr("充电平台运营管理系统"));
     resize(1600, 990);
@@ -181,6 +185,20 @@ MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     setCentralWidget(rootStackedWidget_);
 
     connect(loginPage_, &AdminLoginPage::loginSubmitted, this, &MainWindow::handleLoginSubmitted);
+    connect(adminGateway_, &AdminRequestGateway::finished, this,
+            [this](const QString& id, const QJsonObject& response) {
+        if (id != loginRequestId_) return;
+        loginRequestId_.clear();
+        loginPage_->setBusy(false);
+        loginPage_->resetForm();
+        if (response.value(QStringLiteral("success")).toBool()) showManagementShell();
+        else loginPage_->showError(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString());
+    });
+    connect(adminGateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
+        if (!authenticated) { loginPage_->setBusy(false); showLoginPage(); }
+    });
+    auto* logoutAction = menuBar()->addAction(tr("退出登录"));
+    connect(logoutAction, &QAction::triggered, adminGateway_, &AdminRequestGateway::logout);
     connect(server_, &ServerRuntime::clientCountChanged, this, &MainWindow::updateClientCount);
     dashboardPage_->setClientCount(server_->clientCount());
     showLoginPage();
@@ -353,17 +371,10 @@ void MainWindow::showLoginPage()
 
 void MainWindow::handleLoginSubmitted(const QString& username, const QString& password)
 {
-    loginPage_->setBusy(true);
-    // 阶段 0/1 只做 Mock UI；真实管理员认证必须由后续 Service 层提供。
-    QTimer::singleShot(180, this, [this, username, password]() {
-        loginPage_->setBusy(false);
-        if (username == QStringLiteral("admin") && password == QStringLiteral("123456")) {
-            showManagementShell();
-            return;
-        }
-
-        loginPage_->showError(tr("账号或密码不正确。Mock 演示账号为 admin / 123456。"));
-    });
+    loginRequestId_ = adminGateway_->request(QStringLiteral("auth.login"),
+        {{QStringLiteral("username"), username}, {QStringLiteral("password"), password}},
+        loginPage_, QStringLiteral("login"));
+    loginPage_->setBusy(!loginRequestId_.isEmpty());
 }
 
 void MainWindow::updateClientCount(int count)
