@@ -1,3 +1,4 @@
+#include "charging/client/profile_charging/charging_home_page.h"
 #include "charging/client/profile_charging/charging_page.h"
 #include "charging/client/profile_charging/order_detail_page.h"
 #include "charging/client/profile_charging/order_list_page.h"
@@ -313,6 +314,9 @@ private slots:
     void togglesBetweenTabs();
     void avatarOpensProfilePage();
     void profilePageRedesignKeepsUserAndAddsFunctionSlots();
+    // —— 「充电」Tab 状态首页 / 「我的」页新版式（渐变头图+钱包浮卡+双格） ——
+    void chargingTabRendersLiveSessionCard();
+    void profileWalletAndReservationCellsRoute();
     // —— 任务 #7：找站业务 ——
     void initialSearchGoesThroughLoadingToResultList();
     void topBarSearchFiltersStationList();
@@ -421,8 +425,9 @@ void HomeShellTest::startsOnStationTab()
     QVERIFY(profileTab != nullptr);
     // 4 个 Tab 页 + 详情/预约确认/预约模块路由页（成员 2）
     // + 成员 3 整合路由页 5 个（订单详情/结算/充值/编辑资料/充电过程）
-    // + 设置页 + 导航页（任务 #17 二次迭代，登录态索引 12/13）= 14。
-    QCOMPARE(pageStack->count(), 14);
+    // + 设置页 + 导航页（任务 #17 二次迭代，登录态索引 12/13）
+    // + 钱包路由页（「我的」钱包卡进入，栈尾）= 15。
+    QCOMPARE(pageStack->count(), 15);
 
     // 登录后默认落在“找站”（首页）。
     QCOMPARE(pageStack->currentIndex(), 0);
@@ -517,6 +522,75 @@ void HomeShellTest::profilePageRedesignKeepsUserAndAddsFunctionSlots()
     QCOMPARE(logoutButton->text(), QStringLiteral("退出登录"));
     logoutButton->click();
     QCOMPARE(logoutSpy.count(), 1);
+}
+
+void HomeShellTest::chargingTabRendersLiveSessionCard()
+{
+    // 「充电」Tab 现为状态首页（ChargingHomePage）：种子数据有一笔充电中
+    // 订单，进入后应渲染实时充电卡（功率/电量/时长/停止充电）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    tabButton(shell, QStringLiteral("charging"))->click();
+    QCOMPARE(pageStack->currentIndex(), 2);
+    auto* homePage = shell.findChild<charging::client::ChargingHomePage*>();
+    QVERIFY(homePage != nullptr);
+    QCOMPARE(pageStack->currentWidget(), homePage);
+
+    // 充电卡异步渲染（mock 450ms 延迟）：等首页自己的“停止充电”出现
+    // （注意限定在 homePage 内搜索——路由页 11 的 ChargingPage 也有同名按钮）。
+    QPushButton* stopButton = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&]() {
+            for (auto* button : homePage->findChildren<QPushButton*>()) {
+                if (button->text() == QStringLiteral("停止充电")) {
+                    stopButton = button;
+                    return true;
+                }
+            }
+            return false;
+        }(),
+        3000);
+    QVERIFY(stopButton != nullptr);
+    QTest::qWait(100); // 布局激活后再截图
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_charging_tab.png"));
+}
+
+void HomeShellTest::profileWalletAndReservationCellsRoute()
+{
+    // 「我的」页新版式：钱包浮卡余额列 → 钱包路由页（栈尾索引 14），
+    // 我的预约格 → 预约模块页（索引 6）；顶部导航返回回「我的」Tab。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    tabButton(shell, QStringLiteral("profile"))->click();
+    QTest::qWait(150); // 布局激活后再截图/点按钮
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_profile.png"));
+
+    // 余额列是第一个 role=walletStat 按钮（余额/充值/充值记录三列）。
+    QPushButton* balanceStat = nullptr;
+    for (auto* button : shell.findChildren<QPushButton*>()) {
+        if (button->property("role").toString() == QLatin1String("walletStat")) {
+            balanceStat = button;
+            break;
+        }
+    }
+    QVERIFY(balanceStat != nullptr);
+    balanceStat->click();
+    QCOMPARE(pageStack->currentIndex(), 14);
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+
+    // 我的预约格（保留 openReservationsButton 锚点）→ 预约模块路由页。
+    auto* reservationsCell =
+        shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(reservationsCell != nullptr);
+    reservationsCell->click();
+    QCOMPARE(pageStack->currentIndex(), 6);
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
 }
 
 void HomeShellTest::initialSearchGoesThroughLoadingToResultList()

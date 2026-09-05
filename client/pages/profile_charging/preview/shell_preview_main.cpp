@@ -80,6 +80,9 @@ int main(int argc, char* argv[])
     } else if (view == QLatin1String("profile")) {
         clickTab(QStringLiteral("profile"));
         shoot(1600);
+    } else if (view == QLatin1String("charging")) {
+        clickTab(QStringLiteral("charging"));
+        shoot(1600);
     } else if (view == QLatin1String("detail")) {
         // Wait for the mock station list to render, then click the first card.
         auto retries = std::make_shared<int>(12);

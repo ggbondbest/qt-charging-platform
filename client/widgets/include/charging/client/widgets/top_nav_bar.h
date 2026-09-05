@@ -36,6 +36,11 @@ public:
     void setBackVisible(bool visible);
     bool isBackVisible() const;
 
+    // 搜索框只在「找站」语境有意义；订单/充电/我的等 Tab 与路由页可收起，
+    // 收起后品牌区（Logo + 平台名）回到左侧平衡版式。默认显示。
+    void setSearchVisible(bool visible);
+    bool isSearchVisible() const;
+
 signals:
     // 搜索框回车触发；keyword 为去空白后的文本。
     void searchSubmitted(const QString& keyword);
@@ -55,6 +60,11 @@ private:
     QPushButton* avatarButton_ = nullptr;
     QLabel* nicknameLabel_ = nullptr;
     bool hasUser_ = false;
+    bool backVisible_ = false;
+    bool searchVisible_ = true;
+
+    // 依 hasUser_/backVisible_/searchVisible_ 统一刷新各分区可见性。
+    void refreshVisibility();
 };
 
 } // namespace charging::client

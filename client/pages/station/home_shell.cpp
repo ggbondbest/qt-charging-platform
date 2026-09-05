@@ -1,6 +1,7 @@
 #include "pages/station/home_shell.h"
 
 #include "charging/client/profile_charging/charging_page.h"
+#include "charging/client/profile_charging/charging_home_page.h"
 #include "charging/client/profile_charging/charging_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
 #include "charging/client/profile_charging/order_detail_page.h"
@@ -135,7 +136,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         tabBar_->setCurrentTab(QStringLiteral("station"));
         pageStack_->setCurrentIndex(0);
         backTargets_.clear();
-        topBar_->setBackVisible(false);
+        syncTopBar();
         stationPage_->search(keyword);
     });
     // 任务 #12/#17：顶部导航“返回”按钮 → 按当前路由回上一级页面。
@@ -146,6 +147,17 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     // 占位（不向游客暴露 mock 数据）。
     pageStack_ = new QStackedWidget(this);
     pageStack_->setObjectName(QStringLiteral("homePageStack"));
+    // 预约/设置/地图服务由壳统一装配，且需先于 Tab 页构造（充电状态首页
+    // 依赖预约服务）。SettingsService 作为车辆名额/默认车/通知开关的单一
+    // 事实源。
+    reservationService_ = new services::reservation::ReservationService(this);
+    settingsService_ = new services::settings::SettingsService(this);
+    // 腾讯地图 WebService（key 经环境变量注入；无 key 时页面保持纯模拟）。
+    mapGeoService_ = new services::map::MapGeoService(this);
+    if (hasUser_) {
+        reservationService_->setUserId(user_.id);
+    }
+    reservationService_->setSettingsService(settingsService_);
     stationPage_ = new StationHomePage(pageStack_);
     pageStack_->addWidget(stationPage_);
     if (hasUser_) {
@@ -169,6 +181,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
 
         orderListPage_ = new OrderListPage(orderService_, pageStack_);
         walletPage_ = new WalletPage(walletService_, pageStack_);
+        chargingHomePage_ =
+            new ChargingHomePage(chargingService_, orderService_, reservationService_, pageStack_);
         profilePage_ = new ProfilePage(walletService_, orderService_, pageStack_);
         // 同步渲染真实身份/余额，异步 fetch 回来后覆盖为服务端值。
         profilePage_->setIdentity(user_);
@@ -178,7 +192,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     }
     pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(orderListPage_)
                                    : createOrderPage());
-    pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(walletPage_)
+    pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(chargingHomePage_)
                                    : createChargingPage());
     pageStack_->addWidget(hasUser_ ? static_cast<QWidget*>(profilePage_)
                                    : createProfilePage());
@@ -242,7 +256,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         tabBar_->setCurrentTab(QStringLiteral("station"));
         pageStack_->setCurrentIndex(0);
         backTargets_.clear();
-        topBar_->setBackVisible(false);
+        syncTopBar();
     });
 
     // 全端整合：成员 3 路由页（索引 7–11，追加在既有路由页之后，不影响
@@ -272,7 +286,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
         connect(orderListPage_, &OrderListPage::orderOpened, this,
                 &HomeShell::openOrderDetail);
 
-        // 充值 Tab（钱包/充值记录）：横向导航回壳层 Tab 与充值路由。
+        // 钱包路由页：横向导航回壳层 Tab 与充值路由。
         connect(walletPage_, &WalletPage::rechargeRequested, this, &HomeShell::openRecharge);
         connect(walletPage_, &WalletPage::ordersRequested, this, [this]() {
             tabBar_->setCurrentTab(QStringLiteral("order"));
@@ -281,27 +295,41 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
             tabBar_->setCurrentTab(QStringLiteral("profile"));
         });
 
+        // 充电 Tab：状态首页（充电中/待支付/已有预约/无任务）。
+        connect(chargingHomePage_, &ChargingHomePage::goFindStation, this, [this]() {
+            tabBar_->setCurrentTab(QStringLiteral("station"));
+        });
+        connect(chargingHomePage_, &ChargingHomePage::orderOpened, this,
+                &HomeShell::openOrderDetail);
+        connect(chargingHomePage_, &ChargingHomePage::settlementRequested, this,
+                [this](const charging::client::ChargingStatus& status) {
+                    // 结算页取路由上下文快照：由停止充电回执构建。
+                    currentSummary_ = charging::client::OrderSummary{};
+                    currentSummary_.order = status.order;
+                    currentSummary_.stationName = status.stationName;
+                    currentSummary_.chargerCode = status.chargerCode;
+                    openSettlement();
+                });
+        // mock 世界桥接：预约提交成功后登记进 mock 传输，使
+        // START_CHARGING(reservationId) 能解析到对应桩与展示名
+        // （真实通道下服务端为唯一事实来源，不调此钩子）。
+        connect(reservationService_,
+                &services::reservation::ReservationService::submitSucceeded, this,
+                [this](const services::reservation::ReservationRecord& record) {
+                    if (mockTransport_ != nullptr) {
+                        mockTransport_->registerMockReservation(
+                            record.reservation.id, record.reservation.chargerId,
+                            record.stationName, record.chargerCode);
+                    }
+                });
+
         // “我的”中心页：入口信号 → 路由页 / Tab / 成员 2 预约记录。
         connect(profilePage_, &ProfilePage::profileEditRequested, this,
                 &HomeShell::openProfileEdit);
-        connect(profilePage_, &ProfilePage::walletRequested, this, [this]() {
-            tabBar_->setCurrentTab(QStringLiteral("charging"));
-        });
+        connect(profilePage_, &ProfilePage::walletRequested, this, &HomeShell::openWallet);
         connect(profilePage_, &ProfilePage::rechargeRequested, this, &HomeShell::openRecharge);
         connect(profilePage_, &ProfilePage::allOrdersRequested, this, [this]() {
             pendingOrderFilter_ = charging::client::OrderService::Filter::All;
-            tabBar_->setCurrentTab(QStringLiteral("order"));
-        });
-        connect(profilePage_, &ProfilePage::chargingOrdersRequested, this, [this]() {
-            pendingOrderFilter_ = charging::client::OrderService::Filter::Charging;
-            tabBar_->setCurrentTab(QStringLiteral("order"));
-        });
-        connect(profilePage_, &ProfilePage::waitingPaymentOrdersRequested, this, [this]() {
-            pendingOrderFilter_ = charging::client::OrderService::Filter::WaitingPayment;
-            tabBar_->setCurrentTab(QStringLiteral("order"));
-        });
-        connect(profilePage_, &ProfilePage::completedOrdersRequested, this, [this]() {
-            pendingOrderFilter_ = charging::client::OrderService::Filter::Completed;
             tabBar_->setCurrentTab(QStringLiteral("order"));
         });
         connect(profilePage_, &ProfilePage::reservationRecordsRequested, this,
@@ -368,6 +396,12 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
     navigationPage_->setMapService(mapGeoService_);
     pageStack_->addWidget(navigationPage_);
 
+    // 钱包页降为路由页（成员 3）：入口在「我的」钱包卡。放在栈尾，
+    // 不动设置/导航页既定的 12/13 索引约定。
+    if (walletPage_ != nullptr) {
+        pageStack_->addWidget(walletPage_);
+    }
+
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
     connect(detailPage_, &StationDetailPage::backRequested, this, &HomeShell::leaveRoute);
@@ -375,7 +409,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent) : QWidg
 
     // 底部 Tab 导航公共组件：固定底部，四个 Tab。
     // 原“充值”Tab 按团队调整更名“充电”（路由 ID 同步 charging）；登录态
-    // 下挂载成员 3 钱包页（余额+充值+流水），充值入口保留在其中。
+    // 下挂载成员 3 ChargingHomePage（按充电生命周期状态展示），钱包页降为
+    // 路由页（入口在「我的」钱包卡）。
     tabBar_ = new BottomTabBar({{QStringLiteral("station"), tr("🔍 找站")},
                                 {QStringLiteral("order"), tr("📋 订单")},
                                 {QStringLiteral("charging"), tr("⚡ 充电")},
@@ -397,7 +432,7 @@ void HomeShell::showTab(const QString& id)
     pageStack_->setCurrentIndex(index);
     // 切任意 Tab 即离开路由页：清返回栈、收起顶部导航返回按钮。
     backTargets_.clear();
-    topBar_->setBackVisible(false);
+    syncTopBar();
     // 全端整合：成员 3 Tab 页进入即重查，展示最新的（mock）服务端结果。
     if (id == QLatin1String("order") && orderListPage_) {
         if (pendingOrderFilter_) {
@@ -406,8 +441,8 @@ void HomeShell::showTab(const QString& id)
         } else {
             orderListPage_->refresh();
         }
-    } else if (id == QLatin1String("charging") && walletPage_) {
-        walletPage_->refresh();
+    } else if (id == QLatin1String("charging") && chargingHomePage_) {
+        chargingHomePage_->refresh();
     } else if (id == QLatin1String("profile") && profilePage_) {
         profilePage_->refresh();
     }
@@ -432,7 +467,7 @@ void HomeShell::pushRoute(QWidget* page)
     }
     backTargets_.push_back(target);
     pageStack_->setCurrentWidget(page);
-    topBar_->setBackVisible(true);
+    syncTopBar();
 }
 
 void HomeShell::openStationDetail(const charging::model::Station& station, int distanceMeters)
@@ -467,7 +502,7 @@ void HomeShell::openReservationModule()
     backTargets_.clear();
     backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
     pageStack_->setCurrentWidget(modulePage_);
-    topBar_->setBackVisible(true);
+    syncTopBar();
 }
 
 void HomeShell::openOrderDetail(const charging::client::OrderSummary& summary)
@@ -507,6 +542,13 @@ void HomeShell::openRecharge()
     pushRoute(rechargePage_);
 }
 
+void HomeShell::openWallet()
+{
+    // 「充值」收进「我的」：钱包页现在是路由页，入口在个人中心钱包卡。
+    walletPage_->refresh();
+    pushRoute(walletPage_);
+}
+
 void HomeShell::openProfileEdit()
 {
     profileEditPage_->refresh();
@@ -526,7 +568,7 @@ void HomeShell::openSettings()
     backTargets_.clear();
     backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
     pageStack_->setCurrentWidget(settingsPage_);
-    topBar_->setBackVisible(true);
+    syncTopBar();
 }
 
 void HomeShell::openNavigation(const services::reservation::ReservationRecord& record)
@@ -538,14 +580,14 @@ void HomeShell::openNavigation(const services::reservation::ReservationRecord& r
     backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
     backTargets_.push_back(BackTarget{modulePage_, QString()});
     pageStack_->setCurrentWidget(navigationPage_);
-    topBar_->setBackVisible(true);
+    syncTopBar();
 }
 
 void HomeShell::leaveRoute()
 {
     if (backTargets_.isEmpty()) {
         // 兜底：无路由栈信息时与整合前行为一致（回找站列表）。
-        topBar_->setBackVisible(false);
+        syncTopBar();
         tabBar_->setCurrentTab(QStringLiteral("station"));
         pageStack_->setCurrentIndex(0);
         return;
@@ -554,7 +596,7 @@ void HomeShell::leaveRoute()
     if (!target.tabId.isEmpty()) {
         // 回 Tab 页（路由页不改 Tab 选中，通常 Tab 本就处于选中态）。
         backTargets_.clear();
-        topBar_->setBackVisible(false);
+        syncTopBar();
         const bool alreadyCurrent = tabBar_->currentTab() == target.tabId;
         tabBar_->setCurrentTab(target.tabId);
         pageStack_->setCurrentIndex(tabIndexById().value(target.tabId, 0));
@@ -565,8 +607,17 @@ void HomeShell::leaveRoute()
     } else {
         // 回上层路由页（如结算→详情、导航→预约订单）：保留返回按钮与剩余栈。
         pageStack_->setCurrentWidget(target.page);
-        topBar_->setBackVisible(!backTargets_.isEmpty());
+        syncTopBar();
     }
+}
+
+void HomeShell::syncTopBar()
+{
+    // 返回按钮跟随路由栈；搜索框是「找站」语境——订单/充电/我的 Tab 与
+    // 路由页都不摆站点搜索，收起后品牌区自动回位（TopNavBar 内部处理）。
+    const bool inRoute = !backTargets_.isEmpty();
+    topBar_->setBackVisible(inRoute);
+    topBar_->setSearchVisible(!inRoute && tabBar_->currentTab() == QLatin1String("station"));
 }
 
 void HomeShell::showReservationLoginPrompt()

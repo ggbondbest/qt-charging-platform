@@ -1,6 +1,7 @@
 add_library(charging_client_profile_charging_pages STATIC
     include/charging/client/profile_charging/avatar_library.h
     include/charging/client/profile_charging/charging_page.h
+    include/charging/client/profile_charging/charging_home_page.h
     include/charging/client/profile_charging/charging_pulse.h
     include/charging/client/profile_charging/order_detail_page.h
     include/charging/client/profile_charging/order_list_page.h
@@ -12,6 +13,7 @@ add_library(charging_client_profile_charging_pages STATIC
     include/charging/client/profile_charging/wallet_page.h
     src/avatar_library.cpp
     src/charging_page.cpp
+    src/charging_home_page.cpp
     src/charging_pulse.cpp
     src/order_detail_page.cpp
     src/order_list_page.cpp
@@ -31,6 +33,7 @@ target_include_directories(charging_client_profile_charging_pages PUBLIC
 
 target_link_libraries(charging_client_profile_charging_pages PUBLIC
     ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientReservationServices
     ChargingPlatform::ClientWidgets
     ChargingPlatform::Common
     ChargingPlatform::ProjectOptions
