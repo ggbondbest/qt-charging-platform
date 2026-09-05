@@ -132,6 +132,6 @@ void ReservationOperationLogsTest::invalidQueriesFail()
                  .ok);
 }
 
-QTEST_APPLESS_MAIN(ReservationOperationLogsTest)
+QTEST_GUILESS_MAIN(ReservationOperationLogsTest)
 
 #include "tst_reservation_operation_logs.moc"
