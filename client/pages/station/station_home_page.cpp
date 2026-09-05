@@ -13,7 +13,9 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QStackedWidget>
+#include <QVBoxLayout>
 #include <QVariant>
 
 #include <algorithm>
@@ -103,14 +105,28 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
     rootLayout->setContentsMargins(16, 12, 16, 12);
     rootLayout->setSpacing(10);
 
-    // ① 地图容器区域：固定高度，不可用时面板内部降级为提示+重试，
-    //    下方筛选与列表照常浏览（规格：页面仍可正常浏览）。
+    // ① 地图 + 列表可拖拽分屏（成员 2 地图迭代）：上半为地图面板、下半为
+    //    “筛选栏+列表”容器，分隔条可上下拖动——把地图拉大或把列表压小。
+    //    默认口径保持旧版：真实地图 170 / 降级横幅 56，多余空间归列表；
+    //    面板内部“降级/重试/标记点”逻辑零改动（规格：页面仍可正常浏览）。
     mapPanel_ = new StationMapPanel(this);
     mapPanel_->setObjectName(QStringLiteral("stationMapPanel"));
-    // 降级态收成一行横幅的高度，把省下的空间还给电站列表；真实地图仍占 170。
-    mapPanel_->setFixedHeight(mapPanel_->isDegraded() ? 56 : 170);
-    rootLayout->addWidget(mapPanel_);
-    // 面板内部处理“重试”（重新尝试构建地图视图）；本任务地图保持容器高度。
+    mapPanel_->setMinimumHeight(56); // 压到最低仍保降级横幅一行可读
+    auto* mapListSplitter = new QSplitter(Qt::Vertical, this);
+    mapListSplitter->setObjectName(QStringLiteral("stationMapListSplitter"));
+    mapListSplitter->setHandleWidth(10);
+    mapListSplitter->addWidget(mapPanel_);
+    auto* listPane = new QWidget(mapListSplitter);
+    listPane->setObjectName(QStringLiteral("stationListPane"));
+    auto* listPaneLayout = new QVBoxLayout(listPane);
+    listPaneLayout->setContentsMargins(0, 0, 0, 0);
+    listPaneLayout->setSpacing(rootLayout->spacing());
+    mapListSplitter->addWidget(listPane);
+    mapListSplitter->setStretchFactor(0, 0); // 拉伸增量归列表，地图保持默认高
+    mapListSplitter->setStretchFactor(1, 1);
+    mapListSplitter->setSizes({mapPanel_->isDegraded() ? 56 : 170, 600});
+    rootLayout->addWidget(mapListSplitter, 1);
+    // 面板内部处理“重试”（重新尝试构建地图视图）；分屏高度由用户拖动决定。
 
     // ② 筛选操作栏（地图下方、列表上方）。
     auto* filterBar = new QWidget(this);
@@ -149,12 +165,12 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
     priceFilterComboBox_->addItem(tr("≤ ¥1.50"), 150);
     filterLayout->addWidget(priceFilterComboBox_);
     filterLayout->addStretch();
-    rootLayout->addWidget(filterBar);
+    listPaneLayout->addWidget(filterBar);
 
     // ③ 站点列表区域：加载 / 空 / 异常 / 列表 四态，紧跟筛选栏。
     listStack_ = new QStackedWidget(this);
     listStack_->setObjectName(QStringLiteral("stationListStack"));
-    rootLayout->addWidget(listStack_, 1);
+    listPaneLayout->addWidget(listStack_, 1);
 
     loadingPage_ = new QWidget(listStack_);
     auto* loadingLayout = new QVBoxLayout(loadingPage_);

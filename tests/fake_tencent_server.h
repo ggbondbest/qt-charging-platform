@@ -4,6 +4,7 @@
 #include <QHostAddress>
 #include <QList>
 #include <QPointer>
+#include <QStringList>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -39,6 +40,7 @@ public:
                     // 请求行 "GET <target> HTTP/1.1" → 记录完整 target（path+query）。
                     const QByteArray line = request.left(newline).trimmed();
                     lastRequestTarget_ = QString::fromLatin1(line.split(' ').value(1));
+                    requestTargets_ << lastRequestTarget_;
                     if (holdRequests_) {
                         pending_.append(QPointer<QTcpSocket>(socket));
                         return;
@@ -61,6 +63,8 @@ public:
 
     int connectionCount() const { return connectionCount_; }
     QString lastRequestTarget() const { return lastRequestTarget_; }
+    // 并发多请求时（路线+逆地理）last 不保证顺序，用全量列表断言。
+    QStringList requestTargets() const { return requestTargets_; }
 
     void setResponse(int status, const QByteArray& body)
     {
@@ -106,6 +110,7 @@ private:
     bool holdRequests_ = false;
     int connectionCount_ = 0;
     QString lastRequestTarget_;
+    QStringList requestTargets_;
     QList<QPointer<QTcpSocket>> pending_;
 };
 

@@ -109,6 +109,14 @@ void StationMapPanel::setStations(const QVector<MapStationPoint>& stations)
 #endif
 }
 
+void StationMapPanel::setRoutePoints(const QVector<MapStationPoint>& points)
+{
+    routePoints_ = points;
+    // 刷新通道与 setStations 完全一致（数据全量重注入 html），直接复用；
+    // 降级/未构建时只缓存，重试成功后随 setStations 一并渲染。
+    setStations(stations_);
+}
+
 QString StationMapPanel::mapKey()
 {
     return qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
@@ -155,7 +163,18 @@ void StationMapPanel::tryBuildMapView()
         degraded_ = false;
         degradedBanner_->setVisible(false);
     });
-    static_cast<QVBoxLayout*>(layout())->addWidget(view);
+    auto* panelLayout = static_cast<QVBoxLayout*>(layout());
+    // 功能修正：构造尾部有一根占位 stretch（降级横幅态撑位用），若不摘除，
+    // 地图会被追加到 stretch 之后、永远停在 sizeHint 高度，外层分栏拖动只
+    // 放大空白。摘掉后地图自身吃掉面板全部剩余高度（横幅在最前，不受影响）。
+    if (QLayoutItem* trailing = panelLayout->takeAt(panelLayout->count() - 1)) {
+        if (trailing->spacerItem() != nullptr) {
+            delete trailing;
+        } else {
+            panelLayout->addItem(trailing);
+        }
+    }
+    panelLayout->addWidget(view);
     mapView_ = view;
     view->setHtml(buildMapHtml(), QUrl(QStringLiteral("https://map.qq.com/")));
 #else
@@ -184,11 +203,21 @@ QString StationMapPanel::buildMapHtml() const
         points.append(point);
     }
 
+    QJsonArray route;
+    for (const auto& point : routePoints_) {
+        QJsonArray pair;
+        pair.append(point.latitude);
+        pair.append(point.longitude);
+        route.append(pair);
+    }
+
     html.replace(QStringLiteral("%TENCENT_MAP_KEY%"), mapKey());
     html.replace(QStringLiteral("%CENTER_LAT%"), formatCoordinate(kDefaultCenterLatitude));
     html.replace(QStringLiteral("%CENTER_LNG%"), formatCoordinate(kDefaultCenterLongitude));
     html.replace(QStringLiteral("%STATION_POINTS%"),
                  QString::fromUtf8(QJsonDocument(points).toJson(QJsonDocument::Compact)));
+    html.replace(QStringLiteral("%ROUTE_POINTS%"),
+                 QString::fromUtf8(QJsonDocument(route).toJson(QJsonDocument::Compact)));
     return html;
 }
 
