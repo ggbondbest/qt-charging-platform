@@ -15,6 +15,8 @@ class QVBoxLayout;
 
 namespace charging::client {
 
+class ActionButton;
+
 // 「充电」Tab 根页：按充电生命周期状态堆叠卡片——
 //   充电中卡（功率/电量/时长/停止）→ 待支付卡（费用明细/支付）→
 //   预约卡（倒计时/开始充电/取消，充电中时不显示）→ 全无时显示
@@ -31,6 +33,11 @@ public:
 
     // 重查订单与预约列表并重建卡片（切 Tab 进入时由壳层调用）。
     void refresh();
+
+    // 「模拟扫码」只是 mock 预览通道能力：契约 v1 §4 明确把扫码动作排除在
+    // 协议外，真实模式下 reservationId 0 必被服务端拒绝，入口应隐藏而不是
+    // 假装扫码成功（壳层在有 connection 时调用 setScanDemoAvailable(false)）。
+    void setScanDemoAvailable(bool available);
 
 signals:
     void goFindStation(); // 壳层切到「找站」Tab
@@ -90,6 +97,9 @@ private:
     // 预约卡倒计时标签（每秒 tick 重写文本）。
     QVector<QPair<QLabel*, QDateTime>> countdownLabels_;
     bool startingScan_ = false;
+    ActionButton* scanButton_ = nullptr;
+    QLabel* heroCaptionLabel_ = nullptr;
+    bool scanDemoAvailable_ = true;
 };
 
 } // namespace charging::client

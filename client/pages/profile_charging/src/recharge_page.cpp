@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QShowEvent>
 #include <QVBoxLayout>
 
 namespace charging::client {
@@ -74,6 +75,36 @@ void RechargePage::buildUi()
     balanceCard->bodyLayout()->addLayout(balanceLayout);
     rootLayout->addWidget(balanceCard);
 
+    // 未确认充值恢复条：契约 v1 §3 下超时/断线不是明确失败，持久化的
+    // {amountCents, transactionNo} 意图需要醒目入口"按原金额重试"幂等确认，
+    // 而不是让用户对着 toast 猜测下一步（§5 验收：恢复提示优化）。
+    pendingBar_ = new QWidget(content);
+    pendingBar_->setObjectName(QStringLiteral("rechargePendingBar"));
+    auto* pendingLayout = new QHBoxLayout(pendingBar_);
+    pendingLayout->setContentsMargins(12, 8, 12, 8);
+    pendingLayout->setSpacing(8);
+    auto* pendingPill = new StatusTag(tr("待确认"), StatusTag::Tone::Warning, pendingBar_);
+    pendingNoticeLabel_ = new QLabel(pendingBar_);
+    pendingNoticeLabel_->setObjectName(QStringLiteral("rechargePendingNotice"));
+    pendingNoticeLabel_->setProperty("role", QStringLiteral("secondary"));
+    pendingNoticeLabel_->setWordWrap(true);
+    retryButton_ = new ActionButton(ActionButton::Variant::Chip, tr("按原金额重试"), pendingBar_);
+    retryButton_->setObjectName(QStringLiteral("rechargeRetryButton"));
+    retryButton_->setMinimumHeight(40);
+    connect(retryButton_, &ActionButton::clicked, this, [this]() {
+        const qint64 pending = service_->pendingRechargeAmount();
+        if (pending <= 0 || service_->isRecharging()) {
+            return;
+        }
+        setSubmitting(true);
+        service_->recharge(pending); // 同金额命中流水号复用路径，服务端幂等去重。
+    });
+    pendingLayout->addWidget(pendingPill);
+    pendingLayout->addWidget(pendingNoticeLabel_, 1);
+    pendingLayout->addWidget(retryButton_);
+    pendingBar_->setVisible(false);
+    rootLayout->addWidget(pendingBar_);
+
     auto* amountCard = new Card(this);
     auto* amountLayout = amountCard->bodyLayout();
     auto* amountTitle = new QLabel(tr("选择充值金额"), amountCard);
@@ -82,8 +113,8 @@ void RechargePage::buildUi()
 
     auto* chipGrid = new QGridLayout();
     chipGrid->setSpacing(10);
-    // TODO(contract): preset amounts and the maximum are UI candidates until
-    // the RECHARGE bounds are frozen with the leader.
+    // 预设档位是 UI 选择；单笔上限已随契约 v1 §3 冻结（≤100000 元），
+    // 校验走 WalletService::kMaximumRechargeCents 单一来源。
     const qint64 presets[kChipCount] = {5000, 10000, 20000, 50000}; // 50/100/200/500 元
     for (int index = 0; index < kChipCount; ++index) {
         const qint64 cents = presets[index];
@@ -108,7 +139,9 @@ void RechargePage::buildUi()
     amountLayout->addLayout(chipGrid);
 
     customAmountEdit_ = new QLineEdit(amountCard);
-    customAmountEdit_->setPlaceholderText(tr("其他金额（元），最多 99999.99"));
+    customAmountEdit_->setPlaceholderText(tr("其他金额（元），最多 %1")
+                                              .arg(formatCentsAsYuan(
+                                                  WalletService::kMaximumRechargeCents)));
     customAmountEdit_->setClearButtonEnabled(true);
     customAmountEdit_->setValidator(new QRegularExpressionValidator(
         QRegularExpression(QStringLiteral("^(0|[1-9][0-9]{0,7})(\\.[0-9]{0,2})?$")),
@@ -216,11 +249,31 @@ void RechargePage::onConfirmClicked()
     service_->recharge(amountCents);
 }
 
+void RechargePage::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    updatePendingRechargeNotice(); // 进页即反映上次会话留下的未确认意图。
+}
+
+void RechargePage::updatePendingRechargeNotice()
+{
+    const qint64 pending = service_ != nullptr ? service_->pendingRechargeAmount() : 0;
+    if (pending > 0) {
+        pendingNoticeLabel_->setText(
+            tr("有一笔 ¥%1 的充值结果未确认，重试沿用原流水号，不会重复入账")
+                .arg(formatCentsAsYuan(pending)));
+    }
+    pendingBar_->setVisible(pending > 0);
+}
+
 void RechargePage::setSubmitting(bool submitting)
 {
     confirmButton_->setEnabled(!submitting);
     backButton_->setEnabled(!submitting);
     customAmountEdit_->setEnabled(!submitting);
+    if (retryButton_ != nullptr) {
+        retryButton_->setEnabled(!submitting);
+    }
     for (ActionButton* chip : amountChips_) {
         chip->setEnabled(!submitting);
     }
@@ -236,6 +289,7 @@ void RechargePage::onRechargeCompleted(qint64 amountCents, qint64 balanceAfterCe
     setSubmitting(false);
     resetForm();
     setBalance(balanceAfterCents);
+    updatePendingRechargeNotice(); // 明确成功后意图已清理，撤下恢复条。
     Toast::show(this, tr("充值成功 +%1 元").arg(formatCentsAsYuan(amountCents)),
                 StatusTag::Tone::Success);
     emit rechargeSucceeded(balanceAfterCents);
@@ -250,6 +304,9 @@ void RechargePage::onOperationFailed(const QString& type,
         return; // Other pages own their own request failures.
     }
     setSubmitting(false);
+    // 明确失败（INVALID_ARGUMENT/IDEMPOTENCY_CONFLICT/RECHARGE_FAILED）会清掉
+    // 持久化意图，恢复条随之撤下；超时/断线保留意图，条保持可见可重试。
+    updatePendingRechargeNotice();
     Toast::show(this, displayMessageForError(error), StatusTag::Tone::Danger);
 }
 

@@ -75,7 +75,13 @@ int main(int argc, char* argv[])
         clickTab(QStringLiteral("order"));
         shoot(1600);
     } else if (view == QLatin1String("recharge") || view == QLatin1String("wallet")) {
-        clickTab(QStringLiteral("recharge"));
+        // 钱包/充值是路由页，经「我的」页的钱包卡入口进入。
+        clickTab(QStringLiteral("profile"));
+        const QString buttonId = view == QLatin1String("recharge")
+            ? QStringLiteral("openRechargeButton") : QStringLiteral("openWalletButton");
+        if (auto* entry = shell.findChild<QPushButton*>(buttonId)) {
+            QTimer::singleShot(400, [entry]() { entry->click(); });
+        }
         shoot(1600);
     } else if (view == QLatin1String("profile")) {
         clickTab(QStringLiteral("profile"));

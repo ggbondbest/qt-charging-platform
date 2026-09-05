@@ -114,9 +114,10 @@ void ProfilePage::buildUi()
     };
 
     auto addStatGlyph = [&](const QString& glyph, const QString& caption,
-                            void (ProfilePage::*signal)()) {
+                            const QString& objectName, void (ProfilePage::*signal)()) {
         addDivider();
         auto* button = new QPushButton(walletCard);
+        button->setObjectName(objectName); // 预览/自动化锚点
         button->setProperty("role", QStringLiteral("walletStat"));
         button->setCursor(Qt::PointingHandCursor);
         connect(button, &QPushButton::clicked, this, signal);
@@ -132,8 +133,10 @@ void ProfilePage::buildUi()
         layout->addWidget(captionLabel);
         walletLayout->addWidget(button, 1);
     };
-    addStatGlyph(QStringLiteral("💳"), tr("充值"), &ProfilePage::rechargeRequested);
-    addStatGlyph(QStringLiteral("🧾"), tr("充值记录"), &ProfilePage::walletRequested);
+    addStatGlyph(QStringLiteral("💳"), tr("充值"), QStringLiteral("openRechargeButton"),
+                 &ProfilePage::rechargeRequested);
+    addStatGlyph(QStringLiteral("🧾"), tr("充值记录"), QStringLiteral("openWalletButton"),
+                 &ProfilePage::walletRequested);
 
     walletWrapLayout->addWidget(walletCard);
     rootLayout->addWidget(walletWrap);

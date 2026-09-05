@@ -73,8 +73,9 @@ class NavigationPage;
 // 充电中/待支付/已有预约/无任务），钱包页降为路由页（入口在「我的」
 // 钱包卡）；我的 → ProfilePage 中心页（含编辑资料/详情/结算/充值/
 // 钱包/充电过程路由页；充电中订单点击进入 ChargingPage，停止 → 结算
-// 闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务暂走
-// 共享 mock 通道，服务端命令就绪后切换（TODO(contract)）。“我的预约”入口与
+// 闭环，充值成功自动回跳结算并解锁支付）；钱包/订单/充电服务在真实登录
+// （带 connection）时走契约 v1 的 NetworkRequestTransport，仅无连接预览
+// 用共享 mock 通道。“我的预约”入口与
 // 退出登录按钮保留原测试锚点 objectName（openReservationsButton/logoutButton/
 // nicknameLabel/balanceLabel）。路由返回改为返回栈（backTargets_），支持
 // “详情→结算”等多级返回；切任意 Tab 清栈。
@@ -161,7 +162,7 @@ private:
     charging::client::services::map::MapGeoService* mapGeoService_ = nullptr;
     QVector<BackTarget> backTargets_;
 
-    // ---- 成员 3 整合：共享 mock 通道 + 服务 + 页面（TODO(contract) 换真实通道） ----
+    // ---- 成员 3 整合：传输通道（真实登录 live / 预览 mock）+ 服务 + 页面 ----
     charging::client::MockRequestTransport* mockTransport_ = nullptr;
     charging::client::WalletService* walletService_ = nullptr;
     charging::client::OrderService* orderService_ = nullptr;
