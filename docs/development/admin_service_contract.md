@@ -69,23 +69,56 @@ requestId_ = gateway->request("stations.list",
 
 | action | 输入 | data |
 | --- | --- | --- |
-| dashboard.get | days=7 或 30，默认 7 | 统计字段、trend、timeZone、observedAt、onlineRatio |
+| dashboard.get | days=7 或 30，默认 7 | 统计字段、trend、timeZone、observedAt、onlineRatio、abnormalChargers、latestOrders |
 | stations.list / get | 通用列表条件 / id | 分页站点 / item，含总桩数、空闲桩数、电价、updatedAt |
-| chargers.list / get | 通用条件，可加 stationId、type / id | 分页电桩 / item，含站名、功率、累计数据、updatedAt |
+| chargers.list / get | 通用条件，可加 stationId、type、abnormalOnly / id | 分页电桩 / item，含站名、功率、累计数据、updatedAt、exceptionType |
 | users.list / get | 通用条件 / id | 安全用户列表 / item，含订单数、未完成订单数、充值次数 |
-| orders.list / get | 通用条件，可加 userId / id | 只读订单、计费快照、时间、站名、桩号、脱敏用户 |
+| orders.list / get | 通用条件，可加 userId、stationId、chargerId、createdAtFrom、createdAtTo / id | 只读订单、计费快照、时间、站点 ID/名称、桩号、脱敏用户 |
 | recharges.list / get | 通用条件，可加 userId / id | 全局或指定用户充值记录、安全用户摘要 |
 
 列表输入：keyword（最多 64 字）、可选合法 status、page（1–1000000）、pageSize（1–100）、
-sort（仅 idAsc / idDesc，默认 idAsc）。默认 page=1、pageSize=20；不接受任意 SQL 排序。
+sort（默认 idAsc；所有列表允许 idAsc / idDesc，订单额外允许 createdAtDesc，电桩额外允许
+updatedAtDesc）。时间倒序相同时按 idDesc 打破平局，保证稳定分页，不用 ID 大小代替创建时间。
+默认 page=1、pageSize=20；不接受任意 SQL 排序或不适用于该实体的排序。
 输出 `{items,total,page,pageSize}`；详情输出 `{item}`。类型、枚举、未知字段都严格校验。
 站点 ACTIVE/INACTIVE；桩 AVAILABLE/RESERVED/CHARGING/FAULT/OFFLINE；用户 ACTIVE/FROZEN；
 订单 RESERVED/CHARGING/WAITING_PAYMENT/COMPLETED/CANCELLED；充值 SUCCESS/FAILED。
+
+订单时间筛选作用于 createdAt，而非 startedAt / paidAt；范围为 `[createdAtFrom, createdAtTo)`，
+两端均可单独提供，同时提供时 From 必须早于 To。格式固定为 UTC
+`yyyy-MM-ddTHH:mm:ss.zzzZ`，例如 `2026-09-05T00:00:00.000Z`；页面选择本地日期后先换算成
+对应 UTC 边界，不直接上传本地日期或带偏移字符串。站点、电桩、用户、状态、关键词及时间
+条件按 AND 组合，items 与 total 使用完全相同的筛选和读事务。
 
 Dashboard 复用现有仓储的 UTC 日/月口径，并在读事务中获取一致统计快照：只汇总
 COMPLETED 订单 amountCents，以 paidAt 归属日期，充值不是营收。趋势缺失日期补零。
 activeOrders 包括预约、充电中、待支付。在线率=(总桩数-离线数)/总桩数，无设备返回 0；
 预约、故障、离线分别计数，不计入空闲。页面应标注 UTC，不得按本地日期误标。
+
+### 运营概览两张摘要表（PR #26 审查补充）
+
+`dashboard.get` 在同一个 SQLite 读事务中返回汇总、趋势和以下两个对象，复用管理列表的
+查询与 DTO，不维护另一套 Mock 或缓存：
+
+- `abnormalChargers: {items,total,page:1,pageSize:5}`：只包含 FAULT / OFFLINE 桩，按
+  updatedAtDesc、idDesc 排序，最多 5 条；total 是全部异常桩数量，可直接用于摘要角标。
+  “查看全部异常”调用 `chargers.list {abnormalOnly:true,sort:"updatedAtDesc",page:1,pageSize:20}`。
+  abnormalOnly 必须为 JSON 布尔值；false 或省略不启用异常过滤。
+- `latestOrders: {items,total,page:1,pageSize:5}`：所有状态订单按 createdAtDesc、idDesc
+  取前 5 条；total 是全量订单数量。包含关联站点、桩号和脱敏手机号，字段与 orders.list/get
+  一致。“查看全部订单”调用 `orders.list {sort:"createdAtDesc",page:1,pageSize:20}`。
+
+空数据时 items=[]、total=0，页面显示空态，不填充演示记录。修改桩状态、模拟重启或新增
+订单后重新请求 dashboard.get 即得到当前数据库状态；与其他管理列表在无中间写入时一致。
+
+异常定义在本接口版本冻结为**当前状态分类**：exceptionType=FAULT（故障）、OFFLINE（离线）；
+其来源仅为 chargers.status。其他状态的 exceptionType=null。离线不推断成硬件故障，也不
+返回“过温”“枪通信异常”“模块故障”等数据库没有记录的细分诊断。
+
+数据库当前没有故障事件时间字段，因此不返回或伪造 exceptionAt。updatedAt 是**电桩记录
+更新时间**，不是异常发生时间；页面原“异常时间”列应改为“记录更新时间”，或保留原标题
+并显示“未记录”，不能把 updatedAt 当故障事件时间。后续需要真实诊断/事件时间时再新增
+事件模型和采集来源，不改变本字段含义。
 
 ## 管理写操作
 

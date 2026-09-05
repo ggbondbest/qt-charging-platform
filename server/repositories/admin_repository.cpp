@@ -140,7 +140,7 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             "unitPriceCentsPerKwh,s.energy_wh AS energyWh,s.duration_seconds AS "
             "durationSeconds,s.amount_cents AS amountCents,s.created_at AS createdAt,s.started_at "
             "AS startedAt,s.stopped_at AS stoppedAt,s.paid_at AS paidAt,u.phone,u.nickname,c.code "
-            "AS chargerCode,t.name AS stationName");
+            "AS chargerCode,t.id AS stationId,t.name AS stationName");
         from = QStringLiteral("orders s JOIN users u ON u.id=s.user_id JOIN chargers c ON "
                               "c.id=s.charger_id JOIN stations t ON t.id=c.station_id");
         search = QStringLiteral("(s.order_no LIKE ? OR u.phone LIKE ? OR t.name LIKE ?)");
@@ -179,6 +179,26 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         where += QStringLiteral(" AND s.type=?");
         bindings << p.value(QStringLiteral("type")).toString();
     }
+    if (entity == QStringLiteral("chargers") && p.value(QStringLiteral("abnormalOnly")).toBool())
+        where += QStringLiteral(" AND s.status IN ('FAULT','OFFLINE')");
+    if (entity == QStringLiteral("orders")) {
+        if (p.contains(QStringLiteral("stationId"))) {
+            where += QStringLiteral(" AND c.station_id=?");
+            bindings << p.value(QStringLiteral("stationId")).toString();
+        }
+        if (p.contains(QStringLiteral("chargerId"))) {
+            where += QStringLiteral(" AND s.charger_id=?");
+            bindings << p.value(QStringLiteral("chargerId")).toString();
+        }
+        if (p.contains(QStringLiteral("createdAtFrom"))) {
+            where += QStringLiteral(" AND s.created_at>=?");
+            bindings << p.value(QStringLiteral("createdAtFrom")).toString();
+        }
+        if (p.contains(QStringLiteral("createdAtTo"))) {
+            where += QStringLiteral(" AND s.created_at<?");
+            bindings << p.value(QStringLiteral("createdAtTo")).toString();
+        }
+    }
     if ((entity == QStringLiteral("orders") || entity == QStringLiteral("recharges")) &&
         p.contains(QStringLiteral("userId"))) {
         where += QStringLiteral(" AND s.user_id=?");
@@ -188,19 +208,38 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         scalar(database_, QStringLiteral("SELECT COUNT(*) FROM ") + from + where, bindings);
     const int page = p.value(QStringLiteral("page")).toInt(1),
               size = p.value(QStringLiteral("pageSize")).toInt(20);
-    // Only these two fixed sort expressions can reach SQL, even if called internally.
-    const QString direction = p.value(QStringLiteral("sort")).toString() == QStringLiteral("idDesc")
-                                  ? QStringLiteral(" DESC")
-                                  : QStringLiteral(" ASC");
+    // Fixed expressions only. The ID tie-breaker makes timestamp paging stable.
+    const QString sort = p.value(QStringLiteral("sort")).toString(QStringLiteral("idAsc"));
+    QString orderBy;
+    if (sort == QStringLiteral("idAsc"))
+        orderBy = QStringLiteral("s.id ASC");
+    else if (sort == QStringLiteral("idDesc"))
+        orderBy = QStringLiteral("s.id DESC");
+    else if (sort == QStringLiteral("createdAtDesc") && entity == QStringLiteral("orders"))
+        orderBy = QStringLiteral("s.created_at DESC,s.id DESC");
+    else if (sort == QStringLiteral("updatedAtDesc") && entity == QStringLiteral("chargers"))
+        orderBy = QStringLiteral("s.updated_at DESC,s.id DESC");
+    else
+        throw AdminFailure("INVALID_ARGUMENT");
     bindings << size << (page - 1) * size;
-    auto q = execute(database_,
-                     QStringLiteral("SELECT ") + select + QStringLiteral(" FROM ") + from + where +
-                         QStringLiteral(" ORDER BY s.id") + direction +
-                         QStringLiteral(" LIMIT ? OFFSET ?"),
-                     bindings);
+    auto q =
+        execute(database_,
+                QStringLiteral("SELECT ") + select + QStringLiteral(" FROM ") + from + where +
+                    QStringLiteral(" ORDER BY ") + orderBy + QStringLiteral(" LIMIT ? OFFSET ?"),
+                bindings);
     QJsonArray items;
-    while (q.next())
-        items.append(row(q));
+    while (q.next()) {
+        auto value = row(q);
+        if (entity == QStringLiteral("chargers")) {
+            const QString state = value.value(QStringLiteral("status")).toString();
+            // State classification, NOT a hardware fault diagnosis or event time.
+            value.insert(QStringLiteral("exceptionType"),
+                         state == QStringLiteral("FAULT") || state == QStringLiteral("OFFLINE")
+                             ? QJsonValue(state)
+                             : QJsonValue(QJsonValue::Null));
+        }
+        items.append(value);
+    }
     if (p.contains(QStringLiteral("id"))) {
         if (items.isEmpty())
             throw AdminFailure("NOT_FOUND");
@@ -249,6 +288,17 @@ QJsonObject AdminRepository::dashboard(int days) const
                             {QStringLiteral("completedOrderCount"), v.completedOrderCount},
                             {QStringLiteral("revenueCents"), v.revenueCents}});
         data.insert(QStringLiteral("trend"), points);
+        // Reuse exactly the management-list DTOs and filters in the same read
+        // transaction as the aggregates. No nested transaction or Mock source.
+        data.insert(QStringLiteral("abnormalChargers"),
+                    readRows(QStringLiteral("chargers"),
+                             {{QStringLiteral("abnormalOnly"), true},
+                              {QStringLiteral("sort"), QStringLiteral("updatedAtDesc")},
+                              {QStringLiteral("pageSize"), 5}}));
+        data.insert(QStringLiteral("latestOrders"),
+                    readRows(QStringLiteral("orders"),
+                             {{QStringLiteral("sort"), QStringLiteral("createdAtDesc")},
+                              {QStringLiteral("pageSize"), 5}}));
         execute(database_, QStringLiteral("COMMIT"));
         return data;
     } catch (...) {

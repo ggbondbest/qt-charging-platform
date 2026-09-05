@@ -3,6 +3,7 @@
 #include "admin_repository.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QSet>
@@ -51,6 +52,14 @@ void fields(const QJsonObject& p, const QStringList& allowed)
 {
     for (auto it = p.begin(); it != p.end(); ++it)
         require(allowed.contains(it.key()));
+}
+void utcTimestamp(const QJsonObject& p, const QString& key)
+{
+    const auto value = p.value(key);
+    const auto parsed = QDateTime::fromString(value.toString(), Qt::ISODateWithMs);
+    // Canonical UTC strings preserve SQLite's lexicographic timestamp ordering.
+    require(value.isString() && value.toString().size() == 24 && parsed.isValid() &&
+            parsed.toUTC().toString(Qt::ISODateWithMs) == value.toString());
 }
 void stationFields(const QJsonObject& p)
 {
@@ -215,7 +224,11 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                                     QStringLiteral("page"), QStringLiteral("pageSize"),
                                     QStringLiteral("sort")};
                 if (entity == QStringLiteral("chargers"))
-                    allowed << QStringLiteral("stationId") << QStringLiteral("type");
+                    allowed << QStringLiteral("stationId") << QStringLiteral("type")
+                            << QStringLiteral("abnormalOnly");
+                if (entity == QStringLiteral("orders"))
+                    allowed << QStringLiteral("stationId") << QStringLiteral("chargerId")
+                            << QStringLiteral("createdAtFrom") << QStringLiteral("createdAtTo");
                 if (entity == QStringLiteral("orders") || entity == QStringLiteral("recharges"))
                     allowed << QStringLiteral("userId");
                 fields(p, allowed);
@@ -225,10 +238,26 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     integer(p, QStringLiteral("page"), 1, 1000000);
                 if (p.contains(QStringLiteral("pageSize")))
                     integer(p, QStringLiteral("pageSize"), 1, 100);
-                if (p.contains(QStringLiteral("sort")))
-                    choice(p, QStringLiteral("sort"),
-                           {QStringLiteral("idAsc"), QStringLiteral("idDesc")});
-                for (const auto& key : {QStringLiteral("stationId"), QStringLiteral("userId")})
+                if (p.contains(QStringLiteral("sort"))) {
+                    QStringList sorts{QStringLiteral("idAsc"), QStringLiteral("idDesc")};
+                    if (entity == QStringLiteral("orders"))
+                        sorts << QStringLiteral("createdAtDesc");
+                    if (entity == QStringLiteral("chargers"))
+                        sorts << QStringLiteral("updatedAtDesc");
+                    choice(p, QStringLiteral("sort"), sorts);
+                }
+                if (p.contains(QStringLiteral("abnormalOnly")))
+                    require(p.value(QStringLiteral("abnormalOnly")).isBool());
+                for (const auto& key :
+                     {QStringLiteral("createdAtFrom"), QStringLiteral("createdAtTo")})
+                    if (p.contains(key))
+                        utcTimestamp(p, key);
+                if (p.contains(QStringLiteral("createdAtFrom")) &&
+                    p.contains(QStringLiteral("createdAtTo")))
+                    require(p.value(QStringLiteral("createdAtFrom")).toString() <
+                            p.value(QStringLiteral("createdAtTo")).toString());
+                for (const auto& key : {QStringLiteral("stationId"), QStringLiteral("userId"),
+                                        QStringLiteral("chargerId")})
                     if (p.contains(key))
                         id(p, key);
                 if (p.contains(QStringLiteral("type")))

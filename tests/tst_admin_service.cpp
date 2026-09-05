@@ -284,6 +284,129 @@ private slots:
         QCOMPARE(data(result).value("monthRevenueCents").toInteger(), qint64(432));
         QCOMPARE(data(result).value("trend").toArray().size(), 7);
     }
+    void dashboardSummariesShareManagementData()
+    {
+        QSqlQuery q(db_.database());
+        QVERIFY(q.exec("UPDATE chargers SET status='AVAILABLE'"));
+        const auto empty = data(call("dashboard.get"));
+        QVERIFY(empty.value("abnormalChargers").toObject().value("items").toArray().isEmpty());
+        QCOMPARE(empty.value("abnormalChargers").toObject().value("total").toInt(), 0);
+        QVERIFY(empty.value("latestOrders").toObject().value("items").toArray().isEmpty());
+        for (int i = 0; i < 7; ++i) {
+            q.prepare("INSERT INTO chargers(station_id,code,type,power_watts,status,updated_at) "
+                      "VALUES(1,?,'SLOW',7200,?,?)");
+            q.addBindValue(QString("ABNORMAL-%1").arg(i));
+            q.addBindValue(i % 2 ? "OFFLINE" : "FAULT");
+            q.addBindValue(i == 0 ? "2026-09-07T00:00:00.000Z" : "2026-09-05T00:00:00.000Z");
+            QVERIFY(q.exec());
+            q.prepare("INSERT INTO "
+                      "orders(id,order_no,user_id,charger_id,status,unit_price_cents_per_kwh,"
+                      "created_at) VALUES(?, ?,1,1,'CANCELLED',120,?)");
+            q.addBindValue(100 + i);
+            q.addBindValue(QString("LATEST-%1").arg(i));
+            q.addBindValue(i == 0 ? "2026-09-08T00:00:00.000Z" : "2026-09-05T00:00:00.000Z");
+            QVERIFY(q.exec());
+        }
+        const QJsonObject abnormalQuery{
+            {"abnormalOnly", true}, {"sort", "updatedAtDesc"}, {"pageSize", 5}};
+        const QJsonObject ordersQuery{{"sort", "createdAtDesc"}, {"pageSize", 5}};
+        auto dashboard = data(call("dashboard.get"));
+        const auto abnormalities = dashboard.value("abnormalChargers").toObject();
+        const auto latest = dashboard.value("latestOrders").toObject();
+        QCOMPARE(abnormalities, data(call("chargers.list", abnormalQuery)));
+        QCOMPARE(latest, data(call("orders.list", ordersQuery)));
+        QCOMPARE(abnormalities.value("items").toArray().size(), 5);
+        QCOMPARE(abnormalities.value("total").toInt(), 7);
+        QCOMPARE(dashboard.value("faultChargers").toInt() +
+                     dashboard.value("offlineChargers").toInt(),
+                 7);
+        QCOMPARE(latest.value("items").toArray().size(), 5);
+        QCOMPARE(latest.value("total").toInt(), 7);
+        QCOMPARE(latest.value("items").toArray().at(0).toObject().value("id").toString(),
+                 QString("100"));
+        QCOMPARE(latest.value("items").toArray().at(1).toObject().value("id").toString(),
+                 QString("106"));
+        QVERIFY(!QJsonDocument(dashboard).toJson().contains("13800138000"));
+        for (const auto& value : abnormalities.value("items").toArray()) {
+            const auto charger = value.toObject();
+            QCOMPARE(charger.value("exceptionType"), charger.value("status"));
+            QVERIFY(charger.value("exceptionType") == "FAULT" ||
+                    charger.value("exceptionType") == "OFFLINE");
+            QVERIFY(!charger.contains("exceptionAt")); // no invented event time
+            QCOMPARE(charger, item(call("chargers.get", {{"id", charger.value("id")}})));
+        }
+        auto restart = change(abnormalities.value("items").toArray().first().toObject(),
+                              "summary-restart", "");
+        restart.remove("status");
+        const auto recovered = call("charger.restart", restart);
+        QVERIFY(ok(recovered));
+        QVERIFY(item(recovered).value("exceptionType").isNull());
+        dashboard = data(call("dashboard.get"));
+        QCOMPARE(dashboard.value("abnormalChargers").toObject().value("total").toInt(), 6);
+        QCOMPARE(dashboard.value("abnormalChargers").toObject(),
+                 data(call("chargers.list", abnormalQuery)));
+    }
+    void orderSemanticFiltersAndValidation()
+    {
+        const auto station = item(call("station.create", newStation()));
+        QVERIFY(!station.isEmpty());
+        const auto charger = data(call("chargers.list", {{"stationId", station.value("id")}}))
+                                 .value("items")
+                                 .toArray()
+                                 .first()
+                                 .toObject();
+        QSqlQuery q(db_.database());
+        for (int i = 0; i < 4; ++i) {
+            q.prepare("INSERT INTO "
+                      "orders(order_no,user_id,charger_id,status,unit_price_cents_per_kwh,created_"
+                      "at) VALUES(?,1,?,'CANCELLED',120,?)");
+            q.addBindValue(QString("FILTER-%1").arg(i));
+            q.addBindValue(i == 2 ? "1" : charger.value("id").toString());
+            q.addBindValue(i == 3 ? "2026-09-06T00:00:00.000Z" : "2026-09-05T00:00:00.000Z");
+            QVERIFY(q.exec());
+        }
+        QJsonObject filter{{"stationId", station.value("id")},
+                           {"chargerId", charger.value("id")},
+                           {"userId", "1"},
+                           {"status", "CANCELLED"},
+                           {"keyword", "FILTER"},
+                           {"createdAtFrom", "2026-09-05T00:00:00.000Z"},
+                           {"createdAtTo", "2026-09-06T00:00:00.000Z"},
+                           {"sort", "createdAtDesc"},
+                           {"pageSize", 1}};
+        auto result = data(call("orders.list", filter));
+        QCOMPARE(result.value("total").toInt(), 2);
+        QCOMPARE(result.value("items").toArray().first().toObject().value("orderNo").toString(),
+                 QString("FILTER-1"));
+        filter.insert("page", 2);
+        result = data(call("orders.list", filter));
+        QCOMPARE(result.value("total").toInt(), 2);
+        QCOMPARE(result.value("items").toArray().first().toObject().value("orderNo").toString(),
+                 QString("FILTER-0"));
+        for (const auto& invalid :
+             {"2026-02-30T00:00:00.000Z", "2026-09-05", "2026-09-05T00:00:00Z",
+              "2026-09-05T00:00:00.000+08:00", "' OR 1=1 --"}) {
+            QCOMPARE(code(call("orders.list", {{"createdAtFrom", invalid}})),
+                     QString("INVALID_ARGUMENT"));
+        }
+        QCOMPARE(code(call("orders.list", {{"createdAtFrom", "2026-09-06T00:00:00.000Z"},
+                                           {"createdAtTo", "2026-09-06T00:00:00.000Z"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("orders.list", {{"createdAtFrom", "2026-09-07T00:00:00.000Z"},
+                                           {"createdAtTo", "2026-09-06T00:00:00.000Z"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("orders.list", {{"stationId", 1}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("orders.list", {{"chargerId", "0"}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("orders.list", {{"sort", "createdAtDesc;DELETE"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("users.list", {{"sort", "createdAtDesc"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("orders.list", {{"sort", "updatedAtDesc"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("chargers.list", {{"abnormalOnly", "true"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("users.list", {{"abnormalOnly", true}})), QString("INVALID_ARGUMENT"));
+    }
     void concurrentRetryCommitsOnce()
     {
         QTemporaryDir directory;
