@@ -6,6 +6,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QUuid>
 #include <QtTest>
 
 using charging::server::DatabaseConnection;
@@ -21,6 +22,8 @@ private slots:
     void backupRejectsSourceAliasesAndOpenDatabases();
     void backupReplacementIsSafe();
     void rejectsWrongSchemaWithoutChangingDestination();
+    void restoreRejectsResidualWalWithoutChangingDestination();
+    void rejectsIndexesWithWrongColumnsOrPredicate();
 };
 
 void DatabaseMaintenanceTest::backupValidateAndRestore()
@@ -175,6 +178,77 @@ void DatabaseMaintenanceTest::rejectsWrongSchemaWithoutChangingDestination()
     QVERIFY(!DatabaseMaintenance::restore(wrongPath, destinationPath).ok);
     QVERIFY(destination.open(QIODevice::ReadOnly));
     QCOMPARE(destination.readAll(), QByteArray("original target"));
+}
+
+void DatabaseMaintenanceTest::restoreRejectsResidualWalWithoutChangingDestination()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString sourcePath = directory.filePath(QStringLiteral("source.sqlite"));
+    const QString backupPath = directory.filePath(QStringLiteral("backup.sqlite"));
+    const QString destinationPath = directory.filePath(QStringLiteral("destination.sqlite"));
+    DatabaseConnection source;
+    QString errorMessage;
+    QVERIFY2(source.open(sourcePath, true, &errorMessage), qPrintable(errorMessage));
+    QVERIFY(DatabaseMaintenance::backup(source.database(), backupPath).ok);
+
+    QFile destination(destinationPath);
+    QVERIFY(destination.open(QIODevice::WriteOnly));
+    QCOMPARE(destination.write("original database"), qint64(17));
+    destination.close();
+    QFile wal(destinationPath + QStringLiteral("-wal"));
+    QVERIFY(wal.open(QIODevice::WriteOnly));
+    QCOMPARE(wal.write("residual wal"), qint64(12));
+    wal.close();
+
+    QVERIFY(!DatabaseMaintenance::restore(backupPath, destinationPath).ok);
+    QVERIFY(destination.open(QIODevice::ReadOnly));
+    QCOMPARE(destination.readAll(), QByteArray("original database"));
+    QVERIFY(QFileInfo::exists(destinationPath + QStringLiteral("-wal")));
+}
+
+void DatabaseMaintenanceTest::rejectsIndexesWithWrongColumnsOrPredicate()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString sourcePath = directory.filePath(QStringLiteral("source.sqlite"));
+    const QString wrongColumnsPath = directory.filePath(QStringLiteral("wrong-columns.sqlite"));
+    const QString wrongPredicatePath = directory.filePath(QStringLiteral("wrong-predicate.sqlite"));
+    DatabaseConnection source;
+    QString errorMessage;
+    QVERIFY2(source.open(sourcePath, true, &errorMessage), qPrintable(errorMessage));
+    QVERIFY(DatabaseMaintenance::backup(source.database(), wrongColumnsPath).ok);
+    QVERIFY(DatabaseMaintenance::backup(source.database(), wrongPredicatePath).ok);
+    source.close();
+
+    const auto mutateIndex = [](const QString& path, const QString& replacement) {
+        const QString connectionName = QStringLiteral("index-mutation-%1").arg(
+            QUuid::createUuid().toString(QUuid::WithoutBraces));
+        bool ok = false;
+        {
+            QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                                              connectionName);
+            database.setDatabaseName(path);
+            if (database.open()) {
+                QSqlQuery query(database);
+                ok = query.exec(QStringLiteral("DROP INDEX ux_orders_unfinished_user")) &&
+                     query.exec(replacement);
+                database.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(connectionName);
+        return ok;
+    };
+
+    QVERIFY(mutateIndex(wrongColumnsPath, QStringLiteral(
+        "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(id) "
+        "WHERE status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT')")));
+    QVERIFY(!DatabaseMaintenance::validate(wrongColumnsPath).ok);
+
+    QVERIFY(mutateIndex(wrongPredicatePath, QStringLiteral(
+        "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(user_id) "
+        "WHERE status = 'COMPLETED'")));
+    QVERIFY(!DatabaseMaintenance::validate(wrongPredicatePath).ok);
 }
 
 QTEST_GUILESS_MAIN(DatabaseMaintenanceTest)

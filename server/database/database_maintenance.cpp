@@ -114,22 +114,93 @@ bool validateForeignKey(const QSqlDatabase& database, const QString& table,
     return false;
 }
 
-bool validateIndex(const QSqlDatabase& database, const QString& indexName, bool unique,
+struct IndexDefinition
+{
+    QString name;
+    QString table;
+    QStringList columns;
+    bool unique = false;
+    QString whereClause;
+};
+
+QString normalizedSql(QString sql)
+{
+    QString normalized;
+    normalized.reserve(sql.size());
+    for (const QChar character : sql) {
+        if (!character.isSpace()) {
+            normalized.append(character.toUpper());
+        }
+    }
+    return normalized;
+}
+
+bool validateIndex(const QSqlDatabase& database, const IndexDefinition& expected,
                    QString* errorMessage)
 {
     QSqlQuery query(database);
     query.prepare(QStringLiteral(
-        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = :name LIMIT 1"));
-    query.bindValue(QStringLiteral(":name"), indexName);
+        "SELECT tbl_name, sql FROM sqlite_master "
+        "WHERE type = 'index' AND name = :name LIMIT 1"));
+    query.bindValue(QStringLiteral(":name"), expected.name);
     if (!query.exec() || !query.next()) {
-        *errorMessage = QStringLiteral("Database is missing required index %1").arg(indexName);
+        *errorMessage = QStringLiteral("Database is missing required index %1").arg(expected.name);
         return false;
     }
-    const QString sql = query.value(0).toString();
-    if (sql.isEmpty() || (unique && !sql.contains(QStringLiteral("CREATE UNIQUE INDEX"),
-                                                  Qt::CaseInsensitive))) {
+    const QString table = query.value(0).toString();
+    const QString sql = normalizedSql(query.value(1).toString());
+    if (table != expected.table || sql.isEmpty()) {
         *errorMessage = QStringLiteral("Database index %1 does not match the supported schema")
-                            .arg(indexName);
+                            .arg(expected.name);
+        return false;
+    }
+
+    QSqlQuery listQuery(database);
+    if (!listQuery.exec(QStringLiteral("PRAGMA index_list(%1)").arg(expected.table))) {
+        *errorMessage = listQuery.lastError().text();
+        return false;
+    }
+    bool listed = false;
+    while (listQuery.next()) {
+        if (listQuery.value(1).toString() == expected.name) {
+            listed = true;
+            if (listQuery.value(2).toBool() != expected.unique ||
+                listQuery.value(4).toBool() != !expected.whereClause.isEmpty()) {
+                *errorMessage = QStringLiteral(
+                    "Database index %1 has incorrect uniqueness or partial-index flags")
+                                    .arg(expected.name);
+                return false;
+            }
+            break;
+        }
+    }
+    if (!listed) {
+        *errorMessage = QStringLiteral("Database index %1 belongs to the wrong table")
+                            .arg(expected.name);
+        return false;
+    }
+
+    QSqlQuery columnsQuery(database);
+    if (!columnsQuery.exec(QStringLiteral("PRAGMA index_info(%1)")
+                               .arg(sqlStringLiteral(expected.name)))) {
+        *errorMessage = columnsQuery.lastError().text();
+        return false;
+    }
+    QStringList columns;
+    while (columnsQuery.next()) {
+        columns.append(columnsQuery.value(2).toString());
+    }
+    if (columns != expected.columns) {
+        *errorMessage = QStringLiteral("Database index %1 has incorrect columns")
+                            .arg(expected.name);
+        return false;
+    }
+
+    const qsizetype wherePosition = sql.indexOf(QStringLiteral("WHERE"));
+    const QString actualWhere = wherePosition < 0 ? QString() : sql.mid(wherePosition + 5);
+    if (actualWhere != normalizedSql(expected.whereClause)) {
+        *errorMessage = QStringLiteral("Database index %1 has an incorrect WHERE condition")
+                            .arg(expected.name);
         return false;
     }
     return true;
@@ -242,31 +313,42 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         }
     }
 
-    const QStringList indexes = {
-        QStringLiteral("idx_stations_status"),
-        QStringLiteral("idx_chargers_station_status"),
-        QStringLiteral("idx_reservations_user_status"),
-        QStringLiteral("idx_reservations_charger_status"),
-        QStringLiteral("idx_reservations_expires_at"),
-        QStringLiteral("idx_orders_user_created_at"),
-        QStringLiteral("idx_orders_charger_status"),
-        QStringLiteral("idx_orders_status_created_at"),
-        QStringLiteral("idx_recharge_records_user_created_at"),
-        QStringLiteral("idx_operation_logs_admin_created_at")
+    const QList<IndexDefinition> indexes = {
+        {QStringLiteral("idx_stations_status"), QStringLiteral("stations"),
+         {QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_chargers_station_status"), QStringLiteral("chargers"),
+         {QStringLiteral("station_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_reservations_user_status"), QStringLiteral("reservations"),
+         {QStringLiteral("user_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_reservations_charger_status"), QStringLiteral("reservations"),
+         {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_reservations_expires_at"), QStringLiteral("reservations"),
+         {QStringLiteral("expires_at")}, false, {}},
+        {QStringLiteral("idx_orders_user_created_at"), QStringLiteral("orders"),
+         {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_orders_charger_status"), QStringLiteral("orders"),
+         {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_orders_status_created_at"), QStringLiteral("orders"),
+         {QStringLiteral("status"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_recharge_records_user_created_at"),
+         QStringLiteral("recharge_records"),
+         {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_operation_logs_admin_created_at"),
+         QStringLiteral("operation_logs"),
+         {QStringLiteral("admin_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("ux_reservations_active_user"), QStringLiteral("reservations"),
+         {QStringLiteral("user_id")}, true, QStringLiteral("status = 'ACTIVE'")},
+        {QStringLiteral("ux_reservations_active_charger"), QStringLiteral("reservations"),
+         {QStringLiteral("charger_id")}, true, QStringLiteral("status = 'ACTIVE'")},
+        {QStringLiteral("ux_orders_unfinished_user"), QStringLiteral("orders"),
+         {QStringLiteral("user_id")}, true,
+         QStringLiteral("status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT')")},
+        {QStringLiteral("ux_orders_active_charger"), QStringLiteral("orders"),
+         {QStringLiteral("charger_id")}, true,
+         QStringLiteral("status IN ('RESERVED', 'CHARGING')")}
     };
-    for (const QString& index : indexes) {
-        if (!validateIndex(database, index, false, errorMessage)) {
-            return false;
-        }
-    }
-    const QStringList uniqueIndexes = {
-        QStringLiteral("ux_reservations_active_user"),
-        QStringLiteral("ux_reservations_active_charger"),
-        QStringLiteral("ux_orders_unfinished_user"),
-        QStringLiteral("ux_orders_active_charger")
-    };
-    for (const QString& index : uniqueIndexes) {
-        if (!validateIndex(database, index, true, errorMessage)) {
+    for (const IndexDefinition& index : indexes) {
+        if (!validateIndex(database, index, errorMessage)) {
             return false;
         }
     }
@@ -419,6 +501,18 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     const QString destination = QFileInfo(destinationPath).absoluteFilePath();
     if (isOpenDatabasePath(destination)) {
         return failure(QStringLiteral("Close the destination database before restoring it"));
+    }
+    const QStringList sidecarPaths = {
+        destination + QStringLiteral("-wal"),
+        destination + QStringLiteral("-shm"),
+        destination + QStringLiteral("-journal")
+    };
+    for (const QString& sidecarPath : sidecarPaths) {
+        if (QFileInfo::exists(sidecarPath)) {
+            return failure(QStringLiteral(
+                "Refusing to restore while a SQLite sidecar file exists: %1")
+                               .arg(sidecarPath));
+        }
     }
 
     QString errorMessage;
