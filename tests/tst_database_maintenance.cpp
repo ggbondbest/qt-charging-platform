@@ -23,6 +23,7 @@ private slots:
     void backupReplacementIsSafe();
     void rejectsWrongSchemaWithoutChangingDestination();
     void restoreRejectsResidualWalWithoutChangingDestination();
+    void backupRejectsResidualWalWithoutChangingDestination();
     void rejectsIndexesWithWrongColumnsOrPredicate();
 };
 
@@ -207,6 +208,31 @@ void DatabaseMaintenanceTest::restoreRejectsResidualWalWithoutChangingDestinatio
     QVERIFY(QFileInfo::exists(destinationPath + QStringLiteral("-wal")));
 }
 
+void DatabaseMaintenanceTest::backupRejectsResidualWalWithoutChangingDestination()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString sourcePath = directory.filePath(QStringLiteral("source.sqlite"));
+    const QString destinationPath = directory.filePath(QStringLiteral("destination.sqlite"));
+    DatabaseConnection source;
+    QString errorMessage;
+    QVERIFY2(source.open(sourcePath, true, &errorMessage), qPrintable(errorMessage));
+
+    QFile destination(destinationPath);
+    QVERIFY(destination.open(QIODevice::WriteOnly));
+    QCOMPARE(destination.write("previous backup"), qint64(15));
+    destination.close();
+    QFile wal(destinationPath + QStringLiteral("-wal"));
+    QVERIFY(wal.open(QIODevice::WriteOnly));
+    QCOMPARE(wal.write("residual wal"), qint64(12));
+    wal.close();
+
+    QVERIFY(!DatabaseMaintenance::backup(source.database(), destinationPath).ok);
+    QVERIFY(destination.open(QIODevice::ReadOnly));
+    QCOMPARE(destination.readAll(), QByteArray("previous backup"));
+    QVERIFY(QFileInfo::exists(destinationPath + QStringLiteral("-wal")));
+}
+
 void DatabaseMaintenanceTest::rejectsIndexesWithWrongColumnsOrPredicate()
 {
     QTemporaryDir directory;
@@ -214,11 +240,13 @@ void DatabaseMaintenanceTest::rejectsIndexesWithWrongColumnsOrPredicate()
     const QString sourcePath = directory.filePath(QStringLiteral("source.sqlite"));
     const QString wrongColumnsPath = directory.filePath(QStringLiteral("wrong-columns.sqlite"));
     const QString wrongPredicatePath = directory.filePath(QStringLiteral("wrong-predicate.sqlite"));
+    const QString wrongCasePath = directory.filePath(QStringLiteral("wrong-case.sqlite"));
     DatabaseConnection source;
     QString errorMessage;
     QVERIFY2(source.open(sourcePath, true, &errorMessage), qPrintable(errorMessage));
     QVERIFY(DatabaseMaintenance::backup(source.database(), wrongColumnsPath).ok);
     QVERIFY(DatabaseMaintenance::backup(source.database(), wrongPredicatePath).ok);
+    QVERIFY(DatabaseMaintenance::backup(source.database(), wrongCasePath).ok);
     source.close();
 
     const auto mutateIndex = [](const QString& path, const QString& replacement) {
@@ -249,6 +277,11 @@ void DatabaseMaintenanceTest::rejectsIndexesWithWrongColumnsOrPredicate()
         "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(user_id) "
         "WHERE status = 'COMPLETED'")));
     QVERIFY(!DatabaseMaintenance::validate(wrongPredicatePath).ok);
+
+    QVERIFY(mutateIndex(wrongCasePath, QStringLiteral(
+        "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(user_id) "
+        "WHERE status IN ('reserved', 'CHARGING', 'WAITING_PAYMENT')")));
+    QVERIFY(!DatabaseMaintenance::validate(wrongCasePath).ok);
 }
 
 QTEST_GUILESS_MAIN(DatabaseMaintenanceTest)

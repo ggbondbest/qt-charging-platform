@@ -75,6 +75,24 @@ bool isOpenDatabasePath(const QString& path)
     return false;
 }
 
+bool rejectExistingSidecars(const QString& databasePath, QString* errorMessage)
+{
+    const QStringList sidecarPaths = {
+        databasePath + QStringLiteral("-wal"),
+        databasePath + QStringLiteral("-shm"),
+        databasePath + QStringLiteral("-journal")
+    };
+    for (const QString& sidecarPath : sidecarPaths) {
+        if (QFileInfo::exists(sidecarPath)) {
+            *errorMessage = QStringLiteral(
+                "Refusing to replace a database while a SQLite sidecar file exists: %1")
+                                .arg(sidecarPath);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool validateTableColumns(const QSqlDatabase& database, const QString& table,
                           const QStringList& expectedColumns, QString* errorMessage)
 {
@@ -127,8 +145,22 @@ QString normalizedSql(QString sql)
 {
     QString normalized;
     normalized.reserve(sql.size());
-    for (const QChar character : sql) {
-        if (!character.isSpace()) {
+    bool inString = false;
+    for (qsizetype index = 0; index < sql.size(); ++index) {
+        const QChar character = sql.at(index);
+        if (inString) {
+            normalized.append(character);
+            if (character == QLatin1Char('\'')) {
+                if (index + 1 < sql.size() && sql.at(index + 1) == QLatin1Char('\'')) {
+                    normalized.append(sql.at(++index));
+                } else {
+                    inString = false;
+                }
+            }
+        } else if (character == QLatin1Char('\'')) {
+            inString = true;
+            normalized.append(character);
+        } else if (!character.isSpace()) {
             normalized.append(character.toUpper());
         }
     }
@@ -407,6 +439,9 @@ DatabaseMaintenanceResult DatabaseMaintenance::backup(const QSqlDatabase& databa
         return failure(QStringLiteral("Backup destination is currently open"));
     }
     QString errorMessage;
+    if (!rejectExistingSidecars(destination, &errorMessage)) {
+        return failure(errorMessage);
+    }
     if (!ensureParentDirectory(destination, &errorMessage)) {
         return failure(errorMessage);
     }
@@ -502,20 +537,10 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (isOpenDatabasePath(destination)) {
         return failure(QStringLiteral("Close the destination database before restoring it"));
     }
-    const QStringList sidecarPaths = {
-        destination + QStringLiteral("-wal"),
-        destination + QStringLiteral("-shm"),
-        destination + QStringLiteral("-journal")
-    };
-    for (const QString& sidecarPath : sidecarPaths) {
-        if (QFileInfo::exists(sidecarPath)) {
-            return failure(QStringLiteral(
-                "Refusing to restore while a SQLite sidecar file exists: %1")
-                               .arg(sidecarPath));
-        }
-    }
-
     QString errorMessage;
+    if (!rejectExistingSidecars(destination, &errorMessage)) {
+        return failure(errorMessage);
+    }
     if (!ensureParentDirectory(destination, &errorMessage)) {
         return failure(errorMessage);
     }
