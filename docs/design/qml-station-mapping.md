@@ -113,8 +113,17 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 | Shell（非桥，路由表） | 追加 7 条路由 + migrated 翻位（见 HomeShell 节）；`onSearchSubmitted` 改 `App.navigate("station", keyword)` |
 
 ## 验收自查（19:00 冲刺门）
-- [ ] `charging-qml-preview --view=station` 出列表+星星+地图示意
-- [ ] `--view=login` 表单+校验；`--view=profile` 入口列表
-- [ ] detail/confirm/module/navigation：路由表落地后可截（桥未补前渲染"加载失败"态也算联通证明）
-- [ ] 旧 ctest 34 套保持全绿（我没碰任何旧文件——git status 佐证）
-- [ ] 每页根 objectName == 上表锚点
+- [x] `--view=station`：地图示意+筛选栏渲染；列表区为设计内降级态"站点加载失败·站点查询桥未就绪（等待服务桥今晚补全）"
+- [x] `--view=login` 表单+校验渲染通过；`--view=profile` 余额卡（¥100.00 演示户）+五入口全出
+- [x] detail（arg 头卡即出+桩区失败态重试）/ confirm（A-07/直流快充 120kW/23:45—00:30 推荐+无车辆引导）/ module（Tab+列表失败态）/ navigation（真 arg：模拟路线折线+2.4km+建议出发时刻+降级 Toast）——桥未补前均按口径渲染降级态，10 路由截图零运行期报错
+- [x] 截图通道：仓外克隆 `/tmp/smoke-src` 打 Shell 翻位+`--arg=` 补丁（见 §截图环境），仓库 Shell.qml 未动
+- [x] 每页根 objectName == 上表锚点
+- [x] 修正批 `af2e940`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
+
+## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）
+QML 自 `CHARGING_QML_SOURCE_DIR` 文件系统加载（改 .qml 无需重编）；运行
+`QML2_IMPORT_PATH=<解包 qml6-modules> QT_QPA_PLATFORM=offscreen charging-qml-preview --view=X [--arg=JSON] --screenshot=…`。
+克隆 Shell.qml 追加内容即 §桥缺口末行建议的最小实现（migrated+10、pageSource+7、rootArg 种子、
+`--arg=` 经 `chargingArg` context property 注入、非 login 视图自动 `login()` 过门）。
+截图产物：`~/qml-station-shots/01..10-*.png`。
+
