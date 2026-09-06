@@ -13,4 +13,7 @@ set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/ReservationOrderPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/ReservationCompletedPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/NavigationPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/SettingsPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/FavoritesPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/NotificationPage.qml
     PARENT_SCOPE)
