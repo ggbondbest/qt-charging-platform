@@ -1,0 +1,462 @@
+// test_qml_client_pages — QML 页面交互回归（PR #33 二轮评审 5 项 P2 的钉死用例）。
+//
+// 两层策略：
+//   * 脚本控制的 Fake 桥（与真桥同名 signal/invokable）确定性驱动竞态窗口——
+//     真 mock 通道 450ms 延迟 + 在途静默丢弃无回执，无法观测"过期响应被丢弃"、
+//     "翻页在途下拉后重试仍请求同页"这类只在落定前存在的状态。
+//   * 真服务链（QmlApp 自带 MockRequestTransport）走端到端写路径：双改顺序保存、
+//     头像键白名单准入、支付 → 顶栏余额同步。
+//
+// offscreen 下 QQmlComponent 按 file:// 加载页面（与 charging-qml-preview 同机制）。
+#include <QtTest>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
+
+#include "charging/client/profile_charging/avatar_library.h"
+
+#include "app_bridge.h"
+#include "service_bridges.h"
+
+using charging::qml::ChargingBridge;
+using charging::qml::OrderBridge;
+using charging::qml::QmlApp;
+using charging::qml::WalletBridge;
+
+namespace {
+
+QVariantMap fakeOrder(qint64 id, const QString& status)
+{
+    return QVariantMap{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("orderNo"), QStringLiteral("MOCKORDT%1").arg(id, 4, 10, QChar('0'))},
+        {QStringLiteral("status"), status},
+        {QStringLiteral("stationName"), QStringLiteral("测试电站")},
+        {QStringLiteral("chargerCode"), QStringLiteral("TC-%1").arg(id)},
+        {QStringLiteral("energyWh"), 1000},
+        {QStringLiteral("durationSeconds"), 600},
+        {QStringLiteral("amountCents"), 132},
+        {QStringLiteral("unitPriceCentsPerKwh"), 132},
+        {QStringLiteral("createdAt"), QStringLiteral("2026-09-01 10:00")},
+    };
+}
+
+// —— 脚本桥：镜像 OrderBridge 的 QML 可见面（同名方法/信号） ——
+class FakeOrderBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    struct Call { QString filter; int page; };
+    QList<Call> calls;
+    int statusCountsCalls = 0;
+
+    Q_INVOKABLE void fetchOrders(const QString& filter, int page)
+    {
+        if (busy_)
+            return; // 真服务同款：在途重复提交静默丢弃
+        busy_ = true;
+        calls.append({filter, page});
+    }
+    Q_INVOKABLE void fetchStatusCounts() { ++statusCountsCalls; }
+    Q_INVOKABLE bool isFetchingOrders() const { return busy_; }
+
+    void respond(const QVariantList& orders, int total, bool hasMore)
+    {
+        busy_ = false;
+        emit ordersLoaded(orders, total, hasMore);
+    }
+    void respondFailure()
+    {
+        busy_ = false;
+        emit operationFailed(QStringLiteral("GET_ORDERS"), QStringLiteral("NETWORK"),
+                             QStringLiteral("模拟网络故障"));
+    }
+
+signals:
+    void ordersLoaded(const QVariantList& orders, int total, bool hasMore);
+    void statusCountsUpdated(int chargingCount, int waitingPaymentCount, int completedCount);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    bool busy_ = false;
+};
+
+// —— 脚本桥：镜像 WalletBridge 的 QML 可见面 ——
+class FakeWalletBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    QStringList calls; // "nick:<v>" / "avatar:<k>"
+
+    Q_INVOKABLE void fetchProfile() {}
+    Q_INVOKABLE void updateNickname(const QString& nickname)
+    {
+        calls << (QStringLiteral("nick:") + nickname);
+    }
+    Q_INVOKABLE void updateAvatar(const QString& avatarKey)
+    {
+        calls << (QStringLiteral("avatar:") + avatarKey);
+    }
+
+    void emitProfileLoaded() { emit profileLoaded(QVariantMap{}); }
+    void emitFailure()
+    {
+        emit operationFailed(QStringLiteral("UPDATE_USER_INFO"), QStringLiteral("MOCK"),
+                             QStringLiteral("模拟资料保存失败"));
+    }
+
+signals:
+    void profileLoaded(const QVariantMap& user);
+    void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
+    void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+};
+
+} // namespace
+
+class QmlClientPagesTest final : public QObject
+{
+    Q_OBJECT
+
+    QQuickWindow* window_ = nullptr;
+
+private slots:
+    void init()
+    {
+        if (window_ == nullptr) {
+            window_ = new QQuickWindow;
+            window_->resize(420, 860);
+            window_->show(); // offscreen 下即可：页面与真机同处窗口宿主
+        }
+    }
+    void cleanup()
+    {
+        delete window_;
+        window_ = nullptr;
+    }
+
+    QQuickItem* createPage(QQmlEngine& engine, const QString& fileName, QObject* holder)
+    {
+        QQmlComponent component(&engine);
+        component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
+                                              + QStringLiteral("/pages/profile_charging/")
+                                              + fileName));
+        if (component.isError())
+            qWarning().noquote() << component.errorString();
+        if (!component.isReady())
+            return nullptr;
+        // 与真机同构：页面挂进 QQuickWindow 的 contentItem（Shell 里页面就在
+        // 窗口下）。注意：offscreen 下 Repeater 的 delegate 何时挂进 QObject 树
+        // 取决于 delegate 组件的异步编译时序（实测：画面已渲染、树里仍查无——
+        // grab 走的是场景图快照），因此断言一律不依赖 delegate，只操作页面根
+        // 的公开状态（= delegate onClicked 所改写的同一批属性/函数）。
+        // holder 声明在最后——槽函数局部变量逆序析构：holder 先亡（带走页面），
+        // 再到 window_/engine/app，页面永远死在宿主之前。
+        auto* item = qobject_cast<QQuickItem*>(component.create());
+        if (item) {
+            item->setParent(holder);
+            item->setParentItem(window_->contentItem());
+            item->setWidth(window_->width());
+            item->setHeight(window_->height());
+        }
+        return item;
+    }
+
+    static void click(QObject* target)
+    {
+        if (target == nullptr) {
+            qWarning() << "click target missing";
+            return;
+        }
+        QMetaObject::invokeMethod(target, "clicked"); // 信号发射 = 用户点击语义
+    }
+
+    // —— delegate 无关的交互入口 ——
+    // 各 delegate 的 onClicked 本质是「改页面根的公开状态 + 调页面函数」；
+    // 直接执行同一动作即等价于点击（offscreen 下 delegate 不进 QObject 树）。
+
+    // OrderListPage 筛选胶囊 onClicked: { page.filter = id; load(true) }
+    static void selectFilter(QQuickItem* page, const QString& id)
+    {
+        page->setProperty("filter", id);
+        QMetaObject::invokeMethod(page, "load", Q_ARG(QVariant, true));
+    }
+
+    // ProfileEditPage 头像格 onClicked: page.avatarKey = key
+    static void selectAvatar(QQuickItem* page, const QString& key)
+    {
+        page->setProperty("avatarKey", key);
+    }
+
+    static int cardCount(QQuickItem* page)
+    {
+        auto* model = page->findChild<QObject*>("uiOrdersModel");
+        return model ? model->property("count").toInt() : -1;
+    }
+
+private slots:
+    // P2·复审①：请求中切换筛选——旧("全部")响应不得落到"已完成"列表，
+    // 且必须按当前筛选补查（此前按钮改了 filter、请求被吞，旧结果显示）。
+    void orderListIgnoresStaleFilterResponse()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeOrderBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("OrderListPage.qml"), &holder);
+        QVERIFY(page);
+
+        QCOMPARE(fake.calls.size(), 1);
+        QCOMPARE(fake.calls.at(0).filter, QStringLiteral("all"));
+        QCOMPARE(fake.calls.at(0).page, 1);
+
+        // "全部"在途 → 点「已完成」：只登记意图，不再盲发第二条（会被服务层吞）。
+        selectFilter(page, QStringLiteral("completed"));
+        QCOMPARE(page->property("filter").toString(), QStringLiteral("completed"));
+        QCOMPARE(fake.calls.size(), 1);
+
+        // 过期响应（混着充电中订单的"全部"数据）：不得应用，须立刻重查当前筛选。
+        fake.respond({fakeOrder(1, QStringLiteral("charging")),
+                      fakeOrder(2, QStringLiteral("completed"))},
+                     20, false);
+
+        QCOMPARE(cardCount(page), 0);
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1).filter, QStringLiteral("completed"));
+        QCOMPARE(fake.calls.at(1).page, 1);
+
+        // 新筛选的响应才允许上屏。
+        fake.respond({fakeOrder(2, QStringLiteral("completed"))}, 1, false);
+        QCOMPARE(cardCount(page), 1);
+
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // P2·复审②：第 2 页在途时下拉——不得清掉翻页在途态；随后失败，重试仍请求第 2 页。
+    void orderListKeepsPagingRetryPageAfterPullFailure()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeOrderBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("OrderListPage.qml"), &holder);
+        QVERIFY(page);
+        fake.respond({fakeOrder(1, QStringLiteral("charging")),
+                      fakeOrder(2, QStringLiteral("completed"))},
+                     20, true); // 第一页 + hasMore
+        QCOMPARE(cardCount(page), 2);
+        QCOMPARE(page->property("loadedPage").toInt(), 1);
+
+        auto* more = page->findChild<QQuickItem*>("uiOrderLoadMore");
+        QVERIFY(more);
+        click(more);
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1).page, 2);
+        QVERIFY(page->property("loadingMore").toBool());
+
+        // 第 2 页在途中下拉：不发第三条（会被吞），也绝不碰在途翻页的状态。
+        auto* pull = page->findChild<QQuickItem*>("uiOrderListStack");
+        QVERIFY(pull);
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls.size(), 2);
+        QVERIFY(page->property("loadingMore").toBool()); // 原 bug：这里被清成 false，回退失效
+
+        fake.respondFailure(); // 第 2 页失败 → 错误态，但 loadedPage 仍是成功页 1
+        QVERIFY(page->property("loadMoreError").toBool());
+        QCOMPARE(page->property("loadedPage").toInt(), 1);
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(!pull->property("refreshing").toBool());
+
+        // 重试：仍请求第 2 页（原 bug 会跳到第 3 页，漏掉第 2 页）。
+        click(more);
+        QCOMPARE(fake.calls.size(), 3);
+        QCOMPARE(fake.calls.at(2).page, 2);
+        fake.respond({fakeOrder(3, QStringLiteral("completed"))}, 3, false);
+        QCOMPARE(cardCount(page), 3);
+        QCOMPARE(page->property("loadedPage").toInt(), 2);
+        QVERIFY(!page->property("loadMoreError").toBool());
+    }
+
+    // P2·复审④：同时改昵称+头像 → 串行两步（服务层单飞），全部落定才退出。
+    void profileEditSavesBothFieldsSequentially()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeWalletBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        QCOMPARE(page->property("avatarKey").toString(), QStringLiteral("cat"));
+
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+        QCOMPARE(fake.calls, QStringList{QStringLiteral("nick:小荷")}); // 头像只登记不抢发
+        QCOMPARE(backSpy.count(), 0);
+
+        fake.emitProfileLoaded(); // 昵称落定 → 自动补发头像
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1), QStringLiteral("avatar:cat"));
+        QCOMPARE(backSpy.count(), 0); // 原 bug：第一步成功就退出，头像丢失
+
+        fake.emitProfileLoaded(); // 头像也落定 → 才许退出
+        QCOMPARE(backSpy.count(), 1);
+        QVERIFY(!page->property("sending").toBool());
+    }
+
+    // P2·复审④伴生：任一步失败不得退出，页面留着重试。
+    void profileEditStaysWhenSecondStepFails()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeWalletBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+        QSignalSpy toastSpy(&app, &QmlApp::toastRequested);
+
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+        fake.emitProfileLoaded();
+        QCOMPARE(fake.calls.size(), 2);
+        fake.emitFailure();
+
+        QCOMPARE(backSpy.count(), 0);
+        QVERIFY(!page->property("sending").toBool());          // 保存按钮恢复可点
+        QCOMPARE(toastSpy.last().at(1).toString(), QStringLiteral("danger"));
+    }
+
+    // P2·复审③：QML 头像清单与 widgets AvatarLibrary 逐键对拍（双源治理）。
+    void avatarChoicesStayInSyncWithAvatarLibrary()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                 app.walletService());
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        const QVariantList choices = page->property("avatarChoices").toList();
+        QStringList keys;
+        QStringList glyphs;
+        for (const QVariant& choice : choices) {
+            const QVariantMap map = choice.toMap();
+            QVERIFY(charging::client::AvatarLibrary::contains(
+                map.value(QStringLiteral("key")).toString()));
+            keys << map.value(QStringLiteral("key")).toString();
+            glyphs << map.value(QStringLiteral("glyph")).toString();
+            QVERIFY(!map.value(QStringLiteral("color")).toString().isEmpty());
+        }
+        QStringList expected;
+        for (const charging::client::AvatarSpec& spec : charging::client::AvatarLibrary::all())
+            expected << spec.key;
+        QCOMPARE(keys, expected);
+        QCOMPARE(glyphs.size(), expected.size());
+    }
+
+    // 真服务端到端：双改全链（UPDATE_USER_INFO×2 串行）→ 头像键过白名单、
+    // currentUser 一致、重开编辑页选中态=持久化键（评审③④要求的"重新加载后一致性"）。
+    void profileEditRealMockSavesBothFields()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                 app.walletService());
+        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
+        QVERIFY(wallet);
+        QSignalSpy failSpy(wallet, &WalletBridge::operationFailed);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy loadedSpy(wallet, &WalletBridge::profileLoaded);
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(loadedSpy.count() >= 2, 6000); // 两次 450ms mock 往返
+        if (!failSpy.isEmpty())
+            qWarning().noquote() << "bridge operationFailed:" << failSpy.at(0);
+        QCOMPARE(backSpy.count(), 1); // 两步全落定才退出
+        QCOMPARE(failSpy.count(), 0); // 头像键不在契约白名单会在此报 INVALID_ARGUMENT
+        QCOMPARE(app.currentUser().value(QStringLiteral("nickname")).toString(),
+                 QStringLiteral("小荷"));
+        QCOMPARE(app.currentUser().value(QStringLiteral("avatarKey")).toString(),
+                 QStringLiteral("cat"));
+        QVERIFY(charging::client::AvatarLibrary::contains(
+            app.currentUser().value(QStringLiteral("avatarKey")).toString()));
+
+        // 重开编辑页：选中态来自持久化的 key，而不是展示字形。
+        QQmlEngine engine2;
+        engine2.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine2.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                  app.walletService());
+        QObject holder2;
+        auto* page2 = createPage(engine2, QStringLiteral("ProfileEditPage.qml"), &holder2);
+        QVERIFY(page2);
+        QCOMPARE(page2->property("avatarKey").toString(), QStringLiteral("cat"));
+    }
+
+    // P2·复审⑤：支付成功 → QmlApp 用 paymentCompleted 的余额回写并广播 userChanged。
+    void paymentSyncsTopBarBalance()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* orders = qobject_cast<OrderBridge*>(app.orderService());
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QVERIFY(orders && charging);
+
+        QSignalSpy ordersSpy(orders, &OrderBridge::ordersLoaded);
+        orders->fetchOrders(QStringLiteral("waiting_payment"), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(ordersSpy.count() >= 1, 4000);
+        const QVariantList page1 = ordersSpy.at(0).at(0).toList();
+        QVERIFY(!page1.isEmpty());
+        const qint64 orderId = page1.first().toMap().value(QStringLiteral("id")).toLongLong();
+        const qint64 balanceBefore =
+            app.currentUser().value(QStringLiteral("balanceCents")).toLongLong();
+        QVERIFY(balanceBefore > 0);
+
+        QSignalSpy paySpy(charging, &ChargingBridge::paymentCompleted);
+        QSignalSpy userSpy(&app, &QmlApp::userChanged);
+        charging->payOrder(orderId);
+        QTRY_VERIFY_WITH_TIMEOUT(paySpy.count() >= 1, 4000);
+
+        const qint64 paidAfter = paySpy.at(0).at(1).toLongLong();
+        QVERIFY(paidAfter < balanceBefore); // 真实扣款，非幂等重放
+        QCOMPARE(app.currentUser().value(QStringLiteral("balanceCents")).toLongLong(),
+                 paidAfter);                 // 顶栏绑定源立即一致
+        QVERIFY(userSpy.count() >= 1);        // userChanged 已广播（TopNavBar 重绑）
+    }
+};
+
+QTEST_MAIN(QmlClientPagesTest)
+
+#include "tst_qml_client_pages.moc"

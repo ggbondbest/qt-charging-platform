@@ -13,10 +13,20 @@ Item {
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
     property string filter: "all"
-    property int page_ : 1
-    property bool hasMore: false       // 服务端分页落定（GET_ORDERS.hasMore）
-    property bool loadingMore: false   // 下一页在途，防连点重复翻页
-    property bool loadMoreError: false // 下一页失败 → 页码回退，按钮变体重试
+    property bool hasMore: false       // 服务端分页落定（GET_ORDERS.hasMore，仅当前列表的筛选）
+    property bool loadMoreError: false // 下一页失败 → 按钮变体重试（retry 基准见 loadedPage）
+    property int loadedPage: 1         // 已成功加载页码；在途失败不回滚它，重试天然重发同页
+    // —— 在途请求身份 ——
+    // 服务层（OrderService）单飞且对在途重复提交**静默丢弃无回执**，ordersLoaded
+    // 也不携带请求参数；因此页面自己记录"在途的是哪个 (filter, page)"，并保证
+    // 同时至多一个请求由本页面发出。响应到达时：filter 与当前不一致 = 过期响应，
+    // 不应用、立即按当前筛选重查；一致（含下拉在途）= 该响应即满足刷新语义。
+    property bool reqActive: false
+    property string reqFilter: "all"
+    property int reqPage: 1
+    property bool reqFirst: true
+    property bool queuedReload: false  // 他页在途占用通道时记录的补查意图
+    readonly property bool loadingMore: reqActive && !reqFirst
     property var counts: ({ charging: 0, waitingPayment: 0, completed: 0 })
 
     readonly property var filters: [
@@ -33,49 +43,69 @@ Item {
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function load(first) {
-        // 服务层对在途重复提交是静默丢弃：进页/下拉撞上时必须自己收摊，
-        // 否则刷新胶囊和 loadingMore 永远等不到响应。
-        if (orderService.isFetchingOrders()) {
-            listScroll.setRefreshing(false)
-            loadingMore = false
+        if (reqActive) {
+            // 自己那路在途：不发第二条（服务层会静默吞掉），也绝不替在途请求收摊。
+            // 下拉 → 在途响应到达即满足刷新；切筛选 → 落定时判过期并重查（见 finishRequest）。
             return
         }
-        if (first) {
-            page_ = 1
-            loadMoreError = false
-        } else {
-            if (!hasMore) return
-            page_ += 1
-            loadingMore = true
+        if (orderService.isFetchingOrders()) {
+            // 同一 OrderService 上别的页面在途（order_detail/charging 深链回落）：
+            // 本请求会被丢弃且无回执，记补查意图，等那一路落定后统一走第一页刷新。
+            queuedReload = true
+            return
         }
-        orderService.fetchOrders(page.filter, page_)
+        reqActive = true; reqFirst = first; reqFilter = page.filter
+        reqPage = first ? 1 : loadedPage + 1
+        loadMoreError = false
+        orderService.fetchOrders(reqFilter, reqPage)
+    }
+    // 在途 GET_ORDERS 落定的公共收尾：过期（筛选已切换）的响应不应用；
+    // 过期或有补查意图则立刻按当前筛选重查第一页。
+    function finishRequest() {
+        reqActive = false
+        listScroll.setRefreshing(false)
+        const requery = reqFilter !== page.filter || queuedReload
+        queuedReload = false
+        if (requery) load(true)
     }
 
-    ListModel { id: ordersModel }
+    // objectName 让测试能从根节点直读行数——offscreen 下 Repeater delegate 是否
+    // 挂进 QObject 树取决于异步编译时序，不能依赖 findChildren(delegate)。
+    ListModel { id: ordersModel; objectName: "uiOrdersModel" }
 
     Connections {
         target: orderService
         function onOrdersLoaded(orders, total, hasMore) {
-            if (page_ === 1) ordersModel.clear()
-            for (var i = 0; i < orders.length; ++i)
-                ordersModel.append(orders[i])
-            page.hasMore = hasMore
-            page.loadingMore = false
-            page.loadMoreError = false
-            listScroll.setRefreshing(false)
+            if (!reqActive) {               // 他页在途的响应：不应用，只放行补查
+                if (queuedReload) finishRequest()
+                return
+            }
+            if (reqFilter === page.filter) { // 过期响应直接丢弃
+                if (reqFirst) ordersModel.clear()
+                for (var i = 0; i < orders.length; ++i)
+                    ordersModel.append(orders[i])
+                page.hasMore = hasMore
+                page.loadedPage = reqPage
+                page.loadMoreError = false
+            }
+            finishRequest()
         }
         function onStatusCountsUpdated(chargingCount, waitingPaymentCount, completedCount) {
             page.counts = ({ charging: chargingCount, waitingPayment: waitingPaymentCount,
                              completed: completedCount })
         }
         function onOperationFailed(type, code, message) {
-            listScroll.setRefreshing(false)
-            if (page_ > 1 && page.loadingMore) { // 下一页失败：页码回退，按钮变体重试
-                page_ -= 1
-                page.loadingMore = false
-                page.loadMoreError = true
+            if (type !== "GET_ORDERS") return   // 计数类失败不动订单在途状态/胶囊
+            if (!reqActive) {
+                if (queuedReload) finishRequest()
+                return
             }
-            if (App) App.showToast("加载失败：" + message, "danger")
+            const stale = reqFilter !== page.filter
+            if (!stale) {
+                if (!reqFirst) page.loadMoreError = true // loadedPage 未被在途污染 → 重试仍请求同页
+                if (App) App.showToast("加载失败：" + message, "danger")
+            }
+            finishRequest()
         }
     }
     Component.onCompleted: {
@@ -109,12 +139,13 @@ Item {
             Repeater {
                 model: page.filters
                 P.ActionButton {
+                    objectName: "uiOrderFilter" + modelData.id
                     variant: page.filter === modelData.id ? "primary" : "chip"
                     text: modelData.label
                     onClicked: {
                         if (page.filter === modelData.id) return
                         page.filter = modelData.id
-                        load(true)
+                        load(true)   // 在途时是意图登记：过期检测负责落定后重查
                     }
                 }
             }
@@ -179,6 +210,7 @@ Item {
                                 font.pixelSize: P.Style.fontMd; color: P.Style.ink
                             }
                             P.StatusTag {
+                                objectName: "uiOrderCardStatus"
                                 anchors.right: parent.right
                                 tone: page.statusTone[model.status] || "neutral"
                                 text: page.statusCn[model.status] || model.status
@@ -194,7 +226,7 @@ Item {
                 visible: ordersModel.count > 0 && (page.hasMore || page.loadMoreError)
                 width: listScroll.width
                 variant: "chip"
-                enabled: !page.loadingMore
+                enabled: !page.reqActive
                 text: page.loadMoreError ? "重试加载下一页"
                       : (page.loadingMore ? "加载中…" : "加载更多")
                 onClicked: load(false)
