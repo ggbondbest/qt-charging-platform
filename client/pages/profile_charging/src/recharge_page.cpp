@@ -139,9 +139,8 @@ void RechargePage::buildUi()
     amountLayout->addLayout(chipGrid);
 
     customAmountEdit_ = new QLineEdit(amountCard);
-    customAmountEdit_->setPlaceholderText(tr("其他金额（元），最多 %1")
-                                              .arg(formatCentsAsYuan(
-                                                  WalletService::kMaximumRechargeCents)));
+    customAmountEdit_->setPlaceholderText(tr("其他金额（元），上限 ¥%1")
+                                              .arg(WalletService::kMaximumRechargeCents / 100));
     customAmountEdit_->setClearButtonEnabled(true);
     customAmountEdit_->setValidator(new QRegularExpressionValidator(
         QRegularExpression(QStringLiteral("^(0|[1-9][0-9]{0,7})(\\.[0-9]{0,2})?$")),
