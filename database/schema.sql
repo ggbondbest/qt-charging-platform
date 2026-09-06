@@ -201,6 +201,10 @@ CREATE INDEX IF NOT EXISTS idx_stations_status
     ON stations(status);
 CREATE INDEX IF NOT EXISTS idx_chargers_station_status
     ON chargers(station_id, status);
+CREATE INDEX IF NOT EXISTS idx_chargers_status_updated_at
+    ON chargers(status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_chargers_updated_at
+    ON chargers(updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_reservations_user_status
     ON reservations(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_reservations_charger_status
@@ -213,10 +217,22 @@ CREATE INDEX IF NOT EXISTS idx_orders_charger_status
     ON orders(charger_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_status_created_at
     ON orders(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at
+    ON orders(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_users_status_id
+    ON users(status, id);
 CREATE INDEX IF NOT EXISTS idx_recharge_records_user_created_at
     ON recharge_records(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recharge_records_status_created_at
+    ON recharge_records(status, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_recharge_records_created_at
+    ON recharge_records(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_admin_created_at
     ON operation_logs(admin_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operation_logs_action_created_at
+    ON operation_logs(action, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at
+    ON operation_logs(created_at DESC, id DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reservations_active_user
     ON reservations(user_id)

@@ -198,11 +198,19 @@ Partial unique indexes 保证一个用户最多有一个 `RESERVED` / `CHARGING`
 主要索引：
 
 - `idx_chargers_station_status`：站内状态表和状态统计；
+- `idx_chargers_status_updated_at`：管理端异常电桩筛选及更新时间排序；
+- `idx_chargers_updated_at`：管理端电桩全局更新时间倒序分页；
 - `idx_reservations_*`：用户/桩有效预约及过期扫描；
 - `idx_orders_user_created_at`：用户订单历史；
 - `idx_orders_status_created_at`：后台订单和营收筛选；
+- `idx_orders_created_at`：管理端订单全局时间倒序分页；
+- `idx_users_status_id`：管理端用户状态筛选及稳定分页；
 - `idx_recharge_records_user_created_at`：充值记录；
+- `idx_recharge_records_status_created_at`：管理端充值状态和时间倒序查询；
+- `idx_recharge_records_created_at`：管理端充值全局时间倒序分页；
 - `idx_operation_logs_admin_created_at`：管理员审计。
+- `idx_operation_logs_action_created_at`：管理操作类型和时间倒序查询。
+- `idx_operation_logs_created_at`：管理操作日志全局时间倒序分页。
 
 每次 schema/seed 变更至少运行：
 

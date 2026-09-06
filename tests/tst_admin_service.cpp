@@ -210,6 +210,75 @@ private slots:
             }
         }
     }
+    void keywordWildcardsAreMatchedLiterally()
+    {
+        QSqlQuery query(db_.database());
+        QVERIFY(query.exec("INSERT INTO stations(code,name,address,latitude,longitude,"
+                           "price_cents_per_kwh) "
+                           "VALUES('LITERAL-SEARCH','100%_Ready!','测试路',31.2,121.4,120)"));
+
+        for (const auto& entity : {QStringLiteral("stations"), QStringLiteral("chargers"),
+                                   QStringLiteral("users"), QStringLiteral("orders"),
+                                   QStringLiteral("recharges"), QStringLiteral("operation_logs")}) {
+            const auto result = data(call(entity + QStringLiteral(".list"),
+                                          {{QStringLiteral("keyword"), QStringLiteral("%_")}}));
+            QCOMPARE(result.value(QStringLiteral("total")).toInt(),
+                     entity == QStringLiteral("stations") ? 1 : 0);
+        }
+        QCOMPARE(data(call("stations.list", {{"keyword", "Ready!"}})).value("total").toInt(), 1);
+    }
+    void timestampSortsUseStableIdTieBreakers()
+    {
+        QSqlQuery query(db_.database());
+        const QString timestamp = QStringLiteral("2026-09-06T12:00:00.000Z");
+        for (int id : {801, 802}) {
+            query.prepare("INSERT INTO chargers(id,station_id,code,type,power_watts,status,updated_at) "
+                          "VALUES(?,1,?,'SLOW',7200,'AVAILABLE',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-C-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO orders(id,order_no,user_id,charger_id,status,"
+                          "unit_price_cents_per_kwh,created_at) "
+                          "VALUES(?,?,1,?,'CANCELLED',120,?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-O-%1").arg(id));
+            query.addBindValue(id);
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO recharge_records(id,transaction_no,user_id,amount_cents,"
+                          "balance_after_cents,status,created_at) "
+                          "VALUES(?,?,1,100,100,'SUCCESS',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-R-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO operation_logs(id,admin_id,action,target_type,target_id,"
+                          "details_json,created_at) VALUES(?,1,'sort.verify','ADMIN_COMMAND',?,'{}',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-L-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+        }
+
+        const QList<QPair<QString, QString>> sorts{
+            {QStringLiteral("chargers"), QStringLiteral("updatedAtDesc")},
+            {QStringLiteral("orders"), QStringLiteral("createdAtDesc")},
+            {QStringLiteral("recharges"), QStringLiteral("createdAtDesc")},
+            {QStringLiteral("operation_logs"), QStringLiteral("createdAtDesc")}};
+        for (const auto& entry : sorts) {
+            const auto result = data(call(entry.first + QStringLiteral(".list"),
+                                          {{QStringLiteral("sort"), entry.second},
+                                           {QStringLiteral("keyword"), QStringLiteral("SORT-")},
+                                           {QStringLiteral("pageSize"), 2}}));
+            const auto items = result.value(QStringLiteral("items")).toArray();
+            QCOMPARE(items.at(0).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("802"));
+            QCOMPARE(items.at(1).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("801"));
+        }
+    }
     void auditQueriesAndRechargeTimeRanges()
     {
         QSqlQuery q(db_.database());

@@ -18,6 +18,13 @@ void DatabaseResourcesTest::schemaAndSeedAreEmbedded()
     const QByteArray schema = schemaFile.readAll();
     QVERIFY(!schema.trimmed().isEmpty());
     QVERIFY(schema.contains("CREATE TABLE"));
+    for (const auto* index : {"idx_chargers_status_updated_at", "idx_chargers_updated_at",
+                              "idx_users_status_id", "idx_orders_created_at",
+                              "idx_recharge_records_status_created_at",
+                              "idx_recharge_records_created_at",
+                              "idx_operation_logs_action_created_at",
+                              "idx_operation_logs_created_at"})
+        QVERIFY2(schema.contains(index), index);
 
     QFile seedFile(QStringLiteral(":/database/seed.sql"));
     QVERIFY2(seedFile.open(QIODevice::ReadOnly | QIODevice::Text),
