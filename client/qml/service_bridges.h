@@ -73,10 +73,14 @@ public:
     // filter ∈ "all" | "charging" | "waiting_payment" | "completed"
     Q_INVOKABLE void fetchOrders(const QString& filter, int page);
     Q_INVOKABLE void fetchStatusCounts();
+    // In-flight guard mirror: fetchOrders silently drops while one is running,
+    // so pages must check before paginating or they'd freeze the refresh pill.
+    Q_INVOKABLE bool isFetchingOrders() const;
 
 signals:
     void ordersLoaded(const QVariantList& orders, int total, bool hasMore);
     void statusCountsUpdated(int chargingCount, int waitingPaymentCount, int completedCount);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
 
 private:
     charging::client::OrderService* svc_;

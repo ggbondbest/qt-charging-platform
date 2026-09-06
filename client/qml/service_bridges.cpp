@@ -136,12 +136,17 @@ OrderBridge::OrderBridge(charging::client::OrderService* svc, QObject* parent)
             });
     connect(svc_, &charging::client::OrderService::statusCountsUpdated, this,
             &OrderBridge::statusCountsUpdated);
+    connect(svc_, &charging::client::OrderService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
 }
+
+bool OrderBridge::isFetchingOrders() const { return svc_->isFetchingOrders(); }
 
 void OrderBridge::fetchOrders(const QString& filter, int page)
 {
-    using F = charging::client::OrderService::Filter;
-    static const QHash<QString, F> map{
+    using F = charging::client::OrderService::Filter;    static const QHash<QString, F> map{
         {QStringLiteral("all"), F::All},
         {QStringLiteral("charging"), F::Charging},
         {QStringLiteral("waiting_payment"), F::WaitingPayment},

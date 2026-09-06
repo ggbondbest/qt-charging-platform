@@ -14,6 +14,9 @@ Item {
 
     property string filter: "all"
     property int page_ : 1
+    property bool hasMore: false       // 服务端分页落定（GET_ORDERS.hasMore）
+    property bool loadingMore: false   // 下一页在途，防连点重复翻页
+    property bool loadMoreError: false // 下一页失败 → 页码回退，按钮变体重试
     property var counts: ({ charging: 0, waitingPayment: 0, completed: 0 })
 
     readonly property var filters: [
@@ -30,7 +33,21 @@ Item {
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function load(first) {
-        if (first) { page_ = 1 } else { page_ += 1 }
+        // 服务层对在途重复提交是静默丢弃：进页/下拉撞上时必须自己收摊，
+        // 否则刷新胶囊和 loadingMore 永远等不到响应。
+        if (orderService.isFetchingOrders()) {
+            listScroll.setRefreshing(false)
+            loadingMore = false
+            return
+        }
+        if (first) {
+            page_ = 1
+            loadMoreError = false
+        } else {
+            if (!hasMore) return
+            page_ += 1
+            loadingMore = true
+        }
         orderService.fetchOrders(page.filter, page_)
     }
 
@@ -42,6 +59,9 @@ Item {
             if (page_ === 1) ordersModel.clear()
             for (var i = 0; i < orders.length; ++i)
                 ordersModel.append(orders[i])
+            page.hasMore = hasMore
+            page.loadingMore = false
+            page.loadMoreError = false
             listScroll.setRefreshing(false)
         }
         function onStatusCountsUpdated(chargingCount, waitingPaymentCount, completedCount) {
@@ -50,6 +70,11 @@ Item {
         }
         function onOperationFailed(type, code, message) {
             listScroll.setRefreshing(false)
+            if (page_ > 1 && page.loadingMore) { // 下一页失败：页码回退，按钮变体重试
+                page_ -= 1
+                page.loadingMore = false
+                page.loadMoreError = true
+            }
             if (App) App.showToast("加载失败：" + message, "danger")
         }
     }
@@ -161,6 +186,18 @@ Item {
                         }
                     }
                 }
+            }
+
+            // 分页入口：服务端报告还有下一页（或上一页失败）才现身。
+            P.ActionButton {
+                objectName: "uiOrderLoadMore"
+                visible: ordersModel.count > 0 && (page.hasMore || page.loadMoreError)
+                width: listScroll.width
+                variant: "chip"
+                enabled: !page.loadingMore
+                text: page.loadMoreError ? "重试加载下一页"
+                      : (page.loadingMore ? "加载中…" : "加载更多")
+                onClicked: load(false)
             }
         }
     }

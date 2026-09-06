@@ -62,6 +62,15 @@ ChargingHomePage::ChargingHomePage(
             &charging::client::services::reservation::ReservationService::listSucceeded, this,
             &ChargingHomePage::onReservationsLoaded);
     connect(reservationService_,
+            &charging::client::services::reservation::ReservationService::listFailed, this,
+            [this](const QString& message) {
+                // 预约查询失败 = 预约这一路同样落定（胶囊不许等它），并提示原因。
+                settleReservationPath();
+                if (isVisible()) {
+                    Toast::show(this, message, StatusTag::Tone::Danger);
+                }
+            });
+    connect(reservationService_,
             &charging::client::services::reservation::ReservationService::cancelSucceeded, this,
             [this](qint64) {
                 Toast::show(this, tr("预约已取消"), StatusTag::Tone::Success);
@@ -100,22 +109,41 @@ void ChargingHomePage::buildUi()
     pullScroll_->setPullContent(container);
     rootLayout->addWidget(pullScroll_, 1);
 
-    // 下拉刷新：页面无遮罩加载态（每秒自刷），胶囊就是唯一反馈；两路请求
-    // （订单+预约）都落定后收起。
+    // 下拉刷新：页面无遮罩加载态（每秒自刷），胶囊就是唯一反馈；订单与
+    // 预约两路分别记录落定状态，两路都完成（成功或失败）才收起。
     connect(pullScroll_, &PullToRefreshArea::refreshRequested, this, [this]() {
         if (orderService_->isFetchingOrders()) {
             pullScroll_->setRefreshing(false);
             return;
         }
-        pullRefreshPending_ = 2;
+        pullActive_ = true;
+        pullOrdersSettled_ = false;
+        pullReservationsSettled_ = false;
         orderService_->fetchOrders(OrderService::Filter::All, 1);
         reservationService_->fetchList();
     });
 }
 
-void ChargingHomePage::onPullSourceSettled()
+void ChargingHomePage::settleOrderPath()
 {
-    if (pullRefreshPending_ > 0 && --pullRefreshPending_ == 0) {
+    if (pullActive_) {
+        pullOrdersSettled_ = true;
+    }
+    tryClosePull();
+}
+
+void ChargingHomePage::settleReservationPath()
+{
+    if (pullActive_) {
+        pullReservationsSettled_ = true;
+    }
+    tryClosePull();
+}
+
+void ChargingHomePage::tryClosePull()
+{
+    if (pullActive_ && pullOrdersSettled_ && pullReservationsSettled_) {
+        pullActive_ = false;
         pullScroll_->setRefreshing(false);
     }
 }
@@ -152,7 +180,7 @@ void ChargingHomePage::onOrdersLoaded(const QVector<charging::client::OrderSumma
 {
     Q_UNUSED(total);
     Q_UNUSED(hasMore);
-    onPullSourceSettled(); // 先记账再短路：隐藏时提前 return 也不能卡住胶囊。
+    settleOrderPath(); // 先落定再短路：隐藏时提前 return 也不能卡住胶囊。
     if (!isVisible()) {
         return;
     }
@@ -182,7 +210,7 @@ void ChargingHomePage::onOrdersLoaded(const QVector<charging::client::OrderSumma
 void ChargingHomePage::onReservationsLoaded(
     const charging::client::services::reservation::ReservationList& records)
 {
-    onPullSourceSettled();
+    settleReservationPath();
     const QDateTime now = QDateTime::currentDateTimeUtc();
     upcomingReservations_.clear();
     for (const auto& record : records) {
@@ -575,7 +603,11 @@ void ChargingHomePage::onPaymentCompleted(qint64 amountCents, qint64 balanceAfte
 void ChargingHomePage::onOperationFailed(const QString& type,
                                          const charging::protocol::ProtocolError& error)
 {
-    onPullSourceSettled(); // 任一路失败也算落定，胶囊不许卡死。
+    // 预约以外的操作失败（start/stop/pay）与下拉刷新无关；GET_ORDERS 失败
+    // 才算订单这一路落定（失败同样是完成），胶囊不许卡死。
+    if (type == QString::fromLatin1(charging::protocol::request_type::kGetOrders)) {
+        settleOrderPath();
+    }
     const QString startType =
         QString::fromLatin1(charging::protocol::request_type::kStartCharging);
     const QString stopType = QString::fromLatin1(charging::protocol::request_type::kStopCharging);

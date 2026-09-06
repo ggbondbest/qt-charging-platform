@@ -18,7 +18,9 @@ Card {
     }
 
     Column {
-        anchors.centerIn: parent
+        // NOTE: this Column is a Card content child (lives inside Card's body
+        // Column) — vertical/center anchors are illegal there; center via width.
+        width: parent ? parent.width : 0
         spacing: Style.spaceSm
         Text {
             id: glyphText

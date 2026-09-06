@@ -20,6 +20,8 @@ C++ 服务对象直接以 context property 注入根作用域，名字=类名首
 另有 `App` 对象：`App.currentUser`（登录态，`loginStateChanged()` 信号）、`App.navigate(route[, arg])` / `App.back()`（`arg` 可选路由参数，如 order_detail 的订单 map，页面用 `property var arg` 接收）、`App.showToast(text, tone)`（tone 同 §2 StatusTag）。通道选择 `CHARGING_CHANNEL=mock|tcp`，默认 mock。
 
 > **说明（2026-09-06）**：C++ 服务方法是普通成员函数（非 slot）且信号载荷是裸 struct——QML 两头都不可见。故 `walletService`/`orderService`/`chargingService` 注入的是**同名转发桥**（`service_bridges.h`）：方法名/信号名逐字不变，仅载荷改为 map/list、枚举参数改为小写字符串。**`fetchOrders` 的 filter 取 `"all" | "charging" | "waiting_payment" | "completed"`**。其余服务（station/reservation/…）今晚按同样模式补桥，补前直接调用会失败——页面照常按契约名盲写。
+>
+> **OrderBridge 增补（2026-09-06 PR #33 评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它；②补 `isFetchingOrders()`——服务层对在途重复提交**静默丢弃**，分页/下拉前必须先查，请求被吞时页面自己收刷新胶囊；③分页口径：接 `ordersLoaded(orders, total, hasMore)` 第三参，有下一页时 `fetchOrders(filter, page+1)`，失败回退页码并给重试入口。
 
 ## 2. 平台组件（`client/qml/platform/`，import "../../platform"）
 | 类型名 | 关键 API（=旧 C++ 类语义） |
