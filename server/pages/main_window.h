@@ -12,6 +12,8 @@ namespace charging::server {
 
 class AdminLoginPage;
 class AdminRequestGateway;
+class ChargerManagementPage;
+class OrderManagementPage;
 class ServerRuntime;
 class DashboardPage;
 
@@ -43,6 +45,8 @@ private:
     QStackedWidget* pageStackedWidget_ = nullptr;
     AdminLoginPage* loginPage_ = nullptr;
     DashboardPage* dashboardPage_ = nullptr;
+    ChargerManagementPage* chargerManagementPage_ = nullptr;
+    OrderManagementPage* orderManagementPage_ = nullptr;
     QFrame* sidebar_ = nullptr;
     QLabel* pageTitleLabel_ = nullptr;
     QLabel* pageSubtitleLabel_ = nullptr;
