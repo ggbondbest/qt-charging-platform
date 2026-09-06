@@ -6,6 +6,7 @@ import "../platform" as P
 Item {
     id: page
     property string route: ""
+    property var arg: ""
     objectName: "placeholder_" + route
     width: parent ? parent.width : 420
     height: parent ? parent.height : 600

@@ -1,5 +1,7 @@
 #include "app_bridge.h"
 
+#include "service_bridges.h"
+
 #include "charging/client/profile_charging/charging_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
 #include "charging/client/profile_charging/order_service.h"
@@ -66,11 +68,28 @@ QmlApp::QmlApp(QObject* parent)
     favoritesService_->setCurrentUser(QString::number(user.id));
     stationQueryService_ =
         new charging::client::services::station::StationQueryService(this);
+
+    // Same-name forwarding bridges become the QML-visible services (CONTRACT §1).
+    walletBridge_ = new WalletBridge(walletService_, this);
+    orderBridge_ = new OrderBridge(orderService_, this);
+    chargingBridge_ = new ChargingBridge(chargingService_, this);
+    // Keep currentUser in sync so top-bar balances never lag after recharge/edit.
+    connect(walletBridge_, &WalletBridge::profileLoaded, this,
+            [this](const QVariantMap& user) {
+                for (auto it = user.constBegin(); it != user.constEnd(); ++it)
+                    user_.insert(it.key(), it.value());
+                emit userChanged();
+            });
+    connect(walletBridge_, &WalletBridge::rechargeCompleted, this,
+            [this](qint64, qint64 balanceAfterCents) {
+                user_.insert(QStringLiteral("balanceCents"), balanceAfterCents);
+                emit userChanged();
+            });
 }
 
-QObject* QmlApp::walletService() const { return walletService_; }
-QObject* QmlApp::orderService() const { return orderService_; }
-QObject* QmlApp::chargingService() const { return chargingService_; }
+QObject* QmlApp::walletService() const { return walletBridge_; }
+QObject* QmlApp::orderService() const { return orderBridge_; }
+QObject* QmlApp::chargingService() const { return chargingBridge_; }
 QObject* QmlApp::reservationService() const { return reservationService_; }
 QObject* QmlApp::settingsService() const { return settingsService_; }
 QObject* QmlApp::mapGeoService() const { return mapGeoService_; }
@@ -87,6 +106,7 @@ bool QmlApp::login(const QString& phone)
     if (phone.trimmed().isEmpty())
         return false;
     loggedIn_ = true;
+    emit userChanged();
     emit loginStateChanged();
     return true;
 }
@@ -94,6 +114,7 @@ bool QmlApp::login(const QString& phone)
 void QmlApp::logout()
 {
     loggedIn_ = false;
+    emit userChanged();
     emit loginStateChanged();
 }
 

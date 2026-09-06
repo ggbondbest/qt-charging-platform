@@ -39,10 +39,10 @@ Window {
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
     }
-    function pushRoute(r) {
+    function pushRoute(r, arg) {
         const src = pageSource(r)
         if (src.length === 0) return
-        stack.push(Qt.resolvedUrl(src), { route: r })
+        stack.push(Qt.resolvedUrl(src), { route: r, arg: arg === undefined ? "" : arg })
         for (var i = 0; i < tabIds.length; ++i)
             if (tabIds[i] === r) { tabBar.setCurrentTab(r); break }
     }
@@ -51,7 +51,7 @@ Window {
     // Wire the contract's routing bridge (App.navigate / App.back).
     Connections {
         target: App
-        function onNavigateRequested(route) { shell.pushRoute(route) }
+        function onNavigateRequested(route, arg) { shell.pushRoute(route, arg) }
         function onBackRequested() { shell.pop() }
         function onToastRequested(text, tone) { toast.show(text, tone) }
         function onLoginStateChanged() {

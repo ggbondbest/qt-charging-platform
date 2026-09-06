@@ -3,10 +3,13 @@
 // QmlApp — the only C++ object the QML tree talks to (client/qml/CONTRACT.md §1).
 // Owns the service graph exactly like HomeShell wires it today (mock channel),
 // and exposes each service as a CONSTANT QObject* property, injected as context
-// properties with the contract names. Signals/properties pass through verbatim.
+// properties with the contract names. wallet/order/charging are the same-name
+// forwarding bridges (service_bridges.h) — contract names verbatim, payloads
+// QML-readable. Raw signals/properties otherwise pass through verbatim.
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QVariant>
 #include <QVariantMap>
 
 namespace charging::client {
@@ -25,6 +28,10 @@ namespace station { class StationQueryService; }
 
 namespace charging::qml {
 
+class WalletBridge;
+class OrderBridge;
+class ChargingBridge;
+
 class QmlApp final : public QObject
 {
     Q_OBJECT
@@ -40,7 +47,7 @@ class QmlApp final : public QObject
     // AuthService needs a live ClientConnection; mock channel has none.
     // TODO(contract): wire tcp channel (then also NetworkRequestTransport).
     Q_PROPERTY(QObject* authService READ authService CONSTANT)
-    Q_PROPERTY(QVariantMap currentUser READ currentUser NOTIFY loginStateChanged)
+    Q_PROPERTY(QVariantMap currentUser READ currentUser NOTIFY userChanged)
     Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY loginStateChanged)
 
 public:
@@ -60,7 +67,12 @@ public:
     bool loggedIn() const { return loggedIn_; }
 
     // Shell routing bridge: QML Shell connects to navigateRequested/back.
-    Q_INVOKABLE void navigate(const QString& route) { emit navigateRequested(route); }
+    // `arg` optionally carries a route parameter (e.g. order id for
+    // order_detail); pages read it via their `arg` property.
+    Q_INVOKABLE void navigate(const QString& route, const QVariant& arg = {})
+    {
+        emit navigateRequested(route, arg);
+    }
     Q_INVOKABLE void back() { emit backRequested(); }
     Q_INVOKABLE void showToast(const QString& text, const QString& tone = QStringLiteral("neutral"))
     {
@@ -72,15 +84,19 @@ public:
     Q_INVOKABLE void logout();
 
 signals:
-    void navigateRequested(const QString& route);
+    void navigateRequested(const QString& route, const QVariant& arg);
     void backRequested();
     void toastRequested(const QString& text, const QString& tone);
-    void loginStateChanged();
+    void loginStateChanged();   // login/logout only — Shell navigates on this
+    void userChanged();         // currentUser content (balance/profile edits)
 
 private:
     charging::client::WalletService* walletService_ = nullptr;
     charging::client::OrderService* orderService_ = nullptr;
     charging::client::ChargingService* chargingService_ = nullptr;
+    WalletBridge* walletBridge_ = nullptr;
+    OrderBridge* orderBridge_ = nullptr;
+    ChargingBridge* chargingBridge_ = nullptr;
     charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
     charging::client::services::settings::SettingsService* settingsService_ = nullptr;
     charging::client::services::map::MapGeoService* mapGeoService_ = nullptr;

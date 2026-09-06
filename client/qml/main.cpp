@@ -51,6 +51,13 @@ int main(int argc, char* argv[])
     auto* ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("chargingView"), view);
     ctx->setContextProperty(QStringLiteral("App"), &qmlApp);
+    // Contract §1 channel switch (tcp wiring is TODO(contract) — mock only now).
+    ctx->setContextProperty(QStringLiteral("CHARGING_CHANNEL"),
+                            qEnvironmentVariable("CHARGING_CHANNEL", "mock"));
+    // Screenshot/demo convenience: deep links past the login gate ride the
+    // demo account in. "login"/"station" keep the gate for the real flow.
+    if (view != QLatin1String("login") && view != QLatin1String("station"))
+        qmlApp.login(QStringLiteral("13800138000"));
     // CONTRACT.md §1: bare service names, objects pass through verbatim.
     ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());
     ctx->setContextProperty(QStringLiteral("orderService"), qmlApp.orderService());
@@ -80,7 +87,8 @@ int main(int argc, char* argv[])
     if (!shot.isEmpty()) {
         // grabWindow() is dead under the offscreen platform (verified); render
         // the item tree directly instead — no platform surface required.
-        QTimer::singleShot(500, window, [window, shot]() {
+        // 1100ms covers two 450ms mock round-trips (deep-link fallback chains).
+        QTimer::singleShot(1100, window, [window, shot]() {
             auto* content = window->contentItem();
             auto result = content->grabToImage();
             QObject::connect(result.data(), &QQuickItemGrabResult::ready,

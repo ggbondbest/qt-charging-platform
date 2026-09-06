@@ -17,7 +17,6 @@ Card {
         panel.actionText = a === undefined ? "" : a
     }
 
-    padding: 0
     Column {
         anchors.centerIn: parent
         spacing: Style.spaceSm
