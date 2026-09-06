@@ -74,10 +74,10 @@ Item {
             P.ClickableCard {
                 objectName: "balanceButton"
                 width: col.width - col.padding * 2
+                height: 78
                 onClicked: { if (App) App.navigate("wallet") }
                 Column {
-                    anchors.fill: parent
-                    anchors.margins: P.Style.spaceMd
+                    width: parent.width
                     spacing: P.Style.spaceXs
                     Text { text: "余额（元）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     Text {

@@ -117,7 +117,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
-        onClickFunction: mouse => {
+        onClicked: mouse => {
             const W = width, H = height, PAD = 14
             // Re-derive the same fit transform as onPaint (kept in sync by property binding).
             let loLa = Infinity, hiLa = -Infinity, loLn = Infinity, hiLn = -Infinity

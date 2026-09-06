@@ -45,8 +45,13 @@ Item {
     function refresh() {
         if (!stationQueryService) return
         loading = true; failed = false
-        stationQueryService.search(keyword)   // TODO(contract): 桥补 invokable search
+        try { stationQueryService.search(keyword) }   // TODO(contract): 桥补 invokable search
+        catch (e) {                                    // 桥缺位：显式降级而不是卡 loading
+            loading = false; failed = true
+            failMessage = "站点查询桥未就绪（等待服务桥今晚补全）"
+        }
     }
+    property string failMessage: ""
 
     // ---- 三源投影（与 StationQueryService.applyStationFilter 同语义，
     //      距离/电价/排序为纯客户端投影，不重发请求） ----
@@ -301,7 +306,8 @@ Item {
                 title: viewState() === "loading" ? "正在加载站点…"
                      : viewState() === "error" ? "站点加载失败" : "没有找到匹配的充电站"
                 description: viewState() === "error"
-                             ? "请检查网络或服务端通道（CHARGING_CHANNEL）后重试"
+                             ? (failMessage.length > 0 ? failMessage
+                               : "请检查网络或服务端通道（CHARGING_CHANNEL）后重试")
                              : anyFilterActive() ? "放宽筛选条件试试" : "换个关键词试试"
                 actionText: viewState() === "loading" ? ""
                             : viewState() === "error" ? "重试"

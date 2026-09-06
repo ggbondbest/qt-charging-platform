@@ -205,7 +205,7 @@ Item {
         width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
         padding: P.Style.spaceLg
         function openFor(changing_) {
-            changing = changing_; note = ""
+            passwordDialog.changing = changing_; passwordDialog.note = ""
             oldField.text = ""; newField.text = ""; confirmField.text = ""
             open()
         }
@@ -216,7 +216,7 @@ Item {
         Column {
             width: parent.width
             spacing: P.Style.spaceSm
-            Text { text: changing ? "修改二级保护密码" : "设置二级保护密码"
+            Text { text: passwordDialog.changing ? "修改二级保护密码" : "设置二级保护密码"
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
             TextField {
                 id: oldField

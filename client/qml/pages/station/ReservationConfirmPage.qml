@@ -32,7 +32,8 @@ Item {
     property string recommendCaption: ""
 
     function hhmm(min) {
-        return (min < 10 ? "0" : "") + min + ":00"
+        const h = Math.floor(min / 60) % 24, m = min % 60
+        return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m
     }
     function slotMinutes() { return page.endMinutes - page.startMinutes }
     function feeCents() {

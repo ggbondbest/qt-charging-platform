@@ -13,6 +13,7 @@ Item {
     height: parent ? parent.height : 500
 
     property var record: null            // 母页 activeRecords[0]（map）
+    readonly property var rec: (record === null || record === undefined) ? ({}) : record
     property bool loading: false
     property bool parentFailed: false
 
@@ -126,9 +127,9 @@ Item {
                 Text { text: "📍 距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 Text {
                     objectName: "distanceLabel"
-                    text: (record.distanceMeters === undefined || record.distanceMeters < 0) ? "--"
-                        : record.distanceMeters >= 1000 ? "约 " + (record.distanceMeters / 1000).toFixed(1) + " km"
-                        : "约 " + record.distanceMeters + " m"
+                    text: (page.rec.distanceMeters === undefined || page.rec.distanceMeters < 0) ? "--"
+                        : page.rec.distanceMeters >= 1000 ? "约 " + (page.rec.distanceMeters / 1000).toFixed(1) + " km"
+                        : "约 " + page.rec.distanceMeters + " m"
                     font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
                 }
                 Text { text: "虚拟数据 · 导航功能后续对接"
@@ -154,10 +155,10 @@ Item {
                     objectName: "reservationInfoLabel"
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: (record.stationName || "--") + " · " + (record.chargerCode || "--") + "\n"
-                          + (record.chargerSpec || "充电桩") + " · " + (record.durationMinutes || 0) + " 分钟 · 预估 ¥" + money(record.estimatedFeeCents) + "\n"
-                          + "车辆 " + (record.vehiclePlate || "未关联") + " · 时段 "
-                          + hhmm(record.startAtUtc) + "—" + hhmm(record.expiresAtUtc)
+                    text: (page.rec.stationName || "--") + " · " + (page.rec.chargerCode || "--") + "\n"
+                          + (page.rec.chargerSpec || "充电桩") + " · " + (page.rec.durationMinutes || 0) + " 分钟 · 预估 ¥" + money(page.rec.estimatedFeeCents) + "\n"
+                          + "车辆 " + (page.rec.vehiclePlate || "未关联") + " · 时段 "
+                          + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
                     font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
                 Item { width: 1; height: parent.height - 200 }

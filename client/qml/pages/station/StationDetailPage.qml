@@ -17,6 +17,7 @@ Item {
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
     property var station: page.arg || ({})
+    readonly property bool hasHeader: !!(page.station && page.station.name)
     property bool detailLoading: false
     property bool detailLoaded: false
     property bool detailFailed: false
@@ -95,7 +96,7 @@ Item {
         anchors.fill: parent
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
-        visible: page.detailLoaded
+        // 头卡用列表传来的 arg 即出（不等详情桥）；桩区单独走状态门。
 
         // 站点信息头卡
         P.Card {
@@ -147,8 +148,32 @@ Item {
             }
         }
 
+        // 桩区两态（有头卡时内联，不遮站点信息）
+        P.NoticePanel {
+            objectName: "chargerLoadingNotice"
+            visible: page.hasHeader && !page.detailLoaded && !page.detailFailed
+            width: parent.width
+            height: 120
+            glyph: "⏳"
+            title: "正在加载充电桩列表…"
+            description: "详情桥补全后展示桩位与预约入口"
+            actionText: ""
+        }
+        P.NoticePanel {
+            objectName: "chargerFailedNotice"
+            visible: page.hasHeader && page.detailFailed
+            width: parent.width
+            height: 120
+            glyph: "⚠️"
+            title: "充电桩列表加载失败"
+            description: page.failMessage
+            actionText: "重试"
+            onActionTriggered: page.fetch()
+        }
+
         Text {
             objectName: "chargerSummaryLabel"
+            visible: page.detailLoaded
             text: chargers.length > 0
                   ? "充电桩（空闲 " + availableCount() + " / 共 " + chargers.length + "）"
                   : "充电桩"
@@ -215,7 +240,7 @@ Item {
         // 站点正常但无桩
         P.NoticePanel {
             objectName: "chargerEmptyNotice"
-            visible: chargers.length === 0
+            visible: page.detailLoaded && chargers.length === 0
             width: parent.width
             height: 140
             glyph: "🔌"
@@ -225,11 +250,11 @@ Item {
         }
     }
 
-    // 加载/失败两态（状态门，缺陷4 口径）
+    // 整页两态：仅当 arg 无头卡信息（深链直达）时才遮全页
     P.NoticePanel {
         objectName: "detailNotice"
         anchors.fill: parent
-        visible: !page.detailLoaded
+        visible: !page.hasHeader
         glyph: page.detailFailed ? "⚠️" : "⏳"
         title: page.detailFailed ? "站点详情加载失败" : "正在加载站点详情…"
         description: page.detailFailed ? page.failMessage : ""

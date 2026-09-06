@@ -108,7 +108,6 @@ Item {
                     item.record = Qt.binding(() => page.current)
                     item.loading = Qt.binding(() => page.loading && !page.loaded)
                     item.parentFailed = Qt.binding(() => false)
-                    item.failMessage = ""
                 } else {
                     item.records = Qt.binding(() => page.doneRecords)
                     item.loading = Qt.binding(() => page.loading && !page.loaded)

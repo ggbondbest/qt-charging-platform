@@ -36,7 +36,13 @@ Item {
         // Contract name verbatim; AuthService is a raw service tonight (bridge pending) —
         // call may fail until member-3's bridge lands. TODO(contract): login(phone) invokable
         // + loginSucceeded(userMap, created) / loginFailed(message).
-        if (authService) authService.login(phoneField.text)
+        try {
+            if (authService) authService.login(phoneField.text)
+        } catch (e) {                            // 桥缺位：显式回退而不是卡转圈
+            busy = false
+            resultTone = "error"
+            resultText = "登录桥未就绪（等待服务桥今晚补全），请稍后重试"
+        }
     }
 
     Connections {
@@ -101,6 +107,7 @@ Item {
                 }
 
                 Row {
+                    width: parent.width          // 显式宽：否则子项引用 parent.width 成环（polish loop）
                     spacing: P.Style.spaceSm
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -114,7 +121,7 @@ Item {
                         maximumLength: 11
                         inputMask: ""
                         enabled: !page.busy
-                        validator: IntValidator { bottom: 10000000000; top: 19999999999 }
+                        // 号段校验交给 phoneOk()（IntValidator 装不下 1e10，超 qint32）
                         onAccepted: page.submit()
                     }
                 }
