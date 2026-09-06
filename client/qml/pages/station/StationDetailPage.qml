@@ -56,11 +56,11 @@ Item {
         function onDetailSucceeded(detail) {
             page.detailLoading = false; page.detailLoaded = true; page.detailFailed = false
             // 桥 map 形状：{station…, distanceMeters, chargers[], hasChargerData}；
-            // distance 挂在 detail 层，并入 station 供头卡/导航参数使用。
-            if (detail && detail.station)
-                page.station = Object.assign({}, detail.station,
-                    { distanceMeters: detail.distanceMeters !== undefined
-                                         ? detail.distanceMeters : page.station.distanceMeters })
+            // 兼容 station 子对象与拍平两种形状（TODO(contract) 成员3 定形）。
+            const src = (detail && detail.station) ? detail.station : (detail || {})
+            page.station = Object.assign({}, page.station, src,
+                { distanceMeters: (detail && detail.distanceMeters !== undefined)
+                                     ? detail.distanceMeters : page.station.distanceMeters })
             page.chargers = (detail && detail.chargers) || []
         }
         function onDetailFailed(message) {

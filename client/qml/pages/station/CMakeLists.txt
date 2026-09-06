@@ -9,4 +9,8 @@ set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/ProfilePage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/StationMapItem.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/StationFilterDialog.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/ReservationModulePage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/ReservationOrderPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/ReservationCompletedPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/NavigationPage.qml
     PARENT_SCOPE)

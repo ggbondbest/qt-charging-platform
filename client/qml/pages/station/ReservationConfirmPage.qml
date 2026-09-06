@@ -39,10 +39,13 @@ Item {
         return Math.round((station.priceCentsPerKwh || 0) * Math.max(0, slotMinutes()) / 60)
     }
     function computeRecommend() {
+        // 与 recommendSlotFromTravelMinutes 同口径：now+车程（含秒）→ 向上对齐 15min 刻度。
         const now = new Date()
-        let m = now.getHours() * 60 + now.getMinutes() + page.travelMinutes
-        m = Math.ceil(m / 15) * 15 % 1440
-        return { start: m, end: (m + page.kMaxSlotMinutes) % 1440 }
+        const sod = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
+                    + page.travelMinutes * 60
+        const aligned = (Math.ceil(sod / 900) * 900) % 86400
+        const start = Math.floor(aligned / 60)
+        return { start: start, end: (start + page.kMaxSlotMinutes) % 1440 }
     }
     function applyRecommend() {
         const s = computeRecommend()
