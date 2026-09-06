@@ -4,6 +4,7 @@
 #include <QWidget>
 
 class QLabel;
+class QCheckBox;
 class QLineEdit;
 class QPushButton;
 
@@ -29,6 +30,7 @@ private slots:
 private:
     QLineEdit* usernameLineEdit_ = nullptr;
     QLineEdit* passwordLineEdit_ = nullptr;
+    QCheckBox* rememberAccountCheckBox_ = nullptr;
     QLabel* errorLabel_ = nullptr;
     QPushButton* loginButton_ = nullptr;
 };

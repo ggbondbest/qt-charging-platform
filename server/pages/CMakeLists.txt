@@ -1,4 +1,8 @@
 add_library(charging_server_pages STATIC
+    admin_mock_data.cpp
+    admin_mock_data.h
+    activity_records_page.cpp
+    activity_records_page.h
     admin_login_page.cpp
     admin_login_page.h
     charger_management_page.cpp
