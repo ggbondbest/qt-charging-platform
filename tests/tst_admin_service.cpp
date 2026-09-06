@@ -159,6 +159,57 @@ private slots:
         QCOMPARE(descending.value("items").toArray().size(), 1);
         QVERIFY(descending.value("total").toInt() >= 1);
     }
+    void listAndDetailPayloadsStayConsistent()
+    {
+        QSqlQuery query(db_.database());
+        QVERIFY(query.exec("INSERT INTO orders(order_no,user_id,charger_id,status,"
+                           "unit_price_cents_per_kwh) "
+                           "VALUES('CONTRACT-DETAIL-1',1,1,'RESERVED',120)"));
+        QVERIFY(query.exec("INSERT INTO operation_logs(admin_id,action,target_type,target_id,"
+                           "details_json) "
+                           "VALUES(1,'contract.verify','ADMIN_COMMAND','contract-detail-1','{}')"));
+
+        for (const auto& entity : {QStringLiteral("stations"), QStringLiteral("chargers"),
+                                   QStringLiteral("users"), QStringLiteral("orders"),
+                                   QStringLiteral("recharges"), QStringLiteral("operation_logs")}) {
+            const auto firstPage = data(call(entity + QStringLiteral(".list"),
+                                             {{QStringLiteral("page"), 1},
+                                              {QStringLiteral("pageSize"), 1},
+                                              {QStringLiteral("sort"), QStringLiteral("idAsc")}}));
+            const int total = firstPage.value(QStringLiteral("total")).toInt();
+            QVERIFY2(total > 0, qPrintable(entity));
+            QCOMPARE(firstPage.value(QStringLiteral("items")).toArray().size(), 1);
+
+            QJsonArray allItems;
+            for (int page = 1; page <= total; ++page) {
+                const auto pageData = data(call(entity + QStringLiteral(".list"),
+                                                {{QStringLiteral("page"), page},
+                                                 {QStringLiteral("pageSize"), 1},
+                                                 {QStringLiteral("sort"), QStringLiteral("idAsc")}}));
+                QCOMPARE(pageData.value(QStringLiteral("total")).toInt(), total);
+                const auto items = pageData.value(QStringLiteral("items")).toArray();
+                QCOMPARE(items.size(), 1);
+                allItems.append(items.first());
+            }
+
+            QCOMPARE(allItems.size(), total);
+            for (int index = 0; index < allItems.size(); ++index) {
+                const auto listItem = allItems.at(index).toObject();
+                const auto id = listItem.value(QStringLiteral("id")).toString();
+                QVERIFY2(!id.isEmpty(), qPrintable(entity));
+                if (index > 0) {
+                    const auto previousId = allItems.at(index - 1)
+                                                .toObject()
+                                                .value(QStringLiteral("id"))
+                                                .toString();
+                    QVERIFY2(previousId.toLongLong() < id.toLongLong(), qPrintable(entity));
+                }
+                QCOMPARE(item(call(entity + QStringLiteral(".get"),
+                                   {{QStringLiteral("id"), id}})),
+                         listItem);
+            }
+        }
+    }
     void auditQueriesAndRechargeTimeRanges()
     {
         QSqlQuery q(db_.database());
