@@ -7,6 +7,8 @@
 #include "charging/client/widgets/action_button.h"
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/clickable_card.h"
+#include "charging/client/widgets/motion.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
 #include "charging/common/model/enums.h"
@@ -60,6 +62,15 @@ ChargingHomePage::ChargingHomePage(
             &charging::client::services::reservation::ReservationService::listSucceeded, this,
             &ChargingHomePage::onReservationsLoaded);
     connect(reservationService_,
+            &charging::client::services::reservation::ReservationService::listFailed, this,
+            [this](const QString& message) {
+                // 预约查询失败 = 预约这一路同样落定（胶囊不许等它），并提示原因。
+                settleReservationPath();
+                if (isVisible()) {
+                    Toast::show(this, message, StatusTag::Tone::Danger);
+                }
+            });
+    connect(reservationService_,
             &charging::client::services::reservation::ReservationService::cancelSucceeded, this,
             [this](qint64) {
                 Toast::show(this, tr("预约已取消"), StatusTag::Tone::Success);
@@ -86,17 +97,55 @@ void ChargingHomePage::buildUi()
     titleLabel->setProperty("role", QStringLiteral("pageTitle"));
     rootLayout->addWidget(titleLabel);
 
-    auto* scroll = new QScrollArea(this);
-    scroll->setObjectName(QStringLiteral("uiRecordsScroll"));
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto* container = new QWidget(scroll);
+    pullScroll_ = new PullToRefreshArea(this);
+    pullScroll_->setObjectName(QStringLiteral("uiRecordsScroll"));
+    pullScroll_->setWidgetResizable(true);
+    pullScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* container = new QWidget(pullScroll_);
     cardsLayout_ = new QVBoxLayout(container);
     cardsLayout_->setContentsMargins(0, 0, 0, 0);
     cardsLayout_->setSpacing(12);
     cardsLayout_->addStretch();
-    scroll->setWidget(container);
-    rootLayout->addWidget(scroll, 1);
+    pullScroll_->setPullContent(container);
+    rootLayout->addWidget(pullScroll_, 1);
+
+    // 下拉刷新：页面无遮罩加载态（每秒自刷），胶囊就是唯一反馈；订单与
+    // 预约两路分别记录落定状态，两路都完成（成功或失败）才收起。
+    connect(pullScroll_, &PullToRefreshArea::refreshRequested, this, [this]() {
+        if (orderService_->isFetchingOrders()) {
+            pullScroll_->setRefreshing(false);
+            return;
+        }
+        pullActive_ = true;
+        pullOrdersSettled_ = false;
+        pullReservationsSettled_ = false;
+        orderService_->fetchOrders(OrderService::Filter::All, 1);
+        reservationService_->fetchList();
+    });
+}
+
+void ChargingHomePage::settleOrderPath()
+{
+    if (pullActive_) {
+        pullOrdersSettled_ = true;
+    }
+    tryClosePull();
+}
+
+void ChargingHomePage::settleReservationPath()
+{
+    if (pullActive_) {
+        pullReservationsSettled_ = true;
+    }
+    tryClosePull();
+}
+
+void ChargingHomePage::tryClosePull()
+{
+    if (pullActive_ && pullOrdersSettled_ && pullReservationsSettled_) {
+        pullActive_ = false;
+        pullScroll_->setRefreshing(false);
+    }
 }
 
 void ChargingHomePage::refresh()
@@ -131,6 +180,7 @@ void ChargingHomePage::onOrdersLoaded(const QVector<charging::client::OrderSumma
 {
     Q_UNUSED(total);
     Q_UNUSED(hasMore);
+    settleOrderPath(); // 先落定再短路：隐藏时提前 return 也不能卡住胶囊。
     if (!isVisible()) {
         return;
     }
@@ -160,6 +210,7 @@ void ChargingHomePage::onOrdersLoaded(const QVector<charging::client::OrderSumma
 void ChargingHomePage::onReservationsLoaded(
     const charging::client::services::reservation::ReservationList& records)
 {
+    settleReservationPath();
     const QDateTime now = QDateTime::currentDateTimeUtc();
     upcomingReservations_.clear();
     for (const auto& record : records) {
@@ -177,12 +228,21 @@ void ChargingHomePage::onReservationsLoaded(
 
 void ChargingHomePage::clearCards()
 {
+    // 下拉垫块先摘出保护（它是布局项不是"卡"），重建后原样插回。
+    QLayoutItem* spacerItem = nullptr;
+    if (QLayoutItem* first = cardsLayout_->itemAt(0);
+        first != nullptr && first->widget() == pullScroll_->pullSpacer()) {
+        spacerItem = cardsLayout_->takeAt(0);
+    }
     while (cardsLayout_->count() > 1) {
         QLayoutItem* item = cardsLayout_->takeAt(0);
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
         delete item;
+    }
+    if (spacerItem != nullptr) {
+        cardsLayout_->insertItem(0, spacerItem);
     }
     livePowerLabel_ = nullptr;
     liveEnergyLabel_ = nullptr;
@@ -195,7 +255,12 @@ void ChargingHomePage::clearCards()
 void ChargingHomePage::rebuildCards()
 {
     clearCards();
-    auto addCard = [this](QWidget* widget) {
+    int cardIndex = 0;
+    auto addCard = [this, &cardIndex](QWidget* widget) {
+        // 卡片区整体重建立于低频事件（进页/订单或预约变化）之上，逐卡级联
+        // 入场安全；每秒状态刷新只走 onStatusLoaded 的标签更新，不重播。
+        motion::fadeIn(widget, motion::duration::enter,
+                       qMin(cardIndex++, motion::staggerMax) * motion::staggerStep);
         cardsLayout_->insertWidget(cardsLayout_->count() - 1, widget);
     };
 
@@ -410,6 +475,7 @@ QWidget* ChargingHomePage::buildIdleView()
 
     auto* glyph = new QLabel(QStringLiteral("⚡"), hero);
     glyph->setObjectName(QStringLiteral("uiHeroGlyph"));
+    motion::startBreathing(glyph); // 空态不冷清：⚡ 缓慢呼吸，"在等你的下一单"。
     auto* title = new QLabel(tr("当前没有充电任务"), hero);
     title->setObjectName(QStringLiteral("uiHeroTitle"));
     heroCaptionLabel_ = new QLabel(tr("找站或模拟扫码，开始一次充电"), hero);
@@ -497,11 +563,19 @@ void ChargingHomePage::onStatusLoaded(const charging::client::ChargingStatus& st
     if (status.order.id != liveOrderId_ || livePowerLabel_ == nullptr) {
         return;
     }
-    livePowerLabel_->setText(status.powerKnown ? formatWattsAsKw(status.powerWatts)
+    // 数字"活着"的关键不是重播入场，而是变化的那一次给一个短脉冲。
+    auto setLive = [](QLabel* label, const QString& text) {
+        if (label->text() == text) {
+            return;
+        }
+        label->setText(text);
+        motion::valueUpdate(label);
+    };
+    setLive(livePowerLabel_, status.powerKnown ? formatWattsAsKw(status.powerWatts)
                                                : QStringLiteral("--"));
-    liveEnergyLabel_->setText(formatEnergyWhAsKwh(status.order.energyWh));
-    liveDurationLabel_->setText(formatDurationHms(status.order.durationSeconds));
-    liveAmountLabel_->setText(formatCentsAsYuan(status.order.amountCents));
+    setLive(liveEnergyLabel_, formatEnergyWhAsKwh(status.order.energyWh));
+    setLive(liveDurationLabel_, formatDurationHms(status.order.durationSeconds));
+    setLive(liveAmountLabel_, formatCentsAsYuan(status.order.amountCents));
 }
 
 void ChargingHomePage::onStartCompleted(const charging::client::ChargingStatus& status)
@@ -529,6 +603,11 @@ void ChargingHomePage::onPaymentCompleted(qint64 amountCents, qint64 balanceAfte
 void ChargingHomePage::onOperationFailed(const QString& type,
                                          const charging::protocol::ProtocolError& error)
 {
+    // 预约以外的操作失败（start/stop/pay）与下拉刷新无关；GET_ORDERS 失败
+    // 才算订单这一路落定（失败同样是完成），胶囊不许卡死。
+    if (type == QString::fromLatin1(charging::protocol::request_type::kGetOrders)) {
+        settleOrderPath();
+    }
     const QString startType =
         QString::fromLatin1(charging::protocol::request_type::kStartCharging);
     const QString stopType = QString::fromLatin1(charging::protocol::request_type::kStopCharging);

@@ -26,6 +26,16 @@ if(BUILD_TESTING)
     list(APPEND _charging_qt_components Test)
 endif()
 
+# The QML migration stack is optional: probe quietly so CI images without the
+# declarative dev packages keep configuring exactly as before.
+set(CHARGING_HAS_QML OFF)
+find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} QUIET
+    COMPONENTS Quick QuickControls2)
+if(Qt6Quick_FOUND AND Qt6QuickControls2_FOUND)
+    option(CHARGING_BUILD_QML "Build the QML preview shell (migration in progress)" ON)
+    set(CHARGING_HAS_QML ${CHARGING_BUILD_QML})
+endif()
+
 # A minimum version keeps newer local Qt installations usable. The CI build turns
 # CHARGING_PLATFORM_STRICT_QT_VERSION on and therefore compiles with exactly 6.2.4.
 find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
