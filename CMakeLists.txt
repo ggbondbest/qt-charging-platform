@@ -21,9 +21,19 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(_charging_qt_components Core Gui Network Sql Widgets Quick QuickControls2)
+set(_charging_qt_components Core Gui Network Sql Widgets)
 if(BUILD_TESTING)
     list(APPEND _charging_qt_components Test)
+endif()
+
+# The QML migration stack is optional: probe quietly so CI images without the
+# declarative dev packages keep configuring exactly as before.
+set(CHARGING_HAS_QML OFF)
+find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} QUIET
+    COMPONENTS Quick QuickControls2)
+if(Qt6Quick_FOUND AND Qt6QuickControls2_FOUND)
+    option(CHARGING_BUILD_QML "Build the QML preview shell (migration in progress)" ON)
+    set(CHARGING_HAS_QML ${CHARGING_BUILD_QML})
 endif()
 
 # A minimum version keeps newer local Qt installations usable. The CI build turns

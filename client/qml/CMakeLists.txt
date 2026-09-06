@@ -1,9 +1,6 @@
 # QML migration stack — strictly ADDITIVE. Nothing here references the frozen
 # widgets app; the widgets demo remains the default until the cutover PR lands.
-option(CHARGING_BUILD_QML "Build the QML preview shell (migration in progress)" ON)
-if(NOT CHARGING_BUILD_QML)
-    return()
-endif()
+# Gated by CHARGING_HAS_QML (root CMake: Quick dev packages found + option ON).
 
 # Owned component/page lists are accumulated from the subdirectories below.
 # Each subdirectory appends its .qml files via PARENT_SCOPE — add your page to
