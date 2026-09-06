@@ -12,6 +12,8 @@
 #include <QQuickWindow>
 #include <QTimer>
 
+#include "app_bridge.h"
+
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
@@ -43,7 +45,21 @@ int main(int argc, char* argv[])
     }
 
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("chargingView"), view);
+    charging::qml::QmlApp qmlApp;
+    auto* ctx = engine.rootContext();
+    ctx->setContextProperty(QStringLiteral("chargingView"), view);
+    ctx->setContextProperty(QStringLiteral("App"), &qmlApp);
+    // CONTRACT.md §1: bare service names, objects pass through verbatim.
+    ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());
+    ctx->setContextProperty(QStringLiteral("orderService"), qmlApp.orderService());
+    ctx->setContextProperty(QStringLiteral("chargingService"), qmlApp.chargingService());
+    ctx->setContextProperty(QStringLiteral("reservationService"), qmlApp.reservationService());
+    ctx->setContextProperty(QStringLiteral("settingsService"), qmlApp.settingsService());
+    ctx->setContextProperty(QStringLiteral("mapGeoService"), qmlApp.mapGeoService());
+    ctx->setContextProperty(QStringLiteral("favoritesService"), qmlApp.favoritesService());
+    ctx->setContextProperty(QStringLiteral("notificationService"), qmlApp.notificationService());
+    ctx->setContextProperty(QStringLiteral("stationQueryService"), qmlApp.stationQueryService());
+    ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
     QQmlComponent component(&engine);
     component.loadUrl(QUrl::fromLocalFile(
         QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Root.qml")));

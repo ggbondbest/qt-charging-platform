@@ -12,6 +12,8 @@ add_subdirectory(pages/station)
 
 add_executable(charging_qml_preview
     main.cpp
+    app_bridge.cpp
+    app_bridge.h
     ${CHARGING_QML_FILES}
 )
 set_target_properties(charging_qml_preview PROPERTIES
@@ -22,6 +24,14 @@ target_compile_definitions(charging_qml_preview PRIVATE
 )
 target_link_libraries(charging_qml_preview PRIVATE
     ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
