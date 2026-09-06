@@ -73,7 +73,8 @@ QmlApp::QmlApp(QObject* parent)
     walletBridge_ = new WalletBridge(walletService_, this);
     orderBridge_ = new OrderBridge(orderService_, this);
     chargingBridge_ = new ChargingBridge(chargingService_, this);
-    // Keep currentUser in sync so top-bar balances never lag after recharge/edit.
+    // Keep currentUser in sync so top-bar balances never lag after profile
+    // edit / recharge / payment — the three events that mutate balanceCents.
     connect(walletBridge_, &WalletBridge::profileLoaded, this,
             [this](const QVariantMap& user) {
                 for (auto it = user.constBegin(); it != user.constEnd(); ++it)
@@ -81,6 +82,11 @@ QmlApp::QmlApp(QObject* parent)
                 emit userChanged();
             });
     connect(walletBridge_, &WalletBridge::rechargeCompleted, this,
+            [this](qint64, qint64 balanceAfterCents) {
+                user_.insert(QStringLiteral("balanceCents"), balanceAfterCents);
+                emit userChanged();
+            });
+    connect(chargingBridge_, &ChargingBridge::paymentCompleted, this,
             [this](qint64, qint64 balanceAfterCents) {
                 user_.insert(QStringLiteral("balanceCents"), balanceAfterCents);
                 emit userChanged();
