@@ -314,6 +314,38 @@ private slots:
         QCOMPARE(total, 3);
     }
 
+    void mockRechargeRecordsChainTimeOrderAndBalances()
+    {
+        MockRequestTransport transport;
+        WalletService service(&transport);
+
+        QSignalSpy records(&service, &WalletService::rechargeRecordsLoaded);
+        service.fetchRechargeRecords(1);
+        QVERIFY(waitForSignal(records));
+        const auto loaded = qvariant_cast<QVector<charging::model::RechargeRecord>>(
+            records.at(0).at(0));
+        QCOMPARE(loaded.size(), 3);
+
+        // 真实服务器自增 id 即时间序：id 倒序必须与时间倒序同向，否则列表
+        // "最新在前"在 mock 上是假的（种子曾把最旧一笔排在了最上面）。
+        for (int index = 1; index < loaded.size(); ++index) {
+            QVERIFY2(loaded.at(index - 1).id > loaded.at(index).id, "id must be DESC");
+            QVERIFY2(loaded.at(index - 1).createdAtUtc > loaded.at(index).createdAtUtc,
+                     "createdAt must be DESC");
+        }
+        // 快照链闭合：较新一笔的快照减去它自己的金额 = 相邻较旧一笔的快照，
+        // 且最新一笔的快照恰等于当前余额（否则页面两处数字对不上）。
+        for (int index = 1; index < loaded.size(); ++index) {
+            QCOMPARE(loaded.at(index - 1).balanceAfterCents - loaded.at(index - 1).amountCents,
+                     loaded.at(index).balanceAfterCents);
+        }
+        QSignalSpy profile(&service, &WalletService::profileLoaded);
+        service.fetchProfile();
+        QVERIFY(waitForSignal(profile));
+        QCOMPARE(loaded.first().balanceAfterCents,
+                 qvariant_cast<charging::model::User>(profile.at(0).at(0)).balanceCents);
+    }
+
     // ---- contract-v1 parity (docs/api/user_api_contract.md §2/§3) ----
 
     void mockAcceptsEveryFrozenAvatarKeyAndRejectsUnknown()
