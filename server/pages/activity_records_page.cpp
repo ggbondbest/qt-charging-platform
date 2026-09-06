@@ -369,14 +369,15 @@ void ActivityRecordsPage::rebuildTable()
     }
 }
 
-void ActivityRecordsPage::showDetails(int recordIndex)
+void ActivityRecordsPage::showDetails(int recordIndex, bool requestDetails)
 {
     if (recordIndex < 0 || recordIndex >= records_.size()) {
         return;
     }
     selectedRecordIndex_ = recordIndex;
     const Record& record = records_.at(recordIndex);
-    if (realMode_ && gateway_) {
+    if (realMode_ && gateway_ && requestDetails) {
+        detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(mode_ == ActivityRecordsMode::Recharge ? QStringLiteral("recharges.get") : QStringLiteral("operation_logs.get"),
                                              {{QStringLiteral("id"), record.serverId}}, this, QStringLiteral("activity-detail"));
     }
@@ -459,8 +460,7 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
                   .arg(mode_ == ActivityRecordsMode::Recharge ? tr("充值记录") : tr("操作日志")));
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
-        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
-            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true);
+        else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (authenticated) requestList();
@@ -471,6 +471,8 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
 void ActivityRecordsPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     const bool recharge = mode_ == ActivityRecordsMode::Recharge;
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize},
                       {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
@@ -487,6 +489,31 @@ void ActivityRecordsPage::requestList()
     listRequestId_ = gateway_->request(recharge ? QStringLiteral("recharges.list") : QStringLiteral("operation_logs.list"), query, this,
                                        recharge ? QStringLiteral("recharge-list") : QStringLiteral("operation-log-list"));
     setFeedback(tr("正在加载服务数据…"));
+}
+
+void ActivityRecordsPage::handleDetailResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true);
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
+        || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
+    auto& record = records_[selectedRecordIndex_];
+    const bool recharge = mode_ == ActivityRecordsMode::Recharge;
+    record.id = recharge ? item.value(QStringLiteral("transactionNo")).toString() : item.value(QStringLiteral("id")).toString();
+    record.occurredAt = item.value(QStringLiteral("createdAt")).toString();
+    record.subject = recharge ? item.value(QStringLiteral("nickname")).toString() + tr("　") + item.value(QStringLiteral("phone")).toString()
+                              : (item.value(QStringLiteral("adminId")).isNull() ? tr("系统") : tr("管理员 ID：%1").arg(item.value(QStringLiteral("adminId")).toString()));
+    record.category = recharge ? tr("契约未提供") : item.value(QStringLiteral("action")).toString();
+    record.amountOrTarget = recharge ? tr("¥ %1").arg(QString::number(item.value(QStringLiteral("amountCents")).toInteger() / 100.0, 'f', 2))
+                                    : item.value(QStringLiteral("targetType")).toString() + tr("：") + item.value(QStringLiteral("targetId")).toString();
+    record.status = recharge ? (item.value(QStringLiteral("status")).toString() == QStringLiteral("SUCCESS") ? tr("成功") : tr("失败")) : tr("—");
+    record.details = recharge ? tr("余额变更后余额：¥ %1").arg(QString::number(item.value(QStringLiteral("balanceAfterCents")).toInteger() / 100.0, 'f', 2))
+                              : tr("审计日志仅返回安全元数据；不暴露 details_json。");
+    showDetails(selectedRecordIndex_, false);
 }
 
 void ActivityRecordsPage::handleListResponse(const QJsonObject& response)

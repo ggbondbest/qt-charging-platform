@@ -538,14 +538,15 @@ void OrderManagementPage::updateEmptyState()
     nextPageButton_->setVisible(!isEmpty);
 }
 
-void OrderManagementPage::showOrderDetails(int recordIndex)
+void OrderManagementPage::showOrderDetails(int recordIndex, bool requestDetails)
 {
     if (recordIndex < 0 || recordIndex >= records_.size()) {
         return;
     }
     selectedRecordIndex_ = recordIndex;
     const OrderRecord& record = records_.at(recordIndex);
-    if (realMode_ && gateway_) {
+    if (realMode_ && gateway_ && requestDetails) {
+        detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(QStringLiteral("orders.get"), {{QStringLiteral("id"), record.serverId}}, this,
                                              QStringLiteral("order-detail"));
     }
@@ -648,8 +649,7 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     }
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
-        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
-            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (authenticated) requestList();
@@ -661,6 +661,8 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 void OrderManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
     const QString keyword = orderNumberLineEdit_->text().trimmed();
     if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
@@ -677,6 +679,34 @@ void OrderManagementPage::requestList()
         query.insert(QStringLiteral("createdAtTo"), QDateTime(now.date().addDays(1), QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
     }
     listRequestId_ = gateway_->request(QStringLiteral("orders.list"), query, this, QStringLiteral("order-list")); setFeedback(tr("正在加载服务数据…"));
+}
+
+void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
+        || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
+    auto& record = records_[selectedRecordIndex_]; const QString code = item.value(QStringLiteral("status")).toString();
+    record.orderNo = item.value(QStringLiteral("orderNo")).toString(); record.userName = item.value(QStringLiteral("nickname")).toString(); record.phone = item.value(QStringLiteral("phone")).toString();
+    record.station = item.value(QStringLiteral("stationName")).toString(); record.charger = item.value(QStringLiteral("chargerCode")).toString();
+    record.status = code == QStringLiteral("CHARGING") ? charging::model::OrderStatus::Charging : code == QStringLiteral("WAITING_PAYMENT") ? charging::model::OrderStatus::WaitingPayment : code == QStringLiteral("COMPLETED") ? charging::model::OrderStatus::Completed : code == QStringLiteral("CANCELLED") ? charging::model::OrderStatus::Cancelled : charging::model::OrderStatus::Reserved;
+    record.startAt = item.value(QStringLiteral("createdAt")).toString(); record.duration = tr("%1 分钟").arg(item.value(QStringLiteral("durationSeconds")).toInt() / 60); record.energyWh = item.value(QStringLiteral("energyWh")).toInteger(); record.chargeFeeCents = item.value(QStringLiteral("amountCents")).toInteger();
+    showOrderDetails(selectedRecordIndex_, false);
+    chargingInfoLabel_->setText(tr("电站名称　%1\n电桩编号　%2\n创建时间　%3\n启动时间　%4\n结束时间　%5\n时长　%6\n电量　%7 kWh")
+                                      .arg(record.station, record.charger, record.startAt,
+                                           item.value(QStringLiteral("startedAt")).toString(),
+                                           item.value(QStringLiteral("stoppedAt")).toString(),
+                                           record.duration, formatKwh(record.energyWh)));
+    feeInfoLabel_->setText(tr("电价快照　¥ %1 / kWh\n订单金额　¥ %2")
+                                 .arg(formatCents(item.value(QStringLiteral("unitPriceCentsPerKwh")).toInteger()),
+                                      formatCents(record.chargeFeeCents)));
+    paymentInfoLabel_->setText(tr("支付时间　%1\n订单状态　%2")
+                                     .arg(item.value(QStringLiteral("paidAt")).toString(), orderStatusText(record.status)));
 }
 
 void OrderManagementPage::handleListResponse(const QJsonObject& response)

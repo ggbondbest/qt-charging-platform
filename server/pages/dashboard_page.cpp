@@ -476,9 +476,31 @@ void DashboardPage::refresh(int days)
     if (gateway_ == nullptr) return;
     requestedDays_ = days;
     refreshButton_->setEnabled(false);
+    // A newly authenticated session must never briefly show the preceding
+    // administrator's snapshot while its replacement is pending.
+    clearDashboardData();
     refreshedAtLabel_->setText(tr("刷新时间：正在加载服务数据…"));
     requestId_ = gateway_->request(QStringLiteral("dashboard.get"), {{QStringLiteral("days"), days}}, this,
                                    QStringLiteral("dashboard"));
+}
+
+void DashboardPage::clearDashboardData()
+{
+    todayRevenueValue_->setText(tr("¥ —"));
+    monthRevenueValue_->setText(tr("¥ —"));
+    onlineChargersValue_->setText(tr("—"));
+    onlineChargersHint_->setText(tr("在线率待加载"));
+    totalChargersLabel_->setText(tr("总电桩数：—"));
+    onlineLegendValue_->setText(tr("—"));
+    offlineLegendValue_->setText(tr("—"));
+    faultLegendValue_->setText(tr("—"));
+    exceptionCountBadge_->setText(tr("—"));
+    trendWidget_->setServiceSeries({}, {}, {});
+    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(0, 0, 0);
+    exceptionTable_->setRowCount(0);
+    latestOrdersTable_->setRowCount(0);
+    setEmptyRow(exceptionTable_, tr("正在加载服务数据…"));
+    setEmptyRow(latestOrdersTable_, tr("正在加载服务数据…"));
 }
 
 void DashboardPage::handleDashboardResponse(const QJsonObject& response)

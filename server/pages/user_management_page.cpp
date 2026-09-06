@@ -522,14 +522,15 @@ void UserManagementPage::updateEmptyState()
     nextPageButton_->setVisible(!isEmpty);
 }
 
-void UserManagementPage::showUserDetails(int recordIndex)
+void UserManagementPage::showUserDetails(int recordIndex, bool requestDetails)
 {
     if (recordIndex < 0 || recordIndex >= records_.size()) {
         return;
     }
     selectedRecordIndex_ = recordIndex;
     const UserRecord& record = records_.at(recordIndex);
-    if (realMode_ && gateway_) {
+    if (realMode_ && gateway_ && requestDetails) {
+        detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(QStringLiteral("users.get"), {{QStringLiteral("id"), record.serverId}}, this,
                                              QStringLiteral("user-detail"));
     }
@@ -685,8 +686,7 @@ void UserManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
         else if (id == writeRequestId_) handleWriteResponse(response);
-        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
-            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true);
+        else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (authenticated) requestList();
@@ -704,11 +704,35 @@ QString UserManagementPage::statusCode(const QString& display) const
 void UserManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
     const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
     if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
     listRequestId_ = gateway_->request(QStringLiteral("users.list"), query, this, QStringLiteral("user-list"));
     setFeedback(tr("正在加载服务数据…"));
+}
+
+void UserManagementPage::handleDetailResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true);
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
+        || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
+    auto& record = records_[selectedRecordIndex_];
+    record.id = item.value(QStringLiteral("id")).toString(); record.nickname = item.value(QStringLiteral("nickname")).toString(); record.phone = item.value(QStringLiteral("phone")).toString();
+    record.balanceCents = item.value(QStringLiteral("balanceCents")).toInteger(); record.status = item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常");
+    record.totalOrders = item.value(QStringLiteral("orderCount")).toInt(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    showUserDetails(selectedRecordIndex_, false);
+    detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n未完成订单　%3 笔\n充值次数　%4 次\n用户状态　%5\n记录更新时间　%6")
+                                     .arg(formatCents(record.balanceCents)).arg(record.totalOrders)
+                                     .arg(item.value(QStringLiteral("unfinishedOrderCount")).toInt())
+                                     .arg(item.value(QStringLiteral("rechargeCount")).toInt())
+                                     .arg(record.status, record.expectedUpdatedAt));
 }
 
 void UserManagementPage::handleListResponse(const QJsonObject& response)

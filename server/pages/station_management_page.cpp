@@ -436,14 +436,15 @@ void StationManagementPage::updateEmptyState()
     nextPageButton_->setVisible(!isEmpty);
 }
 
-void StationManagementPage::showStationDetails(int recordIndex)
+void StationManagementPage::showStationDetails(int recordIndex, bool requestDetails)
 {
     if (recordIndex < 0 || recordIndex >= records_.size()) {
         return;
     }
     selectedRecordIndex_ = recordIndex;
     const StationRecord& record = records_.at(recordIndex);
-    if (realMode_ && gateway_) {
+    if (realMode_ && gateway_ && requestDetails) {
+        detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(QStringLiteral("stations.get"), {{QStringLiteral("id"), record.serverId}}, this,
                                              QStringLiteral("station-detail"));
     }
@@ -752,8 +753,7 @@ void StationManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
         else if (id == writeRequestId_) handleWriteResponse(response);
-        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
-            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (authenticated) requestList();
@@ -771,11 +771,37 @@ QString StationManagementPage::statusCode(const QString& display) const
 void StationManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
+    // Do not expose Mock data or a prior administrator's records while a new
+    // authenticated list request is in flight.
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
     const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
     if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
     listRequestId_ = gateway_->request(QStringLiteral("stations.list"), query, this, QStringLiteral("station-list"));
     setFeedback(tr("正在加载服务数据…"));
+}
+
+void StationManagementPage::handleDetailResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
+        || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
+    auto& record = records_[selectedRecordIndex_];
+    record.code = item.value(QStringLiteral("code")).toString(); record.name = item.value(QStringLiteral("name")).toString();
+    record.address = item.value(QStringLiteral("address")).toString(); record.latitude = item.value(QStringLiteral("latitude")).toDouble();
+    record.longitude = item.value(QStringLiteral("longitude")).toDouble(); record.priceCentsPerKwh = item.value(QStringLiteral("priceCentsPerKwh")).toInteger();
+    record.status = item.value(QStringLiteral("status")).toString() == QStringLiteral("ACTIVE") ? tr("运营中") : tr("已停用");
+    record.chargerCount = item.value(QStringLiteral("totalChargers")).toInt(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    showStationDetails(selectedRecordIndex_, false);
+    detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩数　%2 台")
+                                           .arg(record.chargerCount)
+                                           .arg(item.value(QStringLiteral("availableChargers")).toInt()));
 }
 
 void StationManagementPage::handleListResponse(const QJsonObject& response)

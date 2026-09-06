@@ -455,14 +455,15 @@ void ChargerManagementPage::updateEmptyState()
     nextPageButton_->setVisible(!isEmpty);
 }
 
-void ChargerManagementPage::showChargerDetails(int recordIndex)
+void ChargerManagementPage::showChargerDetails(int recordIndex, bool requestDetails)
 {
     if (recordIndex < 0 || recordIndex >= records_.size()) {
         return;
     }
     selectedRecordIndex_ = recordIndex;
     const ChargerRecord& record = records_.at(recordIndex);
-    if (realMode_ && gateway_) {
+    if (realMode_ && gateway_ && requestDetails) {
+        detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(QStringLiteral("chargers.get"), {{QStringLiteral("id"), record.serverId}}, this,
                                              QStringLiteral("charger-detail"));
     }
@@ -793,8 +794,7 @@ void ChargerManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
         else if (id == writeRequestId_) handleWriteResponse(response);
-        else if (id == detailRequestId_ && !response.value(QStringLiteral("success")).toBool())
-            setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (authenticated) requestList();
@@ -815,6 +815,8 @@ QString ChargerManagementPage::statusCode(const QString& display) const
 void ChargerManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1},
                       {QStringLiteral("pageSize"), kPageSize},
                       {QStringLiteral("sort"), QStringLiteral("updatedAtDesc")}};
@@ -825,6 +827,28 @@ void ChargerManagementPage::requestList()
     if (typeComboBox_->currentIndex() > 0) query.insert(QStringLiteral("type"), typeComboBox_->currentIndex() == 1 ? QStringLiteral("FAST") : QStringLiteral("SLOW"));
     listRequestId_ = gateway_->request(QStringLiteral("chargers.list"), query, this, QStringLiteral("charger-list"));
     setFeedback(tr("正在加载服务数据…"));
+}
+
+void ChargerManagementPage::handleDetailResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("详情确认失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
+        || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
+    auto& record = records_[selectedRecordIndex_];
+    const QString state = item.value(QStringLiteral("status")).toString();
+    record.code = item.value(QStringLiteral("code")).toString(); record.station = item.value(QStringLiteral("stationName")).toString();
+    record.type = item.value(QStringLiteral("type")).toString() == QStringLiteral("FAST") ? tr("直流桩") : tr("交流桩");
+    record.power = tr("%1 kW").arg(item.value(QStringLiteral("powerWatts")).toInt() / 1000);
+    record.status = state == QStringLiteral("AVAILABLE") ? tr("可用") : state == QStringLiteral("RESERVED") ? tr("已预约") : state == QStringLiteral("CHARGING") ? tr("充电中") : state == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
+    const int seconds = item.value(QStringLiteral("totalChargeSeconds")).toInt(); record.totalSessions = item.value(QStringLiteral("totalChargeCount")).toInt();
+    record.totalDuration = tr("%1h %2m").arg(seconds / 3600).arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'));
+    record.lastHeartbeat = item.value(QStringLiteral("updatedAt")).toString(); record.alertType = item.value(QStringLiteral("exceptionType")).toString(); record.expectedUpdatedAt = record.lastHeartbeat;
+    showChargerDetails(selectedRecordIndex_, false);
 }
 
 void ChargerManagementPage::handleListResponse(const QJsonObject& response)

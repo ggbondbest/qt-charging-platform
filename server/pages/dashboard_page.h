@@ -29,6 +29,7 @@ signals:
     void latestOrdersRequested();
 
 private:
+    void clearDashboardData();
     void handleDashboardResponse(const QJsonObject& response);
     class AdminRequestGateway* gateway_ = nullptr;
     QString requestId_;

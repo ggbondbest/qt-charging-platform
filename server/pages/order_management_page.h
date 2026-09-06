@@ -42,11 +42,12 @@ private:
     void createMockRecords();
     void rebuildTable();
     void updateEmptyState();
-    void showOrderDetails(int recordIndex);
+    void showOrderDetails(int recordIndex, bool requestDetails = true);
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const OrderRecord& record) const;
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleDetailResponse(const QJsonObject& response);
 
     QVector<OrderRecord> records_;
     QVector<int> filteredRecordIndexes_;
@@ -56,6 +57,7 @@ private:
     bool realMode_ = false;
     QString listRequestId_;
     QString detailRequestId_;
+    QString detailExpectedServerId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* orderNumberLineEdit_ = nullptr;

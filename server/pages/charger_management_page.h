@@ -46,13 +46,14 @@ private:
     void createMockRecords();
     void rebuildTable();
     void updateEmptyState();
-    void showChargerDetails(int recordIndex);
+    void showChargerDetails(int recordIndex, bool requestDetails = true);
     void updateDetailActions();
     void showChargerDialog(int recordIndex);
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const ChargerRecord& record) const;
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
     QString statusCode(const QString& display) const;
 
@@ -65,6 +66,7 @@ private:
     QString listRequestId_;
     QString writeRequestId_;
     QString detailRequestId_;
+    QString detailExpectedServerId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;

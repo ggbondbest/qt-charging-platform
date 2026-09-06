@@ -43,7 +43,7 @@ private:
     void applyFilters();
     void resetFilters();
     void rebuildTable();
-    void showDetails(int recordIndex);
+    void showDetails(int recordIndex, bool requestDetails = true);
     void showPreviousPage();
     void showNextPage();
     void manualRefresh();
@@ -51,6 +51,7 @@ private:
     void setFeedback(const QString& text, bool isError = false);
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleDetailResponse(const QJsonObject& response);
 
     ActivityRecordsMode mode_;
     QVector<Record> records_;
@@ -61,6 +62,7 @@ private:
     bool realMode_ = false;
     QString listRequestId_;
     QString detailRequestId_;
+    QString detailExpectedServerId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
