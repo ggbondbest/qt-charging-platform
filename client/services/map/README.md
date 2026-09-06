@@ -5,7 +5,7 @@
 | 方法 | 接口 | 用途 | 关键返回 |
 | --- | --- | --- | --- |
 | `requestDistanceMatrix(destinations)` | `ws/distance/v1/matrix/`（mode=driving） | 用户位置 → 站点的**行驶距离 + 预估行驶时长**，供预约"系统推荐时段"使用 | `rows[0].elements[].distance`（米）、`duration`（**秒**） |
-| `requestDrivingRoute(from, to)` | `ws/direction/v1/driving/` | 导航页**驾车路线**（分段步骤文案） | `routes[0].distance`（米）、`duration`（**分钟**）、`steps[].instruction` |
+| `requestDrivingRoute(from, to)` | `ws/direction/v1/driving/` | 导航页**驾车路线**（分段步骤文案 + 坐标折线） | `routes[0].distance`（米）、`duration`（**分钟**）、`steps[].instruction`、`polyline`（`QVector<LatLng>`，见下文解码口径） |
 | `requestReverseGeocode(location)`（可选） | `ws/geocoder/v1/` | 坐标 → 地址文本（导航页"前往"行补真实地址） | `result.address` |
 
 > 路线接口真实响应结构为 `result.routes[0]`（早期文档写作 `result.mode`）；
@@ -33,6 +33,26 @@
 
 - `reservation_confirm_page`：推荐时段保持模拟估算（`ReservationService::recommendSlot` 口径不变），Toast 提示"地图服务暂不可用（原因）"；
 - `navigation_page`：保持 `buildMockSteps` 模拟路线，caption 追加"接口异常：原因"；逆地理失败静默，"前往"行回落站名口径。
+
+## 路线折线（polyline）解码口径
+
+官方格式（[JavaScript GL  polyline 指南](https://lbs.qq.com/javascript_gl/guide-polyline.html)同规则）：
+数组为 `[纬度₀, 经度₀, Δ纬₁(微度), Δ经₁, Δ纬₂, Δ经₂, …]`——**前两个元素是首点
+绝对度数**，其后成对的是整数**微度增量**，递推规则 `coors[i] = coors[i-2] + coors[i]/1e6`。
+
+实现口径（`map_geo_service.cpp`，3 条单测锁定）：
+
+- 首点若量级 >1000 视为按微度返回的版本，÷1e6 归一（两种版本都能解）；
+- 逐点解码后校验落在中国范围（纬 15–55 / 经 73–136），任一点越界即判定
+  脏数据，**整条折线置空**（防"飞线"横穿地图的渲染事故）；
+- `polyline` 为空 = 消费方回落口径：导航页 `updateRouteMap()` 用起终点
+  垂直偏移正弦扰动画模拟折线，地图永不空白。
+
+渲染链路（可视化迭代）：`RouteResult.polyline` → `NavigationPage::realPolyline_`
+→ `StationMapPanel::setRoutePoints()`（缓存后复用 `setStations()` 渲染通道）
+→ `tencent_map.html` 注入 `%ROUTE_POINTS%` → `qq.maps.Polyline`（平台绿
+`#00B578`）+ `fitBounds` 自动包住全程。**空数组 = 首页口径逐字节不变**（只画
+站点标记不画线），首页/导航共用同一面板组件。
 
 页面均有 **loading 态**（任务书第 3 条）：确认页推荐按钮追加"（更新中…）"、导航页 caption"正在加载真实导航路线…"，异步信号回填后消失，全程不阻塞、不卡死。
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHostAddress>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 
@@ -23,12 +24,16 @@ public:
     bool isListening() const;
     quint16 serverPort() const;
     int clientCount() const;
+    void submitAdminRequest(const QString& requestId, const QString& action,
+                            const QJsonObject& data, const QString& sessionToken,
+                            qint64 deadlineMs);
 
 signals:
     void listening(quint16 port);
     void clientCountChanged(int count);
     void startupFailed(const QString& message);
     void stopped();
+    void adminResponse(const QString& requestId, const QJsonObject& response);
 
 private:
     enum class State { Idle, Starting, Running, Stopping, Stopped };

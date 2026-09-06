@@ -15,15 +15,104 @@ class ClientConnection;
 
 namespace charging::client::services::station {
 
+// 迭代 3 · 高级筛选的 8 组条件规范选项：弹窗选项、模拟数据取值、过滤匹配
+// 三处共用同一字面量（字符串即匹配键，避免魔法值漂移）。
+namespace station_filter {
+
+inline const QStringList& operatorOptions()
+{
+    static const QStringList value{QStringLiteral("自营"), QStringLiteral("合作站"),
+                                   QStringLiteral("互联互通"), QStringLiteral("个人桩")};
+    return value;
+}
+inline const QStringList& operatingStatusOptions()
+{
+    static const QStringList value{QStringLiteral("营业中"), QStringLiteral("暂停运营")};
+    return value;
+}
+inline const QStringList& accessTypeOptions()
+{
+    static const QStringList value{QStringLiteral("对外"), QStringLiteral("不对外开放")};
+    return value;
+}
+inline const QStringList& parkingFeeOptions()
+{
+    static const QStringList value{QStringLiteral("免费"), QStringLiteral("限时免费"),
+                                   QStringLiteral("停车减免"), QStringLiteral("收费")};
+    return value;
+}
+inline const QStringList& featureOptions()
+{
+    static const QStringList value{QStringLiteral("重卡"), QStringLiteral("即插即充"),
+                                   QStringLiteral("CPU即插即充"), QStringLiteral("有序充电"),
+                                   QStringLiteral("V2G")};
+    return value;
+}
+inline const QStringList& chargerTypeOptions()
+{
+    static const QStringList value{QStringLiteral("超充"), QStringLiteral("快充"),
+                                   QStringLiteral("慢充")};
+    return value;
+}
+inline const QStringList& voltageBandOptions()
+{
+    static const QStringList value{QStringLiteral("低于700V"), QStringLiteral("700V及以上")};
+    return value;
+}
+// 距离单选档位（公里；0=不限由 criteria.maxDistanceKm 表达）。
+inline constexpr int kDistanceOptionsKm[4] = {5, 10, 30, 50};
+
+} // namespace station_filter
+
+// 迭代 3 · 高级筛选条件（客户端 DTO，不改 common/）：各组空 = 不限制；
+// 组内多选取并集（OR），组间交集（AND）。距离组单选（0=不限）。
+struct StationFilterCriteria
+{
+    int maxDistanceKm = 0;          // 5/10/30/50 或 0=不限
+    QStringList statuses;           // 营业中 / 暂停运营
+    QStringList operators;          // 运营商
+    QStringList accessTypes;        // 对外 / 不对外开放
+    QStringList parkingFees;        // 停车费类型
+    QStringList features;           // 特色功能
+    QStringList chargerTypes;       // 充电桩类型
+    QStringList voltageBands;       // 电压档位
+
+    bool isEmpty() const
+    {
+        return maxDistanceKm <= 0 && statuses.isEmpty() && operators.isEmpty()
+            && accessTypes.isEmpty() && parkingFees.isEmpty() && features.isEmpty()
+            && chargerTypes.isEmpty() && voltageBands.isEmpty();
+    }
+};
+
 // 站点列表条目：站点基础信息 + 距离（米）。距离由服务端提供；
 // 真实接口未返回时置 -1（UI 显示“--”）。
+//
+// 迭代 3 筛选属性（运营状态复用 station.status，不新增字段）为客户端模拟
+// 扩展：GET_STATIONS 响应尚无这些字段（TODO(contract)：服务端补充
+// operator/accessType/parkingFee/features/chargerTypes/voltageBands 后，
+// 真实通道解析处直接赋值即可，过滤逻辑零改动）。
 struct StationListItem
 {
     charging::model::Station station;
     int distanceMeters = -1;
+    QString operatorName;      // station_filter::operatorOptions() 之一
+    QString accessType;        // 对外 / 不对外开放
+    QString parkingFee;        // 停车费类型
+    QStringList features;      // 特色功能（可多个）
+    QStringList chargerTypes;  // 站内充电桩类型集合（超充/快充/慢充）
+    bool hasVoltageBelow700 = true;   // 站内存在电压 <700V 的桩
+    bool hasVoltageAtLeast700 = false; // 站内存在电压 ≥700V 的桩
 };
 
 using StationList = QVector<StationListItem>;
+
+// 迭代 3：把筛选条件应用到给定结果集（稳定顺序），返回子集。与排序/电价
+// 筛选同为纯客户端投影——由页面在 lastResults_ 上即时应用，不重发请求。
+// 距离口径：真实通道 distanceMeters=-1（服务端未给距离）时无法证明在圈内，
+// 距离档位激活时不展示；模拟通道恒有距离，不受影响。
+StationList applyStationFilter(const StationList& results,
+                               const StationFilterCriteria& criteria);
 
 // 站点详情（任务 #12）：站点信息 + 距离 + 该站点下全部充电桩。
 struct StationDetail

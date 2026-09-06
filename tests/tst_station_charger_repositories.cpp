@@ -114,6 +114,6 @@ void StationChargerRepositoriesTest::invalidQueriesFail()
     QVERIFY(!chargerRepository.listByStation(chargerQuery).ok);
 }
 
-QTEST_APPLESS_MAIN(StationChargerRepositoriesTest)
+QTEST_GUILESS_MAIN(StationChargerRepositoriesTest)
 
 #include "tst_station_charger_repositories.moc"

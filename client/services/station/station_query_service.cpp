@@ -38,7 +38,7 @@ StationList mockStations()
 
     // id4 置为离线（Inactive）驱动详情页“站点离线”横幅演示；
     // id6 无桩（totalChargers=0）驱动详情页空数据演示。金额单位为分。
-    return {
+    StationList stations = {
         make(1, "SZ-KEY-01", "科技园充电驿站", "南山区科苑南路 1012 号", 22.5412, 113.9430, 120,
              10, 3, 850),
         make(2, "SZ-SDU-02", "深大北门超充站", "南山区深圳大学北门旁", 22.5376, 113.9450, 138, 6,
@@ -52,6 +52,81 @@ StationList mockStations()
         make(6, "SZ-XLH-06", "西丽湖临时站", "南山区丽湖大道 66 号临时场站", 22.5850, 113.9520, 92,
              0, 0, 3800),
     };
+
+    // 迭代 3：模拟筛选属性（真实接口字段就绪前由本页固定赋值）。取值刻意
+    // 覆盖 8 组选项的全部组合，保证任意筛选条件都有“命中/不命中”两种站点，
+    // 演示与测试都能观察到过滤生效。TODO(contract)：GET_STATIONS 扩展字段
+    // 后改由服务端响应填充，本函数只保留真实字段解析。
+    auto attrs = [&stations](qint64 id) -> StationListItem* {
+        for (StationListItem& item : stations) {
+            if (item.station.id == id) {
+                return &item;
+            }
+        }
+        return nullptr;
+    };
+    // 1 自营 · 对外 · 免费停车 · 快充 · 高压（超充口径归入 chargerTypes 展示）
+    if (auto* item = attrs(1)) {
+        item->operatorName = QStringLiteral("自营");
+        item->accessType = QStringLiteral("对外");
+        item->parkingFee = QStringLiteral("免费");
+        item->features = {QStringLiteral("重卡"), QStringLiteral("即插即充")};
+        item->chargerTypes = {QStringLiteral("超充"), QStringLiteral("快充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = true;
+    }
+    // 2 互联互通 · 对外 · 限时免费 · 快充 · 低压为主
+    if (auto* item = attrs(2)) {
+        item->operatorName = QStringLiteral("互联互通");
+        item->accessType = QStringLiteral("对外");
+        item->parkingFee = QStringLiteral("限时免费");
+        item->features = {QStringLiteral("CPU即插即充"), QStringLiteral("有序充电")};
+        item->chargerTypes = {QStringLiteral("快充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = false;
+    }
+    // 3 合作站 · 对外 · 收费 · 慢充/快充 · V2G
+    if (auto* item = attrs(3)) {
+        item->operatorName = QStringLiteral("合作站");
+        item->accessType = QStringLiteral("对外");
+        item->parkingFee = QStringLiteral("收费");
+        item->features = {QStringLiteral("V2G")};
+        item->chargerTypes = {QStringLiteral("快充"), QStringLiteral("慢充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = true;
+    }
+    // 4 自营 · 不对外开放 · 停车减免 · 慢充（暂停运营站点，驱动状态筛选）
+    if (auto* item = attrs(4)) {
+        item->operatorName = QStringLiteral("自营");
+        item->accessType = QStringLiteral("不对外开放");
+        item->parkingFee = QStringLiteral("停车减免");
+        item->features = {};
+        item->chargerTypes = {QStringLiteral("慢充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = false;
+    }
+    // 5 互联互通 · 对外 · 免费 · 全类型 · 高低压都有
+    if (auto* item = attrs(5)) {
+        item->operatorName = QStringLiteral("互联互通");
+        item->accessType = QStringLiteral("对外");
+        item->parkingFee = QStringLiteral("免费");
+        item->features = {QStringLiteral("有序充电"), QStringLiteral("即插即充")};
+        item->chargerTypes = {QStringLiteral("超充"), QStringLiteral("快充"),
+                              QStringLiteral("慢充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = true;
+    }
+    // 6 个人桩 · 对外 · 收费 · 慢充 · 仅低压（空桩临时站）
+    if (auto* item = attrs(6)) {
+        item->operatorName = QStringLiteral("个人桩");
+        item->accessType = QStringLiteral("对外");
+        item->parkingFee = QStringLiteral("收费");
+        item->features = {};
+        item->chargerTypes = {QStringLiteral("慢充")};
+        item->hasVoltageBelow700 = true;
+        item->hasVoltageAtLeast700 = false;
+    }
+    return stations;
 }
 
 // 站点充电桩演示数据：各状态数量与站点 availableChargers 严格一致，
@@ -125,7 +200,66 @@ bool matchesKeyword(const StationListItem& item, const QString& keyword)
         || item.station.address.contains(keyword, Qt::CaseInsensitive);
 }
 
+// 运营状态口径：common 模型枚举 → 筛选规范选项字面量（station_filter 命名
+// 空间），供“营业中 / 暂停运营”组匹配。
+QString operatingStatusText(const StationListItem& item)
+{
+    return item.station.status == charging::model::StationStatus::Active
+        ? QStringLiteral("营业中")
+        : QStringLiteral("暂停运营");
+}
+
 } // namespace
+
+// 迭代 3 · 高级筛选投影：组内 OR、组间 AND、空组不限制（口径见头文件）。
+StationList applyStationFilter(const StationList& results,
+                               const StationFilterCriteria& criteria)
+{
+    if (criteria.isEmpty()) {
+        return results;
+    }
+    auto intersects = [](const QStringList& options, const QStringList& selected) {
+        if (selected.isEmpty()) {
+            return true; // 组内未选 = 不限制
+        }
+        for (const QString& option : options) {
+            if (selected.contains(option)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    StationList filtered;
+    filtered.reserve(results.size());
+    for (const StationListItem& item : results) {
+        if (criteria.maxDistanceKm > 0
+            && (item.distanceMeters < 0
+                || item.distanceMeters > criteria.maxDistanceKm * 1000)) {
+            continue;
+        }
+        if (!intersects({operatingStatusText(item)}, criteria.statuses)
+            || !intersects({item.operatorName}, criteria.operators)
+            || !intersects({item.accessType}, criteria.accessTypes)
+            || !intersects({item.parkingFee}, criteria.parkingFees)
+            || !intersects(item.features, criteria.features)
+            || !intersects(item.chargerTypes, criteria.chargerTypes)) {
+            continue;
+        }
+        if (!criteria.voltageBands.isEmpty()) {
+            const bool wantLow = criteria.voltageBands.contains(
+                QStringLiteral("低于700V"));
+            const bool wantHigh = criteria.voltageBands.contains(
+                QStringLiteral("700V及以上"));
+            if (!((wantLow && item.hasVoltageBelow700)
+                  || (wantHigh && item.hasVoltageAtLeast700))) {
+                continue;
+            }
+        }
+        filtered.append(item);
+    }
+    return filtered;
+}
 
 StationQueryService::StationQueryService(QObject* parent) : QObject(parent)
 {

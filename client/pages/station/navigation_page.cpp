@@ -43,52 +43,25 @@ QLabel#navigationCaptionLabel {
     color: #9AA5B1;
     font-size: 11px;
 }
-QLabel#navigationStepLabel {
-    color: #1F2937;
-    font-size: 13px;
-}
 )";
-
-void destroyLayoutItem(QLayoutItem* item)
-{
-    if (item == nullptr) {
-        return;
-    }
-    if (auto* widget = item->widget()) {
-        widget->deleteLater();
-    }
-    if (auto* sub = item->layout()) {
-        // 步骤行是嵌套 QHBoxLayout（badge+label）：必须递归回收子 widget，
-        // 否则旧 QLabel 悬留 parent 上与新行重叠（模拟→真实路线切换场景）。
-        while (auto* child = sub->takeAt(0)) {
-            destroyLayoutItem(child);
-        }
-    }
-    delete item;
-}
-
-void clearLayoutItems(QVBoxLayout* layout)
-{
-    while (auto* item = layout->takeAt(0)) {
-        destroyLayoutItem(item);
-    }
-}
 
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
-// 真实地图接入（成员 2 地图接入迭代，已落地）：
+// 真实地图接入（成员 2 地图接入迭代）：
 //
 // 1. 路线规划：MapGeoService::requestDrivingRoute（腾讯 WebService
-//    ws/direction/v1/driving/，key 经 CHARGING_TENCENT_MAP_KEY 环境
-//    变量注入）→ handleRouteResult 原地替换距离/时长/步骤，caption 切
-//    “真实导航路线 · 腾讯地图”；接口异常保持模拟步骤 + caption 标注原因
-//    + Toast。见 openRoute/handleRouteResult 实现。
-// 2. 地图渲染（已落地）：WebEngine 构建时本页顶部挂 StationMapPanel 渲染
-//    路线 polyline（updateRouteMap：真实折线 routes[0].polyline 优先、
-//    模拟正弦折线兜底，站点标记 + fitBounds 自动包住视野）；无 WebEngine
-//    或面板降级时保留占位文案（CI 口径不变）。
-// 3. 距离口径统一：确认页距离矩阵结果已写入 ReservationRecord
+//    ws/direction/v1/driving/，key 经环境变量注入）→ handleRouteResult
+//    原地替换距离/时长，caption 切“真实导航路线 · 腾讯地图”；接口异常
+//    保持模拟口径 + caption 标注原因 + Toast。见 openRoute/handleRouteResult。
+// 2. 地图渲染：WebEngine 构建时本页顶部挂 StationMapPanel 渲染路线
+//    polyline（updateRouteMap：真实折线 routes[0].polyline 优先、模拟
+//    正弦折线兜底，站点标记 + fitBounds 自动包住视野）；无 WebEngine 或
+//    面板降级时保留占位文案（CI 口径不变）。
+// 3. 文字步骤模块（迭代 3 移除）：模拟路段文案与真实地理不符，产品口径
+//    改为“仅地图可视化展示”，正确距离/时长依赖后端真实站点坐标与用户
+//    定位；steps 解析保留在服务层（tst_map_geo_service 锁定），页面不再消费。
+// 4. 距离口径统一：确认页距离矩阵结果已写入 ReservationRecord
 //    distanceMeters，本页直接消费同一记录。
 // ─────────────────────────────────────────────────────────────────────────
 NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
@@ -131,19 +104,24 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
 
     // 顶部地图区（成员 2 地图渲染迭代）：WebEngine 构建时挂真实腾讯地图
     // 面板渲染路线折线（openRoute/handleRouteResult 经 updateRouteMap 喂
-    // 数据），与下方文字内容组成可拖拽垂直分栏；无 WebEngine 或面板降级
-    // 时保留原占位文案（CI 口径不变，占位仅隐藏、不销毁——页面级测试仍可
-    // 定位该 objectName）。
+    // 数据），与下方概要卡组成可拖拽垂直分栏；无 WebEngine 或地图未就绪
+    // 时保留占位（CI 口径不变，占位仅隐藏、不销毁——页面级测试仍可定位该
+    // objectName）。验收修复：WebEngine 构建下构造期面板必然还在异步加载
+    // （degraded_ 初值 true），可见性只算一次会让占位在地图渲染成功后永久
+    // 残留——接 mapReady（一次性信号）即时隐藏。
 #ifdef CHARGING_PLATFORM_HAS_WEBENGINE
     routeMapPanel_ = new StationMapPanel(this);
     routeMapPanel_->setObjectName(QStringLiteral("navigationRouteMapPanel"));
-    routeMapPanel_->setMinimumHeight(120);
+    routeMapPanel_->setMinimumHeight(56); // 与首页面板同口径
 #endif
-    auto* mapPlaceholder = new QLabel(tr("🗺️ 地图路线渲染区（当前展示文字路线摘要）"), content);
-    mapPlaceholder->setObjectName(QStringLiteral("navigationMapPlaceholder"));
-    mapPlaceholder->setAlignment(Qt::AlignCenter);
-    mapPlaceholder->setVisible(routeMapPanel_ == nullptr || routeMapPanel_->isDegraded());
-    contentLayout->addWidget(mapPlaceholder);
+    mapPlaceholderLabel_ = new QLabel(tr("🗺️ 地图未就绪（加载中，或组件/密钥不可用）"), content);
+    mapPlaceholderLabel_->setObjectName(QStringLiteral("navigationMapPlaceholder"));
+    mapPlaceholderLabel_->setAlignment(Qt::AlignCenter);
+    mapPlaceholderLabel_->setVisible(routeMapPanel_ == nullptr || routeMapPanel_->isDegraded());
+    if (routeMapPanel_ != nullptr) {
+        connect(routeMapPanel_, &StationMapPanel::mapReady, mapPlaceholderLabel_, &QWidget::hide);
+    }
+    contentLayout->addWidget(mapPlaceholderLabel_);
 
     // 行程概要卡：目标 / 距离 / 预计到达。
     auto* summaryCard = new Card(content);
@@ -167,25 +145,15 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
     summaryBody->addWidget(targetLabel_);
     summaryBody->addLayout(metricRow);
     contentLayout->addWidget(summaryCard);
-
-    // 分段路线步骤列表。
-    auto* stepsCard = new Card(content);
-    stepsCard->setProperty("isNavigationStepsCard", true);
-    auto* stepsBody = stepsCard->bodyLayout();
-    auto* stepsTitle = new QLabel(tr("🧭 路线步骤"), stepsCard);
-    stepsTitle->setProperty("role", QStringLiteral("sectionTitle"));
-    stepsBody->addWidget(stepsTitle);
-    stepsHost_ = new QWidget(stepsCard);
-    stepsHost_->setObjectName(QStringLiteral("navigationStepsHost"));
-    stepsLayout_ = new QVBoxLayout(stepsHost_);
-    stepsLayout_->setContentsMargins(0, 0, 0, 0);
-    stepsLayout_->setSpacing(6);
-    stepsBody->addWidget(stepsHost_);
-    contentLayout->addWidget(stepsCard);
     contentLayout->addStretch();
 
-    // 地图 / 文字内容垂直分栏：拖动分隔条即可放大地图（用户反馈与首页
-    // 同口径）；无 WebEngine 时上半缺席，行为与旧版一致。
+    // 路线步骤文字列表模块（迭代 3 产品口径）：文字步骤与真实地理不符
+    // （模拟模板拼的路段名并非真实路线），整块删除——本页只做地图路线
+    // 可视化展示；距离/时长正确性依赖后端传入真实站点坐标与用户定位，
+    // 接口异常时展示模拟占位口径（caption + Toast 提示）。
+    //
+    // 地图 / 概要卡垂直分栏：拖动分隔条可放大地图（与首页同口径）；
+    // 初始地图高对齐找站页（attachToSplitter 统一升档逻辑）。
     auto* navSplitter = new QSplitter(Qt::Vertical, this);
     navSplitter->setObjectName(QStringLiteral("navigationRouteSplitter"));
     navSplitter->setHandleWidth(10);
@@ -193,41 +161,14 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
         navSplitter->addWidget(routeMapPanel_);
     }
     navSplitter->addWidget(scroll);
-    navSplitter->setStretchFactor(0, 0); // 窗口拉伸增量归文字区
+    navSplitter->setStretchFactor(0, 0); // 窗口拉伸增量归内容区
     navSplitter->setStretchFactor(1, 1);
-    navSplitter->setSizes({240, 480});
-    rootLayout->addWidget(navSplitter, 1);
-}
-
-QPair<QStringList, int> NavigationPage::buildMockSteps(const ReservationRecord& record) const
-{
-    // 模拟分段：按行驶时长把路线切成 4~6 段，文案模板化；真实路线规划
-    // API 就绪后由 steps[] 解析结果替换（见文件顶部接入点注释）。
-    const auto slot = ReservationService::recommendSlot(record.distanceMeters);
-    QStringList roads{
-        tr("滨海大道"), tr("深南大道"), tr("科苑北路"), tr("后海滨路"),
-        tr("白石路"), tr("粤海大道"),
-    };
-    const qint64 seed = record.reservation.chargerId + record.reservation.id;
-
-    QStringList steps;
-    steps << tr("从当前位置出发，向南驶入主路（准备出发）");
-    const int segments = 3 + static_cast<int>(seed % 3); // 3~5 段行驶 + 起终
-    const int totalMeters = record.distanceMeters > 0 ? record.distanceMeters : 1000;
-    for (int i = 0; i < segments; ++i) {
-        const int meters = totalMeters * (i + 1) / segments - totalMeters * i / segments;
-        const QString road
-            = roads.at(static_cast<int>((seed + i * 7) % roads.size()));
-        if (i + 1 == segments) {
-            steps << tr("沿 %1 行驶约 %2 米后右转进入站点").arg(road).arg(meters);
-        } else if (i % 2 == 0) {
-            steps << tr("沿 %1 直行约 %2 米").arg(road).arg(meters);
-        } else {
-            steps << tr("在路口转入 %1，继续行驶约 %2 米").arg(road).arg(meters);
-        }
+    if (routeMapPanel_ != nullptr) {
+        routeMapPanel_->attachToSplitter(navSplitter, 300);
+    } else {
+        navSplitter->setSizes({0, 480}); // 非 WebEngine：内容区独占
     }
-    steps << tr("到达 %1 · 充电桩 %2，驶入场内停车位").arg(record.stationName, record.chargerCode);
-    return {steps, slot.travelMinutes};
+    rootLayout->addWidget(navSplitter, 1);
 }
 
 void NavigationPage::setMapService(services::map::MapGeoService* mapService)
@@ -265,8 +206,10 @@ void NavigationPage::openRoute(const ReservationRecord& record)
                                 ? tr("全程约 %1 km").arg(distance / 1000.0, 0, 'f', 1)
                                 : tr("全程约 %1 m").arg(distance));
 
-    // 模拟路线先行渲染（永不空页）：真实路线到达后原地替换。
-    const auto [steps, travelMinutes] = buildMockSteps(record_);
+    // 模拟口径先行渲染（永不空页）：真实路线到达后原地替换。
+    // 行驶分钟数与确认页推荐时段同源（recommendSlot 模拟估算）。
+    const int travelMinutes =
+        ReservationService::recommendSlot(record_.distanceMeters).travelMinutes;
     QString etaText = tr("预计行驶约 %1 分钟").arg(travelMinutes);
     if (record_.startAtUtc.isValid()) {
         etaText += tr(" · 建议 %1 前出发（预约 %2 开始）")
@@ -276,9 +219,6 @@ void NavigationPage::openRoute(const ReservationRecord& record)
                             record_.startAtUtc.toLocalTime().toString(QStringLiteral("HH:mm")));
     }
     etaLabel_->setText(etaText);
-
-    clearLayoutItems(stepsLayout_);
-    appendStepRows(steps);
 
     // 真实路线（地图接入）：key 可用且预约记录带站点坐标时异步请求；
     // 复位展示口径并记录代际，过期响应在回调里丢弃。请求在途 caption
@@ -299,32 +239,6 @@ void NavigationPage::openRoute(const ReservationRecord& record)
 
     // 地图与文字路线同口径：模拟折线先渲染，真实折线到达后原地替换。
     updateRouteMap();
-}
-
-void NavigationPage::appendStepRows(const QStringList& steps)
-{
-    // 真实路线分段可能很长：截断展示并给出省略说明行（该行不计入
-    // routeStepCount 的双列步骤数）。
-    constexpr int kMaxDisplayedSteps = 15;
-    int index = 1;
-    for (const QString& step : steps) {
-        if (index > kMaxDisplayedSteps) {
-            auto* more = new QLabel(tr("……后续 %1 段已省略").arg(steps.size() - kMaxDisplayedSteps),
-                                    stepsHost_);
-            more->setProperty("role", QStringLiteral("secondary"));
-            stepsLayout_->addWidget(more);
-            return;
-        }
-        auto* row = new QHBoxLayout();
-        auto* badge = new QLabel(QString::number(index++), stepsHost_);
-        badge->setProperty("role", QStringLiteral("secondary"));
-        auto* label = new QLabel(step, stepsHost_);
-        label->setObjectName(QStringLiteral("navigationStepLabel"));
-        label->setWordWrap(true);
-        row->addWidget(badge);
-        row->addWidget(label, 1);
-        stepsLayout_->addLayout(row);
-    }
 }
 
 void NavigationPage::handleRouteResult(quint64 requestId,
@@ -352,15 +266,6 @@ void NavigationPage::handleRouteResult(quint64 requestId,
                                 record_.startAtUtc.toLocalTime().toString(QStringLiteral("HH:mm")));
         }
         etaLabel_->setText(etaText);
-    }
-    if (!route.steps.isEmpty()) {
-        QStringList instructions;
-        instructions.reserve(route.steps.size());
-        for (const auto& step : route.steps) {
-            instructions << step.instruction;
-        }
-        clearLayoutItems(stepsLayout_);
-        appendStepRows(instructions);
     }
 
     usingRealRoute_ = true;
@@ -412,18 +317,6 @@ QString NavigationPage::etaText() const
     return etaLabel_->text();
 }
 
-int NavigationPage::routeStepCount() const
-{
-    int count = 0;
-    for (int i = 0; i < stepsLayout_->count(); ++i) {
-        auto* item = stepsLayout_->itemAt(i);
-        if (item != nullptr && item->layout() != nullptr && item->layout()->count() == 2) {
-            ++count;
-        }
-    }
-    return count;
-}
-
 bool NavigationPage::usingRealRoute() const
 {
     return usingRealRoute_;
@@ -451,7 +344,7 @@ void NavigationPage::updateRouteMap()
         }
     } else {
         // 模拟折线：起终点线性插值 + 垂直方向正弦偏移（约 200 米弦高），
-        // 与文字模拟步骤同口径——接口失败/无坐标时地图永不空白。
+        // 接口失败/无坐标时地图永不空白（文案步骤模块已移除，可视化兜底）。
         constexpr int kSegments = 10;
         constexpr double kPi = 3.14159265358979323846;
         const double dx = to.longitude - from.longitude;

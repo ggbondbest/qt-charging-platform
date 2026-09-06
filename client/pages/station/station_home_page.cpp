@@ -5,6 +5,7 @@
 #include "charging/client/widgets/notice_panel.h"
 #include "charging/client/widgets/status_tag.h"
 #include "pages/station/platform_theme.h"
+#include "pages/station/station_filter_dialog.h"
 #include "pages/station/station_map_panel.h"
 
 #include <QButtonGroup>
@@ -13,8 +14,10 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QVBoxLayout>
 #include <QVariant>
 
@@ -53,6 +56,19 @@ QComboBox#priceFilterComboBox {
     padding: 5px 10px;
     font-size: 12px;
     color: #1F2937;
+}
+QPushButton[isStationStar="true"] {
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    padding: 2px 6px;
+    color: #9CA3AF;
+}
+QPushButton[isStationStar="true"]:hover {
+    color: #00B578;
+}
+QPushButton[isStationStar="true"][starred="true"] {
+    color: #00B578;
 }
 )";
 
@@ -107,7 +123,9 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
 
     // ① 地图 + 列表可拖拽分屏（成员 2 地图迭代）：上半为地图面板、下半为
     //    “筛选栏+列表”容器，分隔条可上下拖动——把地图拉大或把列表压小。
-    //    默认口径保持旧版：真实地图 170 / 降级横幅 56，多余空间归列表；
+    //    迭代 3：初始尺寸改走 attachToSplitter 统一助手（降级 56 / 真地图
+    //    kPreferredInitialHeight=420，异步加载成功后升档），与导航页地图
+    //    同口径——修复构造期 isDegraded 恒真导致的“初始小地图”观感；
     //    面板内部“降级/重试/标记点”逻辑零改动（规格：页面仍可正常浏览）。
     mapPanel_ = new StationMapPanel(this);
     mapPanel_->setObjectName(QStringLiteral("stationMapPanel"));
@@ -124,7 +142,7 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
     mapListSplitter->addWidget(listPane);
     mapListSplitter->setStretchFactor(0, 0); // 拉伸增量归列表，地图保持默认高
     mapListSplitter->setStretchFactor(1, 1);
-    mapListSplitter->setSizes({mapPanel_->isDegraded() ? 56 : 170, 600});
+    mapPanel_->attachToSplitter(mapListSplitter, 600);
     rootLayout->addWidget(mapListSplitter, 1);
     // 面板内部处理“重试”（重新尝试构建地图视图）；分屏高度由用户拖动决定。
 
@@ -187,7 +205,7 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
                                    tr("换个地址或站名关键字试试，也可以清空搜索查看全部站点。"),
                                    tr("清空搜索"), listStack_);
     connect(emptyNotice_, &NoticePanel::actionTriggered, this,
-            &StationHomePage::clearKeywordAndSearch);
+            &StationHomePage::handleEmptyAction);
     listStack_->addWidget(emptyNotice_);
 
     errorNotice_ = new NoticePanel(QStringLiteral("⚠️"), tr("站点加载失败"), QString(),
@@ -220,6 +238,10 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
             [this](int) { refreshFilteredCards(); });
     connect(priceFilterComboBox_, &QComboBox::currentIndexChanged, this,
             [this](int) { refreshFilteredCards(); });
+
+    // 迭代 3：收藏态变化 → 星星回显（服务实例懒建，见 favoritesService()）。
+    connect(favoritesService(), &services::favorites::FavoritesService::favoritesChanged, this,
+            &StationHomePage::refreshStarButtons);
 
     // 进入页面即拉取一次“附近站点”。
     setViewState(ViewState::Loading);
@@ -280,14 +302,7 @@ void StationHomePage::handleQuerySucceeded(
     const services::station::StationList& stations)
 {
     lastResults_ = stations;
-
-    QVector<MapStationPoint> mapPoints;
-    mapPoints.reserve(stations.size());
-    for (const auto& item : stations) {
-        mapPoints.append({item.station.latitude, item.station.longitude, item.station.name});
-    }
-    mapPanel_->setStations(mapPoints);
-
+    // 地图标记刷新统一收敛到 refreshFilteredCards（与列表筛选同口径）。
     refreshFilteredCards();
 }
 
@@ -308,15 +323,19 @@ void StationHomePage::refreshFilteredCards()
         sortMode = SortNearest;
     }
 
-    services::station::StationList filtered;
-    for (const auto& item : lastResults_) {
+    // 迭代 3：高级筛选先过一遍（服务层纯客户端投影，组内 OR / 组间 AND），
+    // 再叠加既有的电价筛选与排序——全部投影于 lastResults_，不重发请求。
+    services::station::StationList filtered
+        = services::station::applyStationFilter(lastResults_, filterCriteria_);
+    services::station::StationList visible;
+    for (const auto& item : filtered) {
         if (maxPriceCents > 0 && item.station.priceCentsPerKwh > maxPriceCents) {
             continue;
         }
-        filtered.append(item);
+        visible.append(item);
     }
-    std::stable_sort(filtered.begin(), filtered.end(), [sortMode](const auto& left,
-                                                                  const auto& right) {
+    std::stable_sort(visible.begin(), visible.end(), [sortMode](const auto& left,
+                                                                 const auto& right) {
         switch (sortMode) {
         case SortMostAvailable:
             if (left.station.availableChargers != right.station.availableChargers) {
@@ -336,12 +355,29 @@ void StationHomePage::refreshFilteredCards()
     });
 
     clearLayoutItems(listLayout_);
-    for (const auto& item : filtered) {
+    for (const auto& item : visible) {
         listLayout_->addWidget(createStationCard(item));
     }
     listLayout_->addStretch();
 
-    if (filtered.isEmpty()) {
+    // 地图标记与列表同口径（筛选后所见即所得）。
+    QVector<MapStationPoint> mapPoints;
+    mapPoints.reserve(visible.size());
+    for (const auto& item : visible) {
+        mapPoints.append({item.station.latitude, item.station.longitude, item.station.name});
+    }
+    mapPanel_->setStations(mapPoints);
+
+    if (visible.isEmpty()) {
+        // 空态文案分口径：有筛选条件在生效 → “暂无符合条件的充电站”（迭代 3
+        // 规格）；纯关键字无结果 → 原有“换个关键词”引导。
+        const bool criteriaActive = !filterCriteria_.isEmpty() || maxPriceCents > 0;
+        emptyNotice_->setContent(
+            QStringLiteral("🔍"),
+            criteriaActive ? tr("暂无符合条件的充电站") : tr("没有找到相关站点"),
+            criteriaActive ? tr("当前筛选条件下没有电站，试试放宽或重置筛选条件。")
+                           : tr("换个地址或站名关键字试试，也可以清空搜索查看全部站点。"),
+            criteriaActive ? tr("重置筛选") : tr("清空搜索"));
         setViewState(ViewState::Empty);
     } else {
         setViewState(ViewState::List);
@@ -397,10 +433,25 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
     auto* distanceLabel = new QLabel(tr("距离 %1").arg(formatDistance(item.distanceMeters)),
                                      card);
     distanceLabel->setProperty("role", QStringLiteral("secondary"));
+
+    // 迭代 3：右下角收藏星星。必须是真 QPushButton——ClickableCard 对
+    // 区域内任意左键释放都发 clicked()，只有按钮自身消费事件才能防误触详情。
+    const qint64 stationId = item.station.id;
+    auto* starButton = new QPushButton(card);
+    starButton->setObjectName(QStringLiteral("stationCardStar_%1").arg(stationId));
+    starButton->setProperty("isStationStar", true);
+    starButton->setCursor(Qt::PointingHandCursor);
+    starButton->setToolTip(tr("收藏该站点"));
+    connect(starButton, &QPushButton::clicked, this,
+            [this, stationId]() { favoritesService()->toggle(stationId); });
+
     detailRow->addWidget(priceLabel);
     detailRow->addStretch();
     detailRow->addWidget(distanceLabel);
+    detailRow->addWidget(starButton);
     body->addLayout(detailRow);
+
+    applyStarState(starButton, stationId);
 
     const charging::model::Station station = item.station;
     const int distanceMeters = item.distanceMeters;
@@ -408,6 +459,21 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
             [this, station, distanceMeters]() { emit stationSelected(station, distanceMeters); });
 
     return card;
+}
+
+// 星星回显：空心 ☆（未收藏，灰）↔ 实心 ★（已收藏，绿高亮，QSS starred 属性）。
+void StationHomePage::applyStarState(QPushButton* starButton, qint64 stationId) const
+{
+    const bool starred = favoritesService_ != nullptr && favoritesService_->contains(stationId);
+    starButton->setText(starred ? QStringLiteral("★") : QStringLiteral("☆"));
+    starButton->setProperty("starred", starred);
+    // 属性选择器变化必须重抛光（QStyleSheetStyle 只在 polish 时求值属性规则，
+    // 仓内既有口径：status_tag/login_page 等成对 unpolish+polish）——否则已
+    // 显示卡片的高亮色不随收藏状态更新（验收缺陷 3）。
+    starButton->style()->unpolish(starButton);
+    starButton->style()->polish(starButton);
+    starButton->setAccessibleName(starred ? tr("取消收藏") : tr("收藏"));
+    starButton->setToolTip(starred ? tr("取消收藏") : tr("收藏该站点"));
 }
 
 int StationHomePage::stationCardCount() const
@@ -447,6 +513,89 @@ QWidget* StationHomePage::stationCardAt(int index) const
         }
     }
     return nullptr;
+}
+
+// —— 迭代 3 · 收藏 + 高级筛选 ——
+
+void StationHomePage::setFavoritesService(services::favorites::FavoritesService* service)
+{
+    if (service == nullptr || service == favoritesService_) {
+        return;
+    }
+    if (favoritesService_ != nullptr) {
+        disconnect(favoritesService_, nullptr, this, nullptr);
+    }
+    favoritesService_ = service;
+    connect(favoritesService_, &services::favorites::FavoritesService::favoritesChanged, this,
+            &StationHomePage::refreshStarButtons);
+    refreshStarButtons(); // 换号/注入后回显该用户收藏
+}
+
+services::favorites::FavoritesService* StationHomePage::favoritesService()
+{
+    if (favoritesService_ == nullptr) {
+        // 未注入兜底：页面自建（父对象随页面析构；未登录 = 内存态口径）。
+        favoritesService_ = new services::favorites::FavoritesService(this);
+        connect(favoritesService_, &services::favorites::FavoritesService::favoritesChanged, this,
+                &StationHomePage::refreshStarButtons);
+    }
+    return favoritesService_;
+}
+
+void StationHomePage::refreshStarButtons()
+{
+    // 星星挂在卡片内（孙级），全量找后按属性过滤。
+    for (QPushButton* button : findChildren<QPushButton*>()) {
+        if (!button->property("isStationStar").toBool()) {
+            continue;
+        }
+        applyStarState(button, button->parentWidget()->property("stationId").toLongLong());
+    }
+}
+
+void StationHomePage::handleEmptyAction()
+{
+    // 与空态文案同口径（验收缺陷 2）：criteriaActive = 高级筛选 OR 电价筛选，
+    // 只要任一生效就重置全部筛选条件、保留用户关键词；纯关键词空态才清词重搜。
+    const bool priceActive = priceFilterComboBox_->currentData().toInt() > 0;
+    if (filterCriteria_.isEmpty() && !priceActive) {
+        clearKeywordAndSearch();
+        return;
+    }
+    if (priceActive) {
+        QSignalBlocker blocker(priceFilterComboBox_); // 防逐信号重复投影
+        priceFilterComboBox_->setCurrentIndex(0);
+    }
+    if (!filterCriteria_.isEmpty()) {
+        setFilterCriteria(services::station::StationFilterCriteria()); // 内部含投影刷新
+    } else {
+        refreshFilteredCards();
+    }
+}
+
+void StationHomePage::openFilterDialog()
+{
+    if (filterDialog_ != nullptr) {
+        filterDialog_->raise();
+        filterDialog_->activateWindow();
+        return;
+    }
+    auto* dialog = new StationFilterDialog(filterCriteria_, this);
+    connect(dialog, &StationFilterDialog::applied, this,
+            &StationHomePage::setFilterCriteria);
+    filterDialog_ = dialog;
+    dialog->show(); // 非模态（设置页弹窗口径）
+}
+
+void StationHomePage::setFilterCriteria(const services::station::StationFilterCriteria& criteria)
+{
+    filterCriteria_ = criteria;
+    refreshFilteredCards(); // 纯投影刷新，不重发请求
+}
+
+services::station::StationFilterCriteria StationHomePage::filterCriteria() const
+{
+    return filterCriteria_;
 }
 
 } // namespace charging::client::pages::station

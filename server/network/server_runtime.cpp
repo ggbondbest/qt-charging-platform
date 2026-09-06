@@ -1,4 +1,6 @@
 #include "server_runtime.h"
+#include "admin_repository.h"
+#include "admin_service.h"
 
 #include "billing_service.h"
 #include "charging_repository.h"
@@ -14,6 +16,8 @@
 #include "user_service.h"
 
 #include <QThread>
+#include <QDateTime>
+#include <QTimer>
 
 namespace charging::server {
 
@@ -33,6 +37,9 @@ signals:
     void ready(quint16 port);
     void countChanged(int count);
     void failed(const QString& message);
+    void adminRequest(const QString& requestId, const QString& action,
+                      const QJsonObject& data, const QString& token, qint64 deadlineMs);
+    void adminResult(const QString& requestId, const QJsonObject& result);
 
 protected:
     void run() override
@@ -49,6 +56,20 @@ protected:
             }
             if (isInterruptionRequested()) return;
             UserRepository users(database.database());
+            AdminRepository adminRepository(database.database());
+            AdminService adminService(&adminRepository);
+            QObject adminContext; // constructed and destroyed in this worker
+            connect(this, &ServerThread::adminRequest, &adminContext,
+                    [this, &adminService](const QString& id, const QString& action,
+                                         const QJsonObject& data, const QString& token, qint64 deadline) {
+                if (isInterruptionRequested()) return;
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close") && QDateTime::currentMSecsSinceEpoch() >= deadline) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
+                    return;
+                }
+                const QString channel = id.contains(QLatin1Char(':')) ? id.section(QLatin1Char(':'), 0, 0) : QString();
+                emit adminResult(id, adminService.handle(action, data, token, channel));
+            }, Qt::QueuedConnection);
             ChargingRepository charging(database.database());
             OrderRepository orders(database.database());
             UserApiRepository userApi(database.database());
@@ -82,6 +103,8 @@ protected:
 ServerRuntime::ServerRuntime(QObject* parent) : QObject(parent), thread_(new ServerThread(this))
 {
     thread_->setObjectName(QStringLiteral("charging-service-worker"));
+    connect(thread_, &ServerThread::adminResult, this, &ServerRuntime::adminResponse,
+            Qt::QueuedConnection);
     connect(thread_, &ServerThread::ready, this, [this](quint16 port) {
         if (state_ != State::Starting) return;
         state_ = State::Running;
@@ -149,6 +172,20 @@ void ServerRuntime::stop()
 bool ServerRuntime::isListening() const { return state_ == State::Running; }
 quint16 ServerRuntime::serverPort() const { return port_; }
 int ServerRuntime::clientCount() const { return clients_; }
+
+void ServerRuntime::submitAdminRequest(const QString& id, const QString& action,
+                                       const QJsonObject& data, const QString& token,
+                                       qint64 deadlineMs)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (state_ != State::Running) {
+        QTimer::singleShot(0, this, [this, id] {
+            emit adminResponse(id, AdminService::failure(QStringLiteral("UNAVAILABLE")));
+        });
+        return;
+    }
+    emit thread_->adminRequest(id, action, data, token, deadlineMs);
+}
 
 } // namespace charging::server
 
