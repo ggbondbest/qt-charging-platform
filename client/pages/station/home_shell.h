@@ -33,6 +33,10 @@ class ClientConnection;
 namespace services::map {
 class MapGeoService;
 } // namespace services::map
+namespace services::favorites {
+class FavoritesService;
+class NotificationService;
+} // namespace services::favorites
 namespace services::reservation {
 class ReservationService;
 struct ReservationRecord;
@@ -50,6 +54,8 @@ class StationDetailPage;
 class StationHomePage;
 class SettingsPage;
 class NavigationPage;
+class FavoritesPage;
+class NotificationPage;
 
 // 首页导航外壳（成员 2，任务 #2/#7）。
 //
@@ -82,6 +88,10 @@ class NavigationPage;
 // 任务 #17 二次迭代追加：设置页（成员 3 ProfilePage“设置”行进入，返回栈
 // 固定回“我的”Tab）与导航页（预约成功“去充电”弹窗进入，返回链
 // 导航 → 预约模块【预约订单】→“我的”Tab）。
+// 迭代 3 追加：收藏服务 + 消息通知服务为壳内单实例（预约信号桥接实时
+// 生成通知）；消息通知页（顶部铃铛进入，登录后 15 / 未登录 9）与收藏夹
+// 页（“我的 → 收藏”进入，登录后 16 / 未登录 10）追加在栈尾；两者未登录
+// 一律拦截提示登录；顶部筛选按钮直达找站页高级筛选弹窗。
 class HomeShell final : public QWidget
 {
     Q_OBJECT
@@ -102,10 +112,19 @@ public:
     ReservationModulePage* reservationModule() const;
     // 设置服务/设置页（测试注入车辆档案驱动名额与默认车约束）。
     charging::client::services::settings::SettingsService* settingsService() const;
+    // 迭代 3 探针：收藏/通知服务与两个新路由页（测试直接驱动断言）。
+    charging::client::services::favorites::FavoritesService* favoritesService() const;
+    charging::client::services::favorites::NotificationService* notificationService() const;
+    FavoritesPage* favoritesPage() const;
+    NotificationPage* notificationPage() const;
 
     // 路由入口（UI 内经个人中心卡片/引导弹窗触发；宿主与测试可直接调用）。
     void openReservationModule();
     void openSettings();
+    // 迭代 3：消息通知页（顶部铃铛）与收藏夹页（“我的 → 收藏”）；
+    // 未登录一律拦截提示登录。
+    void openNotifications();
+    void openFavorites();
 
 signals:
     // 已登录时用户点击“退出登录”，请求返回登录页。
@@ -141,6 +160,9 @@ private:
     // 顶栏态与路由栈/当前 Tab 同步：返回按钮跟随路由栈，搜索框只留在「找站」。
     void syncTopBar();
     void showReservationLoginPrompt();
+    // 迭代 3：通用登录拦截提示（通知/收藏入口复用；文案随功能定制，
+    // 对象名与预约拦截一致，宿主“去登录”同走 loginRequested）。
+    void showFeatureLoginPrompt(const QString& text, const QString& informativeText);
     void showUnfinishedReservationPrompt();
     void showNoVehiclePrompt();
     void showGoChargePrompt(const services::reservation::ReservationRecord& record);
@@ -157,9 +179,13 @@ private:
     ReservationModulePage* modulePage_ = nullptr;
     SettingsPage* settingsPage_ = nullptr;    // 路由页（登录后 12；登录前 7）
     NavigationPage* navigationPage_ = nullptr; // 路由页（登录后 13；登录前 8）
+    FavoritesPage* favoritesPage_ = nullptr;   // 迭代 3 路由页（登录后 16；登录前 10）
+    NotificationPage* notificationPage_ = nullptr; // 迭代 3 路由页（登录后 15；登录前 9）
     charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
     charging::client::services::settings::SettingsService* settingsService_ = nullptr;
     charging::client::services::map::MapGeoService* mapGeoService_ = nullptr;
+    charging::client::services::favorites::FavoritesService* favoritesService_ = nullptr;
+    charging::client::services::favorites::NotificationService* notificationService_ = nullptr;
     QVector<BackTarget> backTargets_;
 
     // ---- 成员 3 整合：传输通道（真实登录 live / 预览 mock）+ 服务 + 页面 ----

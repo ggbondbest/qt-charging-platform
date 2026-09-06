@@ -1,4 +1,6 @@
 add_library(charging_server_core STATIC
+    admin_request_gateway.cpp
+    admin_request_gateway.h
     client_session.cpp
     client_session.h
     charging_server.cpp

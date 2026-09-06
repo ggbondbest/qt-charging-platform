@@ -178,6 +178,18 @@ int ReservationService::unfinishedSlotLimit() const
     return settings_ != nullptr ? qMax(0, settings_->vehicleCount()) : 1;
 }
 
+const ReservationRecord* ReservationService::reservationRecord(qint64 reservationId) const
+{
+    // 迭代 3：取消/到期信号只携带 ID，通知服务桥接需要站名/桩号展示上下文，
+    // 由此只读访问器回查（live/mock 各自数据源）。ID 不存在返回 nullptr。
+    for (const auto& record : (liveMode_ ? liveStore_ : mockStore_)) {
+        if (record.reservation.id == reservationId) {
+            return &record;
+        }
+    }
+    return nullptr;
+}
+
 void ReservationService::submit(const charging::model::Charger& charger,
                                 const charging::model::Station& station, const QDateTime& startUtc,
                                 const QDateTime& endUtc, qint64 vehicleId, const QString& vehiclePlate,
