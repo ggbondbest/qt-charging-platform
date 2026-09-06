@@ -21,7 +21,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(_charging_qt_components Core Gui Network Sql Widgets)
+set(_charging_qt_components Core Gui Network Sql Widgets Quick QuickControls2)
 if(BUILD_TESTING)
     list(APPEND _charging_qt_components Test)
 endif()

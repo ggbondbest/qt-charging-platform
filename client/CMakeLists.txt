@@ -35,3 +35,4 @@ install(TARGETS charging_client
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 )
+add_subdirectory(qml)
