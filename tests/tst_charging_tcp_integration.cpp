@@ -1,4 +1,5 @@
 #include "billing_service.h"
+#include "admin_repository.h"
 #include "charging/common/protocol/protocol.h"
 #include "charging_repository.h"
 #include "charging_service.h"
@@ -181,6 +182,12 @@ public:
             return {};
         }
         return query.value(0).toString();
+    }
+
+    QJsonObject adminRead(const QString& entity, const QJsonObject& parameters) const
+    {
+        charging::server::AdminRepository repository(database_.database());
+        return repository.read(entity, parameters);
     }
 
 private:
@@ -399,6 +406,35 @@ void ChargingTcpIntegrationTest::sameConnectionCompletesAuthenticatedWorkflow()
         fixture.text(
             QStringLiteral("SELECT status FROM chargers WHERE id = %1").arg(fixture.chargerId())),
         QStringLiteral("AVAILABLE"));
+
+    const auto adminOrder = fixture.adminRead(
+        QStringLiteral("orders"), {{QStringLiteral("id"), QString::number(orderId)}})
+                                .value(QStringLiteral("item"))
+                                .toObject();
+    QCOMPARE(adminOrder.value(QStringLiteral("status")).toString(), QStringLiteral("COMPLETED"));
+    QCOMPARE(adminOrder.value(QStringLiteral("amountCents")).toInt(), 120);
+    QCOMPARE(adminOrder.value(QStringLiteral("phone")).toString(), QStringLiteral("138****0101"));
+
+    const auto adminUser = fixture.adminRead(
+        QStringLiteral("users"), {{QStringLiteral("id"), QString::number(fixture.userId())}})
+                               .value(QStringLiteral("item"))
+                               .toObject();
+    QCOMPARE(adminUser.value(QStringLiteral("balanceCents")).toInt(), 9880);
+    QCOMPARE(adminUser.value(QStringLiteral("unfinishedOrderCount")).toInt(), 0);
+
+    const auto adminCharger = fixture.adminRead(
+        QStringLiteral("chargers"), {{QStringLiteral("id"), QString::number(fixture.chargerId())}})
+                                  .value(QStringLiteral("item"))
+                                  .toObject();
+    QCOMPARE(adminCharger.value(QStringLiteral("status")).toString(), QStringLiteral("AVAILABLE"));
+    QCOMPARE(adminCharger.value(QStringLiteral("totalChargeCount")).toInt(), 1);
+    QCOMPARE(adminCharger.value(QStringLiteral("totalChargeSeconds")).toInt(), 500);
+
+    const auto adminOrders = fixture.adminRead(
+        QStringLiteral("orders"), {{QStringLiteral("userId"), QString::number(fixture.userId())},
+                                    {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}});
+    QCOMPARE(adminOrders.value(QStringLiteral("total")).toInt(), 1);
+    QCOMPARE(adminOrders.value(QStringLiteral("items")).toArray().first().toObject(), adminOrder);
 
     // The sixth workflow route, cancellation, is exercised after the first order
     // reaches COMPLETED and therefore no longer blocks a new reservation.
