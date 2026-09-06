@@ -16,6 +16,7 @@ class QVBoxLayout;
 namespace charging::client {
 
 class ActionButton;
+class PullToRefreshArea;
 
 // 「充电」Tab 根页：按充电生命周期状态堆叠卡片——
 //   充电中卡（功率/电量/时长/停止）→ 待支付卡（费用明细/支付）→
@@ -51,6 +52,7 @@ protected:
 private:
     void buildUi();
     void requestStates();
+    void onPullSourceSettled(); // 下拉刷新两路请求（订单+预约）落定计数。
     void rebuildCards();
     void clearCards();
 
@@ -80,6 +82,8 @@ private:
 
     QVBoxLayout* cardsLayout_ = nullptr;
     QTimer* countdownTimer_ = nullptr;
+    PullToRefreshArea* pullScroll_ = nullptr;
+    int pullRefreshPending_ = 0; // 下拉刷新在途源计数（订单+预约两路）。
 
     // 最近一次订单列表的分类结果（服务端仍是唯一事实来源）。
     QVector<charging::client::OrderSummary> chargingOrders_;

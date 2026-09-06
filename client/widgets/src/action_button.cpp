@@ -1,5 +1,7 @@
 #include "charging/client/widgets/action_button.h"
 
+#include "charging/client/widgets/motion.h"
+
 #include <QVariant>
 
 namespace charging::client {
@@ -13,6 +15,7 @@ ActionButton::ActionButton(Variant variant, const QString& text, QWidget* parent
     if (variant == Variant::Chip) {
         setCheckable(true);
     }
+    motion::attachPressDip(this); // 全端统一按压手感（offscreen 自动免装）。
 }
 
 QString ActionButton::variantName(Variant variant)

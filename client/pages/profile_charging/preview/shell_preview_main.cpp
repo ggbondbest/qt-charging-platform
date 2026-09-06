@@ -4,6 +4,7 @@
 // Never linked into charging_client.
 
 #include "charging/client/widgets/clickable_card.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
 #include "pages/station/home_shell.h"
 #include "pages/station/station_home_page.h"
 #include "charging/common/model/models.h"
@@ -23,11 +24,13 @@ constexpr int kPreviewHeight = 860;
 
 charging::model::User sampleUser()
 {
+    // 与 mock 种子账号（13800138000 / 余额 100.00）保持一致，预览截图里
+    // 顶栏、钱包头、充值记录三处余额才是同一个数。
     charging::model::User user;
-    user.id = 42;
-    user.phone = QStringLiteral("13912345678");
-    user.nickname = QStringLiteral("用户5678");
-    user.balanceCents = 12345;
+    user.id = 1;
+    user.phone = QStringLiteral("13800138000");
+    user.nickname = QStringLiteral("用户8000");
+    user.balanceCents = 10000;
     return user;
 }
 
@@ -40,11 +43,14 @@ int main(int argc, char* argv[])
 
     QString view = QStringLiteral("station");
     QString screenshotPath;
+    bool pullDemo = false;
     for (const QString& argument : application.arguments()) {
         if (argument.startsWith(QStringLiteral("--view="))) {
             view = argument.section(QLatin1Char('='), 1);
         } else if (argument.startsWith(QStringLiteral("--screenshot="))) {
             screenshotPath = argument.section(QLatin1Char('='), 1);
+        } else if (argument == QLatin1String("--pull")) {
+            pullDemo = true;
         }
     }
 
@@ -69,10 +75,36 @@ int main(int argc, char* argv[])
         });
     };
 
+    // --pull：截图前用合成事件把当前可见的下拉区按进"松开刷新"态并保持
+    // 手势（不发 release），让胶囊在图里定格——验证手势在整合壳层里真可用，
+    // 而不只是单元测试的隔离环境。
+    const auto armPullDemo = [&]() {
+        if (!pullDemo) {
+            return;
+        }
+        QTimer::singleShot(1100, [&shell]() {
+            const auto areas = shell.findChildren<charging::client::PullToRefreshArea*>();
+            for (auto* area : areas) {
+                if (!area->isVisible()) {
+                    continue;
+                }
+                QWidget* viewport = area->viewport();
+                QMouseEvent press(QEvent::MouseButtonPress, QPointF(120.0, 40.0), Qt::LeftButton,
+                                  Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(viewport, &press);
+                QMouseEvent move(QEvent::MouseMove, QPointF(120.0, 110.0), Qt::NoButton,
+                                 Qt::LeftButton, Qt::NoModifier);
+                QApplication::sendEvent(viewport, &move);
+                return;
+            }
+        });
+    };
+
     shell.show();
 
     if (view == QLatin1String("order")) {
         clickTab(QStringLiteral("order"));
+        armPullDemo();
         shoot(1600);
     } else if (view == QLatin1String("recharge") || view == QLatin1String("wallet")) {
         // 钱包/充值是路由页，经「我的」页的钱包卡入口进入。
@@ -82,12 +114,15 @@ int main(int argc, char* argv[])
         if (auto* entry = shell.findChild<QPushButton*>(buttonId)) {
             QTimer::singleShot(400, [entry]() { entry->click(); });
         }
+        // recharge 页没有下拉区，armPullDemo 自动空转，无需分支。
+        armPullDemo();
         shoot(1600);
     } else if (view == QLatin1String("profile")) {
         clickTab(QStringLiteral("profile"));
         shoot(1600);
     } else if (view == QLatin1String("charging")) {
         clickTab(QStringLiteral("charging"));
+        armPullDemo();
         shoot(1600);
     } else if (view == QLatin1String("detail")) {
         // Wait for the mock station list to render, then click the first card.

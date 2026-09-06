@@ -6,6 +6,7 @@
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/loading_overlay.h"
 #include "charging/client/widgets/notice_panel.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
 #include "charging/client/widgets/status_tag.h"
 #include "charging/client/widgets/toast.h"
 #include "charging/common/protocol/protocol.h"
@@ -81,7 +82,7 @@ void WalletPage::buildUi()
 
     // 流水合并为一张带边框的记录卡：行本身透明、行间细分隔线，
     // 不再是"一行一卡"的碎卡墙。
-    recordsScroll_ = new QScrollArea(this);
+    recordsScroll_ = new PullToRefreshArea(this);
     recordsScroll_->setObjectName(QStringLiteral("uiWalletRecords"));
     recordsScroll_->setWidgetResizable(true);
     recordsScroll_->setFrameShape(QFrame::NoFrame);
@@ -92,7 +93,17 @@ void WalletPage::buildUi()
     recordsListLayout_->setContentsMargins(4, 2, 4, 2);
     recordsListLayout_->setSpacing(0);
     recordsListLayout_->addStretch();
-    recordsScroll_->setWidget(recordsContainer);
+    recordsScroll_->setPullContent(recordsContainer);
+    // 下拉刷新=重拉余额+第一页记录；反馈由胶囊承担，不再叠全屏遮罩。
+    connect(recordsScroll_, &PullToRefreshArea::refreshRequested, this, [this]() {
+        if (service_->isFetchingProfile() || service_->isFetchingRecords()) {
+            recordsScroll_->setRefreshing(false);
+            return;
+        }
+        loadingPage_ = 1;
+        service_->fetchProfile();
+        service_->fetchRechargeRecords(1);
+    });
     rootLayout->addWidget(recordsScroll_, 1);
 
     recordsNotice_ = new NoticePanel(QStringLiteral("—"), tr("暂无充值记录"), QString(),
@@ -173,11 +184,14 @@ void WalletPage::onRecordsLoaded(const QVector<charging::model::RechargeRecord>&
         clearRecordRows();
         shownRecords_.clear();
     }
+    recordsScroll_->setRefreshing(false); // 下拉刷新路径在此收起（普通路径为空操作）。
     for (const charging::model::RechargeRecord& record : records) {
+        const bool firstRow = shownRecords_.isEmpty();
         shownRecords_.append(record);
         // Insert before the trailing stretch item; hairline separator between
         // rows (not before the first), rows themselves stay flat inside the card.
-        if (recordsListLayout_->count() > 1) {
+        // （判"是否首行"用数据计数，不能用布局计数——顶部还有下拉垫块占位。）
+        if (!firstRow) {
             auto* separator = new QFrame(recordsScroll_);
             separator->setObjectName(QStringLiteral("uiRecordSeparator"));
             separator->setFixedHeight(1);
@@ -203,6 +217,7 @@ void WalletPage::onOperationFailed(const QString& type,
                                    const charging::protocol::ProtocolError& error)
 {
     endBusy();
+    recordsScroll_->setRefreshing(false); // 失败也要收起胶囊，不能卡在"正在刷新"。
     Toast::show(this, displayMessageForError(error), StatusTag::Tone::Danger);
 
     const QString profileType =
@@ -275,13 +290,22 @@ QWidget* WalletPage::buildRecordRow(const charging::model::RechargeRecord& recor
 
 void WalletPage::clearRecordRows()
 {
-    // Remove every widget except the trailing stretch item.
+    // 下拉垫块先摘出保护（它是布局项不是"行"），清完原样插回，
+    // 然后移除除尾部拉伸项以外的所有行。
+    QLayoutItem* spacerItem = nullptr;
+    if (QLayoutItem* first = recordsListLayout_->itemAt(0);
+        first != nullptr && first->widget() == recordsScroll_->pullSpacer()) {
+        spacerItem = recordsListLayout_->takeAt(0);
+    }
     while (recordsListLayout_->count() > 1) {
         QLayoutItem* item = recordsListLayout_->takeAt(0);
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
         delete item;
+    }
+    if (spacerItem != nullptr) {
+        recordsListLayout_->insertItem(0, spacerItem);
     }
 }
 
