@@ -198,7 +198,7 @@ Partial unique indexes 保证一个用户最多有一个 `RESERVED` / `CHARGING`
 主要索引：
 
 - `idx_chargers_station_status`：站内状态表和状态统计；
-- `idx_chargers_status_updated_at`：管理端异常电桩筛选及更新时间排序；
+- `idx_chargers_abnormal_updated_at`：异常电桩集合按更新时间和 ID 稳定倒序分页；
 - `idx_chargers_updated_at`：管理端电桩全局更新时间倒序分页；
 - `idx_reservations_*`：用户/桩有效预约及过期扫描；
 - `idx_orders_user_created_at`：用户订单历史；
