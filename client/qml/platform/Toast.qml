@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls      // for the Overlay attached type
 import QtQuick.Controls.Basic
 import "."
 

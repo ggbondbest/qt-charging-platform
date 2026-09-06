@@ -8,6 +8,8 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickItemGrabResult>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QTimer>
@@ -62,7 +64,7 @@ int main(int argc, char* argv[])
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
     QQmlComponent component(&engine);
     component.loadUrl(QUrl::fromLocalFile(
-        QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Root.qml")));
+        QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
     if (component.isError()) {
         qWarning().noquote() << "QML load failed:" << component.errorString();
         return 1;
@@ -76,18 +78,23 @@ int main(int argc, char* argv[])
     window->resize(size);
 
     if (!shot.isEmpty()) {
-        // Grab once the first frame is composited (offscreen-safe path).
-        QObject::connect(window, &QQuickWindow::sceneGraphInitialized, window,
-                         [window, shot]() {
-                             const QImage img = window->grabWindow();
-                             if (img.isNull() || !img.save(shot)) {
-                                 qWarning() << "screenshot failed" << shot;
-                                 QCoreApplication::exit(2);
-                             } else {
-                                 qInfo() << "saved" << shot;
-                                 QCoreApplication::quit();
-                             }
-                         });
+        // grabWindow() is dead under the offscreen platform (verified); render
+        // the item tree directly instead — no platform surface required.
+        QTimer::singleShot(500, window, [window, shot]() {
+            auto* content = window->contentItem();
+            auto result = content->grabToImage();
+            QObject::connect(result.data(), &QQuickItemGrabResult::ready,
+                             [result, shot]() {
+                                 const QImage img = result->image();
+                                 if (img.isNull() || !img.save(shot)) {
+                                     qWarning() << "screenshot failed" << shot;
+                                     QCoreApplication::exit(2);
+                                 } else {
+                                     qInfo() << "saved" << shot << img.size();
+                                     QCoreApplication::quit();
+                                 }
+                             });
+        });
     }
     window->show();
     return app.exec();

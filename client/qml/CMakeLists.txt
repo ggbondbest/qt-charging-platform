@@ -14,6 +14,8 @@ add_executable(charging_qml_preview
     main.cpp
     app_bridge.cpp
     app_bridge.h
+    Shell.qml
+    pages/PlaceholderPage.qml
     ${CHARGING_QML_FILES}
 )
 set_target_properties(charging_qml_preview PROPERTIES

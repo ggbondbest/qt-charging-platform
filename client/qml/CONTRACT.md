@@ -42,3 +42,9 @@ C++ 服务对象直接以 context property 注入根作用域，名字=类名首
 
 ## 5. 验收（冲刺日）
 mock 通道下 `charging-qml-preview --view=<路由> --screenshot=<png>` 出非空截图；旧 ctest 34 套保持全绿（证明没碰旧东西）。像素 diff、测试移植、删旧=明天的事。
+
+### 排雷实录（已验证的坑，别再踩）
+- offscreen 下 `QQuickWindow::grabWindow()` **永远返回 null**（GL /software 后端都救不了）；截图走 `contentItem()->grabToImage()`。
+- 推论：**每个页面根节点必须自绘背景**（`Rectangle { anchors.fill: parent; color: Style.bg }`），否则截图区是黑色。
+- 进程退出时 context property 变 null 会触发绑定重算——绑定里用 `App && App.xxx` 守一下，避免 teardown 噪音。
+- Controls 只有 `Basic` 样式可用（`QQuickStyle::setStyle("Basic")` 已在 main.cpp 设好，勿改）。

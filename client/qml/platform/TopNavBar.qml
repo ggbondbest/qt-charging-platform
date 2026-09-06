@@ -17,6 +17,14 @@ Rectangle {
     readonly property bool notificationsVisible: searchVisible
     objectName: "topNavBar"
 
+    // Signal set verbatim from top_nav_bar.h:
+    signal searchSubmitted(string keyword)
+    signal loginRequested()
+    signal profileRequested()
+    signal backRequested()
+    signal filterRequested()
+    signal notificationsRequested()
+
     function clearUser() { user = null }
     function clearSearch() { searchField.text = "" }
 
