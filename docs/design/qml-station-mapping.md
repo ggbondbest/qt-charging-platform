@@ -1,6 +1,6 @@
 # QML station 域迁移 · 状态/信号→绑定映射草稿
 
-> 基线：develop `0ab34da`（PR #33 已合入，QML 栈在 `client/qml/`）。
+> 基线：develop `3ae4add`（PR #33/#34 已合入，QML 栈在 `client/qml/`）。
 > 领地：`client/qml/pages/station/**`（成员2）。组件/服务名逐字取自 `client/qml/CONTRACT.md`。
 > 本稿两用途：① 每页迁移的对账单；② **今晚桥接口需求清单**（§桥缺口）——station/reservation 等桥按此形状补即可。
 
@@ -36,7 +36,7 @@
 | handleLoginFailed(message) | `onLoginFailed(message)` → resultLabel 红字 |
 | resetState() | `function resetState()`：清 busy/文案回"请输入11位手机号" |
 
-注：AuthService 是裸服务（非桥），`login()` 非 slot——调用即失败，属预期（今晚补桥；桥方法名 `login` 不改）。
+注：AuthService 是裸服务（非桥），`login()` 非 slot——调用即失败，属预期（今晚补桥；桥方法名 `login` 不改）。mock 通道实为 `QmlApp::authService()==nullptr`（app_bridge.cpp:99）——空调用不抛异常，页面以 `App.login()`（C++ Q_INVOKABLE mock 直登，app_bridge.h:83）兜底，桥落地后走 `if (authService)` 正路。
 
 ### StationHomePage.qml（"stationHomePage"）
 | widgets | QML |
@@ -97,19 +97,19 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **SettingsPage.qml**（"settingsPage"）：三模块 Column；密码对话框（Popup 两输入+长度校验，哈希存服务，UI 不落任何明文/哈希值）；车辆 CRUD Popup 列表（vehicles 桥）；通知三开关 `Switch` ↔ `settingsService`（桥）。
 - **FavoritesPage.qml**（"favoritesPage"）：同构 StationHome 列表源=favoritesService.favoriteIds()∩stationQueryService 结果；状态门三 flag 直译（queryLoaded/queryFailed/viewState）；星星可取消；筛选弹窗复用。
 - **NotificationPage.qml**（"notificationPage"）：`notificationService.notifications()` 桥→ListView；`onNotificationsChanged` 重算；空态引导。
-- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（余额=App.currentUser）+ 入口列表（wallet/order/charging/settings/favorites）。
+- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（余额=App.currentUser，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表四项（order / reservation_module / favorites / settings）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
 
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
 |---|---|
 | StationQueryService | `search(keyword)`；`queryStarted/querySucceeded(stations[])/queryFailed(msg)`；**新增** `fetchDetailById(int stationId, int distanceMeters)`（替代 struct 参数版）+ `detailStarted/detailSucceeded(detail)/detailFailed`；list map 字段=StationListItem 拍平（含 station 的 id/name/address/priceCentsPerKwh/status/totalChargers/availableChargers + distanceMeters/operatorName/accessType/parkingFee/features/chargerTypes/hasVoltageBelow700/hasVoltageAtLeast700），枚举串小写 |
-| AuthService | `login(phone)`；`loginSucceeded(userMap, createdBool)/loginFailed(msg)`（或页面只依赖 App.loginStateChanged + currentUser） |
+| AuthService | `login(phone)` / `logout()`；`loginSucceeded(userMap, createdBool)/loginFailed(msg)`（或页面只依赖 App.loginStateChanged + currentUser；mock 通道 App.login/logout 已可用，页面已接兜底） |
 | ReservationService | `fetchList/cancel(id)/expireReservation(id)/submit(map)`；`listStarted/listSucceeded(records)/listFailed/submitStarted(chargerId)/submitSucceeded(record)/submitFailed/cancelStarted/cancelSucceeded/cancelExpired(…)`；record map=ReservationRecord 拍平；`recommendSlotFromTravelMinutes` 以 `Q_INVOKABLE` 暴露 |
-| SettingsService | `vehicles()`（Q_INVOKABLE，map 列表）/`addVehicle/updateVehicle/removeVehicle/setDefaultVehicle`；三通知开关 getter/setter + `settingsChanged` |
+| SettingsService | `vehicles()`（Q_INVOKABLE，map 列表）/`addVehicle(map)/updateVehicle(map)/removeVehicle(id)/setDefaultVehicle(id)`；二级密码三件 `hasSecondPassword()/protectionEnabled()/setSecondPassword(plain)`；通知开关按位 `notificationEnabled(key)` + 对应 setter + `settingsChanged`（设置页 :29/:185/:260/:339 四处 TODO(contract) 即此） |
 | FavoritesService | `contains(id)/toggle(id)/favoriteIds()/favoriteCount()` 全部 `Q_INVOKABLE`；`favoritesChanged` |
 | NotificationService | `notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
-| MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |
+| MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`（routeMap={polyline:[[lat,lng],…], distanceMeters, durationMinutes, steps:[{instruction,distanceMeters},…]}——导航页折线/距离/步骤三消费位已齐）、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |
 | Shell（非桥，路由表） | 追加 7 条路由 + migrated 翻位（见 HomeShell 节）；`onSearchSubmitted` 改 `App.navigate("station", keyword)` |
 
 ## 验收自查（19:00 冲刺门）
@@ -118,7 +118,8 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - [x] detail（arg 头卡即出+桩区失败态重试）/ confirm（A-07/直流快充 120kW/23:45—00:30 推荐+无车辆引导）/ module（Tab+列表失败态）/ navigation（真 arg：模拟路线折线+2.4km+建议出发时刻+降级 Toast）——桥未补前均按口径渲染降级态，10 路由截图零运行期报错
 - [x] 截图通道：仓外克隆 `/tmp/smoke-src` 打 Shell 翻位+`--arg=` 补丁（见 §截图环境），仓库 Shell.qml 未动
 - [x] 每页根 objectName == 上表锚点
-- [x] 修正批 `af2e940`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
+- [x] 修正批 `55ef843`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
+- [x] 审计轮修正批：登录/退出在 mock（authService=nullptr）下兜底 `App.login()/logout()`（不再卡遮罩）；收藏页投影补 voltageBands 组；导航页存 `route.steps`（真实转向指引 + >15 段截断文案）；地图 hit-test 与 onPaint 界域同构（markers∪route、NaN 坐标天然跳）；卡内 anchors.fill 告警 9 处清理（ClickableCard/P.Card 同款：内容 default-property 进内部 Column，卡内锚点被忽略且逐实例告警）——ClickableCard 5 处（profile×2 实爆 + favorites/station/completed×3 潜伏）+ P.Card 4 处（notification delegate×1 + 订单页三栏卡×3，均桥落地/记录到达即爆）；改 Column 契约内 width 绑定、卡高交内容自然高，10 路由复跑零告警零报错
 
 ## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）
 QML 自 `CHARGING_QML_SOURCE_DIR` 文件系统加载（改 .qml 无需重编）；运行

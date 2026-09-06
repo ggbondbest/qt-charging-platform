@@ -227,7 +227,6 @@ Item {
                     delegate: P.ClickableCard {
                         objectName: "stationCard"
                         width: stationList.width - P.Style.spaceSm * 2
-                        height: 88
                         onClicked: {
                             page.selectedMarker = index
                             if (App) App.navigate("station_detail", {
@@ -236,8 +235,7 @@ Item {
                                 distanceMeters: distanceMeters, status: status })
                         }
                         Row {
-                            anchors.fill: parent
-                            anchors.margins: P.Style.spaceMd
+                            width: parent.width        // Column 内容器：anchors.fill 被忽略且告警
                             spacing: P.Style.spaceMd
                             Column {
                                 width: parent.width - 110

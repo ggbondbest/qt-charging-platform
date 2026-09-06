@@ -37,8 +37,7 @@ Item {
                 width: col.width - col.padding * 2
                 onClicked: { if (App) App.navigate("profile_edit") }
                 Row {
-                    anchors.fill: parent
-                    anchors.margins: P.Style.spaceMd
+                    width: parent.width    // 内容进 ClickableCard 内部 Column：anchors.fill 被忽略且告警
                     spacing: P.Style.spaceMd
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
@@ -117,11 +116,9 @@ Item {
                 delegate: P.ClickableCard {
                     objectName: modelData.obj
                     width: col.width - col.padding * 2
-                    height: 56
                     onClicked: { if (App) App.navigate(modelData.route) }
                     Row {
-                        anchors.fill: parent
-                        anchors.margins: P.Style.spaceMd
+                        width: parent.width
                         spacing: P.Style.spaceSm
                         Text { anchors.verticalCenter: parent.verticalCenter
                             text: modelData.glyph; font.pixelSize: P.Style.fontLg }
@@ -144,9 +141,15 @@ Item {
                 visible: !!(App && App.loggedIn)
                 onClicked: {
                     // TODO(contract): authService.logout() invokable；成功后壳收 loginStateChanged 自动翻页
-                    try { authService.logout() } catch (e) {
-                        if (App) App.showToast("退出登录桥未就绪", "warning")
+                    if (authService) {
+                        try { authService.logout() } catch (e) {
+                            if (App) App.showToast("退出登录桥未就绪", "warning")
+                        }
+                        return
                     }
+                    // mock 通道 authService==nullptr（app_bridge.cpp:99）：回退 App.logout()
+                    // （C++ 侧置空登录态并 emit loginStateChanged，壳自动翻回登录页）。
+                    if (App) App.logout()
                 }
             }
         }

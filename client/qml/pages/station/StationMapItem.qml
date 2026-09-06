@@ -119,19 +119,28 @@ Item {
         acceptedButtons: Qt.LeftButton
         onClicked: mouse => {
             const W = width, H = height, PAD = 14
-            // Re-derive the same fit transform as onPaint (kept in sync by property binding).
+            // Re-derive the same fit transform as onPaint（与绘制端逐字同构：markers ∪ route
+            // 一起入界；比较式天然跳 NaN——Math.min/max 会被 NaN 污染导致全组点击永久失效）。
             let loLa = Infinity, hiLa = -Infinity, loLn = Infinity, hiLn = -Infinity
-            for (const m of (mapItem.markers || [])) {
-                loLa = Math.min(loLa, +m.lat); hiLa = Math.max(hiLa, +m.lat)
-                loLn = Math.min(loLn, +m.lng); hiLn = Math.max(hiLn, +m.lng)
+            const bump = (la, ln) => {
+                if (la < loLa) loLa = la
+                if (la > hiLa) hiLa = la
+                if (ln < loLn) loLn = ln
+                if (ln > hiLn) hiLn = ln
+            }
+            for (const m of (mapItem.markers || [])) bump(+m.lat, +m.lng)
+            for (const p of (mapItem.route || [])) {
+                if (Array.isArray(p) && p.length >= 2) bump(+p[0], +p[1])
             }
             if (!isFinite(loLa) || !mapItem.markers || mapItem.markers.length === 0) return
             if (hiLa - loLa < 1e-6) { loLa -= 0.005; hiLa += 0.005 }
             if (hiLn - loLn < 1e-6) { loLn -= 0.005; hiLn += 0.005 }
             for (let i = (mapItem.markers || []).length - 1; i >= 0; --i) {
                 const m = mapItem.markers[i]
-                const x = PAD + (+m.lng - loLn) / (hiLn - loLn) * (W - 2 * PAD)
-                const y = H - PAD - (+m.lat - loLa) / (hiLa - loLa) * (H - 2 * PAD)
+                const la = +m.lat, ln = +m.lng
+                if (!isFinite(la) || !isFinite(ln)) continue   // 坐标坏点不参与点击
+                const x = PAD + (ln - loLn) / (hiLn - loLn) * (W - 2 * PAD)
+                const y = H - PAD - (la - loLa) / (hiLa - loLa) * (H - 2 * PAD)
                 if (Math.hypot(mouse.x - x, mouse.y - y) <= 12) { mapItem.markerClicked(i); return }
             }
         }

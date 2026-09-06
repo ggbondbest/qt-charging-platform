@@ -25,6 +25,7 @@ Item {
     property int routeGen: 0            // 过期回调丢弃（= widgets routeGeneration_ 同语义）
     property int pendingReqId: -1
     property var realPolyline: []
+    property var realSteps: []          // route.steps（桥落地后真实转向指引）
     property string caption: "导航路线为模拟数据 · 腾讯地图路线接口就绪后自动切换真实路线"
 
     function distText(m) {
@@ -75,6 +76,7 @@ Item {
             if (route === undefined || route === null) return
             page.usingRealRoute = true
             page.realPolyline = (route.polyline || [])
+            page.realSteps = (route.steps || [])
             if (route.distanceMeters !== undefined) {
                 // 真实口径覆盖模拟距离（概要卡实时重绑）。
                 page.record = Object.assign({}, page.record, {
@@ -160,7 +162,14 @@ Item {
             height: parent.height - y
             clip: true
             spacing: P.Style.spaceXs
-            model: usingRealRoute ? ((arg.steps || []).slice(0, 15)) : ["模拟路线 · 接口就绪后展示真实转向指引"]
+            model: {
+                if (!usingRealRoute) return ["模拟路线 · 接口就绪后展示真实转向指引"]
+                // = widgets 截断口径：前 15 段 + "…后续 %1 段已省略"
+                const steps = page.realSteps.slice(0, 15)
+                if (page.realSteps.length > 15)
+                    steps.push("…后续 " + (page.realSteps.length - 15) + " 段已省略")
+                return steps
+            }
             delegate: Row {
                 width: parent.width
                 spacing: P.Style.spaceSm

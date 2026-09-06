@@ -53,11 +53,9 @@ Item {
         delegate: P.ClickableCard {
             objectName: "completedCard"
             width: parent.width
-            height: 92
             onClicked: { page.detailRecord = modelData; detailPopup.open() }
             Row {
-                anchors.fill: parent
-                anchors.margins: P.Style.spaceMd
+                width: parent.width            // Column 内容器：anchors.fill 被忽略且告警
                 spacing: P.Style.spaceMd
                 Column {
                     width: parent.width - 90

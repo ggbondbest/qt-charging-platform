@@ -64,10 +64,8 @@ Item {
             delegate: P.Card {
                 objectName: "notificationCard"
                 width: parent.width
-                height: 74
                 Row {
-                    anchors.fill: parent
-                    anchors.margins: P.Style.spaceMd
+                    width: parent.width            // Card 内容进 Column 容器：anchors 被忽略且告警
                     spacing: P.Style.spaceSm
                     Text { anchors.verticalCenter: parent.verticalCenter
                         text: page.glyphFor(modelData.type); font.pixelSize: P.Style.fontXl }

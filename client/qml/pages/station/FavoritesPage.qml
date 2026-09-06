@@ -57,6 +57,11 @@ Item {
             if (c.parkingFees.length > 0 && c.parkingFees.indexOf(s.parkingFee) < 0) continue
             if (c.features.length > 0 && !(s.features || []).some(f => c.features.indexOf(f) >= 0)) continue
             if (c.chargerTypes.length > 0 && !(s.chargerTypes || []).some(t => c.chargerTypes.indexOf(t) >= 0)) continue
+            if (c.voltageBands.length > 0) {
+                const ok = (c.voltageBands.indexOf("低于700V") >= 0 && s.hasVoltageBelow700)
+                           || (c.voltageBands.indexOf("700V及以上") >= 0 && s.hasVoltageAtLeast700)
+                if (!ok) continue
+            }
             rows.push(s)
         }
         favModel.clear()
@@ -125,7 +130,6 @@ Item {
             delegate: P.ClickableCard {
                 objectName: "favoriteCard"
                 width: favList.width
-                height: 86
                 onClicked: {
                     if (App) App.navigate("station_detail", {
                         id: stationId, name: name, address: address,
@@ -133,8 +137,7 @@ Item {
                         distanceMeters: distanceMeters, status: status })
                 }
                 Row {
-                    anchors.fill: parent
-                    anchors.margins: P.Style.spaceMd
+                    width: parent.width        // Column 内容器：anchors.fill 被忽略且告警
                     spacing: P.Style.spaceMd
                     Column {
                         width: parent.width - 60

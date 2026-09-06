@@ -28,6 +28,16 @@ Item {
         resultTone = ""
     }
 
+    function echoUser(u, created) {
+        busy = false
+        resultTone = "success"
+        var m = u || {}
+        resultText = "登录成功" + (created ? "（已自动注册）" : "")
+                     + "\n用户ID：" + (m.id !== undefined ? m.id : "--")
+                     + "\n昵称：" + (m.nickname || "")
+                     + "\n余额：" + money(m.balanceCents || 0) + " 元"
+    }
+
     function submit() {
         if (busy || !phoneOk(phoneField.text)) return
         busy = true
@@ -37,7 +47,16 @@ Item {
         // call may fail until member-3's bridge lands. TODO(contract): login(phone) invokable
         // + loginSucceeded(userMap, created) / loginFailed(message).
         try {
-            if (authService) authService.login(phoneField.text)
+            if (authService) { authService.login(phoneField.text); return }  // 成功经信号回显
+            // mock 通道 QmlApp::authService()==nullptr（app_bridge.cpp:99），空调用不抛异常
+            // 会永久卡 busy——回退 App.login()（C++ mock 直登，壳收 loginStateChanged 翻页）。
+            if (App && App.login(phoneField.text)) {
+                App.showToast("已登录（mock 通道直登）", "success")   // 已注册口径不作假，不标"自动注册"
+                echoUser(App.currentUser, false)
+            } else {
+                busy = false; resultTone = "error"
+                resultText = "登录失败：手机号无效或登录服务未就绪"
+            }
         } catch (e) {                            // 桥缺位：显式回退而不是卡转圈
             busy = false
             resultTone = "error"

@@ -122,7 +122,7 @@ Item {
             width: (page.width - cols.spacing * 2) / 3
             height: parent.height
             Column {
-                anchors.fill: parent
+                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "📍 距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 Text {
@@ -142,7 +142,7 @@ Item {
             width: (page.width - cols.spacing * 2) / 3
             height: parent.height
             Column {
-                anchors.fill: parent
+                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 Text {
@@ -182,7 +182,7 @@ Item {
             width: (page.width - cols.spacing * 2) / 3
             height: parent.height
             Column {
-                anchors.fill: parent
+                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "🔋 汽车电量"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 Text { objectName: "batteryLabel"; text: "SOC --%"
