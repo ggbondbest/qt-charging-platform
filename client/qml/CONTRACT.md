@@ -1,6 +1,6 @@
 # QML 迁移契约 CONTRACT —— 两个 agent 的唯一 API 依据
 
-**基线**：`feature/qml-base`。改本文件=会签 PR，谁都不许单方面改。以下名字**逐字使用**，不许改名、不许发明；后端没定的字段写 `TODO(contract)`。
+**基线**：`feature/client-qml-base`。改本文件=会签 PR，谁都不许单方面改。以下名字**逐字使用**，不许改名、不许发明；后端没定的字段写 `TODO(contract)`。
 
 ## 0. 目录所有权（铁律）
 | 路径 | 属主 | 对方 |
