@@ -94,7 +94,11 @@ Window {
             width: parent.width
             height: parent.height - navBar.height - tabBar.height
             // Login gate mirrors HomeShell: unauthenticated → LoginPage first.
-            Component.onCompleted: pushRoute(App && App.loggedIn ? shell.route : "login")
+            // chargingArg (preview CLI --arg=JSON) 作深链路由参数透传。
+            Component.onCompleted: pushRoute(App && App.loggedIn ? shell.route : "login",
+                (typeof chargingArg !== "undefined" && chargingArg !== null
+                 && (typeof chargingArg === "string" ? chargingArg.length > 0 : true))
+                    ? chargingArg : undefined)
             pushEnter: Transition {
                 NumberAnimation { property: "opacity"; from: 0; to: 1
                     duration: P.Style.motionEnabled ? P.Style.durEnter : 0 }
