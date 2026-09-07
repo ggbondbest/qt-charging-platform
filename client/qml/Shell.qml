@@ -99,13 +99,40 @@ Window {
                 (typeof chargingArg !== "undefined" && chargingArg !== null
                  && (typeof chargingArg === "string" ? chargingArg.length > 0 : true))
                     ? chargingArg : undefined)
+            // Fluent-style page transitions (pattern from FluentUI gallery):
+            // entering page slides in 25% + fades (OutCubic), leaving page
+            // slides away + fades faster — asymmetric durations feel natural.
             pushEnter: Transition {
-                NumberAnimation { property: "opacity"; from: 0; to: 1
-                    duration: P.Style.motionEnabled ? P.Style.durEnter : 0 }
+                ParallelAnimation {
+                    NumberAnimation { property: "opacity"; from: 0; to: 1
+                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
+                        easing.type: Easing.OutCubic }
+                    NumberAnimation { property: "x"; from: stack.width * 0.25; to: 0
+                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
+                        easing.type: Easing.OutCubic }
+                }
             }
-            popExit: Transition {
+            pushExit: Transition {
                 NumberAnimation { property: "opacity"; from: 1; to: 0
                     duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
+            }
+            popEnter: Transition {
+                ParallelAnimation {
+                    NumberAnimation { property: "opacity"; from: 0; to: 1
+                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
+                        easing.type: Easing.OutCubic }
+                    NumberAnimation { property: "x"; from: -stack.width * 0.15; to: 0
+                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
+                        easing.type: Easing.OutCubic }
+                }
+            }
+            popExit: Transition {
+                ParallelAnimation {
+                    NumberAnimation { property: "opacity"; from: 1; to: 0
+                        duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
+                    NumberAnimation { property: "x"; from: 0; to: stack.width * 0.25
+                        duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
+                }
             }
             onCurrentItemChanged: {
                 if (currentItem && currentItem.route)

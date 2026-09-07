@@ -32,6 +32,18 @@ QtObject {
     readonly property color heroFrom: "#00A46C"
     readonly property color heroTo: "#2BC98A"
     readonly property color heroPhone: "#D9F3E7"
+    // Fluent-style interaction states (patterns from zhuzichu520/FluentUI,
+    // adapted to our brand green): every control gets a hover tier between
+    // normal and pressed, plus a focus ring drawn 2px outside the control.
+    readonly property color brandHover: "#14C087"
+    readonly property color dangerHover: "#E64545"
+    readonly property color surfaceHover: "#F5F7FA"
+    readonly property color ghostHover: "#E4EAF0"
+    readonly property color chipHover: "#F7F9FB"
+    readonly property color chipSelectedHover: "#DDF3E7"
+    readonly property color focusRing: "#00B578"
+    readonly property color cardEdgeHi: "#EFF2F6"   // lit top/side border
+    readonly property color cardEdgeLo: "#D5DCE4"   // weighted bottom edge
 
     // type scale (px, matches QSS font-size ladder)
     readonly property int fontXl: 21
@@ -62,6 +74,8 @@ QtObject {
     readonly property int durExit: 120
     readonly property int durValue: 140
     readonly property int durBreathe: 1600
+    readonly property int durHover: 120   // Fluent hover color fade
+    readonly property int durPress: 167   // Fluent pressed settle
     readonly property int staggerStep: 40
     readonly property int staggerMax: 8
     // Reduced-motion / offscreen gate: wrap every duration as
