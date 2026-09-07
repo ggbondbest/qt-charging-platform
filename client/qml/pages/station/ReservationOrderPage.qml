@@ -134,13 +134,13 @@ Item {
                 spacing: P.Style.spaceSm
                 Text { text: "📍 距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 Text {
-                    objectName: "distanceLabel"
+                    objectName: "orderDistanceLabel"
                     text: (page.rec.distanceMeters === undefined || page.rec.distanceMeters < 0) ? "--"
                         : page.rec.distanceMeters >= 1000 ? "约 " + (page.rec.distanceMeters / 1000).toFixed(1) + " km"
                         : "约 " + page.rec.distanceMeters + " m"
                     font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
                 }
-                Text { text: "虚拟数据 · 导航功能后续对接"
+                Text { objectName: "orderModuleCaption"; text: "虚拟数据 · 导航功能后续对接"
                     width: parent.width; wrapMode: Text.WordWrap
                     font.pixelSize: P.Style.fontSm; color: P.Style.faint }
             }
@@ -157,7 +157,7 @@ Item {
                 Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                 // 行序对齐 widgets（info 在前、大号倒计时其后）
                 Text {
-                    objectName: "reservationInfoLabel"
+                    objectName: "orderActiveInfoLabel"
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: (page.rec.stationName || "--") + " · " + (page.rec.chargerCode || "--") + "\n"
@@ -175,7 +175,7 @@ Item {
                 // spring 占位已移除：卡片改自然高后无底部可撑，且其高度绑
                 // Card.height 在 Column 自适应链上曾诱发 polish 环（2026-09-07）。
                 P.ActionButton {
-                    objectName: "reservationCancelButton"
+                    objectName: "reservationOrderCancelButton"
                     variant: "danger"; text: "取消预约"
                     width: parent.width
                     enabled: !page.cancelBusy
@@ -198,9 +198,9 @@ Item {
                 width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "🔋 汽车电量"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                Text { objectName: "batteryLabel"; text: "SOC --%"
+                Text { objectName: "orderBatteryLabel"; text: "SOC --%"
                     font.pixelSize: P.Style.fontLg; color: P.Style.info }
-                Text { text: "虚拟占位 · 电量对接功能暂不实现"
+                Text { objectName: "orderModuleCaption"; text: "虚拟占位 · 电量对接功能暂不实现"
                     width: parent.width; wrapMode: Text.WordWrap
                     font.pixelSize: P.Style.fontSm; color: P.Style.faint }
             }

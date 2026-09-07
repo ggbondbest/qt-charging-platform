@@ -32,9 +32,10 @@ Item {
             spacing: P.Style.spaceMd
 
             // 身份头图（QSS uiProfileHeroButton：电动绿对角渐变 + 白字系；
-            // 原白卡版由成员3 于 2026-09-07 皮肤对齐轮升级，成员2 文件已报备）
+            // 原白卡版由成员3 于 2026-09-07 皮肤对齐轮升级，成员2 文件已报备；
+            // 锚点恢复 widgets 名 uiProfileHeroButton=QSS 选择器同名）
             Rectangle {
-                objectName: "profileHeroButton"
+                objectName: "uiProfileHeroButton"
                 width: col.width - col.padding * 2
                 height: 86
                 radius: P.Style.radiusLg
@@ -68,6 +69,7 @@ Item {
                         width: parent.width - 54 - 90 - parent.spacing * 2
                         spacing: 2
                         Text {
+                            objectName: "nicknameLabel"
                             width: parent.width; elide: Text.ElideRight
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
                             font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
@@ -96,6 +98,7 @@ Item {
                     spacing: P.Style.spaceXs
                     Text { text: "余额（元）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     Text {
+                        objectName: "balanceLabel"
                         text: page.user ? money(page.user.balanceCents) : "--"
                         font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.brandDeep
                     }
@@ -127,6 +130,7 @@ Item {
                     { obj: "openOrdersButton",    glyph: "🧾", text: "我的订单", caption: "全部充电订单",   route: "order" },
                     { obj: "openReservationsButton", glyph: "📅", text: "我的预约", caption: "时段预约记录", route: "reservation_module" },
                     { obj: "openFavoritesButton", glyph: "⭐", text: "收藏",       caption: "",             route: "favorites" },
+                    { obj: "openCouponsButton",   glyph: "🎫", text: "优惠券",     caption: "立减券·折扣券", route: "coupon" },
                     { obj: "openSettingsButton",  glyph: "⚙️", text: "设置",       caption: "",             route: "settings" }
                 ]
                 delegate: P.ClickableCard {

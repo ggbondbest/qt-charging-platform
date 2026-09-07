@@ -112,6 +112,7 @@ Item {
 
         // Centered login card.
         P.Card {
+            objectName: "loginCard"
             width: parent.width
             Column {
                 width: parent.width

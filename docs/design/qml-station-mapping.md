@@ -24,7 +24,9 @@
 
 ### HomeShell（壳）——已完成，无需我写
 成员3 的 `Shell.qml` 即旧 HomeShell 双生（objectName "homeShell"，登录门、四 tab、toast 都在）。**缺口**：路由表只有 station/login/profile 三行指向我；需他追加：
-`station_detail→StationDetailPage.qml`、`reservation_confirm→ReservationConfirmPage.qml`、`reservation_module→ReservationModulePage.qml`、`navigation→NavigationPage.qml`、`favorites→FavoritesPage.qml`、`notifications→NotificationPage.qml`、`settings→SettingsPage.qml`，并把这 7 条 + station/login 翻进 `migrated`。
+`station_detail→StationDetailPage.qml`、`reservation_confirm→ReservationConfirmPage.qml`、`reservation_module→ReservationModulePage.qml`、`navigation→NavigationPage.qml`、`favorites→FavoritesPage.qml`、`notifications→NotificationPage.qml`、`settings→SettingsPage.qml`、`coupon→CouponPage.qml`（功能增加批新增），并把这 8 条 + station/login/profile 翻进 `migrated`。
+**顶栏漏斗一行接线**：`StationHomePage`/`FavoritesPage` 已暴露 `openAdvancedFilter()`，Shell `onFilterRequested` 空桩改为
+`if (stack.currentItem && stack.currentItem.openAdvancedFilter) stack.currentItem.openAdvancedFilter()` 即活。
 
 ### LoginPage.qml（"loginPage"）
 | widgets | QML |
@@ -43,7 +45,7 @@
 |---|---|
 | 构造即 `search()`；QSignalBlocker 防触发循环 | `Component.onCompleted: stationQueryService.search(keyword)`；投影纯函数无循环 |
 | queryStarted/Succeeded/Failed | `Connections` 三分支 → `loading/loaded/failed` + `setRefreshing(false)` |
-| 结果缓存 lastResults_ → 本地投影（排序/电价/筛选三源） | `property var raw: []`；`function project()`：priceMax→`priceCentsPerKwh<=priceMax`，sort=`availableChargers desc`/`distanceMeters asc`（-1 排后），criteria 组内 OR 组间 AND |
+| 结果缓存 lastResults_ → 本地投影（排序/电价/筛选三源） | `property var raw: []`；`function project()`：priceMax→`priceCentsPerKwh<=priceMax`，排序三档=综合（默认，服务端顺序透传）/`availableChargers desc`/`distanceMeters asc`（-1 排后），criteria 组内 OR 组间 AND |
 | StationFilterCriteria 8 组 | `property var criteria`（JS 对象同字段名：maxDistanceKm/statuses/operators/accessTypes/parkingFees/features/chargerTypes/voltageBands），与 applyStationFilter 同语义 |
 | 卡片：名称/电价/空闲/距离/☆ | delegate `ClickableCard` + `App.navigate("station_detail", {id,name,…})`；星星 `MouseArea` eat 事件 → `favoritesService.toggle(id)`；`text: favoritesService.contains(id) ? "★" : "☆"`（`favoritesChanged()` 重算绑定） |
 | 空态「重置」不误清关键词（缺陷2 口径） | `hasActiveFilters()`：criteria 非空或 priceMax>0；重置只回退这两源 |
@@ -59,7 +61,7 @@
 | 离线横幅 | `status.toLowerCase()!=="active"` → 红条（`warningSoft` 底） |
 | 故障桩红卡（原属性选择器） | delegate `Card { border.color: st==="fault" ? Style.danger : Style.line; border.width: st==="fault" ? 2 : 1 }` |
 | 桩状态彩签 | `StatusTag { tone: {available:"success",reserved:"warning",charging:"info",fault:"danger",offline:"neutral"}[st] ?? "neutral" }` |
-| 预约按钮三重准入 + reservationBlocked | `App.loggedIn` 判 + 车辆数/在途预约判（依赖桥，未补前 `App.showToast("…","warning")` 兜底）→ `App.navigate("reservation_confirm", arg)` |
+| 预约按钮三重准入 + reservationBlocked | `App.loggedIn` 判 + 车辆数判（功能增加批：桥缺位读 StationState 车辆通道，0 辆弹 `vehicleRequiredPrompt`〔去添加车辆→设置〕；在途名额判 `reservationService.activeReservationCount()` 缺位放行，占满弹 `unfinishedReservationPrompt`〔去查看→预约模块〕——旧 HomeShell 弹层同文案同钮直译）→ `App.navigate("reservation_confirm", arg)` |
 
 ### ReservationConfirmPage.qml（"reservationConfirmPage"）
 | widgets | QML |
@@ -94,10 +96,17 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 
 ## P2 三页 + ProfilePage
 
-- **SettingsPage.qml**（"settingsPage"）：三模块 Column；密码对话框（Popup 两输入+长度校验，哈希存服务，UI 不落任何明文/哈希值）；车辆 CRUD Popup 列表（vehicles 桥）；通知三开关 `Switch` ↔ `settingsService`（桥）。
-- **FavoritesPage.qml**（"favoritesPage"）：同构 StationHome 列表源=favoritesService.favoriteIds()∩stationQueryService 结果；状态门三 flag 直译（queryLoaded/queryFailed/viewState）；星星可取消；筛选弹窗复用。
+- **SettingsPage.qml**（"settingsPage"）：三模块卡（锚点=settingsSecurityCard/settingsVehicleCard/settingsNotificationCard）；密码弹窗（改密验旧 + ≥4 位 + 两次一致；字段=currentPasswordEdit/newPasswordEdit/confirmPasswordEdit，钮=passwordCancelButton/passwordSaveButton）；**二级密码门（功能增加批，用户指定拦截位）**：进页时若保护开启且已设密码 → `secondPasswordGate` 锁屏覆盖（lockPasswordField + 解锁/离开[App.back]），验证走服务 `verifyProtectionPassword` 或库通道；车辆 CRUD（行钮 vehicleSetDefaultButton/vehicleEditButton/vehicleDeleteButton；弹窗含 vehicleDefaultCheck + 接口双 RadioButton〔对齐旧版，替原 ComboBox〕 + 取消/保存钮组）；通知三开关 `Switch` ↔ `settingsService`。**双通道**：服务 invokable 可读以服务为准，否则落 StationState 会话库——密码哈希/保护开关/车辆跨页往返不丢（真持久化归桥）。
+- **FavoritesPage.qml**（"favoritesPage"）：同构 StationHome 列表源=favoritesService.favoriteIds()∩stationQueryService 结果；状态门三 flag 直译（queryLoaded/queryFailed/viewState）；星星可取消；筛选弹窗复用；暴露 `openAdvancedFilter()`。
 - **NotificationPage.qml**（"notificationPage"）：`notificationService.notifications()` 桥→ListView；`onNotificationsChanged` 重算；空态引导。
-- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（余额=App.currentUser，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表四项（order / reservation_module / favorites / settings）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
+- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（锚点 uiProfileHeroButton；余额=App.currentUser 的 balanceLabel/nicknameLabel，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表五项（openOrdersButton / openReservationsButton / openFavoritesButton / **openCouponsButton（功能增加批）** / openSettingsButton）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
+
+## 功能增加批（2076518，用户实测反馈驱动——注意与纯迁移批次的口径区别：本节是新增功能，无 widgets 对账源）
+
+- **CouponPage.qml**（"couponPage"，route "coupon"）：可用/已使用/已过期三态 Tab + 面额（cash ¥）/折扣（discount 折）双券型卡 + 「去使用」占位（TODO(contract): redeem）+ 空态。旧版仅在 README 留"同款式敬请期待"槽从未实装页面；券服务不在 CONTRACT.md → 桥缺位期渲染页内**演示数据**（与 mock 直登同口径，页内标明"演示数据·券服务桥未就绪"），`typeof couponService` 守卫接入后自动替换。
+- **StationState.js**（`.pragma library` 跨页会话库）：cyrb53 双 32 位混合散列存二级密码（明文即散即用，UI 不落）、protectionOn 开关、车辆数组本地通道（CRUD + 默认车迁移）。进程退出即清空——真持久化归 SettingsService（TODO(contract)）。SettingsPage/StationDetailPage/ReservationConfirmPage 三处消费。
+- **二级密码拦截位决策**：旧版 widgets 口径="关键操作（预约/取消）"且从未实装拦截；用户指定改放"我的→设置"入口（设置提示文案随实装改为"进入「我的 → 设置」将要求输入二级密码"）。预约/取消位如需拦截，服务桥落地后可在此基础上二次开启。
+- **widgets 锚点全对账**（本轮 method：widgets 页 `setObjectName` 全量 ∖ QML `objectName` 全量）：交互锚点 40+ 处逐字对齐（改名/补名，明细见 commit message）；**未采用同名的剩余项=三类**：①布局容器（Scroll/Stack/Splitter/Pane——QML 声明式列表无此物）；②成员3 域（ui*/recharge*/wallet/homeShell/appRoot）；③被更好形态吸收（订单页 loading/error 归母页 moduleNotice、导航 map 占位=StationMapItem、详情 loading 态并入 detailNotice 文案）——不算缺失。
 
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
@@ -105,8 +114,9 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 |---|---|
 | StationQueryService | `search(keyword)`；`queryStarted/querySucceeded(stations[])/queryFailed(msg)`；**新增** `fetchDetailById(int stationId, int distanceMeters)`（替代 struct 参数版）+ `detailStarted/detailSucceeded(detail)/detailFailed`；list map 字段=StationListItem 拍平（含 station 的 id/name/address/priceCentsPerKwh/status/totalChargers/availableChargers + distanceMeters/operatorName/accessType/parkingFee/features/chargerTypes/hasVoltageBelow700/hasVoltageAtLeast700），枚举串小写 |
 | AuthService | `login(phone)` / `logout()`；`loginSucceeded(userMap, createdBool)/loginFailed(msg)`（或页面只依赖 App.loginStateChanged + currentUser；mock 通道 App.login/logout 已可用，页面已接兜底） |
-| ReservationService | `fetchList/cancel(id)/expireReservation(id)/submit(map)`；`listStarted/listSucceeded(records)/listFailed/submitStarted(chargerId)/submitSucceeded(record)/submitFailed/cancelStarted/cancelSucceeded/cancelExpired(…)`；record map=ReservationRecord 拍平；`recommendSlotFromTravelMinutes` 以 `Q_INVOKABLE` 暴露 |
-| SettingsService | `vehicles()`（Q_INVOKABLE，map 列表）/`addVehicle(map)/updateVehicle(map)/removeVehicle(id)/setDefaultVehicle(id)`；二级密码三件 `hasSecondPassword()/protectionEnabled()/setSecondPassword(plain)`；通知开关按位 `notificationEnabled(key)` + 对应 setter + `settingsChanged`（设置页 :29/:185/:260/:339 四处 TODO(contract) 即此） |
+| ReservationService | `fetchList/cancel(id)/expireReservation(id)/submit(map)`；`listStarted/listSucceeded(records)/listFailed/submitStarted(chargerId)/submitSucceeded(record)/submitFailed/cancelStarted/cancelSucceeded/cancelExpired(…)`；record map=ReservationRecord 拍平；`recommendSlotFromTravelMinutes` 以 `Q_INVOKABLE` 暴露；**新增** `activeReservationCount()` / `activeCountForVehicle(qint64)`（详情页预约三重准入的名额判，缺位返回 -1 放行） |
+| SettingsService | 车辆 `vehicles()`（Q_INVOKABLE，map 列表）/`addVehicle(Vehicle)/updateVehicle(Vehicle)/removeVehicle(qint64)/setDefaultVehicle(qint64)/defaultVehicle()` + `vehiclesChanged`；二级密码四件 `hasProtectionPassword()/setProtectionPassword(plain)/verifyProtectionPassword(pw)/clearProtectionPassword()` + 开关 `protectionEnabled()/setProtectionEnabled(bool)` + `protectionStateChanged`（设置页与详情页调用点已按此原名接线，桥一落地即自动翻正）；通知开关按位 `notificationEnabled(key)` + 对应 setter + `settingsChanged` |
+| CouponService（**全新服务，CONTRACT.md 尚无**） | `coupons()` invokable（map 列表：id/title/kind(cash|discount)/valueCents/discountTenths/thresholdCents/condition/expiresAtUtc/status(available|used|expired)/source）+ `redeem(id)`；`couponsChanged`。缺位期 CouponPage 以页内演示数据渲染三态并标"演示数据"，接入后自动替换 |
 | FavoritesService | `contains(id)/toggle(id)/favoriteIds()/favoriteCount()` 全部 `Q_INVOKABLE`；`favoritesChanged` |
 | NotificationService | `notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
 | MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`（routeMap={polyline:[[lat,lng],…], distanceMeters, durationMinutes, steps:[{instruction,distanceMeters},…]}——导航页折线/距离/步骤三消费位已齐）、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |

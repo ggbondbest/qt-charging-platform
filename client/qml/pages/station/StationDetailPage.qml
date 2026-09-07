@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "StationState.js" as StationState
 
 // QML twin of widgets StationDetailPage (objectName "stationDetailPage" kept).
 // arg = 列表页点击卡片带来的 map：{id, name, address, priceCentsPerKwh, distanceMeters, status}。
@@ -71,7 +72,20 @@ Item {
     }
     Component.onCompleted: fetch()
 
-    // ---- 预约三重准入（widgets handleReserveRequested 同序）----
+    // ---- 预约三重准入（widgets handleReserveRequested + HomeShell 弹层直译进页）----
+    function call(target, fn, args) {
+        try { return target[fn].apply(target, args) } catch (e) { return undefined }
+    }
+    function vehicleCount() {
+        const v = call(settingsService, "vehicles", [])
+        if (v !== undefined) return v.length
+        return StationState.vehicles.length   // 桥缺位期读设置页本地通道
+    }
+    function activeReservationCount() {
+        // TODO(contract): reservationService.activeReservationCount() invokable；缺位返回 -1 放行。
+        const n = call(reservationService, "activeReservationCount", [])
+        return (typeof n === "number") ? n : -1
+    }
     function requestReserve(charger) {
         if (String(charger.status).toLowerCase() !== "available") {
             if (App) App.showToast("仅空闲充电桩可预约", "warning")
@@ -81,15 +95,99 @@ Item {
             if (App) { App.showToast("请先登录再发起预约", "warning"); App.navigate("login") }
             return
         }
-        // 车辆数 / 在途名额两项依赖未补的桥 invokable（TODO(contract):
-        // settingsService.vehicleCount()、reservationService.activeReservationCount()
-        // /unfinishedSlotLimit()）。桥缺位期放行，服务端提交仍会二次校验。
+        if (vehicleCount() === 0) {           // 旧版 HomeShell::showNoVehiclePrompt 直译
+            vehicleRequiredPrompt.open()
+            return
+        }
+        const act = activeReservationCount()
+        if (act >= 0 && act >= vehicleCount()) {  // 旧版 showUnfinishedReservationPrompt 直译
+            unfinishedReservationPrompt.open()
+            return
+        }
         if (App) App.navigate("reservation_confirm", {
             stationId: page.station.id, stationName: page.station.name,
             priceCentsPerKwh: page.station.priceCentsPerKwh,
             distanceMeters: page.station.distanceMeters,
             chargerId: charger.id, chargerCode: charger.code,
             chargerType: charger.type, chargerPowerWatts: charger.powerWatts })
+    }
+
+    // 无车辆引导（旧版 vehicleRequiredPrompt 弹层同文案同钮）
+    Popup {
+        id: vehicleRequiredPrompt
+        objectName: "vehicleRequiredPrompt"
+        modal: true
+        anchors.centerIn: parent
+        width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
+        padding: P.Style.spaceLg
+        background: Rectangle {
+            radius: P.Style.radiusLg; color: P.Style.surface
+            border.color: P.Style.line; border.width: 1
+        }
+        Column {
+            width: parent.width
+            spacing: P.Style.spaceMd
+            Text { width: parent.width; wrapMode: Text.WordWrap
+                text: "需要添加车辆"
+                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+            Text { width: parent.width; wrapMode: Text.WordWrap
+                text: "预约名额由车辆决定，请先在「设置 - 车辆管理」添加车辆。"
+                font.pixelSize: P.Style.fontMd; color: P.Style.muted }
+            Row {
+                width: parent.width
+                spacing: P.Style.spaceSm
+                P.ActionButton {
+                    variant: "ghost"; text: "稍后再说"
+                    width: (parent.width - parent.spacing) / 2
+                    onClicked: vehicleRequiredPrompt.close()
+                }
+                P.ActionButton {
+                    objectName: "vehicleGoSettingsButton"
+                    variant: "primary"; text: "去添加车辆"
+                    width: (parent.width - parent.spacing) / 2
+                    onClicked: { vehicleRequiredPrompt.close(); if (App) App.navigate("settings") }
+                }
+            }
+        }
+    }
+
+    // 名额占满引导（旧版 unfinishedReservationPrompt 同文案同钮）
+    Popup {
+        id: unfinishedReservationPrompt
+        objectName: "unfinishedReservationPrompt"
+        modal: true
+        anchors.centerIn: parent
+        width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
+        padding: P.Style.spaceLg
+        background: Rectangle {
+            radius: P.Style.radiusLg; color: P.Style.surface
+            border.color: P.Style.line; border.width: 1
+        }
+        Column {
+            width: parent.width
+            spacing: P.Style.spaceMd
+            Text { width: parent.width; wrapMode: Text.WordWrap
+                text: "无法发起新预约"
+                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+            Text { width: parent.width; wrapMode: Text.WordWrap
+                text: "可预约名额已全部占用（名额 = 车辆数），请结束当前预约后再发起新预约"
+                font.pixelSize: P.Style.fontMd; color: P.Style.muted }
+            Row {
+                width: parent.width
+                spacing: P.Style.spaceSm
+                P.ActionButton {
+                    variant: "ghost"; text: "知道了"
+                    width: (parent.width - parent.spacing) / 2
+                    onClicked: unfinishedReservationPrompt.close()
+                }
+                P.ActionButton {
+                    objectName: "unfinishedGoLookButton"
+                    variant: "primary"; text: "去查看"
+                    width: (parent.width - parent.spacing) / 2
+                    onClicked: { unfinishedReservationPrompt.close(); if (App) App.navigate("reservation_module") }
+                }
+            }
+        }
     }
 
     Column {
@@ -115,33 +213,46 @@ Item {
                     width: parent.width
                     spacing: P.Style.spaceSm
                     Text {
+                        objectName: "detailNameLabel"
                         width: parent.width - 80
                         text: station.name || "站点详情"
                         font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
                         elide: Text.ElideRight
                     }
                     P.StatusTag {
+                        objectName: "detailStatusTag"
                         anchors.verticalCenter: parent.verticalCenter
                         tone: isActive() ? "success" : "neutral"
                         text: isActive() ? "营业中" : "已离线"
                     }
                 }
-                // 行序对齐 widgets：名称+状态 → 地址 → 价格·距离
+                // 行序对齐 widgets：名称+状态 → 地址 → 价格·距离（成员3 690b189）；
+                // 价格/距离两锚点恢复 widgets 分离标签（detailPriceLabel/detailDistanceLabel）。
                 Text {
+                    objectName: "detailAddressLabel"
                     width: parent.width; wrapMode: Text.WordWrap
                     text: station.address || ""; font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
-                Text {
-                    text: "¥" + money(station.priceCentsPerKwh || 0) + "/kWh · 距您 "
-                          + distText(station.distanceMeters)
-                    font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
+                Row {
+                    width: parent.width
+                    spacing: P.Style.spaceMd
+                    Text {
+                        objectName: "detailPriceLabel"
+                        text: "¥" + money(station.priceCentsPerKwh || 0) + "/kWh"
+                        font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
+                    }
+                    Text {
+                        objectName: "detailDistanceLabel"
+                        text: "距您 " + distText(station.distanceMeters)
+                        font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
+                    }
                 }
             }
         }
 
         // 离线横幅（warningSoft 底）
         Rectangle {
-            objectName: "offlineBanner"
+            objectName: "detailOfflineBanner"
             visible: !isActive()
             width: parent.width
             height: 34
@@ -157,7 +268,7 @@ Item {
 
         // 桩区两态（有头卡时内联，不遮站点信息）
         P.NoticePanel {
-            objectName: "chargerLoadingNotice"
+            objectName: "detailLoadingLabel"
             visible: page.hasHeader && !page.detailLoaded && !page.detailFailed
             width: parent.width
             height: 120
@@ -167,7 +278,7 @@ Item {
             actionText: ""
         }
         P.NoticePanel {
-            objectName: "chargerFailedNotice"
+            objectName: "detailErrorNotice"
             visible: page.hasHeader && page.detailFailed
             width: parent.width
             height: 120
@@ -179,7 +290,7 @@ Item {
         }
 
         Text {
-            objectName: "chargerSummaryLabel"
+            objectName: "detailChargerSummaryLabel"
             visible: page.detailLoaded
             text: chargers.length > 0
                   ? "充电桩（空闲 " + availableCount() + " / 共 " + chargers.length + "）"
@@ -247,7 +358,7 @@ Item {
 
         // 站点正常但无桩
         P.NoticePanel {
-            objectName: "chargerEmptyNotice"
+            objectName: "detailChargerEmptyNotice"
             visible: page.detailLoaded && chargers.length === 0
             width: parent.width
             height: 140

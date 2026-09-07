@@ -119,6 +119,9 @@ Item {
         project()
     }
     function clearKeywordAndSearch() { page.keyword = ""; refresh() }
+    // 供壳顶栏漏斗接线（Shell.qml onFilterRequested 空桩注释点名 member 2 域）：
+    // 成员3 一行接通 `stack.currentItem.openAdvancedFilter && stack.currentItem.openAdvancedFilter()` 即活。
+    function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
 
     Connections {
         target: stationQueryService

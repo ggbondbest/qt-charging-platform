@@ -86,6 +86,7 @@ Item {
                     }
                 }
                 P.StatusTag {
+                    objectName: "historyStatusTag"
                     anchors.verticalCenter: parent.verticalCenter
                     tone: page.doneTone(modelData)
                     text: page.doneText(modelData)
@@ -97,7 +98,7 @@ Item {
     // 详情弹层（widgets QDialog 直译）
     Popup {
         id: detailPopup
-        objectName: "completedDetailPopup"
+        objectName: "reservationDetailDialog"
         modal: true
         anchors.centerIn: parent
         width: parent ? Math.min(330, parent.width - P.Style.spaceXl) : 330
@@ -111,6 +112,7 @@ Item {
             width: parent.width
             spacing: P.Style.spaceXs
             Text {
+                objectName: "reservationDetailDialogText"
                 width: parent.width; wrapMode: Text.WordWrap
                 text: detailRecord ? (detailRecord.stationName || "预约详情") : "预约详情"
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink
@@ -133,6 +135,7 @@ Item {
                 }
             }
             P.ActionButton {
+                objectName: "reservationDetailCloseButton"
                 variant: "primary"; text: "关闭"
                 width: parent.width
                 onClicked: detailPopup.close()

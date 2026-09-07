@@ -60,7 +60,7 @@ Item {
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
 
-        Text { text: "我的预约"
+        Text { objectName: "reservationModuleTitle"; text: "我的预约"
             font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
 
         // 二级 Tab
@@ -68,14 +68,14 @@ Item {
             objectName: "reservationTabs"
             spacing: P.Style.spaceSm
             P.ActionButton {
-                objectName: "orderTabButton"
+                objectName: "reservationOrderTabButton"
                 variant: "chip"
                 selected: page.tab === 0
                 text: "🕒 预约订单"
                 onClicked: page.tab = 0
             }
             P.ActionButton {
-                objectName: "completedTabButton"
+                objectName: "reservationHistoryTabButton"
                 variant: "chip"
                 selected: page.tab === 1
                 text: "📒 已完成的预约"
