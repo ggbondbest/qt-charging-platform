@@ -421,16 +421,61 @@ Item {
                     onClicked: if (App) App.showToast("扫码启动协议未定，走 mock 预约流程（TODO(contract)）", "info")
                 }
 
-                // Pending-payment notice — widgets rechargePendingNotice parity path.
-                P.NoticePanel {
+                // Pending-payment — compact reminder ROW (widgets buildPaymentCard
+                // 语义：icon hub + 双行文案 + 小主按钮一行摆完)，不用竖排占位面板。
+                Rectangle {
                     objectName: "rechargePendingNotice"
                     visible: page.waitingCount > 0
                     width: parent.width
-                    glyph: "💰"
-                    title: "有 " + page.waitingCount + " 笔待支付订单"
-                    description: "先完成结算才能开始下一次充电"
-                    actionText: "去处理"
-                    onActionTriggered: if (App) App.navigate("order")
+                    height: 72
+                    radius: P.Style.radiusLg
+                    color: P.Style.surface
+                    border.width: 1; border.color: P.Style.line
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: if (App) App.navigate("order")
+                    }
+                    Rectangle {
+                        id: payHub
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 16
+                        width: 40; height: 40; radius: 20
+                        color: P.Style.warningSoft
+                        Text {
+                            anchors.centerIn: parent
+                            text: "💰"; font.pixelSize: 18
+                        }
+                    }
+                    P.ActionButton {
+                        id: payBtn
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 14
+                        text: "去处理"
+                        variant: "primary"
+                        height: 36; implicitHeight: 36
+                        leftPadding: 18; rightPadding: 18
+                        topPadding: 4; bottomPadding: 4
+                        onClicked: if (App) App.navigate("order")
+                    }
+                    Column {
+                        anchors.left: payHub.right; anchors.right: payBtn.left
+                        anchors.leftMargin: 12; anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 3
+                        Text {
+                            width: parent.width; elide: Text.ElideRight
+                            text: "有 " + page.waitingCount + " 笔待支付订单"
+                            font.pixelSize: P.Style.fontMd; font.bold: true
+                            color: P.Style.ink
+                        }
+                        Text {
+                            width: parent.width; elide: Text.ElideRight
+                            text: "先完成结算才能开始下一次充电"
+                            font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                        }
+                    }
                 }
             }
         }
