@@ -7,7 +7,9 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSqlError>
 #include <QSqlQuery>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <atomic>
@@ -75,6 +77,16 @@ class AdminServiceTest final : public QObject
         if (!q.exec(sql) || !q.next())
             return -1;
         return q.value(0).toLongLong();
+    }
+    QString queryPlan(const QString& sql)
+    {
+        QSqlQuery query(db_.database());
+        if (!query.exec(QStringLiteral("EXPLAIN QUERY PLAN ") + sql))
+            return query.lastError().text();
+        QStringList details;
+        while (query.next())
+            details.append(query.value(3).toString());
+        return details.join(QLatin1Char('\n'));
     }
 private slots:
     void init()
@@ -277,6 +289,45 @@ private slots:
             const auto items = result.value(QStringLiteral("items")).toArray();
             QCOMPARE(items.at(0).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("802"));
             QCOMPARE(items.at(1).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("801"));
+        }
+    }
+    void filteredTimestampSortsAvoidTemporaryBtrees()
+    {
+        const struct QueryCase {
+            QString action;
+            QJsonObject parameters;
+            QString sql;
+            QString index;
+        } cases[]{
+            {QStringLiteral("orders.list"),
+             {{QStringLiteral("status"), QStringLiteral("COMPLETED")},
+              {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}},
+             QStringLiteral("SELECT s.id FROM orders s JOIN users u ON u.id=s.user_id "
+                            "JOIN chargers c ON c.id=s.charger_id "
+                            "JOIN stations t ON t.id=c.station_id WHERE 1=1 "
+                            "AND s.status='COMPLETED' "
+                            "ORDER BY s.created_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_orders_status_created_at")},
+            {QStringLiteral("operation_logs.list"),
+             {{QStringLiteral("adminId"), QStringLiteral("1")},
+              {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}},
+             QStringLiteral("SELECT s.id FROM operation_logs s WHERE 1=1 AND s.admin_id='1' "
+                            "ORDER BY s.created_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_operation_logs_admin_created_at")},
+            {QStringLiteral("chargers.list"),
+             {{QStringLiteral("abnormalOnly"), true},
+              {QStringLiteral("sort"), QStringLiteral("updatedAtDesc")}},
+             QStringLiteral("SELECT s.id FROM chargers s JOIN stations t ON t.id=s.station_id "
+                            "WHERE 1=1 AND s.status IN ('FAULT','OFFLINE') "
+                            "ORDER BY s.updated_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_chargers_abnormal_updated_at")}};
+
+        for (const auto& queryCase : cases) {
+            QVERIFY2(ok(call(queryCase.action, queryCase.parameters)),
+                     qPrintable(queryCase.action));
+            const QString plan = queryPlan(queryCase.sql);
+            QVERIFY2(plan.contains(queryCase.index), qPrintable(plan));
+            QVERIFY2(!plan.contains(QStringLiteral("USE TEMP B-TREE")), qPrintable(plan));
         }
     }
     void auditQueriesAndRechargeTimeRanges()

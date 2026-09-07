@@ -223,10 +223,8 @@ bool validateIndex(const QSqlDatabase& database, const IndexDefinition& expected
         columns.append(columnsQuery.value(2).toString());
     }
     if (columns != expected.columns) {
-        *errorMessage = QStringLiteral("Database index %1 has incorrect columns: expected [%2], "
-                                       "found [%3]")
-                            .arg(expected.name, expected.columns.join(QStringLiteral(", ")),
-                                 columns.join(QStringLiteral(", ")));
+        *errorMessage = QStringLiteral("Database index %1 has incorrect columns")
+                            .arg(expected.name);
         return false;
     }
 
@@ -352,6 +350,11 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
          {QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_chargers_station_status"), QStringLiteral("chargers"),
          {QStringLiteral("station_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_chargers_abnormal_updated_at"), QStringLiteral("chargers"),
+         {QStringLiteral("updated_at"), QStringLiteral("id")}, false,
+         QStringLiteral("status IN ('FAULT','OFFLINE')")},
+        {QStringLiteral("idx_chargers_updated_at"), QStringLiteral("chargers"),
+         {QStringLiteral("updated_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_reservations_user_status"), QStringLiteral("reservations"),
          {QStringLiteral("user_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_reservations_charger_status"), QStringLiteral("reservations"),
@@ -363,13 +366,32 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("idx_orders_charger_status"), QStringLiteral("orders"),
          {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_orders_status_created_at"), QStringLiteral("orders"),
-         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
+         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_orders_created_at"), QStringLiteral("orders"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
+        {QStringLiteral("idx_users_status_id"), QStringLiteral("users"),
+         {QStringLiteral("status"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_recharge_records_user_created_at"),
          QStringLiteral("recharge_records"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_recharge_records_status_created_at"),
+         QStringLiteral("recharge_records"),
+         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_recharge_records_created_at"),
+         QStringLiteral("recharge_records"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_operation_logs_admin_created_at"),
          QStringLiteral("operation_logs"),
-         {QStringLiteral("admin_id"), QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
+         {QStringLiteral("admin_id"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_operation_logs_action_created_at"),
+         QStringLiteral("operation_logs"),
+         {QStringLiteral("action"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_operation_logs_created_at"), QStringLiteral("operation_logs"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("ux_reservations_active_user"), QStringLiteral("reservations"),
          {QStringLiteral("user_id")}, true, QStringLiteral("status = 'ACTIVE'")},
         {QStringLiteral("ux_reservations_active_charger"), QStringLiteral("reservations"),
