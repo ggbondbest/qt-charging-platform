@@ -37,6 +37,8 @@ QtObject {
     readonly property int fontXl: 21
     readonly property int fontHero: 19   // QSS hero nickname
     readonly property int fontGlyph: 34  // QSS chargingHero 空态大图标
+    readonly property int fontPower: 34   // QSS powerValue 34/800 实时功率主视觉
+    readonly property int fontStat: 20    // QSS statValue 20/800 三列统计数值
     readonly property int fontLg2: 16    // QSS heroTitle/cellChevron
     readonly property int fontLg: 15
     readonly property int fontMd: 14

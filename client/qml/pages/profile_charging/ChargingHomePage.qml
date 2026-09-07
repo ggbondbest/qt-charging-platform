@@ -2,14 +2,15 @@ import QtQuick
 import "../../platform" as P
 
 // QML twin of widgets ChargingHomePage (tab route: "charging").
-// Layout/behaviour parity with charging_home_page.cpp + charging_pulse.cpp:
-//   · hero 双态（有任务 深绿渐变白字 / 空态 浅渐变深字），⚡ 呼吸 1400ms
-//     InOutSine alpha 0.38→1（widgets breath_），空态也呼吸（"空态不冷清"）；
-//   · 有任务时 GET_CHARGING_STATUS 实时行：扫弧脉冲环 52px（1600ms Linear,
-//     arc 100°, kTrack #E2F7EC）+ kW / 已充电量 / 充电时长 / 预估费用，
-//     本地 1s tick 补帧（ChargingPage 同款），回访 tab 不闪空态；
-//   · stale-while-revisit：数据落 P.TabCache.charging（单例，6.2 无
-//     globalThis），重进页先渲染旧帧再后台刷（widgets QStackedWidget 常驻观感）。
+// Hero follows the EV-app "charging session card" pattern (Electrix /
+// ArusEV / ChargePoint conventions): status header row → station meta →
+// ONE focal live number (34px power, QSS powerValue) riding the sweeping
+// pulse ring → hairline → three-column stats (20px values, QSS statValue)
+// with bottom-aligned units. Empty state stays centered & calm; the glyph
+// breathes in both states (charging_pulse breath_: 1400ms InOutSine,
+// alpha .38→1, scale .92→1 — "空态不冷清").
+// Anti-flash: skeleton until first data lands; P.TabCache keeps the last
+// snapshot so tab revisits render stale-then-refresh silently.
 Item {
     id: page
     objectName: "chargingHomePage"
@@ -27,6 +28,12 @@ Item {
     property var status: null            // latest GET_CHARGING_STATUS map
     property int seconds: 0
     property real breath: 1.0            // charging_pulse breath_ parity
+
+    readonly property bool busy: chargingCount > 0 && activeOrder !== null
+    readonly property real kw: status && status.powerKnown
+                               ? status.powerWatts / 1000 : -1
+    readonly property real kwh: status ? (status.energyWh || 0) / 1000 : 0
+    readonly property real yuan: status ? (status.amountCents || 0) / 100 : 0
 
     function dur(sec) {
         var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60
@@ -84,9 +91,18 @@ Item {
     }
     // Local 1s tick between server pushes so the timer always moves.
     Timer {
-        running: page.chargingCount > 0 && P.Style.motionEnabled
+        running: page.busy && P.Style.motionEnabled
         repeat: true; interval: 1000
         onTriggered: page.seconds += 1
+    }
+    // breathAnim_ port: 0.15→1→0.15, InOutSine, 1400ms, infinite.
+    SequentialAnimation on breath {
+        running: page.ordersArrived && P.Style.motionEnabled
+        loops: Animation.Infinite
+        NumberAnimation { to: 0.15; duration: P.Style.durBreathe / 2
+            easing.type: Easing.InOutSine }
+        NumberAnimation { to: 1.0; duration: P.Style.durBreathe / 2
+            easing.type: Easing.InOutSine }
     }
 
     Column {
@@ -107,106 +123,146 @@ Item {
                 width: pull.width
                 spacing: P.Style.spaceLg
 
-                // ---- hero：未落数据=等高骨架（不闪"暂无"） ----
-                // Qt6.2 坑：GradientStop.color 的外部属性绑定不随状态刷新
-                // （初帧算成空态后一直浅色，busy 变→只剩白字浮浅底）。
-                // 双态渐变改"两层常量渐变 Rectangle 切 visible"，零动态绑定。
+                // ================== session hero ==================
                 Rectangle {
                     objectName: "uiChargingHero"
                     width: parent.width
-                    height: 180
+                    height: 250
                     radius: P.Style.radiusLg
-                    readonly property bool busy: page.chargingCount > 0
+                    // Qt6.2: GradientStop bindings never re-evaluate → two
+                    // constant layers switched by visible.
                     gradient: Gradient {
-                        orientation: Gradient.Vertical          // 空态层（常驻底）
+                        orientation: Gradient.Vertical
                         GradientStop { position: 0.0; color: P.Style.brandSoft }
                         GradientStop { position: 1.0; color: P.Style.infoSoft }
                     }
                     Rectangle {
                         anchors.fill: parent
                         radius: P.Style.radiusLg
-                        visible: parent.busy
+                        // 注意：用 opacity 不用 visible——6.2 offscreen 实测
+                        // visible 切换不刷新 gradient 纹理（白字浮浅底发白）。
+                        opacity: page.busy ? 1.0 : 0.0
+                        Behavior on opacity {
+                            NumberAnimation { duration: P.Style.motionEnabled ? 250 : 0 }
+                        }
                         gradient: Gradient {
-                            orientation: Gradient.Vertical      // busy 层（整块切换）
+                            orientation: Gradient.Vertical
                             GradientStop { position: 0.0; color: P.Style.heroFrom }
                             GradientStop { position: 1.0; color: P.Style.heroTo }
                         }
                     }
 
-                    // 骨架/空态/有任务 三态内容
-                    Text {
-                        objectName: "uiHeroGlyph"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top; anchors.topMargin: 22
-                        visible: page.ordersArrived
-                        text: "⚡"
-                        font.pixelSize: parent.busy ? 44 : P.Style.fontGlyph
-                        // charging_pulse breath_: alpha .38→1→.38, scale .92→1,
-                        // 1400ms InOutSine infinite — 空态同款慢呼吸。
-                        opacity: 0.38 + 0.62 * page.breath
-                        scale: 0.92 + 0.08 * page.breath
-                    }
+                    // --- first-load skeleton (equal height, no 空态 flash) ---
                     Text {
                         anchors.centerIn: parent
                         visible: !page.ordersArrived
-                        text: "正在加载充电状态…"; font.pixelSize: P.Style.fontMd
-                        color: P.Style.muted
-                    }
-                    Column {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top; anchors.topMargin: 74
-                        spacing: 4
-                        visible: page.ordersArrived
-                        Text {
-                            objectName: "uiHeroTitle"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: page.chargingCount > 0
-                                  ? "有 " + page.chargingCount + " 单正在充电" : "暂无进行中的充电"
-                            font.pixelSize: page.chargingCount > 0 ? P.Style.fontLg : P.Style.fontLg2
-                            font.weight: page.chargingCount > 0 ? Font.Normal : Font.DemiBold
-                            color: page.chargingCount > 0 ? P.Style.surface : P.Style.ink
-                        }
-                        Text {
-                            objectName: "uiHeroCaption"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: page.chargingCount > 0
-                                  ? "实时功率、电量、费用全程可见" : "扫码或预约后在这里查看实时状态"
-                            font.pixelSize: P.Style.fontSm
-                            color: page.chargingCount > 0 ? P.Style.heroPhone : P.Style.muted
-                        }
+                        text: "正在加载充电状态…"
+                        font.pixelSize: P.Style.fontMd; color: P.Style.muted
                     }
 
-                    // ---- 实时行：扫弧脉冲环 + kW/电量/时长/费用（buildActiveCard 语义） ----
-                    // Row 子项禁用 anchors（行为未定义），两列统一 52 高对齐。
-                    Row {
+                    // ================== busy layout ==================
+                    // header row
+                    Text {
+                        id: heroTitle; objectName: "uiHeroTitle"
+                        anchors.left: parent.left; anchors.top: parent.top
+                        anchors.leftMargin: 22; anchors.topMargin: 18
+                        visible: page.ordersArrived && page.busy
+                        text: "正在充电"
+                        font.pixelSize: P.Style.fontLg2; font.bold: true
+                        color: P.Style.surface
+                    }
+                    Rectangle {
+                        id: livePill
+                        anchors.right: parent.right; anchors.top: parent.top
+                        anchors.rightMargin: 22; anchors.topMargin: 16
+                        visible: page.ordersArrived && page.busy
+                        width: livePillText.implicitWidth + 22; height: 24
+                        radius: 12
+                        color: "#33FFFFFF"
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 5
+                            Rectangle {
+                                width: 6; height: 6; radius: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: P.Style.surface
+                                SequentialAnimation on opacity {
+                                    running: page.busy && P.Style.motionEnabled
+                                    loops: Animation.Infinite
+                                    NumberAnimation { to: 0.35; duration: P.Style.durBreathe / 2 }
+                                    NumberAnimation { to: 1.0; duration: P.Style.durBreathe / 2 }
+                                }
+                            }
+                            Text {
+                                id: livePillText
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "充电中"
+                                font.pixelSize: P.Style.fontXs
+                                font.weight: Font.DemiBold; color: P.Style.surface
+                            }
+                        }
+                    }
+                    Text {
+                        id: heroMeta
                         anchors.left: parent.left; anchors.right: parent.right
-                        anchors.bottom: parent.bottom; anchors.bottomMargin: 16
-                        anchors.leftMargin: 20; anchors.rightMargin: 20
-                        spacing: P.Style.spaceMd
-                        visible: page.chargingCount > 0 && page.activeOrder !== null
+                        anchors.top: heroTitle.bottom
+                        anchors.leftMargin: 22; anchors.rightMargin: 22
+                        anchors.topMargin: 5
+                        visible: page.ordersArrived && page.busy
+                        elide: Text.ElideRight
+                        text: (page.activeOrder && page.activeOrder.stationName
+                               ? page.activeOrder.stationName : "充电站")
+                              + " · 桩号 " + ((page.activeOrder && page.activeOrder.chargerCode) || "--")
+                        font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
+                    }
 
-                        // ChargingPulse 移植：52px，track #E2F7EC + 100° 品牌绿
-                        // 圆头弧 1600ms Linear 扫圈（QtQuick.Shapes 本机缺装，
-                        // 用 Canvas 等价绘制）。
+                    // focal: pulse ring + 34px power
+                    Row {
+                        id: mainRow
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: heroMeta.bottom
+                        anchors.topMargin: 16
+                        visible: page.ordersArrived && page.busy
+                        spacing: P.Style.spaceMd
+
+                        // ChargingPulse port: 56px, white translucent track on
+                        // the green wash + 100° round-cap sweep 1600ms Linear,
+                        // vector lightning inside breathing (alpha .38→1,
+                        // scale .92→1) — the widgets bolt polygon, same points.
                         Canvas {
                             objectName: "chargingPulse"
-                            width: 52; height: 52
+                            width: 56; height: 56
                             property real phase: 0.0
+                            property real b: page.breath
                             onPhaseChanged: requestPaint()
+                            onBChanged: requestPaint()
                             onPaint: {
                                 const ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
                                 ctx.lineWidth = 4
-                                ctx.strokeStyle = "#E2F7EC"          // kTrackColor
+                                ctx.strokeStyle = "rgba(255,255,255,0.28)"
                                 ctx.beginPath()
-                                ctx.arc(26, 26, 22, 0, 2 * Math.PI)
+                                ctx.arc(28, 28, 22, 0, 2 * Math.PI)
                                 ctx.stroke()
                                 ctx.lineCap = "round"
-                                ctx.strokeStyle = "#00B578"          // brand
+                                ctx.strokeStyle = "rgba(255,255,255,0.95)"
                                 const a0 = (-90 + phase * 360) * Math.PI / 180
                                 ctx.beginPath()
-                                ctx.arc(26, 26, 22, a0, a0 + 100 * Math.PI / 180)
+                                ctx.arc(28, 28, 22, a0, a0 + 100 * Math.PI / 180)
                                 ctx.stroke()
+                                const lvl = 0.38 + 0.62 * b
+                                const sc = 0.92 + 0.08 * b
+                                const bw = 15 * sc, bh = 24 * sc
+                                ctx.fillStyle = "rgba(255,255,255," + lvl.toFixed(3) + ")"
+                                ctx.beginPath()
+                                ctx.moveTo(28 - bw * 0.15, 28 - bh / 2)
+                                ctx.lineTo(28 - bw / 2,    28 + bh * 0.12)
+                                ctx.lineTo(28 - bw * 0.05, 28 + bh * 0.12)
+                                ctx.lineTo(28 + bw * 0.15, 28 + bh / 2)
+                                ctx.lineTo(28 + bw / 2,    28 - bh * 0.12)
+                                ctx.lineTo(28 + bw * 0.05, 28 - bh * 0.12)
+                                ctx.closePath()
+                                ctx.fill()
                             }
                             SequentialAnimation on phase {
                                 running: P.Style.motionEnabled
@@ -216,43 +272,140 @@ Item {
                             }
                         }
                         Item {
-                            width: statsGrid.implicitWidth
-                            height: 52
-                            Grid {
-                                id: statsGrid
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                columns: 4
-                                columnSpacing: P.Style.spaceMd
-                                Repeater {
-                                    model: [
-                                        { k: "kW",   v: page.status && page.status.powerKnown
-                                                        ? (page.status.powerWatts / 1000).toFixed(1) : "—" },
-                                        { k: "kWh",  v: page.status ? ((page.status.energyWh || 0) / 1000).toFixed(2) : "—" },
-                                        { k: "时长", v: page.dur(page.seconds) },
-                                        { k: "预估¥", v: page.status ? ((page.status.amountCents || 0) / 100).toFixed(2) : "—" },
-                                    ]
-                                    Column {
-                                        spacing: 2
+                            width: powerCol.implicitWidth
+                            height: 56
+                            Column {
+                                id: powerCol
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.top: parent.top; anchors.topMargin: 4
+                                spacing: 2
+                                Row {
+                                    spacing: 4
+                                    Text {
+                                        id: powerVal
+                                        text: page.kw >= 0 ? page.kw.toFixed(1) : "—"
+                                        font.pixelSize: P.Style.fontPower
+                                        font.weight: Font.Black; color: P.Style.surface
+                                    }
+                                    Text {
+                                        text: "kW"
+                                        font.pixelSize: P.Style.fontSm
+                                        font.weight: Font.DemiBold; color: P.Style.heroPhone
+                                        height: powerVal.height
+                                        verticalAlignment: Text.AlignBottom
+                                        bottomPadding: 6
+                                    }
+                                }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: "实时充电功率"
+                                    font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
+                                }
+                            }
+                        }
+                    }
+
+                    // hairline + three-column live stats (QSS statValue)
+                    Rectangle {
+                        id: heroHr
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.bottom: heroStats.top
+                        anchors.bottomMargin: 14; anchors.leftMargin: 22; anchors.rightMargin: 22
+                        visible: page.ordersArrived && page.busy
+                        height: 1; color: "#30FFFFFF"
+                    }
+                    Row {
+                        id: heroStats
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.bottom: parent.bottom; anchors.bottomMargin: 18
+                        anchors.leftMargin: 22; anchors.rightMargin: 22
+                        visible: page.ordersArrived && page.busy
+                        readonly property real colW: (width - 2) / 3
+                        Repeater {
+                            model: [
+                                { val: page.kwh.toFixed(2), unit: "kWh", k: "已充电量" },
+                                { val: page.dur(page.seconds), unit: "",  k: "充电时长" },
+                                { val: "¥" + page.yuan.toFixed(2), unit: "", k: "预估费用" },
+                            ]
+                            delegate: Item {
+                                width: heroStats.colW; height: 50
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 3
+                                    Row {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        spacing: 3
                                         Text {
-                                            text: modelData.v
-                                            font.pixelSize: P.Style.fontMd; font.bold: true
-                                            color: P.Style.surface
+                                            id: sv
+                                            text: modelData.val
+                                            font.pixelSize: P.Style.fontStat
+                                            font.weight: Font.ExtraBold; color: P.Style.surface
                                         }
                                         Text {
-                                            text: modelData.k
-                                            font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
+                                            visible: modelData.unit.length > 0
+                                            text: modelData.unit
+                                            font.pixelSize: P.Style.fontXs
+                                            color: P.Style.heroPhone
+                                            height: sv.height
+                                            verticalAlignment: Text.AlignBottom
+                                            bottomPadding: 3
                                         }
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: modelData.k
+                                        font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
                                     }
                                 }
                             }
+                        }
+                        // column dividers — Row 会覆盖子项 x，故为 Row 兄弟节点
+                        // （见下方 heroDiv1/2），语言同 widgets 卡内白细线。
+                    }
+                    Repeater {
+                        model: 2
+                        delegate: Rectangle {
+                            width: 1; height: 30
+                            x: heroStats.x + (index + 1) * heroStats.colW + index
+                            y: heroStats.y - (height - heroStats.height) / 2
+                            visible: page.ordersArrived && page.busy
+                            color: "#26FFFFFF"
+                        }
+                    }
+
+                    // ================== empty layout ==================
+                    Column {
+                        id: emptyCol
+                        anchors.centerIn: parent
+                        spacing: P.Style.spaceSm
+                        visible: page.ordersArrived && !page.busy
+                        Text {
+                            objectName: "uiHeroGlyph"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "⚡"
+                            font.pixelSize: 40
+                            // 空态也呼吸：widgets motion::startBreathing(glyph)
+                            // "空态不冷清 —— 在等你的下一单"
+                            opacity: 0.38 + 0.62 * page.breath
+                            scale: 0.92 + 0.08 * page.breath
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "暂无进行中的充电"
+                            font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
+                            color: P.Style.ink
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "扫码或预约后，在这里查看实时状态"
+                            font.pixelSize: P.Style.fontSm; color: P.Style.muted
                         }
                     }
                 }
 
                 P.ActionButton {
                     objectName: "viewChargingRunButton"
-                    visible: page.chargingCount > 0 && page.activeOrder !== null
+                    visible: page.busy
                     width: parent.width
                     variant: "primary"
                     text: "查看实时充电"
@@ -279,23 +432,7 @@ Item {
                     actionText: "去处理"
                     onActionTriggered: if (App) App.navigate("order")
                 }
-
-                Text {
-                    width: parent.width
-                    text: "提示：充电页轮询走 GET_CHARGING_STATUS（mock 每秒推一次实时功率）"
-                    font.pixelSize: P.Style.fontSm; color: P.Style.faint
-                }
             }
         }
-    }
-
-    // 呼吸驱动（widgets breathAnim_ 0.15→1→0.15, InOutSine, 1400ms 无限循环）
-    SequentialAnimation on breath {
-        running: page.ordersArrived && P.Style.motionEnabled
-        loops: Animation.Infinite
-        NumberAnimation { to: 0.15; duration: P.Style.durBreathe / 2
-            easing.type: Easing.InOutSine }
-        NumberAnimation { to: 1.0; duration: P.Style.durBreathe / 2
-            easing.type: Easing.InOutSine }
     }
 }
