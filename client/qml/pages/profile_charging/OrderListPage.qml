@@ -140,7 +140,8 @@ Item {
                 model: page.filters
                 P.ActionButton {
                     objectName: "uiOrderFilter" + modelData.id
-                    variant: page.filter === modelData.id ? "primary" : "chip"
+                    variant: "chip"
+                    selected: page.filter === modelData.id
                     text: modelData.label
                     onClicked: {
                         if (page.filter === modelData.id) return

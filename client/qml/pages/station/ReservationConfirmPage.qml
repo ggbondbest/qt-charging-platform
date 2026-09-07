@@ -88,6 +88,10 @@ Item {
             const v = vehicles[vehicleIndex >= 0 ? vehicleIndex : 0]
             reservationService.submit({
                 chargerId: station.chargerId, stationId: station.stationId,
+                // 桩元数据透传给桥（mock 用 code/type/power 生成桩号与规格文案）
+                chargerCode: station.chargerCode || "", chargerType: station.chargerType || "fast",
+                chargerPowerWatts: station.chargerPowerWatts || 0,
+                stationName: station.stationName || station.name || "",
                 startMinutes: page.startMinutes, endMinutes: page.endMinutes,
                 vehicleId: v ? v.id : 0, vehiclePlate: v ? v.plate : "",
                 distanceMeters: station.distanceMeters || -1 })

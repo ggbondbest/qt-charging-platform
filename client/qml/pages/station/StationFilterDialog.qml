@@ -97,7 +97,8 @@ Popup {
                         Repeater {
                             model: dialog.distanceKm
                             P.ActionButton {
-                                variant: dialog.maxDistanceKm === modelData ? "primary" : "chip"
+                                variant: "chip"
+                                selected: dialog.maxDistanceKm === modelData
                                 text: modelData + "公里内"
                                 onClicked: dialog.setDistance(modelData)
                             }

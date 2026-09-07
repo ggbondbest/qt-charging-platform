@@ -31,40 +31,56 @@ Item {
             padding: P.Style.spaceLg
             spacing: P.Style.spaceMd
 
-            // 身份头卡（点击=编辑资料）
-            P.ClickableCard {
+            // 身份头图（QSS uiProfileHeroButton：电动绿对角渐变 + 白字系；
+            // 原白卡版由成员3 于 2026-09-07 皮肤对齐轮升级，成员2 文件已报备）
+            Rectangle {
                 objectName: "profileHeroButton"
                 width: col.width - col.padding * 2
-                onClicked: { if (App) App.navigate("profile_edit") }
+                height: 86
+                radius: P.Style.radiusLg
+                gradient: Gradient {
+                    orientation: Gradient.Diagonal
+                    GradientStop { position: 0.0; color: P.Style.heroFrom }
+                    GradientStop { position: 1.0; color: P.Style.heroTo }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (App) App.navigate("profile_edit") }
+                }
                 Row {
-                    width: parent.width    // 内容进 ClickableCard 内部 Column：anchors.fill 被忽略且告警
+                    anchors.fill: parent
+                    anchors.margins: P.Style.spaceLg
                     spacing: P.Style.spaceMd
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 46; height: 46; radius: 23
-                        color: P.Style.brandSoft
+                        width: 54; height: 54; radius: 27
+                        color: P.Style.brand
+                        border.width: 2; border.color: "#66FFFFFF"
                         Text {
                             anchors.centerIn: parent
-                            text: "👤"; font.pixelSize: 22
+                            text: page.user && page.user.nickname ? page.user.nickname[0] : "⚡"
+                            font.pixelSize: 22; font.bold: true; color: P.Style.surface
                         }
                     }
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 46 - 80 - parent.spacing * 2
+                        width: parent.width - 54 - 90 - parent.spacing * 2
                         spacing: 2
                         Text {
                             width: parent.width; elide: Text.ElideRight
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
-                            font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink
+                            font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
                         }
                         Text {
                             text: page.user ? (page.user.phone || "") : "点这里登录"
-                            font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                            font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
                         }
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "编辑资料 ›"; font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                        text: "编辑资料 ›"; font.pixelSize: P.Style.fontSm
+                        font.weight: Font.DemiBold; color: P.Style.heroPhone
                     }
                 }
             }

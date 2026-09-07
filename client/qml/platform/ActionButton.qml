@@ -4,9 +4,14 @@ import "."
 
 // QML twin of widgets ActionButton — same name, same variant vocabulary:
 //   primary | secondary | danger | ghost | chip
+// Skin mirrors resources/qss/client_platform.qss #uiActionButton rules
+// verbatim: pill radius 24 (chip=12), white secondary, QSS pressed/disabled
+// solid colors, and the checked chip state (浅绿底+绿描边+深绿字) exposed as
+// the `selected` property instead of the widgets-only :checked pseudo-class.
 Button {
     id: root
     property string variant: "primary"
+    property bool selected: false      // chip 选中态（排序/tab/筛选 chips 用）
     objectName: "actionButton_" + (text || "")
 
     implicitHeight: 44
@@ -15,20 +20,37 @@ Button {
     topPadding: Style.spaceSm
     bottomPadding: Style.spaceSm
 
-    readonly property color fg: ({
+    // QSS uiStatusTag 同源字色映射
+    readonly property color fg: !enabled ? ({
+            "primary": "#F2FBF7", "danger": "#FDF3F3",
+            "secondary": "#B7BFC9", "ghost": Style.faint, "chip": "#B7BFC9"
+        })[variant] || Style.faint : ({
         "primary": Style.surface, "danger": Style.surface,
-        "secondary": Style.ink, "ghost": Style.brandDeep, "chip": Style.muted
+        "secondary": Style.ink, "ghost": Style.ink,
+        "chip": root.selected ? Style.brandDeep : Style.ink
     })[variant] || Style.surface
-    readonly property color bg: ({
+    readonly property color bg: !enabled ? ({
+            "primary": Style.brandEdge, "danger": "#F3B9BC",
+            "secondary": Style.surface, "ghost": "transparent", "chip": Style.surface
+        })[variant] || Style.surface : root.down ? ({
+            "primary": Style.brandPressed, "danger": Style.dangerPressed,
+            "secondary": Style.ghost, "ghost": "transparent", "chip": Style.bg
+        })[variant] || Style.surface : ({
         "primary": Style.brand, "danger": Style.danger,
-        "secondary": Style.ghost, "ghost": "transparent", "chip": Style.brandSoft
+        "secondary": Style.surface, "ghost": "transparent",
+        "chip": root.selected ? Style.brandSoft : Style.surface
     })[variant] || Style.brand
-    readonly property int rad: variant === "chip" ? Style.radiusPill : Style.radiusMd
+    readonly property int rad: variant === "chip" ? Style.radiusMd : Style.radiusChip
+    readonly property bool bordered: variant === "secondary" || (variant === "chip" && !root.selected)
+    readonly property int borderW: variant === "secondary" || variant === "chip" ? 1 : 0
+    readonly property color borderColor: root.selected ? Style.brand : Style.lineStrong
 
     contentItem: Text {
         text: root.text
-        font.pixelSize: Style.fontMd
+        font.pixelSize: root.variant === "primary" || root.variant === "danger"
+                        || root.variant === "chip" ? Style.fontLg : Style.fontMd
         font.bold: root.variant === "primary" || root.variant === "danger"
+                   || (root.variant === "chip" && root.selected)
         color: root.fg
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
@@ -36,11 +58,7 @@ Button {
     background: Rectangle {
         radius: root.rad
         color: root.bg
-        border.width: root.variant === "secondary" ? 1 : 0
-        border.color: Style.lineStrong
-        opacity: root.down ? 0.85 : 1.0
-        Behavior on opacity {
-            NumberAnimation { duration: root.enabled && Style.motionEnabled ? Style.durMicro : 0 }
-        }
+        border.width: root.borderW
+        border.color: root.borderColor
     }
 }

@@ -111,16 +111,24 @@ Item {
     P.LoadingOverlay { running: page.loading && !hasActive }
 
     // ---- 三栏主视图 ----
+    // 顶部对齐 + 列高各自显式（列宽 1/3、卡片自然高、底部留空）——与 widgets
+    // QBoxLayout 三列同构。旧版 anchors.fill + Card height:parent.height 与
+    // Row.implicitHeight 互成依赖 → 高度塌 0（2026-09-07 皮肤对齐轮修正）。
+    // Card 无 clip：三列内容溢出互叠，故列宽内必须真包得住（窄屏适配项，
+    // 记入 TODO）。
+    property real colW: (width - P.Style.spaceSm * 2) / 3
+
     Row {
         id: cols
-        anchors.fill: parent
+        anchors { left: parent.left; right: parent.right; top: parent.top }
         spacing: P.Style.spaceSm
         visible: hasActive
 
         P.Card {
+            id: distanceCard
             objectName: "distanceCard"
-            width: (page.width - cols.spacing * 2) / 3
-            height: parent.height
+            width: page.colW
+            height: distanceCard.implicitHeight
             Column {
                 width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
@@ -133,24 +141,21 @@ Item {
                     font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
                 }
                 Text { text: "虚拟数据 · 导航功能后续对接"
+                    width: parent.width; wrapMode: Text.WordWrap
                     font.pixelSize: P.Style.fontSm; color: P.Style.faint }
             }
         }
 
         P.Card {
+            id: countdownCard
             objectName: "countdownCard"
-            width: (page.width - cols.spacing * 2) / 3
-            height: parent.height
+            width: page.colW
+            height: countdownCard.implicitHeight
             Column {
                 width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                Text {
-                    objectName: "reservationCountdownLabel"
-                    text: page.countdownText
-                    font.pixelSize: P.Style.fontXl; font.bold: true
-                    color: page.countdownColor
-                }
+                // 行序对齐 widgets（info 在前、大号倒计时其后）
                 Text {
                     objectName: "reservationInfoLabel"
                     width: parent.width
@@ -161,7 +166,14 @@ Item {
                           + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
                     font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
-                Item { width: 1; height: parent.height - 200 }
+                Text {
+                    objectName: "reservationCountdownLabel"
+                    text: page.countdownText
+                    font.pixelSize: P.Style.fontXl; font.bold: true
+                    color: page.countdownColor
+                }
+                // spring 占位已移除：卡片改自然高后无底部可撑，且其高度绑
+                // Card.height 在 Column 自适应链上曾诱发 polish 环（2026-09-07）。
                 P.ActionButton {
                     objectName: "reservationCancelButton"
                     variant: "danger"; text: "取消预约"
@@ -178,9 +190,10 @@ Item {
         }
 
         P.Card {
+            id: batteryCard
             objectName: "batteryCard"
-            width: (page.width - cols.spacing * 2) / 3
-            height: parent.height
+            width: page.colW
+            height: batteryCard.implicitHeight
             Column {
                 width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
@@ -188,6 +201,7 @@ Item {
                 Text { objectName: "batteryLabel"; text: "SOC --%"
                     font.pixelSize: P.Style.fontLg; color: P.Style.info }
                 Text { text: "虚拟占位 · 电量对接功能暂不实现"
+                    width: parent.width; wrapMode: Text.WordWrap
                     font.pixelSize: P.Style.fontSm; color: P.Style.faint }
             }
         }
