@@ -8,8 +8,9 @@ import "StationState.js" as StationState
 // 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 名额提示）、
 // 🔔通知与提醒（三 Switch ↔ settingsService.notificationEnabled）。
 // 双通道：服务 invokable 可读时以服务为准；桥缺位期落 StationState（.pragma
-// library 跨页会话库）——因此密码/车辆/开关在页间往返不丢，且「我的→设置」
-// 入口进页需二级密码解锁（保护开启时，用户指定的拦截位）。
+// library 跨页会话库）——因此密码/车辆/开关在页间往返不丢。
+// 二级密码作用点在登录环节（用户二轮指定口径）：本页只负责设置/开关，
+// 真正的验证发生在 LoginPage——进入本页不再要求解锁。
 // 密码只在库/服务层落哈希，UI 不存任何明文/散列。
 Item {
     id: page
@@ -24,8 +25,6 @@ Item {
     property bool hasPassword: false
     property bool protectionOn: false
     property var vehicles: []
-    // 进页密码门：保护开启且已设密码时锁定；解锁仅对本页本次访问生效。
-    property bool locked: false
 
     function call(target, fn, args) {   // 桥缺位期统一吞异常
         try { return target[fn].apply(target, args) } catch (e) { return undefined }
@@ -46,10 +45,7 @@ Item {
             page.protectionOn = StationState.protectionEnabled()
         }
     }
-    Component.onCompleted: {
-        reload()
-        locked = page.hasPassword && page.protectionOn
-    }
+    Component.onCompleted: reload()
     Connections {
         target: settingsService
         function onNotificationsChanged() { notifyCol.syncSwitches() }
@@ -109,8 +105,8 @@ Item {
                         objectName: "protectionSwitchHint"
                         width: parent.width; wrapMode: Text.WordWrap
                         text: !page.hasPassword ? "未设置二级保护密码，开关暂不可用——请先点击上方「设置密码」"
-                              : page.protectionOn ? "进入「我的 → 设置」将要求输入二级密码"
-                              : "当前未开启，进入设置不做二次验证"
+                              : page.protectionOn ? "已开启：该账号下次在登录页输入手机号时，将要求输入二级保护密码"
+                              : "当前未开启，登录时不做二级密码验证"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                 }
@@ -298,9 +294,13 @@ Item {
                         }
                         if (newField.text.length < 4) { passwordDialog.note = "密码长度至少 4 位"; return }
                         if (newField.text !== confirmField.text) { passwordDialog.note = "两次输入的密码不一致"; return }
-                        // 明文只透传给哈希通道（库/服务），UI 不留存。
+                        // 明文只透传给哈希通道（库/服务），UI 不留存；
+                        // 库通道把密码绑定到当前登录手机号——登录页仅对该号码要求验证。
                         // TODO(contract): settingsService.setProtectionPassword(plain) invokable。
-                        StationState.setSecondPassword(newField.text)
+                        StationState.setSecondPassword(newField.text,
+                            StationState.accountPhone()
+                            || (App && App.currentUser && App.currentUser.phone
+                                ? App.currentUser.phone : ""))
                         call(settingsService, "setProtectionPassword", [newField.text])
                         page.hasPassword = true
                         passwordDialog.close()
@@ -423,59 +423,6 @@ Item {
         }
     }
 
-    // ---- 进页密码门（用户指定拦截位：我的→设置）----
-    Rectangle {
-        objectName: "secondPasswordGate"
-        anchors.fill: parent
-        visible: page.locked
-        color: P.Style.bg
-        Column {
-            anchors.centerIn: parent
-            width: Math.min(300, parent.width - P.Style.spaceXl)
-            spacing: P.Style.spaceSm
-            Text { text: "🔒"; font.pixelSize: 34; anchors.horizontalCenter: parent.horizontalCenter }
-            Text { anchors.horizontalCenter: parent.horizontalCenter
-                text: "输入二级保护密码"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
-            Text { width: parent.width; wrapMode: Text.WordWrap
-                anchors.horizontalCenter: parent.horizontalCenter
-                horizontalAlignment: Text.AlignHCenter
-                text: "本页面已开启二级密码保护，验证通过后进入。"
-                font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-            TextField {
-                id: lockField
-                objectName: "lockPasswordField"
-                width: parent.width; placeholderText: "二级保护密码"
-                echoMode: TextInput.Password
-                onAccepted: lockGateUnlock()
-            }
-            Text {
-                objectName: "lockErrorLabel"
-                visible: page.lockNote.length > 0
-                text: page.lockNote; font.pixelSize: P.Style.fontSm; color: P.Style.danger
-            }
-            Row {
-                width: parent.width
-                spacing: P.Style.spaceSm
-                P.ActionButton {
-                    objectName: "lockExitButton"
-                    variant: "ghost"; text: "离开"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: { if (App) App.back() }
-                }
-                P.ActionButton {
-                    objectName: "lockUnlockButton"
-                    variant: "primary"; text: "解锁"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: lockGateUnlock()
-                }
-            }
-        }
-    }
-    property string lockNote: ""
-    function lockGateUnlock() {
-        const okSvc = call(settingsService, "verifyProtectionPassword", [lockField.text])
-        const ok = (typeof okSvc === "boolean") ? okSvc : StationState.verifySecondPassword(lockField.text)
-        if (!ok) { page.lockNote = "密码不正确"; return }
-        page.lockNote = ""; page.locked = false; lockField.text = ""
-    }
+    // 进页密码门已撤销（用户二轮指定口径）：二级密码的作用点在登录环节，
+    // 由 LoginPage 按手机号命中触发验证；本页只做设置与开关。
 }

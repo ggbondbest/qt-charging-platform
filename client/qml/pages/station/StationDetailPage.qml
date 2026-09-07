@@ -24,6 +24,7 @@ Item {
     property bool detailFailed: false
     property string failMessage: ""
     property var chargers: []
+    property bool demo: false
 
     function money(c) { return (c / 100).toFixed(2) }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
@@ -49,7 +50,20 @@ Item {
         // TODO(contract): struct 参数 fetchDetail(Station,int) QML 不可达，
         //                桥补 fetchDetailById(int stationId, int distanceMeters)。
         try { stationQueryService.fetchDetailById(station.id, station.distanceMeters || -1) }
-        catch (e) { detailLoading = false; detailFailed = true; failMessage = "详情桥未就绪" }
+        catch (e) { loadDemo() }   // 桥缺位：页内演示桩位（标注"演示数据"），预约链路可完整走通
+    }
+    // 五种桩态各一（同 widgets 彩签口径）；真桥落地后 onDetailSucceeded 替换。
+    function loadDemo() {
+        demo = true
+        chargers = [
+            { id: 9101, code: "A-07", type: "fast", powerWatts: 120000, status: "available" },
+            { id: 9102, code: "A-08", type: "fast", powerWatts: 120000, status: "reserved" },
+            { id: 9103, code: "A-09", type: "fast", powerWatts: 160000, status: "charging" },
+            { id: 9104, code: "B-01", type: "slow", powerWatts: 7000,   status: "available" },
+            { id: 9105, code: "B-02", type: "slow", powerWatts: 7000,   status: "fault" },
+            { id: 9106, code: "B-03", type: "fast", powerWatts: 60000,  status: "offline" }
+        ]
+        detailLoading = false; detailLoaded = true; detailFailed = false
     }
 
     Connections {
@@ -57,6 +71,7 @@ Item {
         function onDetailStarted() { page.detailLoading = true; page.detailFailed = false }
         function onDetailSucceeded(detail) {
             page.detailLoading = false; page.detailLoaded = true; page.detailFailed = false
+            page.demo = false                       // 真数据到位，演示桩位退位
             // 桥 map 形状：{station…, distanceMeters, chargers[], hasChargerData}；
             // 兼容 station 子对象与拍平两种形状（TODO(contract) 成员3 定形）。
             const src = (detail && detail.station) ? detail.station : (detail || {})
@@ -292,9 +307,12 @@ Item {
         Text {
             objectName: "detailChargerSummaryLabel"
             visible: page.detailLoaded
-            text: chargers.length > 0
-                  ? "充电桩（空闲 " + availableCount() + " / 共 " + chargers.length + "）"
-                  : "充电桩"
+            width: parent.width
+            wrapMode: Text.WordWrap      // NoWrap 长标注会溢出裁字
+            text: (chargers.length > 0
+                   ? "充电桩（空闲 " + availableCount() + " / 共 " + chargers.length + "）"
+                   : "充电桩")
+                  + (page.demo ? " · 演示数据（详情桥未就绪，接入后自动替换）" : "")
             font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
         }
 

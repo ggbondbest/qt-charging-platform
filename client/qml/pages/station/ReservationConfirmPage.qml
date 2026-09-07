@@ -120,10 +120,19 @@ Item {
 
     Component.onCompleted: { loadVehicles(); applyRecommend() }
 
-    Column {
+    // 整页可上下拖拽（用户二轮指定）：内容超视口即滚动，提交/关闭钮始终可达。
+    Flickable {
         anchors.fill: parent
-        anchors.margins: P.Style.spaceLg
-        spacing: P.Style.spaceMd
+        contentWidth: width
+        contentHeight: confirmCol.height + 2 * P.Style.spaceLg
+        clip: true
+
+        Column {
+            id: confirmCol
+            x: P.Style.spaceLg
+            y: P.Style.spaceLg
+            width: parent.width - 2 * P.Style.spaceLg
+            spacing: P.Style.spaceMd
 
         Text { objectName: "reservationConfirmTitle"; text: "预约确认"
             font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
@@ -253,6 +262,7 @@ Item {
                 enabled: page.canSubmit
                 onClicked: page.confirm()
             }
+        }
         }
     }
 

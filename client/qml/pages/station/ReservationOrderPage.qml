@@ -111,98 +111,105 @@ Item {
     P.LoadingOverlay { running: page.loading && !hasActive }
 
     // ---- 三栏主视图 ----
-    // 顶部对齐 + 列高各自显式（列宽 1/3、卡片自然高、底部留空）——与 widgets
-    // QBoxLayout 三列同构。旧版 anchors.fill + Card height:parent.height 与
-    // Row.implicitHeight 互成依赖 → 高度塌 0（2026-09-07 皮肤对齐轮修正）。
-    // Card 无 clip：三列内容溢出互叠，故列宽内必须真包得住（窄屏适配项，
-    // 记入 TODO）。
+    // 卡片自然高 + 列宽 1/3（b355fd9 三栏塌陷修正：旧版 anchors.fill +
+    // Card height:parent.height 与 Row.implicitHeight 互成依赖 → 高度塌 0）；
+    // 外层 Flickable = 整页可上下拖拽（用户二轮指定），内容超视口即滚动。
     property real colW: (width - P.Style.spaceSm * 2) / 3
 
-    Row {
-        id: cols
-        anchors { left: parent.left; right: parent.right; top: parent.top }
-        spacing: P.Style.spaceSm
-        visible: hasActive
+    Flickable {
+        id: orderFlick
+        anchors.fill: parent
+        visible: page.hasActive
+        contentWidth: width
+        contentHeight: Math.max(height, cols.implicitHeight)
+        clip: true
 
-        P.Card {
-            id: distanceCard
-            objectName: "distanceCard"
-            width: page.colW
-            height: distanceCard.implicitHeight
-            Column {
-                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
-                spacing: P.Style.spaceSm
-                Text { text: "📍 距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                Text {
-                    objectName: "orderDistanceLabel"
-                    text: (page.rec.distanceMeters === undefined || page.rec.distanceMeters < 0) ? "--"
-                        : page.rec.distanceMeters >= 1000 ? "约 " + (page.rec.distanceMeters / 1000).toFixed(1) + " km"
-                        : "约 " + page.rec.distanceMeters + " m"
-                    font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
-                }
-                Text { objectName: "orderModuleCaption"; text: "虚拟数据 · 导航功能后续对接"
-                    width: parent.width; wrapMode: Text.WordWrap
-                    font.pixelSize: P.Style.fontSm; color: P.Style.faint }
-            }
-        }
+        Row {
+            id: cols
+            width: orderFlick.width
+            spacing: P.Style.spaceSm
+            visible: hasActive
 
-        P.Card {
-            id: countdownCard
-            objectName: "countdownCard"
-            width: page.colW
-            height: countdownCard.implicitHeight
-            Column {
-                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
-                spacing: P.Style.spaceSm
-                Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                // 行序对齐 widgets（info 在前、大号倒计时其后）
-                Text {
-                    objectName: "orderActiveInfoLabel"
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: (page.rec.stationName || "--") + " · " + (page.rec.chargerCode || "--") + "\n"
-                          + (page.rec.chargerSpec || "充电桩") + " · " + (page.rec.durationMinutes || 0) + " 分钟 · 预估 ¥" + money(page.rec.estimatedFeeCents) + "\n"
-                          + "车辆 " + (page.rec.vehiclePlate || "未关联") + " · 时段 "
-                          + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
-                    font.pixelSize: P.Style.fontSm; color: P.Style.muted
-                }
-                Text {
-                    objectName: "reservationCountdownLabel"
-                    text: page.countdownText
-                    font.pixelSize: P.Style.fontXl; font.bold: true
-                    color: page.countdownColor
-                }
-                // spring 占位已移除：卡片改自然高后无底部可撑，且其高度绑
-                // Card.height 在 Column 自适应链上曾诱发 polish 环（2026-09-07）。
-                P.ActionButton {
-                    objectName: "reservationOrderCancelButton"
-                    variant: "danger"; text: "取消预约"
-                    width: parent.width
-                    enabled: !page.cancelBusy
-                    onClicked: { page.cancelBusy = true; page.cancelNote = ""; page.cancel() }
-                }
-                Text {
-                    visible: page.cancelNote.length > 0
-                    text: page.cancelNote
-                    font.pixelSize: P.Style.fontSm; color: P.Style.danger
+            P.Card {
+                id: distanceCard
+                objectName: "distanceCard"
+                width: page.colW
+                height: distanceCard.implicitHeight
+                Column {
+                    width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
+                    spacing: P.Style.spaceSm
+                    Text { text: "📍 距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    Text {
+                        objectName: "orderDistanceLabel"
+                        text: (page.rec.distanceMeters === undefined || page.rec.distanceMeters < 0) ? "--"
+                            : page.rec.distanceMeters >= 1000 ? "约 " + (page.rec.distanceMeters / 1000).toFixed(1) + " km"
+                            : "约 " + page.rec.distanceMeters + " m"
+                        font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
+                    }
+                    Text { objectName: "orderModuleCaption"; text: "虚拟数据 · 导航功能后续对接"
+                        width: parent.width; wrapMode: Text.WordWrap
+                        font.pixelSize: P.Style.fontSm; color: P.Style.faint }
                 }
             }
-        }
 
-        P.Card {
-            id: batteryCard
-            objectName: "batteryCard"
-            width: page.colW
-            height: batteryCard.implicitHeight
-            Column {
-                width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
-                spacing: P.Style.spaceSm
-                Text { text: "🔋 汽车电量"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                Text { objectName: "orderBatteryLabel"; text: "SOC --%"
-                    font.pixelSize: P.Style.fontLg; color: P.Style.info }
-                Text { objectName: "orderModuleCaption"; text: "虚拟占位 · 电量对接功能暂不实现"
-                    width: parent.width; wrapMode: Text.WordWrap
-                    font.pixelSize: P.Style.fontSm; color: P.Style.faint }
+            P.Card {
+                id: countdownCard
+                objectName: "countdownCard"
+                width: page.colW
+                height: countdownCard.implicitHeight
+                Column {
+                    width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
+                    spacing: P.Style.spaceSm
+                    Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    // 行序对齐 widgets（info 在前、大号倒计时其后）
+                    Text {
+                        objectName: "orderActiveInfoLabel"
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: (page.rec.stationName || "--") + " · " + (page.rec.chargerCode || "--") + "\n"
+                              + (page.rec.chargerSpec || "充电桩") + " · " + (page.rec.durationMinutes || 0) + " 分钟 · 预估 ¥" + money(page.rec.estimatedFeeCents) + "\n"
+                              + "车辆 " + (page.rec.vehiclePlate || "未关联") + " · 时段 "
+                              + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
+                        font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                    }
+                    Text {
+                        objectName: "reservationCountdownLabel"
+                        text: page.countdownText
+                        font.pixelSize: P.Style.fontXl; font.bold: true
+                        color: page.countdownColor
+                    }
+                    // spring 占位已移除：卡片改自然高后无底部可撑，且其高度绑
+                    // Card.height 在 Column 自适应链上曾诱发 polish 环（2026-09-07）。
+                    P.ActionButton {
+                        objectName: "reservationOrderCancelButton"
+                        variant: "danger"; text: "取消预约"
+                        width: parent.width
+                        enabled: !page.cancelBusy
+                        onClicked: { page.cancelBusy = true; page.cancelNote = ""; page.cancel() }
+                    }
+                    Text {
+                        visible: page.cancelNote.length > 0
+                        text: page.cancelNote
+                        font.pixelSize: P.Style.fontSm; color: P.Style.danger
+                    }
+                }
+            }
+
+            P.Card {
+                id: batteryCard
+                objectName: "batteryCard"
+                width: page.colW
+                height: batteryCard.implicitHeight
+                Column {
+                    width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
+                    spacing: P.Style.spaceSm
+                    Text { text: "🔋 汽车电量"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "orderBatteryLabel"; text: "SOC --%"
+                        font.pixelSize: P.Style.fontLg; color: P.Style.info }
+                    Text { objectName: "orderModuleCaption"; text: "虚拟占位 · 电量对接功能暂不实现"
+                        width: parent.width; wrapMode: Text.WordWrap
+                        font.pixelSize: P.Style.fontSm; color: P.Style.faint }
+                }
             }
         }
     }

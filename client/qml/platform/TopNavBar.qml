@@ -38,8 +38,14 @@ Rectangle {
         anchors.rightMargin: Style.spaceLg
         spacing: Style.spaceSm
 
-        Item { width: 1; height: 1; visible: nav.backVisible
+        Item {
+            // 容器尺寸对齐文案（原 1×1 容器 + verticalCenter → 文字半数溢出导航条、
+            // 被窗口顶缘裁切；用户实测指定修复，仅改布局不改样式）。
+            width: backText.implicitWidth
+            height: nav.implicitHeight
+            visible: nav.backVisible
             Text {
+                id: backText
                 anchors.verticalCenter: parent.verticalCenter
                 visible: nav.backVisible
                 text: "‹ 返回"

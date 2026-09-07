@@ -43,15 +43,52 @@ Item {
     }
 
     function refresh() {
-        if (!stationQueryService) return
+        if (!stationQueryService) { loadDemo(); return }
         loading = true; failed = false
         try { stationQueryService.search(keyword) }   // TODO(contract): 桥补 invokable search
-        catch (e) {                                    // 桥缺位：显式降级而不是卡 loading
-            loading = false; failed = true
-            failMessage = "站点查询桥未就绪（等待服务桥今晚补全）"
+        catch (e) {                                    // 桥缺位：退页内演示数据（标注清楚），
+            loadDemo()                                 // 真桥落地后信号即替换，不再走到这
         }
     }
     property string failMessage: ""
+    property bool demo: false
+
+    // ---- 演示数据通道（同优惠券页口径：标"演示数据"，不冒充真实查询结果）----
+    // 带经纬度点位 → 地图示意自动布点；关键词搜索在演示通道内同样生效。
+    function demoStations() {
+        const base = [
+            { id: 9001, name: "滨海快充站", address: "南山区滨海大道 2012 号",
+              priceCentsPerKwh: 128, availableChargers: 6, totalChargers: 12,
+              distanceMeters: 2400, status: "active", latitude: 22.5372, longitude: 113.9401,
+              operatorName: "国网电动", features: ["雨棚", "卫生间"], chargerTypes: ["fast"],
+              parkingFee: "免停车费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: false },
+            { id: 9002, name: "科技园慢充站", address: "高新区科苑南路 3188 号",
+              priceCentsPerKwh: 98, availableChargers: 4, totalChargers: 8,
+              distanceMeters: 1200, status: "active", latitude: 22.5448, longitude: 113.9512,
+              operatorName: "特来电", features: ["地下车库"], chargerTypes: ["slow"],
+              parkingFee: "首 2 小时免费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: false },
+            { id: 9003, name: "深圳湾超充站", address: "东滨路 1008 号",
+              priceCentsPerKwh: 145, availableChargers: 2, totalChargers: 6,
+              distanceMeters: 3600, status: "active", latitude: 22.5233, longitude: 113.9438,
+              operatorName: "华为超充", features: ["雨棚"], chargerTypes: ["fast"],
+              parkingFee: "收费", accessType: "公共", hasVoltageBelow700: false, hasVoltageAtLeast700: true },
+            { id: 9004, name: "世界之窗充电站", address: "深南大道 9037 号",
+              priceCentsPerKwh: 119, availableChargers: 0, totalChargers: 10,
+              distanceMeters: 5200, status: "offline", latitude: 22.5391, longitude: 113.9716,
+              operatorName: "国网电动", features: [], chargerTypes: ["fast", "slow"],
+              parkingFee: "免停车费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: true }
+        ]
+        const kw = page.keyword.trim()
+        return kw.length === 0 ? base
+             : base.filter(s => s.name.indexOf(kw) >= 0 || s.address.indexOf(kw) >= 0)
+    }
+    function loadDemo() {
+        demo = true
+        raw = demoStations()
+        loading = false; loaded = true; failed = false
+        project()
+        try { pull.setRefreshing(false) } catch (e) {}
+    }
 
     // ---- 三源投影（与 StationQueryService.applyStationFilter 同语义，
     //      距离/电价/排序为纯客户端投影，不重发请求） ----
@@ -128,6 +165,7 @@ Item {
         function onQueryStarted() { page.loading = true; page.failed = false }
         function onQuerySucceeded(stations) {
             page.loading = false; page.loaded = true; page.failed = false
+            page.demo = false                      // 真数据到位，演示通道退位
             page.raw = stations || []
             page.project()
             pull.setRefreshing(false)
@@ -218,6 +256,16 @@ Item {
             }
         }
 
+        // 演示数据标注（同优惠券页口径：不冒充真实查询结果；NoWrap 会溢出裁字，补换行）
+        Text {
+            objectName: "homeDemoCaption"
+            visible: page.demo
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "当前为演示数据（站点查询桥未就绪，接入后自动替换）；点卡片可进详情预约"
+            font.pixelSize: P.Style.fontSm; color: P.Style.faint
+        }
+
         // 列表四态（Column 内余高：parent.height - y）
         Item {
             id: stationListArea
@@ -236,11 +284,13 @@ Item {
                 ListView {
                     id: stationList
                     objectName: "stationList"
-                    // ListView 是 PullToRefreshArea 默认内容（Column）的子项：
-                    // anchors 在 Column 内被忽略 → 高度塌成默认 16（列表空白真凶）。
-                    // 显式给满铺尺寸（Column 宽=flick 宽=本 Item 宽）。
-                    width: stationListArea.width
-                    height: stationListArea.height
+                    // PullToRefreshArea 内容是 Column：禁垂直/fill 锚（平台会告警且不生效），
+                    // 显式尺寸 + x 负偏移等价还原原 -spaceSm 出血。
+                    // 显式尺寸（PullToRefreshArea 内容是 Column，禁垂直/fill 锚）；
+                    // pull 与列表区同高（anchors.fill），取 pull.height 免再引无 id 容器。
+                    width: parent.width + P.Style.spaceSm * 2
+                    x: -P.Style.spaceSm
+                    height: pull.height
                     spacing: P.Style.spaceSm
                     clip: true
                     visible: viewState() === "list"

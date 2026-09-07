@@ -1,6 +1,7 @@
 // station 域跨页会话状态库（.pragma library：同引擎内所有 import 共享一份实例，
-// 页面 pop/push 不丢）。桥缺位期的本地通道：二级密码（哈希存储，明文即散即用）、
-// 保护开关、车辆 CRUD。桥落地后各页优先读服务真值，本库自动退位。
+// 页面 pop/push 不丢）。桥缺位期的本地通道：二级密码（哈希存储、绑定手机号，
+// 校验发生在登录环节——用户二轮指定口径）、保护开关、车辆 CRUD。
+// 桥落地后各页优先读服务真值，本库自动退位。
 // 注意：Qt 引擎销毁（进程退出）后清空——真持久化归 SettingsService（QSettings/SQLite）。
 .pragma library
 
@@ -18,13 +19,24 @@ function hash(s) {
 }
 
 var passHash = ""
+var passPhone = ""       // 设置密码时绑定的手机号；登录页仅对该号码要求验证
 var protectionOn = false
+var lastLoginPhone = ""  // mock 通道最近一次登录的手机号（设置页绑定时取用）
 
-function setSecondPassword(plain) { passHash = hash(plain) }
+function noteLoginPhone(phone) { if (phone) lastLoginPhone = phone }
+function accountPhone() {
+    // 优先当前会话登录号（App 未暴露时退最近登录号）。
+    return lastLoginPhone
+}
+function setSecondPassword(plain, phone) { passHash = hash(plain); passPhone = phone || "" }
 function hasSecondPassword() { return passHash.length > 0 }
 function verifySecondPassword(plain) { return hasSecondPassword() && hash(plain) === passHash }
 function setProtectionEnabled(on) { protectionOn = !!on }
 function protectionEnabled() { return protectionOn && passHash.length > 0 }
+// 登录环节判定：保护开启 + 已设密码 + 输入手机号 === 设密码时绑定的号码。
+function needsSecondPassword(phone) {
+    return protectionEnabled() && passPhone.length > 0 && phone === passPhone
+}
 
 // ---- 车辆（桥缺位本地通道；服务 vehicles() 可读时以服务为准） ----
 var vehicles = []
