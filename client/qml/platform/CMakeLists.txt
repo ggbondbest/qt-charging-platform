@@ -1,6 +1,7 @@
 # platform/ — owned by member 3 agent. Others: READ ONLY.
 set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/Style.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/TabCache.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/qmldir
     ${CMAKE_CURRENT_SOURCE_DIR}/ActionButton.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/ActionBar.qml
