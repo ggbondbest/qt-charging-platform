@@ -21,7 +21,7 @@ C++ 服务对象直接以 context property 注入根作用域，名字=类名首
 
 > **说明（2026-09-06）**：C++ 服务方法是普通成员函数（非 slot）且信号载荷是裸 struct——QML 两头都不可见。故 `walletService`/`orderService`/`chargingService` 注入的是**同名转发桥**（`service_bridges.h`）：方法名/信号名逐字不变，仅载荷改为 map/list、枚举参数改为小写字符串。**`fetchOrders` 的 filter 取 `"all" | "charging" | "waiting_payment" | "completed"`**。其余服务（station/reservation/…）今晚按同样模式补桥，补前直接调用会失败——页面照常按契约名盲写。
 >
-> **OrderBridge 增补（2026-09-06 PR #33 评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它；②补 `isFetchingOrders()`——服务层对在途重复提交**静默丢弃**，分页/下拉前必须先查，请求被吞时页面自己收刷新胶囊；③分页口径：接 `ordersLoaded(orders, total, hasMore)` 第三参，有下一页时 `fetchOrders(filter, page+1)`，失败回退页码并给重试入口。
+> **OrderBridge 增补（2026-09-06 PR #33 两轮评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它，且**按 type 过滤**（计数类失败别动列表在途状态）。②补 `isFetchingOrders()`：服务层对在途重复提交**静默丢弃且无回执**，响应也不携带请求参数——因此**页面必须单飞并记住在途身份** `(filter, page, first)`：在途时新指令只登记意图（切筛选→落定判过期丢弃+重查；他页占用通道→queuedReload），**绝不允许清掉在途请求的状态或应用过期响应**。③分页口径：`loadedPage`（已成功页）与 `reqPage`（在途页）分离，加载更多永远发 `loadedPage+1`，失败只置重试态、页码不漂移；接 `ordersLoaded` 第三参 `hasMore`。④头像键双源治理：`ProfileEditPage.avatarChoices` 是 widgets `AvatarLibrary::all()` 的 QML 镜像，`test_qml_client_pages` 逐键对拍（同三方字面量+测试钉死模式）；展示 glyph 与提交 key 分离，`""`=默认昵称首字头像。⑤余额同步矩阵：改 `balanceCents` 的三事件 `profileLoaded` / `rechargeCompleted` / `paymentCompleted` 都必须在 `QmlApp` 回写并 `userChanged`，顶栏才不滞后。
 
 ## 2. 平台组件（`client/qml/platform/`，import "../../platform"）
 | 类型名 | 关键 API（=旧 C++ 类语义） |
@@ -52,3 +52,4 @@ mock 通道下 `charging-qml-preview --view=<路由> --screenshot=<png>` 出非�
 - 推论：**每个页面根节点必须自绘背景**（`Rectangle { anchors.fill: parent; color: Style.bg }`），否则截图区是黑色。
 - 进程退出时 context property 变 null 会触发绑定重算——绑定里用 `App && App.xxx` 守一下，避免 teardown 噪音。
 - Controls 只有 `Basic` 样式可用（`QQuickStyle::setStyle("Basic")` 已在 main.cpp 设好，勿改）。
+- **offscreen 下 Repeater 的 delegate 对 C++ `findChildren` 不可见**：画面（grabToImage 走场景图）渲染正常，但 delegate 对象何时挂进 QObject 树取决于 delegate 组件的异步编译时序，窗口宿主/等待事件循环都救不了（实测挂窗口 + 2s 轮询仍为空）。交互测试因此**不得** `findChild(delegate objectName)`：改断页面根上的公开状态与函数（`setProperty` / `invokeMethod("load", …)`，与 delegate onClicked 同一代码路径），模型行数走挂过 `objectName` 的 ListModel（如 `uiOrdersModel.count`）。
