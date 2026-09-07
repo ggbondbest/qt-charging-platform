@@ -73,6 +73,13 @@ QmlApp::QmlApp(QObject* parent)
     walletBridge_ = new WalletBridge(walletService_, this);
     orderBridge_ = new OrderBridge(orderService_, this);
     chargingBridge_ = new ChargingBridge(chargingService_, this);
+    // 2026-09-07 补桥批：station/reservation/settings/favorites/notification
+    // 全部同名转发桥化（成员2 页面此前按契约名盲写的调用点即刻生效）。
+    stationQueryBridge_ = new StationQueryBridge(stationQueryService_, this);
+    reservationBridge_ = new ReservationBridge(reservationService_, this);
+    settingsBridge_ = new SettingsBridge(settingsService_, this);
+    favoritesBridge_ = new FavoritesBridge(favoritesService_, this);
+    notificationBridge_ = new NotificationBridge(notificationService_, this);
     // Keep currentUser in sync so top-bar balances never lag after profile
     // edit / recharge / payment — the three events that mutate balanceCents.
     connect(walletBridge_, &WalletBridge::profileLoaded, this,
@@ -96,12 +103,12 @@ QmlApp::QmlApp(QObject* parent)
 QObject* QmlApp::walletService() const { return walletBridge_; }
 QObject* QmlApp::orderService() const { return orderBridge_; }
 QObject* QmlApp::chargingService() const { return chargingBridge_; }
-QObject* QmlApp::reservationService() const { return reservationService_; }
-QObject* QmlApp::settingsService() const { return settingsService_; }
+QObject* QmlApp::reservationService() const { return reservationBridge_; }
+QObject* QmlApp::settingsService() const { return settingsBridge_; }
 QObject* QmlApp::mapGeoService() const { return mapGeoService_; }
-QObject* QmlApp::favoritesService() const { return favoritesService_; }
-QObject* QmlApp::notificationService() const { return notificationService_; }
-QObject* QmlApp::stationQueryService() const { return stationQueryService_; }
+QObject* QmlApp::favoritesService() const { return favoritesBridge_; }
+QObject* QmlApp::notificationService() const { return notificationBridge_; }
+QObject* QmlApp::stationQueryService() const { return stationQueryBridge_; }
 QObject* QmlApp::authService() const { return nullptr; }  // TODO(contract): tcp only
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 

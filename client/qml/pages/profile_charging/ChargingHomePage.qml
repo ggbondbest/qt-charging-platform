@@ -39,6 +39,7 @@ Item {
         Text { text: "充电"; font.pixelSize: P.Style.fontXl; color: P.Style.ink }
 
         // Hero card — uiChargingHero parity (glyph/title/caption objectNames kept).
+        // QSS 双态语义：有任务=深绿渐变白字；空态=浅渐变(#EAF9F2→#E8F3FE)深字。
         Rectangle {
             objectName: "uiChargingHero"
             width: parent.width
@@ -46,8 +47,8 @@ Item {
             radius: P.Style.radiusLg
             gradient: Gradient {
                 orientation: Gradient.Vertical
-                GradientStop { position: 0.0; color: P.Style.brandDeep }
-                GradientStop { position: 1.0; color: P.Style.brand }
+                GradientStop { position: 0.0; color: page.chargingCount > 0 ? P.Style.heroFrom : P.Style.brandSoft }
+                GradientStop { position: 1.0; color: page.chargingCount > 0 ? P.Style.heroTo : P.Style.infoSoft }
             }
             Column {
                 anchors.centerIn: parent
@@ -56,21 +57,24 @@ Item {
                     objectName: "uiHeroGlyph"
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: page.chargingCount > 0 ? "⚡" : "🔌"
-                    font.pixelSize: 44
+                    font.pixelSize: page.chargingCount > 0 ? 44 : P.Style.fontGlyph
                 }
                 Text {
                     objectName: "uiHeroTitle"
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: page.chargingCount > 0
                           ? "有 " + page.chargingCount + " 单正在充电" : "暂无进行中的充电"
-                    font.pixelSize: P.Style.fontLg; color: P.Style.surface
+                    font.pixelSize: page.chargingCount > 0 ? P.Style.fontLg : P.Style.fontLg2
+                    font.weight: page.chargingCount > 0 ? Font.Normal : Font.DemiBold
+                    color: page.chargingCount > 0 ? P.Style.surface : P.Style.ink
                 }
                 Text {
                     objectName: "uiHeroCaption"
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: page.chargingCount > 0
                           ? "实时功率、电量、费用全程可见" : "扫码或预约后在这里查看实时状态"
-                    font.pixelSize: P.Style.fontSm; color: P.Style.brandBright
+                    font.pixelSize: P.Style.fontSm
+                    color: page.chargingCount > 0 ? P.Style.heroPhone : P.Style.muted
                 }
             }
         }
