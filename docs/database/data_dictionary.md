@@ -220,7 +220,7 @@ PRAGMA foreign_key_check;
 PRAGMA integrity_check;
 ```
 
-期望分别为 `1`、无行、`ok`。还应断言：
+期望分别为 `2`、无行、`ok`。还应断言：
 
 - seed 可重复执行且行数不增长；
 - seed 有 1 个管理员、1 个演示用户、3 个站、7 个桩、1 条充值流水；

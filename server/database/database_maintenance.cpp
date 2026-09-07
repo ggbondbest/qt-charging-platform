@@ -260,7 +260,8 @@ bool validateTableDefinition(const QSqlDatabase& database, const QString& table,
     return true;
 }
 
-bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
+bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
+                            bool requireCurrentIndexes = true)
 {
     const QList<QPair<QString, QStringList>> tables = {
         {QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("phone"),
@@ -343,6 +344,10 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
                                 errorMessage)) {
             return false;
         }
+    }
+
+    if (!requireCurrentIndexes) {
+        return true;
     }
 
     const QList<IndexDefinition> indexes = {
@@ -439,6 +444,61 @@ DatabaseMaintenanceResult copyAtomically(const QString& sourcePath, const QStrin
                            .arg(destination.errorString()));
     }
     return success();
+}
+
+DatabaseMaintenanceResult validateLegacyRestoreSource(const QString& databasePath)
+{
+    const QString path = QFileInfo(databasePath).absoluteFilePath();
+    const QFileInfo fileInfo(path);
+    if (!fileInfo.isFile() || fileInfo.size() == 0) {
+        return failure(QStringLiteral("Database backup does not exist or is empty: %1").arg(path));
+    }
+    if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
+        return failure(QStringLiteral("Qt SQLite driver QSQLITE is not available"));
+    }
+
+    const QString connectionName = QStringLiteral("legacy-restore-validation-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    DatabaseMaintenanceResult result = success();
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        database.setDatabaseName(path);
+        if (!database.open()) {
+            result = failure(QStringLiteral("Unable to open backup: %1")
+                                 .arg(database.lastError().text()));
+        } else {
+            QSqlQuery integrityQuery(database);
+            if (!integrityQuery.exec(QStringLiteral("PRAGMA integrity_check")) ||
+                !integrityQuery.next() ||
+                integrityQuery.value(0).toString() != QStringLiteral("ok")) {
+                result = failure(QStringLiteral("SQLite integrity check failed"));
+            }
+
+            QSqlQuery foreignKeyQuery(database);
+            if (result.ok &&
+                (!foreignKeyQuery.exec(QStringLiteral("PRAGMA foreign_key_check")) ||
+                 foreignKeyQuery.next())) {
+                result = failure(QStringLiteral("SQLite foreign key check failed"));
+            }
+
+            QSqlQuery versionQuery(database);
+            if (result.ok &&
+                (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 1)) {
+                result = failure(QStringLiteral("Unsupported database schema version"));
+            }
+            if (result.ok) {
+                QString schemaError;
+                if (!validatePlatformSchema(database, &schemaError, false)) {
+                    result = failure(schemaError);
+                }
+            }
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return result;
 }
 
 } // namespace
@@ -552,9 +612,12 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (destinationPath.trimmed().isEmpty()) {
         return failure(QStringLiteral("Restore destination must not be empty"));
     }
-    const DatabaseMaintenanceResult validation = validate(backupPath);
-    if (!validation.ok) {
-        return validation;
+    const DatabaseMaintenanceResult currentValidation = validate(backupPath);
+    if (!currentValidation.ok) {
+        const DatabaseMaintenanceResult legacyValidation = validateLegacyRestoreSource(backupPath);
+        if (!legacyValidation.ok) {
+            return currentValidation;
+        }
     }
 
     const QString destination = QFileInfo(destinationPath).absoluteFilePath();
