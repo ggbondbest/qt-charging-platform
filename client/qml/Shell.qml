@@ -18,9 +18,15 @@ Window {
 
     // Routes whose .qml already exist this sprint get real pages; the rest
     // render the placeholder until their owner's PR lands (then flip here).
+    // PR #36 landed 成员2 的 station 域（docs/design/qml-station-mapping.md
+    // HomeShell 节翻位清单）——station/login/profile + 7 条新路由全部翻页。
     readonly property var migrated: ["wallet", "recharge", "order", "order_detail",
                                      "charging", "charging_run", "settlement",
-                                     "profile_edit"]
+                                     "profile_edit",
+                                     "station", "login", "profile",
+                                     "station_detail", "reservation_confirm",
+                                     "reservation_module", "navigation",
+                                     "favorites", "notifications", "settings"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
         const t = {
@@ -35,6 +41,13 @@ Window {
             "charging_run": "pages/profile_charging/ChargingPage.qml",
             "settlement":   "pages/profile_charging/SettlementPage.qml",
             "profile_edit": "pages/profile_charging/ProfileEditPage.qml",
+            "station_detail":      "pages/station/StationDetailPage.qml",
+            "reservation_confirm": "pages/station/ReservationConfirmPage.qml",
+            "reservation_module":  "pages/station/ReservationModulePage.qml",
+            "navigation":          "pages/station/NavigationPage.qml",
+            "favorites":           "pages/station/FavoritesPage.qml",
+            "notifications":       "pages/station/NotificationPage.qml",
+            "settings":            "pages/station/SettingsPage.qml",
         }
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
@@ -69,7 +82,8 @@ Window {
             backVisible: stack.depth > 1
             searchVisible: shell.route === "station"
             onBackRequested: shell.pop()
-            onSearchSubmitted: (keyword) => { if (App) App.navigate("station") }
+            // 映射稿 HomeShell 节：搜索关键词经路由 arg 注入站点首页（arg 作关键词入口）。
+            onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
             onFilterRequested: { /* StationFilterDialog.qml — member 2's domain */ }
