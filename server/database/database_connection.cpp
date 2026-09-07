@@ -26,6 +26,20 @@ bool fail(QString* errorMessage, const QString& message)
     return false;
 }
 
+QString normalizedSql(const QString& sql)
+{
+    QString normalized;
+    normalized.reserve(sql.size());
+    for (const QChar character : sql) {
+        if (!character.isSpace() && character != QLatin1Char('"') &&
+            character != QLatin1Char('`') && character != QLatin1Char('[') &&
+            character != QLatin1Char(']') && character != QLatin1Char(';')) {
+            normalized.append(character.toLower());
+        }
+    }
+    return normalized;
+}
+
 // Splits the repository-controlled SQL resources at semicolons while respecting
 // quoted strings and SQL comments. QSqlQuery intentionally receives one
 // statement at a time because the SQLite driver does not accept whole scripts.
@@ -164,10 +178,75 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
     databasePath_ = resolvedPath;
 
     if (!executeResourceScript(QStringLiteral(":/database/schema.sql"), errorMessage) ||
+        !migrateManagedIndexes(errorMessage) ||
         (loadDemoSeed &&
          !executeResourceScript(QStringLiteral(":/database/seed.sql"), errorMessage))) {
         close();
         return false;
+    }
+    return true;
+}
+
+bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
+{
+    const QList<QPair<QString, QString>> managedIndexes = {
+        {QStringLiteral("idx_orders_status_created_at"),
+         QStringLiteral("CREATE INDEX idx_orders_status_created_at "
+                        "ON orders(status, created_at DESC, id DESC)")},
+        {QStringLiteral("idx_operation_logs_admin_created_at"),
+         QStringLiteral("CREATE INDEX idx_operation_logs_admin_created_at "
+                        "ON operation_logs(admin_id, created_at DESC, id DESC)")}
+    };
+
+    if (!database_.transaction()) {
+        return fail(errorMessage, QStringLiteral("Unable to start database migration: %1")
+                                      .arg(database_.lastError().text()));
+    }
+
+    const auto rollbackWithError = [this, errorMessage](const QString& message) {
+        database_.rollback();
+        return fail(errorMessage, message);
+    };
+
+    for (const auto& managedIndex : managedIndexes) {
+        QSqlQuery definitionQuery(database_);
+        definitionQuery.prepare(QStringLiteral(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?"));
+        definitionQuery.addBindValue(managedIndex.first);
+        if (!definitionQuery.exec()) {
+            return rollbackWithError(QStringLiteral("Unable to inspect database index %1: %2")
+                                         .arg(managedIndex.first,
+                                              definitionQuery.lastError().text()));
+        }
+
+        const bool matches = definitionQuery.next() &&
+                             normalizedSql(definitionQuery.value(0).toString()) ==
+                                 normalizedSql(managedIndex.second);
+        definitionQuery.finish();
+        if (matches) {
+            continue;
+        }
+
+        QSqlQuery migrationQuery(database_);
+        if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS %1")
+                                     .arg(managedIndex.first)) ||
+            !migrationQuery.exec(managedIndex.second)) {
+            return rollbackWithError(QStringLiteral("Unable to rebuild database index %1: %2")
+                                         .arg(managedIndex.first,
+                                              migrationQuery.lastError().text()));
+        }
+    }
+
+    QSqlQuery migrationQuery(database_);
+    if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS "
+                                            "idx_chargers_status_updated_at")) ||
+        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 2"))) {
+        return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
+                                     .arg(migrationQuery.lastError().text()));
+    }
+    if (!database_.commit()) {
+        return rollbackWithError(QStringLiteral("Unable to commit database migration: %1")
+                                     .arg(database_.lastError().text()));
     }
     return true;
 }

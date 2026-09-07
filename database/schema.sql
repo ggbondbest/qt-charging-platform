@@ -216,7 +216,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_user_created_at
 CREATE INDEX IF NOT EXISTS idx_orders_charger_status
     ON orders(charger_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_status_created_at
-    ON orders(status, created_at DESC);
+    ON orders(status, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at
     ON orders(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_users_status_id
@@ -228,7 +228,7 @@ CREATE INDEX IF NOT EXISTS idx_recharge_records_status_created_at
 CREATE INDEX IF NOT EXISTS idx_recharge_records_created_at
     ON recharge_records(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_admin_created_at
-    ON operation_logs(admin_id, created_at DESC);
+    ON operation_logs(admin_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_action_created_at
     ON operation_logs(action, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at
@@ -247,6 +247,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_active_charger
     ON orders(charger_id)
     WHERE status IN ('RESERVED', 'CHARGING');
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 COMMIT;

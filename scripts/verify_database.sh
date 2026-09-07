@@ -57,8 +57,8 @@ if [[ "${table_count}" -ne 8 ]]; then
 fi
 
 schema_version="$(sqlite3 -batch -bail "${temporary_database}" 'PRAGMA user_version;')"
-if [[ "${schema_version}" -ne 1 ]]; then
-    printf 'Database verification failed: expected schema version 1, found %s.\n' \
+if [[ "${schema_version}" -ne 2 ]]; then
+    printf 'Database verification failed: expected schema version 2, found %s.\n' \
         "${schema_version}" >&2
     exit 1
 fi

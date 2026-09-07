@@ -223,8 +223,10 @@ bool validateIndex(const QSqlDatabase& database, const IndexDefinition& expected
         columns.append(columnsQuery.value(2).toString());
     }
     if (columns != expected.columns) {
-        *errorMessage = QStringLiteral("Database index %1 has incorrect columns")
-                            .arg(expected.name);
+        *errorMessage = QStringLiteral("Database index %1 has incorrect columns: expected [%2], "
+                                       "found [%3]")
+                            .arg(expected.name, expected.columns.join(QStringLiteral(", ")),
+                                 columns.join(QStringLiteral(", ")));
         return false;
     }
 
@@ -361,13 +363,13 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("idx_orders_charger_status"), QStringLiteral("orders"),
          {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_orders_status_created_at"), QStringLiteral("orders"),
-         {QStringLiteral("status"), QStringLiteral("created_at")}, false, {}},
+         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_recharge_records_user_created_at"),
          QStringLiteral("recharge_records"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
         {QStringLiteral("idx_operation_logs_admin_created_at"),
          QStringLiteral("operation_logs"),
-         {QStringLiteral("admin_id"), QStringLiteral("created_at")}, false, {}},
+         {QStringLiteral("admin_id"), QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("ux_reservations_active_user"), QStringLiteral("reservations"),
          {QStringLiteral("user_id")}, true, QStringLiteral("status = 'ACTIVE'")},
         {QStringLiteral("ux_reservations_active_charger"), QStringLiteral("reservations"),
@@ -506,7 +508,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::validate(const QString& databaseP
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 1)) {
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 2)) {
                 result = failure(QStringLiteral("Unsupported database schema version"));
             }
             if (result.ok) {
