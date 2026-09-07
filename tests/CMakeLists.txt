@@ -276,6 +276,16 @@ set_tests_properties(station_map_panel PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+add_executable(test_pull_to_refresh tst_pull_to_refresh.cpp)
+target_link_libraries(test_pull_to_refresh PRIVATE
+    ChargingPlatform::ClientWidgets
+    Qt6::Test
+)
+add_test(NAME pull_to_refresh COMMAND test_pull_to_refresh)
+set_tests_properties(pull_to_refresh PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 add_executable(test_map_geo_service tst_map_geo_service.cpp)
 target_link_libraries(test_map_geo_service PRIVATE
     ChargingPlatform::ClientMapServices
@@ -392,4 +402,42 @@ if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)
         COMMAND ${CHARGING_BASH_EXECUTABLE}
                 ${PROJECT_SOURCE_DIR}/scripts/verify_database.sh
     )
+endif()
+
+# QML page interaction regression (PR #33 second-round review follow-ups).
+# Same gate as client/qml — configure stays byte-identical without the Qt
+# Quick declarative packages, so the existing CI is unaffected either way.
+if(CHARGING_HAS_QML)
+add_executable(test_qml_client_pages tst_qml_client_pages.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+)
+target_include_directories(test_qml_client_pages PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/qml
+)
+target_compile_definitions(test_qml_client_pages PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml"
+)
+target_link_libraries(test_qml_client_pages PRIVATE
+    ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME qml_client_pages COMMAND test_qml_client_pages)
+set_tests_properties(qml_client_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 60
+)
 endif()

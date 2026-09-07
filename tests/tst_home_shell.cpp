@@ -26,6 +26,7 @@
 #include "services/favorites/notification_service.h"
 #include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
 #include "services/settings/settings_service.h"
 #include "services/station/station_query_service.h"
 #include "fake_tencent_server.h"
@@ -351,6 +352,7 @@ private slots:
     void profilePageRedesignKeepsUserAndAddsFunctionSlots();
     // —— 「充电」Tab 状态首页 / 「我的」页新版式（渐变头图+钱包浮卡+双格） ——
     void chargingTabRendersLiveSessionCard();
+    void chargingTabPullSettlesWhenReservationFails(); // PR #33 评审 P2-1 回归
     void profileWalletAndReservationCellsRoute();
     // —— 任务 #7：找站业务 ——
     void initialSearchGoesThroughLoadingToResultList();
@@ -603,6 +605,30 @@ void HomeShellTest::chargingTabRendersLiveSessionCard()
     QVERIFY(stopButton != nullptr);
     QTest::qWait(100); // 布局激活后再截图
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_charging_tab.png"));
+}
+
+void HomeShellTest::chargingTabPullSettlesWhenReservationFails()
+{
+    // PR #33 评审 P2-1 回归：下拉刷新的订单/预约两路各自"落定"（成功或失败）
+    // 才收胶囊。修复前页面未接 ReservationService::listFailed——订单成功 +
+    // 预约失败的组合会让胶囊卡死在 Refreshing（本页不轮询订单，无自愈路径）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    tabButton(shell, QStringLiteral("charging"))->click();
+    auto* homePage = shell.findChild<charging::client::ChargingHomePage*>();
+    QVERIFY(homePage != nullptr);
+    auto* pull = homePage->findChild<charging::client::PullToRefreshArea*>();
+    QVERIFY(pull != nullptr);
+
+    QTest::qWait(1100); // 让进页 showEvent 的两路请求（mock 450ms/路）先落定
+
+    reservationService(shell)->setSimulateFailure(true); // 下一次预约请求走 listFailed
+    pull->setRefreshing(true);                           // 等价于真实手势触发后的组件态
+    QMetaObject::invokeMethod(pull, "refreshRequested"); // 触发页面刷新入口
+
+    QCOMPARE(pull->state(), charging::client::PullToRefreshArea::State::Refreshing);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        pull->state() == charging::client::PullToRefreshArea::State::Collapsed, 4000);
 }
 
 void HomeShellTest::profileWalletAndReservationCellsRoute()
