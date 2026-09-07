@@ -4,9 +4,17 @@ import "../../platform" as P
 
 // QML twin of widgets NavigationPage (objectName "navigationPage").
 // arg = ReservationRecord map（确认页成功弹层带来）。
-// 口径 = widgets 完全一致的模拟先行：行驶分钟 = 5 + ⌈米/500⌉（recommendSlot 同源），
-// 路线折线 = 用户默认位置 → 站点坐标两点示意；桥就绪且记录带坐标时
-// requestDrivingRoute 异步升级真实路线，代际号丢弃过期回调，失败保持模拟+Toast。
+//
+// "地图 APP" 化交互（2026-09-08 用户指定）：
+// ① 进页自动 IP 定位起点（ws/location/v1/ip）；失败 → 明确"定位失败·请手动输入"态，
+//    绝不静默；起点也可手动输入（地址 → 正地理编码；"纬度,经度" → 直用）。
+// ② 选定预约站点后按真起点 requestDrivingRoute 画真实路线 + 距离（ws/direction/v1），
+//    地图优先腾讯静态图（ws/staticmap/v2 真瓦片 PNG），失败回落 StationMapItem
+//    Canvas 真折线；无 key 保持模拟先行（与 widgets 口径逐字节一致）。
+// ③ "跳转腾讯地图导航" = URI API routeplan 页（Qt.openUrlExternally）——URL 内嵌
+//    referer=key，绝不打印/入库；无 key 时按钮置灰。
+// 消费面 = MapGeoService 的 qml* 转发信号（载荷 QVariantMap，见映射稿 §桥缺口）；
+// requestId 代际过滤丢弃过期回调（信号广播，其他页面的请求也会到这里）。
 Item {
     id: page
     objectName: "navigationPage"
@@ -18,15 +26,41 @@ Item {
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
     property var record: page.arg || ({})
-    // 用户默认位置与 StationMapPanel 中心同口径（不动成员3 文件的常量复制）
-    readonly property real userLat: 22.541
-    readonly property real userLng: 113.943
+    // 用户默认位置与 StationMapPanel 中心同口径（无 key / 定位失败时的兜底起点）
+    readonly property real demoLat: 22.541
+    readonly property real demoLng: 113.943
     property bool usingRealRoute: false
-    property int routeGen: 0            // 过期回调丢弃（= widgets routeGeneration_ 同语义）
-    property int pendingReqId: -1
-    property var realPolyline: []
-    property var realSteps: []          // route.steps（桥落地后真实转向指引）
-    property string caption: "导航路线为模拟数据 · 腾讯地图路线接口就绪后自动切换真实路线"
+    property int pendingRouteReq: -1    // qmlRouteReady 代际过滤
+    property int pendingIpReq: -1
+    property int pendingGeoReq: -1
+    property int pendingStaticReq: -1
+    property var realPolyline: []       // [[lat,lng],…]（qml* 转发面口径）
+    property var realSteps: []          // [{instruction,distanceMeters},…]
+    property string caption: defaultCaption()
+
+    // —— 起点状态机：mock（无 key 演示位）| locating | located | failed | manual ——
+    property string originState: "mock"
+    property real originLat: demoLat
+    property real originLng: demoLng
+    property string originLabel: ""
+    property bool originKnown: originState === "located" || originState === "manual"
+
+    readonly property bool mapOnline: !!mapGeoService && mapGeoService.usable()
+    readonly property string originHint: {
+        if (originState === "locating") return "📡 正在自动定位…"
+        if (originState === "located")  return "📍 已定位：" + (originLabel || "当前位置")
+        if (originState === "failed")   return "⚠️ 定位失败 · 请手动输入起点"
+        if (originState === "manual")   return "📍 起点：" + (originLabel || "手动位置")
+        return "📍 演示位置（未配置地图密钥）"
+    }
+
+    // —— 目的地（预约站点坐标）——
+    readonly property bool hasLoc: record.hasStationLocation === true
+                                   && (record.stationLatitude !== undefined || (record.station && record.station.latitude !== undefined))
+    readonly property real destLat: hasLoc
+        ? (record.stationLatitude !== undefined ? record.stationLatitude : record.station.latitude) : 0
+    readonly property real destLng: hasLoc
+        ? (record.stationLongitude !== undefined ? record.stationLongitude : record.station.longitude) : 0
 
     function distText(m) {
         const d = Math.max(0, m || 0)
@@ -37,8 +71,10 @@ Item {
         if (typeof v === "string" && v.length) { const d = new Date(v); if (!isNaN(d.getTime())) return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2) }
         return null
     }
-    readonly property int travelMinutes:
-        5 + Math.ceil(Math.max(0, record.distanceMeters || 0) / 500)
+    readonly property int travelMinutes: usingRealRoute && realDurationMinutes > 0
+        ? realDurationMinutes
+        : 5 + Math.ceil(Math.max(0, record.distanceMeters || 0) / 500)
+    property int realDurationMinutes: -1   // 真路线分钟口径（direction duration=分钟）
     readonly property string etaText: {
         let t = "预计行驶约 " + travelMinutes + " 分钟"
         const st = hhmm(record.startAtUtc)
@@ -52,53 +88,138 @@ Item {
         }
         return t
     }
-    readonly property bool hasLoc: record.hasStationLocation === true
-                                   && (record.stationLatitude !== undefined || (record.station && record.station.latitude !== undefined))
 
-    function requestRealRoute() {
-        if (!mapGeoService || !hasLoc) return
-        const lat = record.stationLatitude !== undefined ? record.stationLatitude : record.station.latitude
-        const lng = record.stationLongitude !== undefined ? record.stationLongitude : record.station.longitude
-        ++routeGen
-        caption = "正在加载真实导航路线…"
-        // TODO(contract): requestDrivingRoute(fromLat,fromLng,toLat,toLng)→requestId（成员3 定形）。
-        try { page.pendingReqId = mapGeoService.requestDrivingRoute(userLat, userLng, lat, lng) }
-        catch (e) { page.pendingReqId = -1; caption = page.defaultCaption(); if (App) App.showToast("地图服务暂不可用，已展示模拟路线", "warning") }
-    }
     function defaultCaption() {
         return "导航路线为模拟数据 · 腾讯地图路线接口就绪后自动切换真实路线"
     }
+
+    // —— 请求链 ——
+    function autoLocate() {
+        if (!mapOnline) { originState = "mock"; requestRealRoute(); return }
+        originState = "locating"
+        try { page.pendingIpReq = mapGeoService.requestIpLocation() }
+        catch (e) { originState = "failed"; requestRealRoute() }
+    }
+    function applyOriginPoint(point, stateWhenOk) {
+        page.originLat = point.latitude
+        page.originLng = point.longitude
+        page.originState = stateWhenOk
+        try { mapGeoService.setUserLocationLatLng(point.latitude, point.longitude) } catch (e) {}
+        requestRealRoute()
+    }
+    function requestRealRoute() {
+        if (!hasLoc) return
+        if (!mapOnline) return   // 无 key：保持模拟先行（与 widgets 口径一致，不发请求）
+        caption = "正在规划真实路线…"
+        page.pendingRouteReq = mapGeoService.requestDrivingRoute(
+            originLat, originLng, destLat, destLng)
+    }
+    function requestStaticImage() {
+        if (!mapOnline || !usingRealRoute || realPolyline.length < 2) return
+        const midLat = (originLat + destLat) / 2
+        const midLng = (originLng + destLng) / 2
+        const spanKm = Math.max(0.2, (record.distanceMeters || 2000) / 1000)
+        const z = spanKm > 20 ? 10 : spanKm > 8 ? 11 : spanKm > 4 ? 12 : spanKm > 2 ? 13
+                : spanKm > 1 ? 14 : spanKm > 0.5 ? 15 : 16
+        const w = Math.round(mapCard.width), h = Math.round(mapCard.height)
+        page.pendingStaticReq = mapGeoService.requestStaticMap(
+            midLat, midLng, z, w, h, realPolyline,
+            [{ latitude: originLat, longitude: originLng, label: "起" },
+             { latitude: destLat, longitude: destLng, label: "终" }])
+    }
+    function parseManualOrigin(text) {
+        const t = (text || "").trim()
+        if (!t.length) { if (App) App.showToast("请输入起点地址或坐标", "warning"); return }
+        // "纬度,经度"（支持中英文逗号/空格）→ 直用坐标。
+        const m = t.match(/^(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)$/)
+        if (m) {
+            const lat = parseFloat(m[1]), lng = parseFloat(m[2])
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+                applyOriginPoint({ latitude: lat, longitude: lng }, "manual")
+                originLabel = t
+                staticMapFile = ""
+                return
+            }
+            if (App) App.showToast("坐标超出范围（纬度±90 / 经度±180）", "warning")
+            return
+        }
+        if (!mapOnline) { if (App) App.showToast("未配置地图密钥，无法解析地址", "warning"); return }
+        caption = "正在解析地址…"
+        page.pendingGeoReq = mapGeoService.requestAddressGeocode(t)
+    }
+
+    // 静态图落盘文件（qmlStaticMapReady 给路径；file:// URL 挂 Image）
+    property string staticMapFile: ""
+    readonly property url staticMapUrl: staticMapFile.length ? Url.fileUrl(staticMapFile) : ""
+
     Connections {
         target: mapGeoService
-        // 桥保 C++ 全形（requestId 首参，契约"信号名/参数序不变仅载荷改 map"）。
-        function onRouteSucceeded(requestId, route) {
-            if (requestId !== undefined && page.pendingReqId >= 0 && requestId !== page.pendingReqId) return  // 过期丢弃
-            if (route === undefined || route === null) return
+        function onQmlIpLocationReady(requestId, point) {
+            if (requestId !== page.pendingIpReq) return   // 过期/他页请求
+            page.pendingIpReq = -1
+            const city = point && point.city ? point.city : ""
+            page.originLabel = (city ? city + " · " : "") + "IP 定位"
+            page.applyOriginPoint(point, "located")
+        }
+        function onQmlIpLocationError(requestId, message) {
+            if (requestId !== page.pendingIpReq) return
+            page.pendingIpReq = -1
+            page.originState = "failed"     // 定位失败明示（用户指定：没定位到=定位失败，不猜）
+            page.requestRealRoute()         // 兜底演示起点，页面永不空
+        }
+        function onQmlGeocodeReady(requestId, point) {
+            if (requestId !== page.pendingGeoReq) return
+            page.pendingGeoReq = -1
+            if (point && point.latitude !== undefined) {
+                page.originLabel = point.address || originInput.text
+                page.applyOriginPoint(point, "manual")
+                staticMapFile = ""
+            }
+        }
+        function onQmlGeocodeError(requestId, message) {
+            if (requestId !== page.pendingGeoReq) return
+            page.pendingGeoReq = -1
+            if (App) App.showToast("地址解析失败：" + message, "warning")
+        }
+        function onQmlRouteReady(requestId, route) {
+            if (requestId !== page.pendingRouteReq) return
+            if (!route) return
             page.usingRealRoute = true
-            page.realPolyline = (route.polyline || [])
-            page.realSteps = (route.steps || [])
+            page.realPolyline = route.polyline || []
+            page.realSteps = route.steps || []
+            page.realDurationMinutes = route.durationMinutes !== undefined
+                ? (route.durationMinutes || 0) : -1
             if (route.distanceMeters !== undefined) {
-                // 真实口径覆盖模拟距离（概要卡实时重绑）。
+                // 真实行驶距离覆盖模拟值（概要卡实时重绑）。
                 page.record = Object.assign({}, page.record, {
                     distanceMeters: route.distanceMeters })
             }
             page.caption = "真实导航路线 · 腾讯地图"
+            page.requestStaticImage()
         }
-        function onRouteFailed(requestId, error, message) {
-            if (requestId !== undefined && page.pendingReqId >= 0 && requestId !== page.pendingReqId) return
+        function onQmlRouteError(requestId, message) {
+            if (requestId !== page.pendingRouteReq) return
             page.caption = "导航路线为模拟数据（接口异常：" + message + "）"
-            if (App) App.showToast("地图服务暂不可用（" + message + "），已展示模拟路线", "warning")
+            if (mapOnline && message !== "未配置地图密钥" && App)
+                App.showToast("地图服务暂不可用（" + message + "），已展示模拟路线", "warning")
+        }
+        function onQmlStaticMapReady(requestId, filePath) {
+            if (requestId !== page.pendingStaticReq) return
+            page.staticMapFile = filePath
+        }
+        function onQmlStaticMapError(requestId, message) {
+            // 静态图缺失不是错误态：Canvas 真折线照常可用，静默回落。
+            if (requestId !== page.pendingStaticReq) return
+            page.pendingStaticReq = -1
+            page.staticMapFile = ""
         }
     }
-    Component.onCompleted: requestRealRoute()
+    Component.onCompleted: autoLocate()
 
-    // 折线数据源：真实 polyline 到达则替换，否则两点示意线。
+    // 折线数据源（Canvas 回落层）：真实 polyline 到达则替换，否则两点示意线。
     readonly property var routeLine: usingRealRoute && realPolyline.length >= 2
         ? realPolyline
-        : (hasLoc ? [[userLat, userLng],
-                     [record.stationLatitude !== undefined ? record.stationLatitude : record.station.latitude,
-                      record.stationLongitude !== undefined ? record.stationLongitude : record.station.longitude]]
-                  : [])
+        : (hasLoc ? [[originLat, originLng], [destLat, destLng]] : [])
 
     Column {
         anchors.fill: parent
@@ -114,17 +235,101 @@ Item {
             font.pixelSize: P.Style.fontSm; color: P.Style.faint
         }
 
-        // 地图（Canvas 示意 → 明天 WebEngineView 原位替换）
-        StationMapItem {
+        // —— 起点行：状态提示 + 手动输入 + 重新定位（地图 APP 同款"我的位置"入口）——
+        Rectangle {
+            objectName: "originRow"
+            width: parent.width
+            height: 76
+            radius: P.Style.radiusLg
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+            Column {
+                anchors.left: parent.left; anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: P.Style.spaceMd; anchors.rightMargin: P.Style.spaceMd
+                spacing: P.Style.spaceXs
+                Text {
+                    objectName: "originHintLabel"
+                    text: page.originHint
+                    font.pixelSize: P.Style.fontSm
+                    color: page.originState === "failed" ? P.Style.warning : P.Style.muted
+                }
+                Row {
+                    width: parent.width
+                    spacing: P.Style.spaceSm
+                    Rectangle {
+                        width: parent.width - locateButton.width - goButton.width - 2 * P.Style.spaceSm
+                        height: 36
+                        radius: P.Style.radiusSm
+                        color: P.Style.ghost
+                        border.width: 1
+                        border.color: originInput.activeFocus ? P.Style.brand : P.Style.line
+                        TextField {
+                            id: originInput
+                            objectName: "originField"
+                            anchors.fill: parent
+                            anchors.leftMargin: P.Style.spaceSm
+                            anchors.rightMargin: P.Style.spaceSm
+                            verticalAlignment: TextInput.AlignVCenter
+                            placeholderText: "输入起点：地址 或 纬度,经度"
+                            placeholderTextColor: P.Style.faint
+                            color: P.Style.ink
+                            font.pixelSize: P.Style.fontSm
+                            background: Item {}
+                            onAccepted: page.parseManualOrigin(text)
+                        }
+                    }
+                    P.ActionButton {
+                        id: goButton
+                        objectName: "originGoButton"
+                        variant: "primary"; text: "路线"
+                        width: 60; height: 36
+                        onClicked: page.parseManualOrigin(originInput.text)
+                    }
+                    P.ActionButton {
+                        id: locateButton
+                        objectName: "originLocateButton"
+                        variant: "secondary"; text: "🎯"
+                        width: 40; height: 36
+                        enabled: page.mapOnline
+                        onClicked: page.autoLocate()
+                    }
+                }
+            }
+        }
+
+        // —— 地图：静态图（真瓦片）优先，Canvas 真折线回落 ——
+        Rectangle {
+            id: mapCard
             objectName: "navigationMapPanel"
             width: parent.width
-            height: 190
-            route: page.routeLine
-            markers: hasLoc
-                ? [{ lat: routeLine.length ? +routeLine[routeLine.length - 1][0] : userLat,
-                     lng: routeLine.length ? +routeLine[routeLine.length - 1][1] : userLng,
-                     label: record.stationName || "", selected: true }]
-                : []
+            height: 230
+            radius: P.Style.radiusLg
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+            clip: true
+            StationMapItem {
+                objectName: "navigationMapCanvas"
+                anchors.fill: parent
+                visible: page.staticMapFile.length === 0
+                route: page.routeLine
+                markers: hasLoc
+                    ? [{ lat: destLat, lng: destLng,
+                         label: record.stationName || "", selected: true },
+                       { lat: originLat, lng: originLng,
+                         label: page.originKnown ? "我的位置" : "起点", selected: false }]
+                    : []
+            }
+            Image {
+                objectName: "navigationStaticMapImage"
+                anchors.fill: parent
+                visible: page.staticMapFile.length > 0
+                source: page.staticMapUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+            }
         }
 
         // 行程概要
@@ -144,6 +349,7 @@ Item {
                 Text {
                     objectName: "navigationDistanceLabel"
                     text: page.distText(record.distanceMeters)
+                          + (usingRealRoute ? " · 行驶 " + travelMinutes + " 分钟" : "")
                     font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
                 }
                 Text {
@@ -159,7 +365,7 @@ Item {
         ListView {
             objectName: "navigationStepsList"
             width: parent.width
-            height: parent.height - y
+            height: parent.height - y - 110
             clip: true
             spacing: P.Style.spaceXs
             model: {
@@ -178,12 +384,33 @@ Item {
                 Text {
                     width: parent.width - 20
                     wrapMode: Text.WordWrap
-                    text: typeof modelData === "object" ? (modelData.instruction || "") : modelData
+                    text: typeof modelData === "object"
+                          ? (modelData.instruction || "")
+                            + (modelData.distanceMeters ? "（" + page.distText(modelData.distanceMeters).replace("全程约 ", "") + "）" : "")
+                          : modelData
                     font.pixelSize: P.Style.fontMd; color: P.Style.ink
                 }
             }
         }
 
+        // —— 跳转腾讯地图导航（URI API 接力真导航；无 key 置灰）——
+        P.ActionButton {
+            objectName: "navigationExternalButton"
+            variant: "primary"; text: "跳转腾讯地图导航"
+            width: parent.width
+            enabled: page.mapOnline && hasLoc
+            onClicked: {
+                const url = mapGeoService.navigationUriUrl(
+                    originLat, originLng, page.originLabel || "我的位置",
+                    destLat, destLng, record.stationName || "充电站")
+                if (!url.length) {
+                    if (App) App.showToast("地图密钥未配置，无法跳转导航", "warning")
+                    return
+                }
+                if (!Qt.openUrlExternally(url) && App)
+                    App.showToast("未找到可打开地图的应用", "warning")
+            }
+        }
         P.ActionButton {
             objectName: "navigationBackButton"
             variant: "secondary"; text: "返回"
