@@ -35,12 +35,16 @@ Item {
     Item { id: dragProxy; y: 0; width: 1; height: 1 }
 
     // Pull gesture strip at the very top (see NOTE below for full-surface TODO).
+    // z:2 — the Flickable below is declared later and would otherwise sit on
+    // top of this MouseArea: the strip never received a press and the whole
+    // pull gesture silently died (2026-09-07 order-page report "下拉刷新没了").
     MouseArea {
         id: pullMouse
+        z: 2
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 24
+        height: 28
         enabled: pull.pullEnabled && !pull.refreshing
         drag.target: dragProxy
         drag.axis: Drag.YAxis
