@@ -261,7 +261,7 @@ bool validateTableDefinition(const QSqlDatabase& database, const QString& table,
 }
 
 bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
-                            bool requireCurrentIndexes = true)
+                            bool currentIndexes = true)
 {
     const QList<QPair<QString, QStringList>> tables = {
         {QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("phone"),
@@ -346,18 +346,11 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         }
     }
 
-    if (!requireCurrentIndexes) {
-        return true;
-    }
-
-    const QList<IndexDefinition> indexes = {
+    QList<IndexDefinition> indexes = {
         {QStringLiteral("idx_stations_status"), QStringLiteral("stations"),
          {QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_chargers_station_status"), QStringLiteral("chargers"),
          {QStringLiteral("station_id"), QStringLiteral("status")}, false, {}},
-        {QStringLiteral("idx_chargers_abnormal_updated_at"), QStringLiteral("chargers"),
-         {QStringLiteral("updated_at"), QStringLiteral("id")}, false,
-         QStringLiteral("status IN ('FAULT','OFFLINE')")},
         {QStringLiteral("idx_chargers_updated_at"), QStringLiteral("chargers"),
          {QStringLiteral("updated_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_reservations_user_status"), QStringLiteral("reservations"),
@@ -371,8 +364,11 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         {QStringLiteral("idx_orders_charger_status"), QStringLiteral("orders"),
          {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_orders_status_created_at"), QStringLiteral("orders"),
-         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
-         {}},
+         currentIndexes
+             ? QStringList{QStringLiteral("status"), QStringLiteral("created_at"),
+                           QStringLiteral("id")}
+             : QStringList{QStringLiteral("status"), QStringLiteral("created_at")},
+         false, {}},
         {QStringLiteral("idx_orders_created_at"), QStringLiteral("orders"),
          {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_users_status_id"), QStringLiteral("users"),
@@ -389,8 +385,11 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
          {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_operation_logs_admin_created_at"),
          QStringLiteral("operation_logs"),
-         {QStringLiteral("admin_id"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
-         {}},
+         currentIndexes
+             ? QStringList{QStringLiteral("admin_id"), QStringLiteral("created_at"),
+                           QStringLiteral("id")}
+             : QStringList{QStringLiteral("admin_id"), QStringLiteral("created_at")},
+         false, {}},
         {QStringLiteral("idx_operation_logs_action_created_at"),
          QStringLiteral("operation_logs"),
          {QStringLiteral("action"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
@@ -408,6 +407,18 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
          {QStringLiteral("charger_id")}, true,
          QStringLiteral("status IN ('RESERVED', 'CHARGING')")}
     };
+    if (currentIndexes) {
+        indexes.append({QStringLiteral("idx_chargers_abnormal_updated_at"),
+                        QStringLiteral("chargers"),
+                        {QStringLiteral("updated_at"), QStringLiteral("id")}, false,
+                        QStringLiteral("status IN ('FAULT','OFFLINE')")});
+    } else {
+        indexes.append({QStringLiteral("idx_chargers_status_updated_at"),
+                        QStringLiteral("chargers"),
+                        {QStringLiteral("status"), QStringLiteral("updated_at"),
+                         QStringLiteral("id")},
+                        false, {}});
+    }
     for (const IndexDefinition& index : indexes) {
         if (!validateIndex(database, index, errorMessage)) {
             return false;
@@ -616,7 +627,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (!currentValidation.ok) {
         const DatabaseMaintenanceResult legacyValidation = validateLegacyRestoreSource(backupPath);
         if (!legacyValidation.ok) {
-            return currentValidation;
+            return legacyValidation;
         }
     }
 

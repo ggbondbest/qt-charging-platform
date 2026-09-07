@@ -156,8 +156,10 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
     }
 
     QString resolvedPath = databasePath;
+    bool isNewDatabase = databasePath == QStringLiteral(":memory:");
     if (databasePath != QStringLiteral(":memory:")) {
         const QFileInfo fileInfo(databasePath);
+        isNewDatabase = !fileInfo.exists() || fileInfo.size() == 0;
         resolvedPath = fileInfo.absoluteFilePath();
         QDir parentDirectory = fileInfo.absoluteDir();
         if (!parentDirectory.exists() && !parentDirectory.mkpath(QStringLiteral("."))) {
@@ -165,6 +167,39 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
                         QStringLiteral("Unable to create the database directory: %1")
                             .arg(parentDirectory.absolutePath()));
         }
+    }
+
+    int schemaVersion = 0;
+    if (!isNewDatabase) {
+        const QString versionConnectionName = QStringLiteral("%1-version-check").arg(connectionName_);
+        QString versionError;
+        {
+            QSqlDatabase versionDatabase =
+                QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), versionConnectionName);
+            versionDatabase.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+            versionDatabase.setDatabaseName(resolvedPath);
+            if (!versionDatabase.open()) {
+                versionError = versionDatabase.lastError().text();
+            } else {
+                QSqlQuery versionQuery(versionDatabase);
+                if (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
+                    !versionQuery.next()) {
+                    versionError = versionQuery.lastError().text();
+                } else {
+                    schemaVersion = versionQuery.value(0).toInt();
+                }
+                versionDatabase.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(versionConnectionName);
+        if (!versionError.isEmpty()) {
+            return fail(errorMessage, QStringLiteral("Unable to read database schema version: %1")
+                                          .arg(versionError));
+        }
+    }
+    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 2) {
+        return fail(errorMessage, QStringLiteral("Unsupported database schema version: %1")
+                                      .arg(schemaVersion));
     }
 
     database_ = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName_);
