@@ -79,7 +79,8 @@ Item {
                             text: modelData.body || ""
                             font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     }
-                    Text { anchors.verticalCenter: parent.verticalCenter
+                    Text { objectName: "notificationTimeLabel"
+                        anchors.verticalCenter: parent.verticalCenter
                         text: page.timeText(modelData.createdAtUtc)
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint }
                 }

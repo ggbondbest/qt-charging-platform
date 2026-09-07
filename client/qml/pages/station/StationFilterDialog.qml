@@ -77,6 +77,9 @@ Popup {
         anchors.fill: parent
         spacing: P.Style.spaceMd
 
+        Text { objectName: "stationFilterDialogTitle"; text: "高级筛选"
+            font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+
         ScrollView {
             id: scroller
             width: parent.width
@@ -90,7 +93,7 @@ Popup {
                 Column {
                     objectName: "filterGroupDistance"
                     spacing: P.Style.spaceXs
-                    Text { text: "距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "stationFilterGroupTitle"; text: "距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                     Flow {
                         width: parent.width
                         spacing: P.Style.spaceSm
@@ -116,6 +119,7 @@ Popup {
                         width: scroller.availableWidth
                         spacing: P.Style.spaceXs
                         Text {
+                            objectName: "stationFilterGroupTitle"
                             text: group.title
                             font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
                         }
@@ -150,13 +154,13 @@ Popup {
                 onClicked: dialog.close()
             }
             P.ActionButton {
-                objectName: "filterResetButton"
+                objectName: "stationFilterResetButton"
                 variant: "secondary"; text: "重置"
                 width: (footerRow.width - footerRow.spacing * 2) / 3
                 onClicked: dialog.resetChecks()
             }
             P.ActionButton {
-                objectName: "filterApplyButton"
+                objectName: "stationFilterApplyButton"
                 variant: "primary"; text: "确定"
                 width: (footerRow.width - footerRow.spacing * 2) / 3
                 onClicked: dialog.applyAndClose()
