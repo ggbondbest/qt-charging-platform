@@ -55,7 +55,7 @@
 | 地图分栏（WebEngine） | `StationMapItem.qml` Canvas 示意（降级态可视化 + 选卡联动高亮）；真图=明天 QtWebEngineQuick 决策 |
 | PullToRefresh | `P.PullToRefreshArea` 包 ListView，`onRefreshRequested: search(keyword)` |
 | 演示数据通道（桥缺位，二轮修复批） | `refresh()`：服务缺位或调用抛 → `loadDemo()`（demo=true，`homeDemoCaption` 标"演示数据…接入后自动替换"）；4 站带经纬度→地图自动布点、关键词按名称/地址过滤；`onQuerySucceeded` 置 demo=false 自动退位；**真实失败信号 onQueryFailed 仍保留失败 UI+重试钮**（用户要求异常页不撤） |
-| 筛选栏溢出（二轮修复批） | `stationFilterBarFlick` 横向 Flickable——原固定宽 Row 把「⛏ 筛选」钮裁成半截，与返回钮裁切同类缺陷 |
+| 筛选栏溢出 | 二轮修复批曾用 `stationFilterBarFlick` 横向 Flickable（原固定宽 Row 把「⛏ 筛选」钮裁成半截）；**变基后按"机制按成员3"口径换成 develop 的 `Flow` 自动换行**（同缺陷同修，六控件 420 宽放不下时折行，无横向滚动残留） |
 | ListView 尺寸 | PullToRefreshArea 内容是 Column（平台禁垂直/fill 锚）：显式 `width: parent.width+2*spaceSm / x: -spaceSm / height: pull.height` 等价还原 -spaceSm 出血 |
 
 ### StationDetailPage.qml（"stationDetailPage"）
@@ -115,7 +115,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **二级密码拦截位决策（已被二轮口径倒转，留档）**：功能增加批曾按当时用户指定把拦截放"我的→设置"入口（进页锁屏门）；二轮复测用户明确"逻辑完全颠倒"——现行口径为**登录环节按手机号拦截**（见 LoginPage 表 + 二轮修复批节），设置页锁屏门已整体撤销。预约/取消位如需拦截，服务桥落地后可在此基础上二次开启。
 - **widgets 锚点全对账**（本轮 method：widgets 页 `setObjectName` 全量 ∖ QML `objectName` 全量）：交互锚点 40+ 处逐字对齐（改名/补名，明细见 commit message）；**未采用同名的剩余项=三类**：①布局容器（Scroll/Stack/Splitter/Pane——QML 声明式列表无此物）；②成员3 域（ui*/recharge*/wallet/homeShell/appRoot）；③被更好形态吸收（订单页 loading/error 归母页 moduleNotice、导航 map 占位=StationMapItem、详情 loading 态并入 detailNotice 文案）——不算缺失。
 
-## 二轮修复批（98c9b6b，用户二轮复测——三截图+六条指令，全部增量修改，配色/圆角/绿色主按钮未动）
+## 二轮修复批（98c9b6b→e4fd0b9 变基后，用户二轮复测——三截图+六条指令，全部增量修改，配色/圆角/绿色主按钮未动）
 
 - **二级密码倒转**：设置页进页锁屏门整体撤销（`secondPasswordGate` 删除，原位置留口径注释）；LoginPage 新增密码行 `secondPasswordEdit`（仅"设过密码+开启保护"的手机号命中出现）+ submit() 前置门（空/错两提示）；StationState 增加 `passPhone` 绑定与 `noteLoginPhone/accountPhone`——设置页存密码时绑最近登录号。服务通道优先（hasProtectionPassword+protectionEnabled 皆真=任意号需密码），库通道兜底。
 - **整页滚动**：登录/预约确认/预约模块/订单四页根容器套 Flickable（用户点名三页全覆盖+订单页连带）；找站/详情列表本在 ListView 内滚动，无需外层。
@@ -137,7 +137,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 | FavoritesService | `contains(id)/toggle(id)/favoriteIds()/favoriteCount()` 全部 `Q_INVOKABLE`；`favoritesChanged` |
 | NotificationService | `notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
 | MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`（routeMap={polyline:[[lat,lng],…], distanceMeters, durationMinutes, steps:[{instruction,distanceMeters},…]}——导航页折线/距离/步骤三消费位已齐）、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |
-| Shell（非桥，路由表） | 追加 7 条路由 + migrated 翻位（见 HomeShell 节）仍待成员3；`searchVisible` 绑当前页 route 与 `onSearchSubmitted→App.navigate("station", keyword)` 两处已由用户点名代修（98c9b6b）；TopNavBar 返回钮容器尺寸同批代修 |
+| Shell（非桥，路由表） | station 域 10 条路由已由成员3 翻位落地（develop `0f65111`：migrated+10、pageSource+7）；**仅剩 coupon 两行**（`migrated` +1、`pageSource` +1 行）与顶栏漏斗一行接线 `stack.currentItem.openAdvancedFilter?.()`。`searchVisible` 绑当前页 route、`onSearchSubmitted→App.navigate("station", keyword)`、TopNavBar 返回钮容器尺寸三处=用户点名代修（各带根因注释），已随 rebase 并入本分支 |
 
 ## 验收自查（19:00 冲刺门）
 - [x] `--view=station`：地图示意+筛选栏渲染；列表区为设计内降级态"站点加载失败·站点查询桥未就绪（等待服务桥今晚补全）"
@@ -147,12 +147,15 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - [x] 每页根 objectName == 上表锚点
 - [x] 修正批 `55ef843`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
 - [x] 审计轮修正批：登录/退出在 mock（authService=nullptr）下兜底 `App.login()/logout()`（不再卡遮罩）；收藏页投影补 voltageBands 组；导航页存 `route.steps`（真实转向指引 + >15 段截断文案）；地图 hit-test 与 onPaint 界域同构（markers∪route、NaN 坐标天然跳）；卡内 anchors.fill 告警 9 处清理（ClickableCard/P.Card 同款：内容 default-property 进内部 Column，卡内锚点被忽略且逐实例告警）——ClickableCard 5 处（profile×2 实爆 + favorites/station/completed×3 潜伏）+ P.Card 4 处（notification delegate×1 + 订单页三栏卡×3，均桥落地/记录到达即爆）；改 Column 契约内 width 绑定、卡高交内容自然高，10 路由复跑零告警零报错
-- [x] 二轮修复批（98c9b6b）：二级密码倒转到登录环节/四页 Flickable/顶栏搜索·铃铛·返回钮修复/三页演示数据通道/订单页 polish 环/NoWrap 裁字族——11 路由 rc=0 零告警 + 密码断言 10/10 + qmllint 零 Error，详见 §二轮修复批
+- [x] 二轮修复批（98c9b6b→e4fd0b9）：二级密码倒转到登录环节/四页 Flickable/顶栏搜索·铃铛·返回钮修复/三页演示数据通道/订单页 polish 环/NoWrap 裁字族——11 路由 rc=0 零告警 + 密码断言 10/10 + qmllint 零 Error，详见 §二轮修复批
+- [x] **变基轮（rebase 至 develop `0fcc44d` 后复测）**：成员3 服务桥（`3db8931`）与路由翻位（`0f65111`）已在基底落地 → station/reservation_module 直渲**真数据**（上条"桥未就绪"降级态自然退位，演示通道 catch 不再触发）；订单三栏=成员3 塌陷修正（colW+自然高）外套本分支整页 Flickable；排序 chip `selected` 机制与"综合=2/空闲=0/距离=1"编号以 develop 为准并入。复跑 11 路由 offscreen rc=0 零报错、qmllint 零 Error；解冲突口径=样式/机制按成员3、widgets 对账锚点 objectName 按本分支（`detailPriceLabel/detailDistanceLabel/reservationOrderTabButton/uiProfileHeroButton` 等实名保留）
 
 ## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）
 QML 自 `CHARGING_QML_SOURCE_DIR` 文件系统加载（改 .qml 无需重编）；运行
 `QML2_IMPORT_PATH=<解包 qml6-modules> QT_QPA_PLATFORM=offscreen charging-qml-preview --view=X [--arg=JSON] --screenshot=…`。
-克隆 Shell.qml 追加内容即 §桥缺口末行建议的最小实现（migrated+10、pageSource+7、rootArg 种子、
-`--arg=` 经 `chargingArg` context property 注入、非 login 视图自动 `login()` 过门）。
+解包 qml6-modules 实机路径=`/home/bit/qt6qml/usr/lib/x86_64-linux-gnu/qt6/qml`（apt 未装 qml6-module-*，缺该环境变量时
+所有 preview 运行报 "module QtQuick.Window is not installed"——排查一次记一次）。
+**变基轮起**：develop 基底已含路由翻位与 `--arg=`/`--logged-in` 原生支持（成员3 `0f65111`+`d9b8c11`），
+10 路由可**仓库直构直跑、零补丁**；仅 coupon 一条仍需克隆翻位（Shell 两行：migrated +1、pageSource +1）。
 截图产物：`~/qml-station-shots/01..10-*.png`。
 
