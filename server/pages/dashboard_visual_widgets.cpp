@@ -68,7 +68,7 @@ void MetricIconWidget::paintEvent(QPaintEvent*)
 namespace {
 
 struct TrendSeries {
-    QList<qreal> revenueThousands;
+    QList<qreal> revenueYuan;
     QList<qreal> completedOrderCount;
     QStringList labels;
 };
@@ -80,12 +80,12 @@ TrendSeries createTrendSeries(int period, const QDate& customStartDate, const QD
                                           153, 157, 185, 193, 177, 152, 155, 161, 132, 126, 130, 104,
                                           89, 111, 125, 119, 102, 109, 154, 172, 176, 157, 152};
     if (period == 0) {
-        series.revenueThousands = {92, 118, 105, 143, 169, 152, 184, 171, 202, 187, 214, 196};
+        series.revenueYuan = {92, 118, 105, 143, 169, 152, 184, 171, 202, 187, 214, 196};
         for (int hour = 0; hour < 24; hour += 2) {
             series.labels.append(QObject::tr("今日 %1:00").arg(hour, 2, 10, QLatin1Char('0')));
         }
     } else if (period == 1) {
-        series.revenueThousands = {124, 155, 137, 181, 163, 205, 188};
+        series.revenueYuan = {124, 155, 137, 181, 163, 205, 188};
         series.labels = {QObject::tr("周一"), QObject::tr("周二"), QObject::tr("周三"),
                          QObject::tr("周四"), QObject::tr("周五"), QObject::tr("周六"),
                          QObject::tr("周日")};
@@ -94,17 +94,17 @@ TrendSeries createTrendSeries(int period, const QDate& customStartDate, const QD
         const QDate end = customEndDate.isValid() ? customEndDate : QDate(2025, 5, 31);
         for (QDate date = start; date <= end; date = date.addDays(1)) {
             const int seed = date.dayOfYear() * 17 + date.month() * 31;
-            series.revenueThousands.append(88 + seed % 112);
+            series.revenueYuan.append(88 + seed % 112);
             series.labels.append(date.toString(QStringLiteral("MM-dd")));
         }
     } else {
-        series.revenueThousands = monthlyRevenue;
+        series.revenueYuan = monthlyRevenue;
         const QDate start(2025, 4, 28);
         for (int index = 0; index < monthlyRevenue.size(); ++index) {
             series.labels.append(start.addDays(index).toString(QStringLiteral("MM-dd")));
         }
     }
-    for (const qreal revenue : std::as_const(series.revenueThousands)) {
+    for (const qreal revenue : std::as_const(series.revenueYuan)) {
         // This is an independent count metric, rather than a second ambiguous money amount.
         series.completedOrderCount.append(qRound(revenue * 3.7 + 48));
     }
@@ -119,6 +119,40 @@ QRectF trendPlotRect(const QWidget* widget)
 int visiblePointCount(const QRectF& plot, int total)
 {
     return qBound(2, qMin(total, qMax(2, qFloor(plot.width() / 68.0) + 1)), total);
+}
+
+// A five-interval, "nice number" axis keeps small real values readable while
+// retaining clean labels for larger operating data (1, 2, 2.5, 3, 4, 5 ...).
+qreal niceAxisStep(qreal minimumStep)
+{
+    if (minimumStep <= 0.0) return 1.0;
+    const qreal magnitude = qPow(10.0, qFloor(qLn(minimumStep) / qLn(10.0)));
+    const qreal normalized = minimumStep / magnitude;
+    for (const qreal candidate : {1.0, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0}) {
+        if (normalized <= candidate) return candidate * magnitude;
+    }
+    return 10.0 * magnitude;
+}
+
+struct TrendAxis {
+    qreal maximum = 1.0;
+    qreal step = 0.2;
+};
+
+TrendAxis createTrendAxis(const QList<qreal>& values, bool integerOnly = false)
+{
+    const qreal dataMaximum = values.isEmpty() ? 0.0 : *std::max_element(values.cbegin(), values.cend());
+    const qreal step = integerOnly ? qMax<qreal>(1.0, qCeil(niceAxisStep(dataMaximum / 5.0)))
+                                   : niceAxisStep(dataMaximum / 5.0);
+    return {step * 5.0, step};
+}
+
+QString formatRevenueAxisLabel(qreal yuan, qreal step)
+{
+    if (yuan >= 10000.0) {
+        return QObject::tr("¥ %1万").arg(QLocale().toString(yuan / 10000.0, 'f', yuan >= 100000.0 ? 0 : 1));
+    }
+    return QObject::tr("¥ %1").arg(QLocale().toString(yuan, 'f', step < 1.0 ? 2 : 0));
 }
 
 } // namespace
@@ -178,12 +212,12 @@ void RevenueTrendWidget::paintEvent(QPaintEvent*)
         // Mock values here made the value vector longer than the service label
         // vector, so the tooltip could index past its last label while painting.
         series.labels = serviceLabels_;
-        series.revenueThousands.clear();
+        series.revenueYuan.clear();
         series.completedOrderCount.clear();
-        for (const auto cents : serviceRevenueCents_) series.revenueThousands.append(cents / 1000.0);
+        for (const auto cents : serviceRevenueCents_) series.revenueYuan.append(cents / 100.0);
         for (const auto count : serviceCompletedOrders_) series.completedOrderCount.append(count);
     }
-    const QList<qreal>& values = displayMode_ == 0 ? series.revenueThousands : series.completedOrderCount;
+    const QList<qreal>& values = displayMode_ == 0 ? series.revenueYuan : series.completedOrderCount;
     if (values.size() < 2 || plot.width() <= 0.0 || plot.height() <= 0.0) {
         return;
     }
@@ -195,9 +229,7 @@ void RevenueTrendWidget::paintEvent(QPaintEvent*)
         selectedIndex_ = firstVisibleIndex_ + shownCount - 1;
     }
 
-    const qreal maximumValue = displayMode_ == 0
-                                   ? qMax<qreal>(250.0, *std::max_element(values.cbegin(), values.cend()) * 1.15)
-                                   : qMax<qreal>(900.0, *std::max_element(values.cbegin(), values.cend()) * 1.15);
+    const TrendAxis axis = createTrendAxis(values, displayMode_ == 1);
     QFont labelFont = painter.font();
     labelFont.setPixelSize(13);
     painter.setFont(labelFont);
@@ -205,11 +237,10 @@ void RevenueTrendWidget::paintEvent(QPaintEvent*)
         const qreal y = plot.top() + plot.height() * index / 5.0;
         painter.setPen(QPen(gridColor, 1, Qt::DashLine));
         painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
-        const qreal value = maximumValue * (5 - index) / 5.0;
+        const qreal value = axis.maximum - axis.step * index;
         painter.setPen(QColor("#596a84"));
-        const QString label = displayMode_ == 0
-                                  ? QString::number(value, 'f', 0) + tr("k")
-                                  : QString::number(value, 'f', 0);
+        const QString label = displayMode_ == 0 ? formatRevenueAxisLabel(value, axis.step)
+                                                : QLocale().toString(value, 'f', 0);
         painter.drawText(QRectF(0, y - 10, plot.left() - 12, 20), Qt::AlignRight | Qt::AlignVCenter, label);
     }
 
@@ -217,7 +248,7 @@ void RevenueTrendWidget::paintEvent(QPaintEvent*)
     const auto pointAt = [&](int seriesIndex) {
         const int visibleIndex = seriesIndex - firstVisibleIndex_;
         return QPointF(plot.left() + step * visibleIndex,
-                       plot.bottom() - plot.height() * values.at(seriesIndex) / maximumValue);
+                       plot.bottom() - plot.height() * values.at(seriesIndex) / axis.maximum);
     };
     QPainterPath line;
     for (int index = firstVisibleIndex_; index < firstVisibleIndex_ + shownCount; ++index) {
@@ -260,7 +291,7 @@ void RevenueTrendWidget::paintEvent(QPaintEvent*)
     painter.drawEllipse(QPointF(tooltip.left() + 15, tooltip.bottom() - 18), 3, 3);
     painter.setPen(QColor("#68758a"));
     const QString valueText = displayMode_ == 0
-                                  ? tr("¥ %1").arg(QLocale().toString(values.at(selectedIndex_) * 1000, 'f', 0))
+                                  ? tr("¥ %1").arg(QLocale().toString(values.at(selectedIndex_), 'f', 2))
                                   : tr("%1 笔").arg(QLocale().toString(values.at(selectedIndex_), 'f', 0));
     const QString metricText = displayMode_ == 0 ? tr("营收") : tr("完成订单");
     painter.drawText(tooltip.adjusted(28, 26, -6, -5), Qt::AlignLeft | Qt::AlignVCenter,
@@ -312,21 +343,21 @@ void RevenueTrendWidget::mouseMoveEvent(QMouseEvent* event)
         // Keep interaction math aligned with the same service-only series used
         // by paintEvent; otherwise a drag can reintroduce a stale Mock index.
         series.labels = serviceLabels_;
-        series.revenueThousands.clear();
+        series.revenueYuan.clear();
         series.completedOrderCount.clear();
-        for (const auto cents : serviceRevenueCents_) series.revenueThousands.append(cents / 1000.0);
+        for (const auto cents : serviceRevenueCents_) series.revenueYuan.append(cents / 100.0);
         for (const auto count : serviceCompletedOrders_) series.completedOrderCount.append(count);
     }
     const QRectF plot = trendPlotRect(this);
-    if (series.revenueThousands.size() < 2) {
+    if (series.revenueYuan.size() < 2) {
         return;
     }
-    const int shownCount = visiblePointCount(plot, series.revenueThousands.size());
-    const int maxFirstIndex = qMax(0, series.revenueThousands.size() - shownCount);
+    const int shownCount = visiblePointCount(plot, series.revenueYuan.size());
+    const int maxFirstIndex = qMax(0, series.revenueYuan.size() - shownCount);
     if (dragging_) {
         if (draggingOverview_ && maxFirstIndex > 0) {
             const qreal trackWidth = plot.width();
-            const qreal handleWidth = qMax<qreal>(42.0, trackWidth * shownCount / series.revenueThousands.size());
+            const qreal handleWidth = qMax<qreal>(42.0, trackWidth * shownCount / series.revenueYuan.size());
             const qreal handleLeft = qBound(plot.left(), event->pos().x() - handleWidth / 2.0,
                                              plot.right() - handleWidth);
             firstVisibleIndex_ = qRound((handleLeft - plot.left()) * maxFirstIndex
