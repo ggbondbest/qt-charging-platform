@@ -36,7 +36,9 @@
 | handleLoginStarted：遮罩+按钮"登录中…" | `Connections onLoginStarted` → `overlay.running=true; busy=true`（桥若无此信号则本地置位，TODO(contract)） |
 | handleLoginSucceeded(user, created) | `onLoginSucceeded(user, created)` → 成功文案（含"（已自动注册）"）；壳收 loginStateChanged 自动翻页 |
 | handleLoginFailed(message) | `onLoginFailed(message)` → resultLabel 红字 |
-| resetState() | `function resetState()`：清 busy/文案回"请输入11位手机号" |
+| resetState() | `function resetState()`：清 busy/文案回"请输入11位手机号"（含 secondField） |
+| **二级保护密码（登录环节，用户二轮指定口径）** | `secondVisible: phoneOk && secondRequired(phoneField.text)`——命中"设过密码且开启保护"的手机号才现 `secondPasswordEdit`（objectName 同）行；submit() 前置门：空→"该账号已开启二级保护密码，请输入密码后登录"；错→清框+"二级保护密码错误，请重新输入"。校验服务 `verifyProtectionPassword` 优先（`hasProtectionPassword()+protectionEnabled()` 皆真=任意号需密码）、`StationState.needsSecondPassword(phone)` 库兜底；`noteLoginPhone(phone)` 记最近登录号供设置页绑定 |
+| **整页滚动（二轮修复批）** | 页根套 Flickable（`loginCol` x/y=spaceXl，contentHeight=col.height+2*spaceXl），小屏可上下拖拽 |
 
 注：AuthService 是裸服务（非桥），`login()` 非 slot——调用即失败，属预期（今晚补桥；桥方法名 `login` 不改）。mock 通道实为 `QmlApp::authService()==nullptr`（app_bridge.cpp:99）——空调用不抛异常，页面以 `App.login()`（C++ Q_INVOKABLE mock 直登，app_bridge.h:83）兜底，桥落地后走 `if (authService)` 正路。
 
@@ -49,9 +51,12 @@
 | StationFilterCriteria 8 组 | `property var criteria`（JS 对象同字段名：maxDistanceKm/statuses/operators/accessTypes/parkingFees/features/chargerTypes/voltageBands），与 applyStationFilter 同语义 |
 | 卡片：名称/电价/空闲/距离/☆ | delegate `ClickableCard` + `App.navigate("station_detail", {id,name,…})`；星星 `MouseArea` eat 事件 → `favoritesService.toggle(id)`；`text: favoritesService.contains(id) ? "★" : "☆"`（`favoritesChanged()` 重算绑定） |
 | 空态「重置」不误清关键词（缺陷2 口径） | `hasActiveFilters()`：criteria 非空或 priceMax>0；重置只回退这两源 |
-| 搜索框在壳顶栏 | `arg` 作为关键词入口（route 参数），TODO(contract)：Shell 接线 onSearchSubmitted→navigate("station", kw) |
+| 搜索框在壳顶栏 | `arg` 作为关键词入口（route 参数）；Shell 接线已完成（用户点名修复）：`onSearchSubmitted→App.navigate("station", keyword)`，页端 `onArgChanged` 收词重查；搜索框/铃铛显隐改绑 `stack.currentItem.route`（原绑 `shell.route` 仅启动求值一次） |
 | 地图分栏（WebEngine） | `StationMapItem.qml` Canvas 示意（降级态可视化 + 选卡联动高亮）；真图=明天 QtWebEngineQuick 决策 |
 | PullToRefresh | `P.PullToRefreshArea` 包 ListView，`onRefreshRequested: search(keyword)` |
+| 演示数据通道（桥缺位，二轮修复批） | `refresh()`：服务缺位或调用抛 → `loadDemo()`（demo=true，`homeDemoCaption` 标"演示数据…接入后自动替换"）；4 站带经纬度→地图自动布点、关键词按名称/地址过滤；`onQuerySucceeded` 置 demo=false 自动退位；**真实失败信号 onQueryFailed 仍保留失败 UI+重试钮**（用户要求异常页不撤） |
+| 筛选栏溢出（二轮修复批） | `stationFilterBarFlick` 横向 Flickable——原固定宽 Row 把「⛏ 筛选」钮裁成半截，与返回钮裁切同类缺陷 |
+| ListView 尺寸 | PullToRefreshArea 内容是 Column（平台禁垂直/fill 锚）：显式 `width: parent.width+2*spaceSm / x: -spaceSm / height: pull.height` 等价还原 -spaceSm 出血 |
 
 ### StationDetailPage.qml（"stationDetailPage"）
 | widgets | QML |
@@ -62,6 +67,7 @@
 | 故障桩红卡（原属性选择器） | delegate `Card { border.color: st==="fault" ? Style.danger : Style.line; border.width: st==="fault" ? 2 : 1 }` |
 | 桩状态彩签 | `StatusTag { tone: {available:"success",reserved:"warning",charging:"info",fault:"danger",offline:"neutral"}[st] ?? "neutral" }` |
 | 预约按钮三重准入 + reservationBlocked | `App.loggedIn` 判 + 车辆数判（功能增加批：桥缺位读 StationState 车辆通道，0 辆弹 `vehicleRequiredPrompt`〔去添加车辆→设置〕；在途名额判 `reservationService.activeReservationCount()` 缺位放行，占满弹 `unfinishedReservationPrompt`〔去查看→预约模块〕——旧 HomeShell 弹层同文案同钮直译）→ `App.navigate("reservation_confirm", arg)` |
+| 演示数据通道（桥缺位，二轮修复批） | fetch() 抛 → `loadDemo()`：6 桩五态全展（available×2/reserved/charging/fault〔红框〕/offline），detailLoaded=true 让预约链路完整可走；头卡标注"演示数据（详情桥未就绪…）"；`onDetailSucceeded` 自动退位。delegate 引 `chargerList.width` → ListView 须真 `id: chargerList`（objectName 不可作标识符解析） |
 
 ### ReservationConfirmPage.qml（"reservationConfirmPage"）
 | widgets | QML |
@@ -73,6 +79,7 @@
 | 预估费用联动 | `readonly property int feeCents: priceCentsPerKwh * hours`，Text 绑定 |
 | ≤45min 约束 | `readonly property bool tooLong: end-start>45`；红行内提示 + 提交 enabled: !tooLong && … |
 | submit → submitStarted/Succeeded/Failed | `reservationService.submit(...)` TODO(contract)（载荷改 map）；成功→`Dialog`"是否现在前往充电？"→`App.navigate("navigation", record)` / `App.navigate("reservation_module")`；失败 Toast |
+| 整页滚动（二轮修复批） | 主 Column 套 Flickable（`confirmCol` x/y=spaceLg，contentHeight=col.height+2*spaceLg），小屏长表单可上下拖拽 |
 
 ## P1 五页
 
@@ -86,17 +93,17 @@ arg=record map；进页先模拟口径（distance/eta 兜底公式），`mapGeoS
 Canvas：`property var markers`（{lat,lng,label,selected}）、`property var route`（[[lat,lng],…]）；自动 fit 边界 + 10px 内边距；示意底（网格+对角线河）纯装饰；`onPaint` 里画点/折线；无 WebEngine 依赖、offscreen 可截图。**决策记录**：任务书建议 QQuickPaintedItem C++ 包壳——但类型注册要动 `client/qml/main.cpp`（成员3 禁区），CMake 挂载点只透 .qml；故 Sprint 用 Canvas 等价实现，明天真地图走 QtWebEngineQuick `WebEngineView`（独立进程无 Widgets 互斥问题）时一并定夺。
 
 ### ReservationModulePage.qml（"reservationModulePage"）
-二级 Tab 两 ActionButton（variant 切换 chip/primary）；`reservationService.fetchList()` → `onListStarted/Succeeded(records)/Failed`：按 status.toLowerCase() 分发 active(=="reserved")/done(其余)；取消 `onCancelSucceeded` → 切 Tab + 重拉；`reservationExpired` 信号（桥名以 C++ 为准 TODO(contract)）→ 重拉。
+二级 Tab 两 ActionButton（variant 切换 chip/primary）；`reservationService.fetchList()` → `onListStarted/Succeeded(records)/Failed`：按 status.toLowerCase() 分发 active(=="reserved")/done(其余)；取消 `onCancelSucceeded` → 切 Tab + 重拉；`reservationExpired` 信号（桥名以 C++ 为准 TODO(contract)）→ 重拉。二轮修复批：fetchList 桥缺位 → `loadDemo()` 3 条记录（active 进行中/fulfilled/cancelled），`moduleDemoCaption` 标注，`onListSucceeded` 自动退位——修复用户点名的"预约列表加载失败"；母页套 `moduleFlick` Flickable 整页可上下拖拽。
 
 ### ReservationOrderPage.qml（"reservationOrderPage"）
-三栏 Row：左距离 Column、中信息+倒计时、右电量占位。`Timer` 每秒 `remainingSeconds--`；颜色 `{>`}三档绑定 Style.brand/warning/danger；归零→`reservationService.expireReservation(id)`+`fetchList()`。取消按钮 ActionBar variant:"danger"。
+三栏 Row：左距离 Column、中信息+倒计时、右电量占位。`Timer` 每秒 `remainingSeconds--`；颜色 `{>`}三档绑定 Style.brand/warning/danger；归零→`reservationService.expireReservation(id)`+`fetchList()`。取消按钮 ActionBar variant:"danger"。二轮修复批：三栏套 `orderFlick` Flickable；**删除撑位 `Item{height: parent.height-200}`**——Column 子项绑 parent.height 触发 polish 死循环（demo 记录渲染后暴露，冒烟 timeout 根因）；窄卡 caption 补 width+WordWrap（NoWrap 裁字）。
 
 ### ReservationCompletedPage.qml（"reservationCompletedPage"）
 ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag）；点击→`Dialog` 详情全字段；空态 NoticePanel。
 
 ## P2 三页 + ProfilePage
 
-- **SettingsPage.qml**（"settingsPage"）：三模块卡（锚点=settingsSecurityCard/settingsVehicleCard/settingsNotificationCard）；密码弹窗（改密验旧 + ≥4 位 + 两次一致；字段=currentPasswordEdit/newPasswordEdit/confirmPasswordEdit，钮=passwordCancelButton/passwordSaveButton）；**二级密码门（功能增加批，用户指定拦截位）**：进页时若保护开启且已设密码 → `secondPasswordGate` 锁屏覆盖（lockPasswordField + 解锁/离开[App.back]），验证走服务 `verifyProtectionPassword` 或库通道；车辆 CRUD（行钮 vehicleSetDefaultButton/vehicleEditButton/vehicleDeleteButton；弹窗含 vehicleDefaultCheck + 接口双 RadioButton〔对齐旧版，替原 ComboBox〕 + 取消/保存钮组）；通知三开关 `Switch` ↔ `settingsService`。**双通道**：服务 invokable 可读以服务为准，否则落 StationState 会话库——密码哈希/保护开关/车辆跨页往返不丢（真持久化归桥）。
+- **SettingsPage.qml**（"settingsPage"）：三模块卡（锚点=settingsSecurityCard/settingsVehicleCard/settingsNotificationCard）；密码弹窗（改密验旧 + ≥4 位 + 两次一致；字段=currentPasswordEdit/newPasswordEdit/confirmPasswordEdit，钮=passwordCancelButton/passwordSaveButton）；**进页密码门已撤销（用户二轮指定口径倒转）**：二级密码作用点在登录环节（见 LoginPage 表），本页只做设置/开关，`protectionSwitchHint` 三态文案同步为登录口径（"已开启：该账号下次在登录页输入手机号时，将要求输入二级保护密码"）；保存时 `StationState.setSecondPassword(plain, 最近登录号)` 把密码绑定到登录用手机号；车辆 CRUD（行钮 vehicleSetDefaultButton/vehicleEditButton/vehicleDeleteButton；弹窗含 vehicleDefaultCheck + 接口双 RadioButton〔对齐旧版，替原 ComboBox〕 + 取消/保存钮组）；通知三开关 `Switch` ↔ `settingsService`；整页 `Flickable`（二轮修复批）。**双通道**：服务 invokable 可读以服务为准，否则落 StationState 会话库——密码哈希/保护开关/车辆跨页往返不丢（真持久化归桥）。
 - **FavoritesPage.qml**（"favoritesPage"）：同构 StationHome 列表源=favoritesService.favoriteIds()∩stationQueryService 结果；状态门三 flag 直译（queryLoaded/queryFailed/viewState）；星星可取消；筛选弹窗复用；暴露 `openAdvancedFilter()`。
 - **NotificationPage.qml**（"notificationPage"）：`notificationService.notifications()` 桥→ListView；`onNotificationsChanged` 重算；空态引导。
 - **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（锚点 uiProfileHeroButton；余额=App.currentUser 的 balanceLabel/nicknameLabel，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表五项（openOrdersButton / openReservationsButton / openFavoritesButton / **openCouponsButton（功能增加批）** / openSettingsButton）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
@@ -105,8 +112,18 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 
 - **CouponPage.qml**（"couponPage"，route "coupon"）：可用/已使用/已过期三态 Tab + 面额（cash ¥）/折扣（discount 折）双券型卡 + 「去使用」占位（TODO(contract): redeem）+ 空态。旧版仅在 README 留"同款式敬请期待"槽从未实装页面；券服务不在 CONTRACT.md → 桥缺位期渲染页内**演示数据**（与 mock 直登同口径，页内标明"演示数据·券服务桥未就绪"），`typeof couponService` 守卫接入后自动替换。
 - **StationState.js**（`.pragma library` 跨页会话库）：cyrb53 双 32 位混合散列存二级密码（明文即散即用，UI 不落）、protectionOn 开关、车辆数组本地通道（CRUD + 默认车迁移）。进程退出即清空——真持久化归 SettingsService（TODO(contract)）。SettingsPage/StationDetailPage/ReservationConfirmPage 三处消费。
-- **二级密码拦截位决策**：旧版 widgets 口径="关键操作（预约/取消）"且从未实装拦截；用户指定改放"我的→设置"入口（设置提示文案随实装改为"进入「我的 → 设置」将要求输入二级密码"）。预约/取消位如需拦截，服务桥落地后可在此基础上二次开启。
+- **二级密码拦截位决策（已被二轮口径倒转，留档）**：功能增加批曾按当时用户指定把拦截放"我的→设置"入口（进页锁屏门）；二轮复测用户明确"逻辑完全颠倒"——现行口径为**登录环节按手机号拦截**（见 LoginPage 表 + 二轮修复批节），设置页锁屏门已整体撤销。预约/取消位如需拦截，服务桥落地后可在此基础上二次开启。
 - **widgets 锚点全对账**（本轮 method：widgets 页 `setObjectName` 全量 ∖ QML `objectName` 全量）：交互锚点 40+ 处逐字对齐（改名/补名，明细见 commit message）；**未采用同名的剩余项=三类**：①布局容器（Scroll/Stack/Splitter/Pane——QML 声明式列表无此物）；②成员3 域（ui*/recharge*/wallet/homeShell/appRoot）；③被更好形态吸收（订单页 loading/error 归母页 moduleNotice、导航 map 占位=StationMapItem、详情 loading 态并入 detailNotice 文案）——不算缺失。
+
+## 二轮修复批（98c9b6b，用户二轮复测——三截图+六条指令，全部增量修改，配色/圆角/绿色主按钮未动）
+
+- **二级密码倒转**：设置页进页锁屏门整体撤销（`secondPasswordGate` 删除，原位置留口径注释）；LoginPage 新增密码行 `secondPasswordEdit`（仅"设过密码+开启保护"的手机号命中出现）+ submit() 前置门（空/错两提示）；StationState 增加 `passPhone` 绑定与 `noteLoginPhone/accountPhone`——设置页存密码时绑最近登录号。服务通道优先（hasProtectionPassword+protectionEnabled 皆真=任意号需密码），库通道兜底。
+- **整页滚动**：登录/预约确认/预约模块/订单四页根容器套 Flickable（用户点名三页全覆盖+订单页连带）；找站/详情列表本在 ListView 内滚动，无需外层。
+- **顶栏修复（成员3 文件两处最小改动，用户点名"搜索框/通知图标/返回按钮"）**：① `Shell.searchVisible` 改绑 `stack.currentItem.route`（原绑 `shell.route` 仅启动求值一次→登录后搜索框/铃铛永不再显示）；② `onSearchSubmitted` 改 `App.navigate("station", keyword)`（原丢关键词）；③ TopNavBar 返回钮容器 1×1 Item→`backText.implicitWidth × nav.implicitHeight`（原 verticalCenter 致文字上半截越出导航条被窗口顶缘裁切）。均仅改绑定/布局，样式 token 不动。
+- **演示数据通道（找站/详情/预约模块三页）**：桥缺位 catch→`loadDemo()`，页内标"演示数据（…桥未就绪，接入后自动替换）"，真数据信号到达 demo=false 自动退位；**真实失败信号（onQueryFailed/onDetailFailed/onListFailed）保留失败 UI+重试**（用户要求异常页不撤）。找站 4 站带经纬度→地图自动布点（用户点名"地图渲染排查"结论：地图组件无 bug，全红因列表无数据可布点）；关键词搜索在演示通道按名称/地址过滤（搜索链路完整可验）。
+- **订单页 polish 死循环**：三栏 Column 内撑位 `Item{height: parent.height-200}` 绑 parent.height→布局循环求值（冒烟 06 timeout 根因，demo 记录渲染后暴露），删除。
+- **文字裁切族**：Text 默认 NoWrap——homeDemoCaption/detailChargerSummaryLabel/moduleDemoCaption/orderModuleCaption×2 补 width+WordWrap；找站筛选栏套横向 Flickable（"⛏ 筛选"钮原被裁半截，与返回钮同类缺陷）。
+- 冒烟：11 路由 offscreen rc=0 日志门零告警（截图成批同尺寸=克隆 Shell 补丁被仓库版覆盖丢过，重跑 setup-smoke.sh 复原——QML 热加载、翻位表/arg 注入/自动登录三补丁必须在位）；密码流转断言 10/10（StationState.js node 直验）；qmllint 9 页零 Error；截图 12=登录页密码行形态（仅冒烟克隆临时强制 visible 拍摄，仓库绑定未动）。
 
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
@@ -120,7 +137,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 | FavoritesService | `contains(id)/toggle(id)/favoriteIds()/favoriteCount()` 全部 `Q_INVOKABLE`；`favoritesChanged` |
 | NotificationService | `notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
 | MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`（routeMap={polyline:[[lat,lng],…], distanceMeters, durationMinutes, steps:[{instruction,distanceMeters},…]}——导航页折线/距离/步骤三消费位已齐）、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |
-| Shell（非桥，路由表） | 追加 7 条路由 + migrated 翻位（见 HomeShell 节）；`onSearchSubmitted` 改 `App.navigate("station", keyword)` |
+| Shell（非桥，路由表） | 追加 7 条路由 + migrated 翻位（见 HomeShell 节）仍待成员3；`searchVisible` 绑当前页 route 与 `onSearchSubmitted→App.navigate("station", keyword)` 两处已由用户点名代修（98c9b6b）；TopNavBar 返回钮容器尺寸同批代修 |
 
 ## 验收自查（19:00 冲刺门）
 - [x] `--view=station`：地图示意+筛选栏渲染；列表区为设计内降级态"站点加载失败·站点查询桥未就绪（等待服务桥今晚补全）"
@@ -130,6 +147,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - [x] 每页根 objectName == 上表锚点
 - [x] 修正批 `55ef843`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
 - [x] 审计轮修正批：登录/退出在 mock（authService=nullptr）下兜底 `App.login()/logout()`（不再卡遮罩）；收藏页投影补 voltageBands 组；导航页存 `route.steps`（真实转向指引 + >15 段截断文案）；地图 hit-test 与 onPaint 界域同构（markers∪route、NaN 坐标天然跳）；卡内 anchors.fill 告警 9 处清理（ClickableCard/P.Card 同款：内容 default-property 进内部 Column，卡内锚点被忽略且逐实例告警）——ClickableCard 5 处（profile×2 实爆 + favorites/station/completed×3 潜伏）+ P.Card 4 处（notification delegate×1 + 订单页三栏卡×3，均桥落地/记录到达即爆）；改 Column 契约内 width 绑定、卡高交内容自然高，10 路由复跑零告警零报错
+- [x] 二轮修复批（98c9b6b）：二级密码倒转到登录环节/四页 Flickable/顶栏搜索·铃铛·返回钮修复/三页演示数据通道/订单页 polish 环/NoWrap 裁字族——11 路由 rc=0 零告警 + 密码断言 10/10 + qmllint 零 Error，详见 §二轮修复批
 
 ## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）
 QML 自 `CHARGING_QML_SOURCE_DIR` 文件系统加载（改 .qml 无需重编）；运行
