@@ -9,6 +9,7 @@
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QJsonDocument>
 #include <QQuickItemGrabResult>
 #include <QQuickStyle>
 #include <QQuickWindow>
@@ -38,6 +39,14 @@ int main(int argc, char* argv[])
 
     const QString shot = valueOf("--screenshot=");
     const QString view = valueOf("--view=");
+    // --arg=JSON: deep-link route parameter (map for detail/confirm pages,
+    // bare string for keyword args). Falls back to plain string if not JSON.
+    QVariant deepArg;
+    const QString argRaw = valueOf("--arg=");
+    if (!argRaw.isEmpty()) {
+        const QJsonDocument doc = QJsonDocument::fromJson(argRaw.toUtf8());
+        deepArg = doc.isNull() ? QVariant(argRaw) : QVariant(doc.toVariant());
+    }
     QSize size(420, 860);
     const QString sizeArg = valueOf("--size=");
     if (!sizeArg.isEmpty()) {
@@ -50,13 +59,16 @@ int main(int argc, char* argv[])
     charging::qml::QmlApp qmlApp;
     auto* ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("chargingView"), view);
+    ctx->setContextProperty(QStringLiteral("chargingArg"), deepArg);
     ctx->setContextProperty(QStringLiteral("App"), &qmlApp);
     // Contract §1 channel switch (tcp wiring is TODO(contract) — mock only now).
     ctx->setContextProperty(QStringLiteral("CHARGING_CHANNEL"),
                             qEnvironmentVariable("CHARGING_CHANNEL", "mock"));
     // Screenshot/demo convenience: deep links past the login gate ride the
-    // demo account in. "login"/"station" keep the gate for the real flow.
-    if (view != QLatin1String("login") && view != QLatin1String("station"))
+    // demo account in. "login"/"station" keep the gate for the real flow
+    // unless --logged-in is passed (lets shots exercise post-login routes).
+    if (view != QLatin1String("login") && view != QLatin1String("station")
+        || app.arguments().contains(QStringLiteral("--logged-in")))
         qmlApp.login(QStringLiteral("13800138000"));
     // CONTRACT.md §1: bare service names, objects pass through verbatim.
     ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());

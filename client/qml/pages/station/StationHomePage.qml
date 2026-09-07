@@ -21,7 +21,7 @@ Item {
     property string keyword: typeof arg === "string" ? arg : ""
     property var priceTiers: [-1, 100, 120, 150]
     property int priceMax: -1
-    property int sortMode: 0            // 0=空闲优先 1=距离最近
+    property int sortMode: 2            // 2=综合（服务端顺序，widgets 默认）0=空闲优先 1=距离最近
     property var criteria: ({ maxDistanceKm: 0, statuses: [], operators: [],
                               accessTypes: [], parkingFees: [], features: [],
                               chargerTypes: [], voltageBands: [] })
@@ -79,13 +79,14 @@ Item {
             }
             rows.push(s)
         }
-        rows.sort(page.sortMode === 1
-                  ? (a, b) => {
-                        const da = a.distanceMeters < 0 ? 1e12 : a.distanceMeters
-                        const db = b.distanceMeters < 0 ? 1e12 : b.distanceMeters
-                        return da - db
-                    }
-                  : (a, b) => b.availableChargers - a.availableChargers)
+        if (page.sortMode !== 2)   // 综合=保持服务端返回顺序（widgets 同语义）
+            rows.sort(page.sortMode === 1
+                      ? (a, b) => {
+                            const da = a.distanceMeters < 0 ? 1e12 : a.distanceMeters
+                            const db = b.distanceMeters < 0 ? 1e12 : b.distanceMeters
+                            return da - db
+                        }
+                      : (a, b) => b.availableChargers - a.availableChargers)
         stationModel.clear()
         for (const s of rows) {
             stationModel.append({
@@ -168,29 +169,43 @@ Item {
             }
         }
 
-        // 筛选操作栏
-        Row {
+        // 筛选操作栏（顺序对齐 widgets：三个排序 chip → 电价 caption → 组合框；
+        // ⛏筛选 是 QML 版弹层入口，widgets 走顶栏 filterRequested，Shell 无此入口故页内补位。
+        // Flow 自动换行：420 宽单行放不下六个控件，⛏ 曾被 Row 溢出裁掉）
+        Flow {
             objectName: "stationFilterBar"
             width: parent.width
             spacing: P.Style.spaceSm
+            P.ActionButton {
+                objectName: "sortRecommendedButton"
+                variant: "chip"
+                selected: page.sortMode === 2
+                text: "综合"
+                onClicked: { page.sortMode = 2; page.project() }
+            }
+            P.ActionButton {
+                objectName: "sortAvailableButton"
+                variant: "chip"
+                selected: page.sortMode === 0
+                text: "空闲优先"
+                onClicked: { page.sortMode = 0; page.project() }
+            }
+            P.ActionButton {
+                objectName: "sortDistanceButton"
+                variant: "chip"
+                selected: page.sortMode === 1
+                text: "距离最近"
+                onClicked: { page.sortMode = 1; page.project() }
+            }
+            Text {
+                text: "电价"; font.pixelSize: P.Style.fontSm; color: P.Style.muted
+            }
             ComboBox {
                 id: priceCombo
                 objectName: "priceFilterComboBox"
                 width: 116
                 model: ["全部电价", "≤ ¥1.00", "≤ ¥1.20", "≤ ¥1.50"]
                 onActivated: idx => { page.priceMax = page.priceTiers[idx]; page.project() }
-            }
-            P.ActionButton {
-                objectName: "sortAvailableButton"
-                variant: page.sortMode === 0 ? "primary" : "chip"
-                text: "空闲优先"
-                onClicked: { page.sortMode = 0; page.project() }
-            }
-            P.ActionButton {
-                objectName: "sortDistanceButton"
-                variant: page.sortMode === 1 ? "primary" : "chip"
-                text: "距离最近"
-                onClicked: { page.sortMode = 1; page.project() }
             }
             P.ActionButton {
                 objectName: "advancedFilterButton"
@@ -202,6 +217,7 @@ Item {
 
         // 列表四态（Column 内余高：parent.height - y）
         Item {
+            id: stationListArea
             objectName: "stationListArea"
             width: parent.width
             height: parent.height - y
@@ -217,8 +233,11 @@ Item {
                 ListView {
                     id: stationList
                     objectName: "stationList"
-                    anchors.fill: parent
-                    anchors.margins: -P.Style.spaceSm
+                    // ListView 是 PullToRefreshArea 默认内容（Column）的子项：
+                    // anchors 在 Column 内被忽略 → 高度塌成默认 16（列表空白真凶）。
+                    // 显式给满铺尺寸（Column 宽=flick 宽=本 Item 宽）。
+                    width: stationListArea.width
+                    height: stationListArea.height
                     spacing: P.Style.spaceSm
                     clip: true
                     visible: viewState() === "list"

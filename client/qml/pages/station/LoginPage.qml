@@ -118,13 +118,8 @@ Item {
                 spacing: P.Style.spaceMd
 
                 Text { text: "手机号登录"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: "未注册的手机号将自动创建账号，登录后即可找站、预约与充电。"
-                    font.pixelSize: P.Style.fontSm; color: P.Style.muted
-                }
 
+                // 行序对齐 widgets：标题→手机号行→说明→按钮
                 Row {
                     width: parent.width          // 显式宽：否则子项引用 parent.width 成环（polish loop）
                     spacing: P.Style.spaceSm
@@ -143,6 +138,13 @@ Item {
                         // 号段校验交给 phoneOk()（IntValidator 装不下 1e10，超 qint32）
                         onAccepted: page.submit()
                     }
+                }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "未注册的手机号将自动创建账号，登录后即可找站、预约与充电。"
+                    font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
 
                 P.ActionButton {

@@ -78,6 +78,12 @@ Item {
                               + " · 预估 ¥" + page.money(modelData.estimatedFeeCents)
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
+                    Text {
+                        // widgets hintLabel 同文案（整卡可点→弹层，hint 提示入口）
+                        width: parent.width; horizontalAlignment: Text.AlignRight
+                        text: "点击查看预约详情 ›"
+                        font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                    }
                 }
                 P.StatusTag {
                     anchors.verticalCenter: parent.verticalCenter

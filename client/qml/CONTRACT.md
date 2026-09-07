@@ -19,7 +19,10 @@ C++ 服务对象直接以 context property 注入根作用域，名字=类名首
 
 另有 `App` 对象：`App.currentUser`（登录态，`loginStateChanged()` 信号）、`App.navigate(route[, arg])` / `App.back()`（`arg` 可选路由参数，如 order_detail 的订单 map，页面用 `property var arg` 接收）、`App.showToast(text, tone)`（tone 同 §2 StatusTag）。通道选择 `CHARGING_CHANNEL=mock|tcp`，默认 mock。
 
-> **说明（2026-09-06）**：C++ 服务方法是普通成员函数（非 slot）且信号载荷是裸 struct——QML 两头都不可见。故 `walletService`/`orderService`/`chargingService` 注入的是**同名转发桥**（`service_bridges.h`）：方法名/信号名逐字不变，仅载荷改为 map/list、枚举参数改为小写字符串。**`fetchOrders` 的 filter 取 `"all" | "charging" | "waiting_payment" | "completed"`**。其余服务（station/reservation/…）今晚按同样模式补桥，补前直接调用会失败——页面照常按契约名盲写。
+> **说明（2026-09-06 立，2026-09-07 补全）**：C++ 服务方法是普通成员函数（非 slot）且信号载荷是裸 struct——QML 两头都不可见。故上下文注入的全部是**同名转发桥**（`service_bridges.h`）：方法名/信号名逐字不变，仅载荷改为 map/list、枚举参数改为小写字符串。**`fetchOrders` 的 filter 取 `"all" | "charging" | "waiting_payment" | "completed"`**。station/reservation/settings/favorites/notification 五域已于 09-07 按同模式补桥落地。三个桥侧口径特例：
+> - **`fetchDetailById(stationId, distanceMeters)`**（新增桥方法）：裸服务 `fetchDetail(Station,int)` 的 struct 参数 QML 传不动，桥按 id 从上次 `querySucceeded` 缓存重建 Station 再转发；缓存缺失时以占位 Station（仅 id）转发，mock 服务按 id 查自有数据。
+> - **`reservationService.submit(map)`**：`startMinutes`/`endMinutes` 为**当日分钟位**（本地，与推荐时段同基准），桥据今日重建 QDateTime 再转 UTC；`end < start` 视作跨零点顺延一天（与 widgets `QDateTimeEdit` 口径一致）。
+> - **`settingsService` 的 `second*` 别名**（`hasSecondPassword`/`setSecondPassword`/`verifySecondPassword`）→ 裸服务 `protection*`，语义同一（二级保护密码）；`notificationEnabled(key)` 的 key ∈ `"expiry" | "success" | "cancel"`。
 >
 > **OrderBridge 增补（2026-09-06 PR #33 两轮评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它，且**按 type 过滤**（计数类失败别动列表在途状态）。②补 `isFetchingOrders()`：服务层对在途重复提交**静默丢弃且无回执**，响应也不携带请求参数——因此**页面必须单飞并记住在途身份** `(filter, page, first)`：在途时新指令只登记意图（切筛选→落定判过期丢弃+重查；他页占用通道→queuedReload），**绝不允许清掉在途请求的状态或应用过期响应**。③分页口径：`loadedPage`（已成功页）与 `reqPage`（在途页）分离，加载更多永远发 `loadedPage+1`，失败只置重试态、页码不漂移；接 `ordersLoaded` 第三参 `hasMore`。④头像键双源治理：`ProfileEditPage.avatarChoices` 是 widgets `AvatarLibrary::all()` 的 QML 镜像，`test_qml_client_pages` 逐键对拍（同三方字面量+测试钉死模式）；展示 glyph 与提交 key 分离，`""`=默认昵称首字头像。⑤余额同步矩阵：改 `balanceCents` 的三事件 `profileLoaded` / `rechargeCompleted` / `paymentCompleted` 都必须在 `QmlApp` 回写并 `userChanged`，顶栏才不滞后。
 

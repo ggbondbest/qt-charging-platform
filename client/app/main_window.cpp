@@ -18,6 +18,28 @@ namespace {
 const QString kDefaultServerHost = QStringLiteral("127.0.0.1");
 constexpr quint16 kDefaultServerPort = 9527;
 
+// 稳定尺寸页面栈：QStackedLayout 的 sizeHint/minimumSize 取**所有页的最大值**
+// （Qt 设计如此），且页面数据异步加载后 updateGeometry() 会向上传播——导致
+// 切换页面/登录后窗口被最大页的 min 强制撑大、退出时又弹回，桌面演示时明显
+// 跳动。覆写这两个虚函数把中心件对 QMainWindow 布局报告的尺寸钉在固定手机上
+// 视口，页面自身内容变化不再驱动窗口尺寸；页内长内容本就应落在滚动容器里。
+class StableSizeStack : public QStackedWidget
+{
+public:
+    using QStackedWidget::QStackedWidget;
+
+    QSize sizeHint() const override { return QSize(kViewportWidth, kViewportHeight); }
+    QSize minimumSizeHint() const override
+    {
+        // 仍允许演示时自由缩放到合理下限，不至于卡死窗口管理器。
+        return {kViewportWidth - 60, kViewportHeight - 340};
+    }
+
+private:
+    static constexpr int kViewportWidth = 420;
+    static constexpr int kViewportHeight = 860;
+};
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -46,7 +68,7 @@ MainWindow::MainWindow(const QString& hostName, quint16 port, QWidget* parent)
     connection_ = new network::ClientConnection(hostName, port, this);
     authService_ = new services::station::AuthService(connection_, this);
 
-    pageStack_ = new QStackedWidget(this);
+    pageStack_ = new StableSizeStack(this);
     pageStack_->setObjectName(QStringLiteral("mainPageStack"));
     pageStack_->setStyleSheet(
         QStringLiteral("#mainPageStack { background: #F4F6F8; }"));
