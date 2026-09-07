@@ -80,7 +80,9 @@ Window {
             width: parent.width
             user: App && App.currentUser ? App.currentUser : null
             backVisible: stack.depth > 1
-            searchVisible: shell.route === "station"
+            // 搜索框/铃铛随"当前页"显隐（原绑 shell.route——只在启动时求值一次，
+            // 从登录进入 station 后不更新，顶栏搜索与通知图标消失；用户实测指定修复）。
+            searchVisible: stack.currentItem && stack.currentItem.route === "station"
             onBackRequested: shell.pop()
             // 映射稿 HomeShell 节：搜索关键词经路由 arg 注入站点首页（arg 作关键词入口）。
             onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }

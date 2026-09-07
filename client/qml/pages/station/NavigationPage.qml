@@ -105,10 +105,10 @@ Item {
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
 
-        Text { text: "导航前往充电桩"
+        Text { objectName: "navigationPageTitle"; text: "导航前往充电桩"
             font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
         Text {
-            objectName: "navigationCaption"
+            objectName: "navigationCaptionLabel"
             width: parent.width; wrapMode: Text.WordWrap
             text: page.caption
             font.pixelSize: P.Style.fontSm; color: P.Style.faint

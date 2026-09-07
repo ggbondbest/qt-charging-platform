@@ -89,6 +89,128 @@ class AdminServiceTest final : public QObject
         return details.join(QLatin1Char('\n'));
     }
 private slots:
+    void summariesUseFullFilteredScope()
+    {
+        const QStringList entities{"stations", "chargers",  "users",
+                                   "orders",   "recharges", "operation_logs"};
+        const QStringList counts{"totalStations",   "totalChargers", "totalUsers",
+                                 "todayOrderCount", "todayCount",    "todayCount"};
+        for (int i = 0; i < entities.size(); ++i) {
+            const auto action = entities[i] + ".summary";
+            QVERIFY(ok(call(action)));
+            QCOMPARE(code(service_->handle(action, {})), QString("UNAUTHORIZED"));
+            QCOMPARE(code(call(action, {{"pageSize", 1}})), QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"unknown", true}})), QString("INVALID_ARGUMENT"));
+            const auto empty = data(call(action, {{"keyword", "no-such-summary-fixture"}}));
+            QCOMPARE(empty.value(counts[i]).toInteger(), qint64(0));
+            QCOMPARE(empty.value("timeZone").toString(), QString("Asia/Shanghai"));
+        }
+        const QJsonObject filter{{"stationId", "1"}, {"type", "FAST"}};
+        const auto listed = data(call("chargers.list", filter));
+        const auto summary = data(call("chargers.summary", filter));
+        QCOMPARE(summary.value("totalChargers").toInteger(), listed.value("total").toInteger());
+        const auto balances = data(call("users.summary"));
+        QCOMPARE(balances.value("totalBalanceCents").toInteger(),
+                 scalar("SELECT SUM(balance_cents) FROM users"));
+        QCOMPARE(code(call("orders.summary", {{"createdAtFrom", "bad-date"}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("chargers.summary", {{"status", "INVALID"}})),
+                 QString("INVALID_ARGUMENT"));
+    }
+    void summariesUseShanghaiCalendarBoundaries()
+    {
+        QSqlQuery q(db_.database());
+        // UTC August 31 at 16:00 is Shanghai September 1 at midnight.
+        QVERIFY(q.exec("UPDATE users SET created_at='2026-08-31T15:59:59.999Z'"));
+        QVERIFY(q.exec("UPDATE users SET created_at='2026-08-31T16:00:00.000Z' WHERE id=1"));
+        const auto now = QDateTime::fromString("2026-08-31T18:00:00.000Z", Qt::ISODateWithMs);
+        QCOMPARE(repo_->summary("users", {}, now).value("todayNewUsers").toInteger(), qint64(1));
+        QVERIFY(q.exec("UPDATE recharge_records SET created_at='2026-08-31T16:00:00.000Z'"));
+        auto recharges = repo_->summary("recharges", {}, now);
+        QCOMPARE(recharges.value("todayCount").toInteger(),
+                 scalar("SELECT COUNT(*) FROM recharge_records"));
+        QCOMPARE(recharges.value("monthAmountCents").toInteger(),
+                 scalar("SELECT COALESCE(SUM(amount_cents),0) FROM recharge_records WHERE "
+                        "status='SUCCESS'"));
+        QVERIFY(
+            q.exec("INSERT INTO "
+                   "orders(order_no,user_id,charger_id,status,unit_price_cents_per_kwh,amount_"
+                   "cents,started_at,stopped_at,paid_at,created_at) "
+                   "VALUES('SUMMARY-PAID',1,1,'COMPLETED',120,789,'2026-08-31T15:00:00.000Z','2026-"
+                   "08-31T16:00:00.000Z','2026-08-31T16:00:00.000Z','2026-08-31T15:00:00.000Z')"));
+        auto orders = repo_->summary("orders", {}, now);
+        QCOMPARE(orders.value("todayOrderCount").toInteger(), qint64(0));
+        QCOMPARE(orders.value("todayRevenueCents").toInteger(), qint64(789));
+        QCOMPARE(orders.value("monthRevenueCents").toInteger(), qint64(789));
+        QCOMPARE(orders.value("totalRevenueCents").toInteger(), qint64(789));
+        const auto dashboard = repo_->dashboard(7, now);
+        QCOMPARE(dashboard.value("todayRevenueCents").toInteger(), qint64(789));
+        QCOMPARE(dashboard.value("monthRevenueCents").toInteger(), qint64(789));
+        QCOMPARE(dashboard.value("totalRevenueCents").toInteger(), qint64(789));
+        const auto lastDay = dashboard.value("trend").toArray().last().toObject();
+        QCOMPARE(lastDay.value("date").toString(), QString("2026-09-01"));
+        QCOMPARE(lastDay.value("revenueCents").toInteger(), qint64(789));
+        QCOMPARE(lastDay.value("completedOrderCount").toInteger(), qint64(1));
+        // List-style createdAt filtering intersects paidAt accounting, not replaces it.
+        orders = repo_->summary("orders", {{"createdAtFrom", "2026-08-31T16:00:00.000Z"}}, now);
+        QCOMPARE(orders.value("todayRevenueCents").toInteger(), qint64(0));
+        QVERIFY(q.exec(
+            "UPDATE orders SET paid_at='2026-09-01T16:00:00.000Z' WHERE order_no='SUMMARY-PAID'"));
+        QCOMPARE(repo_->summary("orders", {}, now).value("todayRevenueCents").toInteger(),
+                 qint64(0));
+    }
+    void summaryEmptyScopeAndIntegerPrecision()
+    {
+        for (const auto& entity :
+             {"stations", "chargers", "users", "orders", "recharges", "operation_logs"}) {
+            const auto result =
+                data(call(QString(entity) + ".summary", {{"keyword", "missing-fixture"}}));
+            QVERIFY(!result.isEmpty());
+            for (auto it = result.begin(); it != result.end(); ++it)
+                if (it.value().isDouble())
+                    QCOMPARE(it.value().toInteger(), qint64(0));
+        }
+        QSqlQuery q(db_.database());
+        QVERIFY(q.exec("UPDATE users SET balance_cents=3000000000 WHERE id=1"));
+        QCOMPARE(data(call("users.summary")).value("totalBalanceCents").toInteger(),
+                 scalar("SELECT SUM(balance_cents) FROM users"));
+        const auto filtered = data(call("users.summary", {{"keyword", "13800138000"}}));
+        QCOMPARE(filtered.value("totalUsers").toInteger(), qint64(1));
+        QCOMPARE(filtered.value("totalBalanceCents").toInteger(), qint64(3000000000LL));
+        QVERIFY(!QJsonDocument(filtered).toJson().contains("13800138000"));
+    }
+    void summaryStatusAndInitiatorAccounting()
+    {
+        const auto now = QDateTime::fromString("2026-09-01T04:00:00.000Z", Qt::ISODateWithMs);
+        const auto chargers = repo_->summary("chargers", {}, now);
+        QCOMPARE(chargers.value("totalChargers").toInteger(), qint64(7));
+        QCOMPARE(chargers.value("onlineChargers").toInteger(), qint64(6));
+        QCOMPARE(chargers.value("faultChargers").toInteger(), qint64(1));
+        QCOMPARE(chargers.value("totalChargeCount").toInteger(), qint64(62));
+        const auto stations = repo_->summary("stations", {{"keyword", "STA-DEMO-001"}}, now);
+        QCOMPARE(stations.value("totalStations").toInteger(), qint64(1));
+        QCOMPARE(stations.value("totalChargers").toInteger(), qint64(3));
+        QCOMPARE(stations.value("onlineChargers").toInteger(), qint64(3));
+        QSqlQuery q(db_.database());
+        QVERIFY(q.exec("INSERT INTO "
+                       "recharge_records(transaction_no,user_id,amount_cents,balance_after_cents,"
+                       "status,created_at) "
+                       "VALUES('FAILED-SUMMARY',1,900,10000,'FAILED','2026-09-01T01:00:00.000Z')"));
+        const auto recharge = repo_->summary("recharges", {}, now);
+        QCOMPARE(recharge.value("todayCount").toInteger(), qint64(2));
+        QCOMPARE(recharge.value("failedCountToday").toInteger(), qint64(1));
+        QCOMPARE(recharge.value("todayAmountCents").toInteger(), qint64(10000));
+        QVERIFY(q.exec("DELETE FROM operation_logs"));
+        QVERIFY(
+            q.exec("INSERT INTO operation_logs(admin_id,action,target_type,created_at) "
+                   "VALUES(1,'TEST','USER','2026-09-01T01:00:00.000Z'),(NULL,'TEST','USER','2026-"
+                   "09-01T01:00:00.000Z'),(NULL,'TEST','USER','2026-08-31T15:59:59.999Z')"));
+        const auto logs = repo_->summary("operation_logs", {}, now);
+        QCOMPARE(logs.value("todayCount").toInteger(), qint64(2));
+        QCOMPARE(logs.value("monthCount").toInteger(), qint64(2));
+        QCOMPARE(logs.value("adminInitiatedCountToday").toInteger(), qint64(1));
+        QCOMPARE(logs.value("systemInitiatedCountToday").toInteger(), qint64(1));
+    }
     void init()
     {
         QVERIFY(db_.open(":memory:", true));
@@ -105,9 +227,9 @@ private slots:
     }
     void authenticationAndRevocation()
     {
-        for (const auto& action :
-             {"dashboard.get", "stations.list", "users.get", "orders.list", "recharges.list",
-              "operation_logs.list", "operation_logs.get", "station.create", "user.status", "charger.restart"})
+        for (const auto& action : {"dashboard.get", "stations.list", "users.get", "orders.list",
+                                   "recharges.list", "operation_logs.list", "operation_logs.get",
+                                   "station.create", "user.status", "charger.restart"})
             QCOMPARE(code(service_->handle(action, {}, "forged")), QString("UNAUTHORIZED"));
         QCOMPARE(
             code(service_->handle("auth.login", {{"username", "admin"}, {"password", "wrong"}})),
@@ -144,7 +266,8 @@ private slots:
     }
     void queriesValidateAndMask()
     {
-        for (const auto& entity : {"stations", "chargers", "users", "orders", "recharges", "operation_logs"}) {
+        for (const auto& entity :
+             {"stations", "chargers", "users", "orders", "recharges", "operation_logs"}) {
             const QString list = QString(entity) + ".list";
             QVERIFY(ok(call(list)));
             QCOMPARE(code(call(list, {{"page", 0}})), QString("INVALID_ARGUMENT"));
@@ -337,9 +460,9 @@ private slots:
         QVERIFY(q.exec("DELETE FROM recharge_records"));
         QCOMPARE(data(call("operation_logs.list")).value("total").toInt(), 0);
         for (int i = 1; i <= 4; ++i) {
-            const QString time = i == 1 ? "2026-09-06T00:00:00.000Z" :
-                                 i == 4 ? "2026-09-04T23:59:59.999Z" :
-                                          "2026-09-05T00:00:00.000Z";
+            const QString time = i == 1   ? "2026-09-06T00:00:00.000Z"
+                                 : i == 4 ? "2026-09-04T23:59:59.999Z"
+                                          : "2026-09-05T00:00:00.000Z";
             q.prepare("INSERT INTO recharge_records(id,transaction_no,user_id,amount_cents,"
                       "balance_after_cents,status,created_at) VALUES(?,?,1,100,100,'SUCCESS',?)");
             q.addBindValue(i);
@@ -358,7 +481,8 @@ private slots:
             const QString action = entity + ".list";
             QJsonObject filter{{"createdAtFrom", "2026-09-05T00:00:00.000Z"},
                                {"createdAtTo", "2026-09-06T00:00:00.000Z"},
-                               {"sort", "createdAtDesc"}, {"pageSize", 1}};
+                               {"sort", "createdAtDesc"},
+                               {"pageSize", 1}};
             if (entity == "recharges") {
                 filter.insert("userId", "1");
                 filter.insert("status", "SUCCESS");
@@ -372,36 +496,68 @@ private slots:
             auto result = call(action, filter);
             QVERIFY(ok(result));
             QCOMPARE(data(result).value("total").toInt(), 2);
-            QCOMPARE(data(result).value("items").toArray().first().toObject().value("id").toString(), QString("3"));
+            QCOMPARE(
+                data(result).value("items").toArray().first().toObject().value("id").toString(),
+                QString("3"));
             filter.insert("page", 2);
             result = call(action, filter);
-            QCOMPARE(data(result).value("items").toArray().first().toObject().value("id").toString(), QString("2"));
+            QCOMPARE(
+                data(result).value("items").toArray().first().toObject().value("id").toString(),
+                QString("2"));
             filter.insert("page", 3);
             QVERIFY(data(call(action, filter)).value("items").toArray().isEmpty());
-            QCOMPARE(data(call(action, {{"sort", "createdAtDesc"}})).value("items").toArray().first().toObject().value("id").toString(), QString("1"));
-            QCOMPARE(data(call(action, {{"createdAtTo", "2026-09-05T00:00:00.000Z"}})).value("total").toInt(), 1);
-            QCOMPARE(data(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"}})).value("total").toInt(), 1);
-            for (const auto& invalid : {QJsonValue("2026-09-05"), QJsonValue("bad"), QJsonValue(123), QJsonValue("2026-09-05T00:00:00+08:00")})
-                QCOMPARE(code(call(action, {{"createdAtFrom", invalid}})), QString("INVALID_ARGUMENT"));
-            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"}, {"createdAtTo", "2026-09-05T00:00:00.000Z"}})), QString("INVALID_ARGUMENT"));
-            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-05T00:00:00.000Z"}, {"createdAtTo", "2026-09-05T00:00:00.000Z"}})), QString("INVALID_ARGUMENT"));
-            QCOMPARE(code(call(action, {{"sort", "createdAtDesc;DELETE"}})), QString("INVALID_ARGUMENT"));
+            QCOMPARE(data(call(action, {{"sort", "createdAtDesc"}}))
+                         .value("items")
+                         .toArray()
+                         .first()
+                         .toObject()
+                         .value("id")
+                         .toString(),
+                     QString("1"));
+            QCOMPARE(data(call(action, {{"createdAtTo", "2026-09-05T00:00:00.000Z"}}))
+                         .value("total")
+                         .toInt(),
+                     1);
+            QCOMPARE(data(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"}}))
+                         .value("total")
+                         .toInt(),
+                     1);
+            for (const auto& invalid : {QJsonValue("2026-09-05"), QJsonValue("bad"),
+                                        QJsonValue(123), QJsonValue("2026-09-05T00:00:00+08:00")})
+                QCOMPARE(code(call(action, {{"createdAtFrom", invalid}})),
+                         QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-06T00:00:00.000Z"},
+                                        {"createdAtTo", "2026-09-05T00:00:00.000Z"}})),
+                     QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"createdAtFrom", "2026-09-05T00:00:00.000Z"},
+                                        {"createdAtTo", "2026-09-05T00:00:00.000Z"}})),
+                     QString("INVALID_ARGUMENT"));
+            QCOMPARE(code(call(action, {{"sort", "createdAtDesc;DELETE"}})),
+                     QString("INVALID_ARGUMENT"));
             QVERIFY(!QJsonDocument(call(action)).toJson().contains("13800138000"));
         }
         const auto logs = data(call("operation_logs.list", {{"targetId", "operation-2"}}));
         QCOMPARE(logs.value("total").toInt(), 1);
-        QCOMPARE(logs.value("items").toArray().first().toObject(), item(call("operation_logs.get", {{"id", "2"}})));
+        QCOMPARE(logs.value("items").toArray().first().toObject(),
+                 item(call("operation_logs.get", {{"id", "2"}})));
         QVERIFY(!QJsonDocument(logs).toJson().contains("secret"));
         QVERIFY(!item(call("operation_logs.get", {{"id", "2"}})).contains("details"));
-        QCOMPARE(data(call("operation_logs.list", {{"action", "' OR 1=1 --"}})).value("total").toInt(), 0);
+        QCOMPARE(
+            data(call("operation_logs.list", {{"action", "' OR 1=1 --"}})).value("total").toInt(),
+            0);
         QCOMPARE(code(call("operation_logs.list", {{"adminId", 1}})), QString("INVALID_ARGUMENT"));
-        QCOMPARE(code(call("operation_logs.list", {{"targetType", QString(33, 'x')}})), QString("INVALID_ARGUMENT"));
-        QCOMPARE(code(call("operation_logs.get", {{"id", "2"}, {"keyword", "x"}})), QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("operation_logs.list", {{"targetType", QString(33, 'x')}})),
+                 QString("INVALID_ARGUMENT"));
+        QCOMPARE(code(call("operation_logs.get", {{"id", "2"}, {"keyword", "x"}})),
+                 QString("INVALID_ARGUMENT"));
         QCOMPARE(code(call("operation_logs.edit", {{"id", "2"}})), QString("INVALID_ARGUMENT"));
         QVERIFY(q.exec("UPDATE operation_logs SET admin_id=NULL WHERE id=2"));
         QVERIFY(item(call("operation_logs.get", {{"id", "2"}})).value("adminId").isNull());
         QVERIFY(ok(call("station.create", newStation())));
-        QCOMPARE(data(call("operation_logs.list", {{"action", "station.create"}})).value("total").toInt(), 1);
+        QCOMPARE(data(call("operation_logs.list", {{"action", "station.create"}}))
+                     .value("total")
+                     .toInt(),
+                 1);
     }
     void stationWritesConflictAndDurableReplay()
     {
@@ -513,7 +669,7 @@ private slots:
         QVERIFY(ok(result));
         QCOMPARE(data(result).value("trend").toArray().size(), 30);
         QCOMPARE(data(result).value("todayRevenueCents").toInteger(), qint64(0));
-        QCOMPARE(data(result).value("timeZone").toString(), QString("UTC"));
+        QCOMPARE(data(result).value("timeZone").toString(), QString("Asia/Shanghai"));
         QCOMPARE(code(call("dashboard.get", {{"days", 8}})), QString("INVALID_ARGUMENT"));
         // The seed recharge is not counted as revenue. Only a paid order is.
         QSqlQuery q(db_.database());

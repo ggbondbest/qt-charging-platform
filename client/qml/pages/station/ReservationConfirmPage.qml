@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "StationState.js" as StationState
 
 // QML twin of widgets ReservationConfirmPage (objectName "reservationConfirmPage").
 // arg = 详情页 map：{stationId, stationName, priceCentsPerKwh, distanceMeters,
@@ -62,8 +63,10 @@ Item {
     property int vehicleIndex: -1
     function loadVehicles() {
         // TODO(contract): settingsService.vehicles() invokable（map 列表）。
-        try { page.vehicles = settingsService.vehicles() || [] }
-        catch (e) { page.vehicles = [] }
+        // 桥缺位期读 StationState（设置页添加的车辆跨页可见）。
+        let v
+        try { v = settingsService.vehicles() } catch (e) { v = undefined }
+        page.vehicles = (v !== undefined) ? v : StationState.vehicles
         vehicleIndex = -1
         for (let i = 0; i < vehicles.length; ++i)
             if (vehicles[i].isDefault) { vehicleIndex = i; break }
@@ -117,12 +120,21 @@ Item {
 
     Component.onCompleted: { loadVehicles(); applyRecommend() }
 
-    Column {
+    // 整页可上下拖拽（用户二轮指定）：内容超视口即滚动，提交/关闭钮始终可达。
+    Flickable {
         anchors.fill: parent
-        anchors.margins: P.Style.spaceLg
-        spacing: P.Style.spaceMd
+        contentWidth: width
+        contentHeight: confirmCol.height + 2 * P.Style.spaceLg
+        clip: true
 
-        Text { objectName: "confirmTitle"; text: "预约确认"
+        Column {
+            id: confirmCol
+            x: P.Style.spaceLg
+            y: P.Style.spaceLg
+            width: parent.width - 2 * P.Style.spaceLg
+            spacing: P.Style.spaceMd
+
+        Text { objectName: "reservationConfirmTitle"; text: "预约确认"
             font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
 
         // 上下文信息卡
@@ -159,7 +171,7 @@ Item {
                     Text { anchors.verticalCenter: parent.verticalCenter; width: 100
                         text: "预约车辆"; font.pixelSize: P.Style.fontMd; color: P.Style.muted }
                     ComboBox {
-                        objectName: "vehicleComboBox"
+                        objectName: "reservationVehicleComboBox"
                         width: parent.width - 100 - parent.spacing
                         enabled: !page.busy && page.vehicles.length > 0
                         model: {
@@ -205,7 +217,7 @@ Item {
                 }
 
                 P.ActionButton {
-                    objectName: "recommendedButton"
+                    objectName: "useRecommendedSlotButton"
                     variant: "secondary"
                     text: page.recommendCaption || "✨ 使用系统推荐时段"
                     enabled: !page.busy
@@ -213,7 +225,7 @@ Item {
                 }
 
                 Text {
-                    objectName: "feeLabel"
+                    objectName: "reservationFeeLabel"
                     width: parent.width; wrapMode: Text.WordWrap
                     text: page.canSubmit || page.busy
                           ? "预估费用 ≈ ¥" + (page.feeCents() / 100).toFixed(2)
@@ -223,7 +235,7 @@ Item {
                     font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
                 }
                 Text {
-                    objectName: "messageLabel"
+                    objectName: "reservationMessageLabel"
                     width: parent.width; wrapMode: Text.WordWrap
                     text: page.validationMessage
                     font.pixelSize: P.Style.fontSm
@@ -237,19 +249,20 @@ Item {
             width: parent.width
             spacing: P.Style.spaceMd
             P.ActionButton {
-                objectName: "confirmCloseButton"
+                objectName: "reservationCloseButton"
                 variant: "ghost"; text: "关闭"
                 width: (parent.width - parent.spacing) / 2
                 onClicked: { if (App) App.back() }
             }
             P.ActionButton {
-                objectName: "confirmSubmitButton"
+                objectName: "reservationConfirmButton"
                 variant: "primary"
                 text: page.busy ? "提交中…" : "确认预约"
                 width: (parent.width - parent.spacing) / 2
                 enabled: page.canSubmit
                 onClicked: page.confirm()
             }
+        }
         }
     }
 
@@ -279,7 +292,7 @@ Item {
                 width: parent.width
                 spacing: P.Style.spaceSm
                 P.ActionButton {
-                    objectName: "goNavigateButton"
+                    objectName: "goChargeButton"
                     variant: "primary"; text: "现在前往"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: {

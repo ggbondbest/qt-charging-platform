@@ -211,7 +211,8 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
         const auto parts = action.split(QLatin1Char('.'));
         require(parts.size() == 2);
         const QString entity = parts.first(), operation = parts.last();
-        if (operation == QStringLiteral("list") || operation == QStringLiteral("get")) {
+        if (operation == QStringLiteral("list") || operation == QStringLiteral("get") ||
+            operation == QStringLiteral("summary")) {
             require(QStringList{QStringLiteral("stations"), QStringLiteral("chargers"),
                                 QStringLiteral("users"), QStringLiteral("orders"),
                                 QStringLiteral("recharges"), QStringLiteral("operation_logs")}
@@ -223,6 +224,11 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                 QStringList allowed{QStringLiteral("keyword"), QStringLiteral("status"),
                                     QStringLiteral("page"), QStringLiteral("pageSize"),
                                     QStringLiteral("sort")};
+                if (operation == QStringLiteral("summary")) {
+                    allowed.removeAll(QStringLiteral("page"));
+                    allowed.removeAll(QStringLiteral("pageSize"));
+                    allowed.removeAll(QStringLiteral("sort"));
+                }
                 if (entity == QStringLiteral("chargers"))
                     allowed << QStringLiteral("stationId") << QStringLiteral("type")
                             << QStringLiteral("abnormalOnly");
@@ -296,7 +302,8 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     choice(p, QStringLiteral("status"), statuses.value(entity));
                 }
             }
-            return success(repository_->read(entity, p));
+            return success(operation == QStringLiteral("summary") ? repository_->summary(entity, p)
+                                                                  : repository_->read(entity, p));
         }
         require(QStringList{QStringLiteral("station.create"), QStringLiteral("station.edit"),
                             QStringLiteral("station.status"), QStringLiteral("user.status"),
