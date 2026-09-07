@@ -3,10 +3,16 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 
 // QML twin of widgets StationHomePage (objectName "stationHomePage" kept).
-// 自上而下：地图示意（StationMapItem，真 WebEngine 图=明天）→ 筛选操作栏
-// （排序 chips + 电价下拉 + 高级筛选入口）→ 站点卡片 ListView（星星收藏）。
-// 三源投影（关键词/电价/8 组条件）在 QML 侧复现 applyStationFilter 语义；
-// 服务桥未补前所有调用按契约名盲写（TODO(contract) 见 docs/design/qml-station-mapping.md）。
+//
+// 2026-09-08 设计轮（用户指定"与其他页面 ui 风格相称 + 按钮布局充满设计感"）：
+// ① 出血式 hero 绿渐变带（成员3 #41 语言：heroFrom→heroTo、fontHero、统计大字），
+//    关键词/统计一目了然；② map⇄list 分段切换（EV 充电 app 通例）：列表态=紧凑地图
+//    +全列表，地图态=大地图+选中站点 peek 浮卡（marker↔卡片双向联动保留）；
+// ③ 筛选整合进单行胶囊工具栏：排序三 chip + 电价 + 漏斗（激活筛选计数徽标），
+//    替代原 Flow 散排（曾裁掉 ⛏ 的那条）；④ 站点卡：价格大字右挂 + 空闲比例条
+//    （可用性色彩），状态/收藏星锚点不变。
+// 三源投影（关键词/电价/8 组条件）保持 widgets applyStationFilter 语义；
+// 全部 objectName 锚点保留（真点击回归 test_qml_station_interactions 依赖）。
 Item {
     id: page
     objectName: "stationHomePage"
@@ -30,6 +36,7 @@ Item {
     property bool loaded: false         // 状态门（缺陷4 模式）：未落定不进"空"
     property bool failed: false
     property int selectedMarker: -1
+    property string viewMode: "list"    // "list" | "map"（分段切换，默认列表保原口径）
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
@@ -40,6 +47,28 @@ Item {
     function viewState() {
         if (!loaded) return failed ? "error" : "loading"
         return stationModel.count > 0 ? "list" : "empty"
+    }
+    function activeFilterCount() {   // 漏斗徽标：激活的筛选组数（排序不算）
+        const c = page.criteria
+        let n = 0
+        if (page.priceMax > 0) ++n
+        if (c.maxDistanceKm > 0) ++n
+        n += (c.statuses.length > 0) + (c.operators.length > 0) + (c.accessTypes.length > 0)
+           + (c.parkingFees.length > 0) + (c.features.length > 0)
+           + (c.chargerTypes.length > 0) + (c.voltageBands.length > 0)
+        return n
+    }
+    // hero 统计（当前投影结果的实时聚合）
+    readonly property int statAvailable: {
+        let n = 0
+        for (let i = 0; i < stationModel.count; ++i) n += stationModel.get(i).availableChargers
+        return viewState() === "list" ? n : 0
+    }
+    readonly property real statAvgPrice: {
+        if (stationModel.count === 0) return 0
+        let sum = 0
+        for (let i = 0; i < stationModel.count; ++i) sum += stationModel.get(i).priceCentsPerKwh
+        return sum / stationModel.count / 100
     }
 
     function refresh() {
@@ -139,6 +168,8 @@ Item {
                 operatorName: s.operatorName || "", features: (s.features || []).join("·")
             })
         }
+        // 投影后选中索引越界回退（筛选把选中站滤掉时不打断 peek 显示）
+        if (page.selectedMarker >= stationModel.count) page.selectedMarker = -1
     }
     function anyFilterActive() {
         const c = page.criteria
@@ -156,9 +187,12 @@ Item {
         project()
     }
     function clearKeywordAndSearch() { page.keyword = ""; refresh() }
-    // 供壳顶栏漏斗接线（Shell.qml onFilterRequested 空桩注释点名 member 2 域）：
-    // 成员3 一行接通 `stack.currentItem.openAdvancedFilter && stack.currentItem.openAdvancedFilter()` 即活。
+    // 供壳顶栏漏斗接线（Shell.qml onFilterRequested）：一行接通即活。
     function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
+    function focusStation(index) {     // 列表→marker / marker→列表 双向联动共用
+        page.selectedMarker = index
+        stationList.positionViewAtIndex(index, ListView.Center)
+    }
 
     Connections {
         target: stationQueryService
@@ -180,83 +214,314 @@ Item {
         target: favoritesService
         function onFavoritesChanged() { page.project() }   // 重算星星绑定
     }
-    // 壳顶栏搜索→路由参数（Shell 接线待成员3 改 navigate("station", kw)，
-    // 现按 arg 变更响应）。
+    // 壳顶栏搜索→路由参数（arg 变更响应）。
     onArgChanged: { const k = typeof arg === "string" ? arg : ""; if (k !== keyword) { keyword = k; refresh() } }
 
     Component.onCompleted: refresh()
 
     Column {
+        id: rootCol
         anchors.fill: parent
         anchors.margins: P.Style.spaceLg
-        spacing: P.Style.spaceMd
+        spacing: P.Style.spaceSm
 
-        // 地图示意（选卡联动高亮；真地图=明天 WebEngine 决策）
-        StationMapItem {
-            objectName: "stationMapPanel"
-            width: parent.width
-            height: 130
-            markers: {
-                const out = []
-                for (let i = 0; i < stationModel.count; ++i) {
-                    const r = stationModel.get(i)
-                    out.push({ lat: r.lat, lng: r.lng, label: r.name, selected: i === page.selectedMarker })
-                }
-                return out
+        // ---------- ① hero 渐变带（出血到左右缘，同 ProfilePage 口径） ----------
+        Rectangle {
+            objectName: "stationHeroBand"
+            x: -P.Style.spaceLg
+            width: rootCol.width + P.Style.spaceLg * 2
+            height: 96
+            radius: 0
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: P.Style.heroFrom }
+                GradientStop { position: 1.0; color: P.Style.heroTo }
             }
-            onMarkerClicked: index => {
-                page.selectedMarker = index
-                stationList.positionViewAtIndex(index, ListView.Center)
+            // 右缘大闪电低透明装饰（只此一处的点缀）
+            Text {
+                anchors.right: parent.right; anchors.rightMargin: 14
+                anchors.verticalCenter: parent.verticalCenter
+                text: "⚡"; font.pixelSize: 64; opacity: 0.16
+                color: P.Style.surface
+            }
+            Column {
+                anchors.left: parent.left; anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: P.Style.spaceLg + 4
+                anchors.rightMargin: 80
+                spacing: 6
+                Text {
+                    objectName: "stationHeroTitle"
+                    text: page.keyword.length > 0 ? "搜索：" + page.keyword : "附近充电站"
+                    width: parent.width; elide: Text.ElideRight
+                    font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
+                }
+                Row {
+                    spacing: P.Style.spaceLg
+                    Repeater {
+                        model: [
+                            { v: page.viewState() === "list" ? String(stationModel.count) : "--",
+                              c: "座电站" },
+                            { v: page.viewState() === "list" ? String(page.statAvailable) : "--",
+                              c: "枪空闲" },
+                            { v: page.viewState() === "list" && page.statAvgPrice > 0
+                                  ? "¥" + page.statAvgPrice.toFixed(2) : "--",
+                              c: "均价/kWh" },
+                        ]
+                        delegate: Column {
+                            spacing: 1
+                            Text { text: modelData.v; font.pixelSize: P.Style.fontLg2
+                                font.bold: true; color: P.Style.surface }
+                            Text { text: modelData.c; font.pixelSize: P.Style.fontSm
+                                color: P.Style.heroPhone }
+                        }
+                    }
+                }
             }
         }
 
-        // 筛选操作栏（顺序对齐 widgets：三个排序 chip → 电价 caption → 组合框；
-        // ⛏筛选 是 QML 版弹层入口，widgets 走顶栏 filterRequested，Shell 无此入口故页内补位。
-        // Flow 自动换行：420 宽单行放不下六个控件，⛏ 曾被 Row 溢出裁掉）
-        Flow {
-            objectName: "stationFilterBar"
+        // ---------- ② 分段切换 + 关键词清除（地图⇄列表，EV app 通例） ----------
+        Row {
+            objectName: "stationViewModeRow"
             width: parent.width
             spacing: P.Style.spaceSm
+            Rectangle {
+                width: 164; height: 36
+                radius: P.Style.radiusSm
+                color: P.Style.ghost
+                border.width: 1
+                border.color: P.Style.line
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    spacing: 0
+                    Repeater {
+                        model: [
+                            { obj: "viewModeListButton", text: "☰ 列表", mode: "list" },
+                            { obj: "viewModeMapButton",  text: "🗺 地图", mode: "map" },
+                        ]
+                        delegate: Rectangle {
+                            objectName: modelData.obj
+                            width: 77; height: 28
+                            radius: P.Style.radiusSm - 3
+                            color: page.viewMode === modelData.mode ? P.Style.surface : "transparent"
+                            border.width: page.viewMode === modelData.mode ? 1 : 0
+                            border.color: P.Style.brandEdge
+                            Behavior on color { ColorAnimation { duration: P.Style.motionEnabled ? 120 : 0 } }
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.text
+                                font.pixelSize: P.Style.fontSm
+                                font.bold: page.viewMode === modelData.mode
+                                color: page.viewMode === modelData.mode ? P.Style.brandDeep : P.Style.muted
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: page.viewMode = modelData.mode
+                            }
+                        }
+                    }
+                }
+            }
+            Item { width: parent.width - 164 - (clearKeywordButton.visible ? clearKeywordButton.width + P.Style.spaceSm : 0) - advancedFilterButton.width - P.Style.spaceSm; height: 1 }
             P.ActionButton {
-                objectName: "sortRecommendedButton"
-                variant: "chip"
-                selected: page.sortMode === 2
-                text: "综合"
-                onClicked: { page.sortMode = 2; page.project() }
-            }
-            P.ActionButton {
-                objectName: "sortAvailableButton"
-                variant: "chip"
-                selected: page.sortMode === 0
-                text: "空闲优先"
-                onClicked: { page.sortMode = 0; page.project() }
-            }
-            P.ActionButton {
-                objectName: "sortDistanceButton"
-                variant: "chip"
-                selected: page.sortMode === 1
-                text: "距离最近"
-                onClicked: { page.sortMode = 1; page.project() }
-            }
-            Text {
-                text: "电价"; font.pixelSize: P.Style.fontSm; color: P.Style.muted
-            }
-            ComboBox {
-                id: priceCombo
-                objectName: "priceFilterComboBox"
-                width: 116
-                model: ["全部电价", "≤ ¥1.00", "≤ ¥1.20", "≤ ¥1.50"]
-                onActivated: idx => { page.priceMax = page.priceTiers[idx]; page.project() }
-            }
-            P.ActionButton {
-                objectName: "advancedFilterButton"
+                id: clearKeywordButton
+                objectName: "clearKeywordButton"
                 variant: "ghost"
-                text: "⛏ 筛选"      // 原手绘漏斗图标位，明天换 icon 资源
+                visible: page.keyword.length > 0
+                text: "✕ " + (page.keyword.length > 6 ? page.keyword.slice(0, 6) + "…" : page.keyword)
+                height: 36
+                onClicked: page.clearKeywordAndSearch()
+            }
+            // 漏斗（含激活计数徽标）钉行尾——原 Flow 里被裁的 ⛏ 有了固定席位
+            P.ActionButton {
+                id: advancedFilterButton
+                objectName: "advancedFilterButton"
+                variant: page.activeFilterCount() > 0 ? "primary" : "ghost"
+                text: "⛏ 筛选"
+                height: 36
                 onClicked: filterDialog.openDialog(page.criteria)
+                Rectangle {
+                    objectName: "advancedFilterBadge"
+                    visible: page.activeFilterCount() > 0
+                    width: Math.max(18, badgeText.implicitWidth + 8); height: 18
+                    radius: 9
+                    color: P.Style.danger
+                    border.width: 2; border.color: P.Style.surface
+                    anchors.left: parent.right; anchors.leftMargin: -10
+                    anchors.top: parent.top; anchors.topMargin: -6
+                    Text {
+                        id: badgeText
+                        anchors.centerIn: parent
+                        text: String(page.activeFilterCount())
+                        font.pixelSize: 10; font.bold: true; color: P.Style.surface
+                    }
+                }
             }
         }
 
-        // 演示数据标注（同优惠券页口径：不冒充真实查询结果；NoWrap 会溢出裁字，补换行）
+        // ---------- ③ 地图：列表态紧凑条 / 地图态大图 + peek 卡 ----------
+        Rectangle {
+            id: mapHub
+            width: parent.width
+            height: page.viewMode === "map" ? 300 : 128
+            radius: P.Style.radiusLg
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+            clip: true
+            Behavior on height {
+                NumberAnimation { duration: P.Style.motionEnabled ? P.Style.durEnter : 0 }
+            }
+            StationMapItem {
+                objectName: "stationMapPanel"
+                anchors.fill: parent
+                markers: {
+                    const out = []
+                    for (let i = 0; i < stationModel.count; ++i) {
+                        const r = stationModel.get(i)
+                        out.push({ lat: r.lat, lng: r.lng, label: r.name, selected: i === page.selectedMarker })
+                    }
+                    return out
+                }
+                onMarkerClicked: index => page.focusStation(index)
+            }
+            // peek 卡（地图态选中浮层：价格大字 + 空闲 + 进详情）
+            Rectangle {
+                objectName: "stationPeekCard"
+                visible: page.viewMode === "map" && page.selectedMarker >= 0
+                         && stationModel.count > 0
+                width: parent.width - P.Style.spaceMd
+                height: 66
+                radius: P.Style.radiusLg
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: P.Style.spaceSm
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: P.Style.surface
+                opacity: visible ? 1 : 0
+                border.width: 1
+                border.color: P.Style.brandEdge
+                Behavior on opacity { NumberAnimation { duration: P.Style.motionEnabled ? 120 : 0 } }
+                Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: P.Style.spaceMd; anchors.rightMargin: P.Style.spaceSm
+                    spacing: P.Style.spaceSm
+                    Column {
+                        width: parent.width - 130
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 1
+                        Text {
+                            width: parent.width; elide: Text.ElideRight
+                            text: stationModel.count > page.selectedMarker && page.selectedMarker >= 0
+                                  ? stationModel.get(page.selectedMarker).name : ""
+                            font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
+                        }
+                        Text {
+                            width: parent.width; elide: Text.ElideRight
+                            text: {
+                                const r = stationModel.count > page.selectedMarker && page.selectedMarker >= 0
+                                          ? stationModel.get(page.selectedMarker) : null
+                                return r ? r.address : ""
+                            }
+                            font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                        }
+                        Text {
+                            text: {
+                                const r = stationModel.count > page.selectedMarker && page.selectedMarker >= 0
+                                          ? stationModel.get(page.selectedMarker) : null
+                                return r ? "空闲 " + r.availableChargers + "/" + r.totalChargers
+                                           + " · " + page.distText(r.distanceMeters) : ""
+                            }
+                            font.pixelSize: P.Style.fontSm; color: P.Style.brandDeep
+                        }
+                    }
+                    Column {
+                        width: 70
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            anchors.right: parent.right
+                            text: {
+                                const r = stationModel.count > page.selectedMarker && page.selectedMarker >= 0
+                                          ? stationModel.get(page.selectedMarker) : null
+                                return r ? "¥" + page.money(r.priceCentsPerKwh) : ""
+                            }
+                            font.pixelSize: P.Style.fontLg2; font.bold: true; color: P.Style.brandDeep
+                        }
+                        Text {
+                            anchors.right: parent.right
+                            text: "/kWh"; font.pixelSize: 10; color: P.Style.faint
+                        }
+                    }
+                    P.ActionButton {
+                        objectName: "stationPeekOpenButton"
+                        variant: "primary"; text: "详情"
+                        width: 56; height: 30
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: {
+                            const r = stationModel.get(page.selectedMarker)
+                            if (App && r) App.navigate("station_detail", {
+                                id: r.stationId, name: r.name, address: r.address,
+                                priceCentsPerKwh: r.priceCentsPerKwh,
+                                distanceMeters: r.distanceMeters, status: r.status })
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------- ④ 筛选胶囊条（排序三 chip + 电价；漏斗在 ② 行尾带徽标） ----------
+        Rectangle {
+            objectName: "stationFilterBar"
+            width: parent.width
+            height: 40
+            radius: P.Style.radiusSm
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+            Row {
+                anchors.fill: parent
+                anchors.leftMargin: 5; anchors.rightMargin: 5
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 4
+                P.ActionButton {
+                    objectName: "sortRecommendedButton"
+                    variant: "chip"
+                    anchors.verticalCenter: parent.verticalCenter
+                    selected: page.sortMode === 2
+                    text: "综合"
+                    onClicked: { page.sortMode = 2; page.project() }
+                }
+                P.ActionButton {
+                    objectName: "sortAvailableButton"
+                    variant: "chip"
+                    anchors.verticalCenter: parent.verticalCenter
+                    selected: page.sortMode === 0
+                    text: "空闲"
+                    onClicked: { page.sortMode = 0; page.project() }
+                }
+                P.ActionButton {
+                    objectName: "sortDistanceButton"
+                    variant: "chip"
+                    anchors.verticalCenter: parent.verticalCenter
+                    selected: page.sortMode === 1
+                    text: "最近"
+                    onClicked: { page.sortMode = 1; page.project() }
+                }
+                Rectangle { width: 1; height: 22; anchors.verticalCenter: parent.verticalCenter
+                    color: P.Style.line }
+                ComboBox {
+                    id: priceCombo
+                    objectName: "priceFilterComboBox"
+                    width: parent.width - x - 1   // 吃满行尾，胶囊条不留空档
+                    anchors.verticalCenter: parent.verticalCenter
+                    model: ["全部电价", "≤ ¥1.00", "≤ ¥1.20", "≤ ¥1.50"]
+                    onActivated: idx => { page.priceMax = page.priceTiers[idx]; page.project() }
+                }
+            }
+        }
+
+        // 演示数据标注（同优惠券页口径：不冒充真实查询结果）
         Text {
             objectName: "homeDemoCaption"
             visible: page.demo
@@ -266,7 +531,7 @@ Item {
             font.pixelSize: P.Style.fontSm; color: P.Style.faint
         }
 
-        // 列表四态（Column 内余高：parent.height - y）
+        // ---------- ⑤ 列表四态 ----------
         Item {
             id: stationListArea
             objectName: "stationListArea"
@@ -284,10 +549,7 @@ Item {
                 ListView {
                     id: stationList
                     objectName: "stationList"
-                    // PullToRefreshArea 内容是 Column：禁垂直/fill 锚（平台会告警且不生效），
-                    // 显式尺寸 + x 负偏移等价还原原 -spaceSm 出血。
-                    // 显式尺寸（PullToRefreshArea 内容是 Column，禁垂直/fill 锚）；
-                    // pull 与列表区同高（anchors.fill），取 pull.height 免再引无 id 容器。
+                    // PullToRefreshArea 内容是 Column：显式尺寸 + x 负偏移等价还原出血。
                     width: parent.width + P.Style.spaceSm * 2
                     x: -P.Style.spaceSm
                     height: pull.height
@@ -307,11 +569,11 @@ Item {
                                 distanceMeters: distanceMeters, status: status })
                         }
                         Row {
-                            width: parent.width        // Column 内容器：anchors.fill 被忽略且告警
+                            width: parent.width
                             spacing: P.Style.spaceMd
                             Column {
-                                width: parent.width - 110
-                                spacing: 2
+                                width: parent.width - 118
+                                spacing: 4
                                 Text {
                                     width: parent.width; elide: Text.ElideRight
                                     text: name; font.pixelSize: P.Style.fontLg
@@ -321,20 +583,58 @@ Item {
                                     width: parent.width; elide: Text.ElideRight
                                     text: address; font.pixelSize: P.Style.fontSm; color: P.Style.muted
                                 }
+                                // 空闲比例条（可用性色彩：充足 brand / 紧张 warning / 无 danger）
+                                Item {
+                                    width: parent.width; height: 14
+                                    Rectangle {
+                                        id: availTrack
+                                        anchors.left: parent.left; anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: 6; radius: 3
+                                        color: P.Style.ghost
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            height: 6
+                                            radius: 3
+                                            width: parent.width * Math.min(1,
+                                                totalChargers > 0 ? availableChargers / totalChargers : 0)
+                                            Behavior on width {
+                                                NumberAnimation { duration: P.Style.durEnter }
+                                            }
+                                            color: availableChargers === 0 ? P.Style.danger
+                                                 : (totalChargers > 0 && availableChargers / totalChargers < 0.34)
+                                                   ? P.Style.warning : P.Style.brand
+                                        }
+                                    }
+                                }
                                 Text {
-                                    text: "¥" + page.money(priceCentsPerKwh) + "/kWh · 空闲 "
-                                          + availableChargers + "/" + totalChargers
+                                    text: "空闲 " + availableChargers + "/" + totalChargers
                                           + " · " + page.distText(distanceMeters)
                                           + (status !== "active" ? " · 暂停运营" : "")
-                                    font.pixelSize: P.Style.fontSm; color: P.Style.brandDeep
+                                    font.pixelSize: P.Style.fontSm; color: P.Style.muted
                                 }
                             }
                             Item {
-                                width: 96
+                                width: 104
                                 height: parent.height
                                 Column {
                                     anchors.centerIn: parent
                                     spacing: P.Style.spaceXs
+                                    // 价格大字（右挂对齐成列，fontLg2+小单位）
+                                    Column {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        Text {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: "¥" + page.money(priceCentsPerKwh)
+                                            font.pixelSize: P.Style.fontLg2; font.bold: true
+                                            color: P.Style.brandDeep
+                                        }
+                                        Text {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            text: "/kWh"; font.pixelSize: 10; color: P.Style.faint
+                                        }
+                                    }
                                     P.StatusTag {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         tone: status === "active" ? "success" : "neutral"
@@ -344,11 +644,11 @@ Item {
                                         objectName: "favoriteStarButton"
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: 34
-                                        height: 28
+                                        height: 24
                                         Text {
                                             anchors.centerIn: parent
                                             text: page.isFav(stationId) ? "★" : "☆"
-                                            font.pixelSize: 20
+                                            font.pixelSize: 18
                                             color: page.isFav(stationId) ? P.Style.warning : P.Style.faint
                                         }
                                         onClicked: {
