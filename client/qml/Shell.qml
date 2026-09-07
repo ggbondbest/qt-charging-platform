@@ -55,7 +55,21 @@ Window {
     function pushRoute(r, arg) {
         const src = pageSource(r)
         if (src.length === 0) return
-        stack.push(Qt.resolvedUrl(src), { route: r, arg: arg === undefined ? "" : arg })
+        const url = Qt.resolvedUrl(src)
+        const props = { route: r, arg: arg === undefined ? "" : arg }
+        // Parallel tab switches replace/clear the stack instead of pushing:
+        // widgets HomeShell used a QStackedWidget (switch = no hierarchy);
+        // bare push piled page instances whose countdown Timers / polling
+        // Connections / looping animations kept running forever → progressive
+        // lag + "frozen" animations (2026-09-07 user feedback).
+        const isTab = tabIds.indexOf(r) >= 0
+        if (isTab) {
+            if (stack.depth > 1) stack.clear()
+            if (stack.depth > 0) stack.replace(url, props)
+            else stack.push(url, props)
+        } else {
+            stack.push(url, props)
+        }
         for (var i = 0; i < tabIds.length; ++i)
             if (tabIds[i] === r) { tabBar.setCurrentTab(r); break }
     }
@@ -99,40 +113,24 @@ Window {
                 (typeof chargingArg !== "undefined" && chargingArg !== null
                  && (typeof chargingArg === "string" ? chargingArg.length > 0 : true))
                     ? chargingArg : undefined)
-            // Fluent-style page transitions (pattern from FluentUI gallery):
-            // entering page slides in 25% + fades (OutCubic), leaving page
-            // slides away + fades faster — asymmetric durations feel natural.
+            // Transitions kept to a bare cross-fade: x-sliding the whole page
+            // forces full-subtree repaints per frame and crawls under the
+            // software renderer on this VM (2026-09-07 user feedback).
             pushEnter: Transition {
-                ParallelAnimation {
-                    NumberAnimation { property: "opacity"; from: 0; to: 1
-                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
-                        easing.type: Easing.OutCubic }
-                    NumberAnimation { property: "x"; from: stack.width * 0.25; to: 0
-                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
-                        easing.type: Easing.OutCubic }
-                }
+                NumberAnimation { property: "opacity"; from: 0; to: 1
+                    duration: P.Style.motionEnabled ? P.Style.durEnter : 0 }
             }
-            pushExit: Transition {
+            popExit: Transition {
                 NumberAnimation { property: "opacity"; from: 1; to: 0
                     duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
             }
-            popEnter: Transition {
-                ParallelAnimation {
-                    NumberAnimation { property: "opacity"; from: 0; to: 1
-                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
-                        easing.type: Easing.OutCubic }
-                    NumberAnimation { property: "x"; from: -stack.width * 0.15; to: 0
-                        duration: P.Style.motionEnabled ? P.Style.durEnter : 0
-                        easing.type: Easing.OutCubic }
-                }
+            replaceEnter: Transition {
+                NumberAnimation { property: "opacity"; from: 0; to: 1
+                    duration: P.Style.motionEnabled ? P.Style.durEnter : 0 }
             }
-            popExit: Transition {
-                ParallelAnimation {
-                    NumberAnimation { property: "opacity"; from: 1; to: 0
-                        duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
-                    NumberAnimation { property: "x"; from: 0; to: stack.width * 0.25
-                        duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
-                }
+            replaceExit: Transition {
+                NumberAnimation { property: "opacity"; from: 1; to: 0
+                    duration: P.Style.motionEnabled ? P.Style.durExit : 0 }
             }
             onCurrentItemChanged: {
                 if (currentItem && currentItem.route)
@@ -146,7 +144,8 @@ Window {
             tabs: [{ id: "station", text: "🔍 找站" }, { id: "order", text: "📋 订单" },
                    { id: "charging", text: "⚡ 充电" }, { id: "profile", text: "👤 我的" }]
             currentTab: "station"
-            onTabChanged: (id) => { while (stack.depth > 1) stack.pop(); shell.pushRoute(id) }
+            // pushRoute now clears/replaces for tab targets — no manual pop loop.
+            onTabChanged: (id) => { shell.pushRoute(id) }
         }
     }
 
