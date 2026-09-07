@@ -2,6 +2,13 @@ import QtQuick
 import "../../platform" as P
 
 // QML twin of widgets OrderListPage (tab route: "order").
+// Billing-style list (industry conventions from ChargePoint / Electrix order
+// screens): month group headers carrying a live summary ("N 单 · ¥X · Y kWh",
+// summed over the *visible* rows — TODO(contract): server month-stats field),
+// icon-hub cards where the amount is the right-hand focal number, and the
+// widgets 40ms-staggered cascade entrance (capped) on each fresh first page.
+// Pull-to-refresh shares the platform PullToRefreshArea (its gesture strip z
+// was fixed 2026-09-07 — it sat behind the Flickable and swallowed presses).
 Item {
     id: page
     objectName: "orderListPage"
@@ -40,6 +47,13 @@ Item {
     readonly property var statusTone: ({
         reserved: "info", charging: "warning", waiting_payment: "danger",
         completed: "success", cancelled: "neutral" })
+    // Icon hub 座：tone → 软底色 + 字形（widgets buildMonthGroups 的状态图形语）
+    readonly property var hubSpec: ({
+        warning: { g: "⚡", bg: P.Style.warningSoft },
+        danger:  { g: "💰", bg: P.Style.dangerSoft },
+        success: { g: "✅", bg: P.Style.brandSoft },
+        info:    { g: "📒", bg: P.Style.infoSoft },
+        neutral: { g: "✕", bg: P.Style.ghost } })
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function load(first) {
@@ -73,6 +87,50 @@ Item {
     // 挂进 QObject 树取决于异步编译时序，不能依赖 findChildren(delegate)。
     ListModel { id: ordersModel; objectName: "uiOrdersModel" }
 
+    // ---- month grouping (widgets rebuildMonthGroups parity) ----
+    // rows = [{kind:"month"|"order", ...}], fed to the Repeater; ordersModel
+    // keeps the raw applied rows so the test's count semantics stay intact.
+    property var rows: []
+    function monthKeyOf(createdAt) {
+        const s = String(createdAt || "")
+        return /^\d{4}-\d{2}/.test(s) ? s.substring(0, 7) : "zz"
+    }
+    function monthLabelOf(key) {
+        if (key === "zz") return "更早"          // widgets 兜底口径
+        const p = key.split("-")
+        return p[0] + "年" + parseInt(p[1], 10) + "月"
+    }
+    // fadeFrom = -1 → 整表级联入场（第一页）；否则 index ≥ fadeFrom 的新行才入场。
+    function rebuildRows(fadeFrom) {
+        const out = []
+        var lastKey = ""
+        var cur = null
+        for (var i = 0; i < ordersModel.count; ++i) {
+            const o = ordersModel.get(i)
+            const key = monthKeyOf(o.createdAt)
+            if (key !== lastKey) {
+                cur = { kind: "month", title: monthLabelOf(key),
+                        count: 0, cents: 0, wh: 0, summary: "",
+                        fade: fadeFrom < 0 || i >= fadeFrom, sIndex: 0 }
+                if (cur.fade) cur.sIndex = (fadeFrom < 0 ? i : i - fadeFrom)
+                out.push(cur)
+                lastKey = key
+            }
+            cur.count += 1
+            cur.cents += o.amountCents || 0
+            cur.wh += o.energyWh || 0
+            out.push({ kind: "order", order: o,
+                       fade: fadeFrom < 0 || i >= fadeFrom,
+                       sIndex: fadeFrom < 0 ? i : i - fadeFrom })
+        }
+        // 汇总 = 可见行相加（本地翻页下不是整月真实值）TODO(contract): 月统计字段
+        for (const r of out)
+            if (r.kind === "month")
+                r.summary = r.count + " 单 · ¥" + money(r.cents)
+                             + " · " + (r.wh / 1000).toFixed(2) + " kWh"
+        page.rows = out
+    }
+
     Connections {
         target: orderService
         function onOrdersLoaded(orders, total, hasMore) {
@@ -82,11 +140,13 @@ Item {
             }
             if (reqFilter === page.filter) { // 过期响应直接丢弃
                 if (reqFirst) ordersModel.clear()
+                const prevCount = ordersModel.count
                 for (var i = 0; i < orders.length; ++i)
                     ordersModel.append(orders[i])
                 page.hasMore = hasMore
                 page.loadedPage = reqPage
                 page.loadMoreError = false
+                rebuildRows(reqFirst ? -1 : prevCount)
             }
             finishRequest()
         }
@@ -115,26 +175,29 @@ Item {
 
     Column {
         anchors.fill: parent
-        anchors.margins: P.Style.spaceLg
-        spacing: P.Style.spaceMd
+        anchors.margins: P.Style.spaceXl
+        spacing: P.Style.spaceLg
 
-        Row {
+        // ---- header（anchors 布局：Row 子项 anchors 在 6.2 是未定义行为）----
+        Item {
             width: parent.width
+            height: 40
             Text {
+                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                 text: "我的订单"
-                font.pixelSize: P.Style.fontXl; color: P.Style.ink
-                anchors.verticalCenter: parent.verticalCenter
+                font.pixelSize: P.Style.fontXl; font.weight: Font.Bold; color: P.Style.ink
             }
-            Item { width: parent.width * 0.15; height: 1 }
             Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "⚡" + page.counts.charging + "  💰" + page.counts.waitingPayment
-                      + "  ✅" + page.counts.completed
+                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                objectName: "uiOrderCounts"
+                text: "充电中 " + page.counts.charging + " · 待支付 " + page.counts.waitingPayment
+                      + " · 已完成 " + page.counts.completed
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
         }
 
         Row {
+            width: parent.width
             spacing: P.Style.spaceSm
             Repeater {
                 model: page.filters
@@ -142,7 +205,11 @@ Item {
                     objectName: "uiOrderFilter" + modelData.id
                     variant: "chip"
                     selected: page.filter === modelData.id
-                    text: modelData.label
+                    text: modelData.label + (modelData.id !== "all"
+                          ? " " + ({ charging: page.counts.charging,
+                                     waiting_payment: page.counts.waitingPayment,
+                                     completed: page.counts.completed }[modelData.id] || 0)
+                          : "")
                     onClicked: {
                         if (page.filter === modelData.id) return
                         page.filter = modelData.id
@@ -157,66 +224,171 @@ Item {
             objectName: "uiOrderListStack"
             width: parent.width
             height: parent.height - y
+            spacingHint: P.Style.spaceMd
             onRefreshRequested: {
                 orderService.fetchStatusCounts()
                 load(true)
             }
 
+            // ---- mixed rows: month headers + order cards ----
             Repeater {
-                model: ordersModel
-                delegate: P.ClickableCard {
+                model: page.rows
+                Loader {
+                    width: listScroll.width
+                    height: item ? item.height : 0
+                    sourceComponent: modelData.kind === "month"
+                                     ? monthHeaderComp : orderCardComp
+                    onLoaded: {
+                        item.row = modelData
+                        if (modelData.fade && P.Style.motionEnabled)
+                            rowDelay.start()
+                        else
+                            opacity = 1.0
+                    }
+                    opacity: 0
+                    // widgets motion parity: 40ms stagger, 8-row cap.
+                    // (6.2 锚定动画拒绝 startDelay 赋值 → Timer 先延时再起跑)
+                    Timer {
+                        id: rowDelay
+                        interval: Math.min(modelData.sIndex, 8) * 40
+                        onTriggered: rowIn.start()
+                    }
+                    NumberAnimation on opacity {
+                        id: rowIn
+                        from: 0; to: 1; duration: P.Style.durEnter
+                    }
+                }
+            }
+
+            Component {
+                id: monthHeaderComp
+                Item {
+                    property var row: ({})
+                    height: 30
+                    objectName: "uiMonthHeader"
+                    Text {
+                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                        text: row.title || ""
+                        font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
+                        color: P.Style.ink
+                    }
+                    Text {
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        text: row.summary || ""
+                        font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                    }
+                }
+            }
+
+            Component {
+                id: orderCardComp
+                P.ClickableCard {
+                    id: card
+                    property var row: ({})
+                    readonly property var o: row.order || ({})
                     objectName: "uiOrderCard"
                     width: listScroll.width
-                    height: Math.max(72, col.implicitHeight + 2 * P.Style.spaceMd)
+                    height: 88
                     onClicked: {
-                        if (!App) return
-                        App.navigate("order_detail", ({
-                            id: model.id, orderNo: model.orderNo, status: model.status,
-                            stationName: model.stationName, chargerCode: model.chargerCode,
-                            energyWh: model.energyWh, durationSeconds: model.durationSeconds,
-                            amountCents: model.amountCents,
-                            unitPriceCentsPerKwh: model.unitPriceCentsPerKwh,
-                            createdAt: model.createdAt }))
+                        if (App && row.order) App.navigate("order_detail", row.order)
                     }
-                    Row {
-                        id: col
-                        x: P.Style.spaceMd; y: P.Style.spaceMd
-                        width: parent.width - 2 * P.Style.spaceMd
-                        spacing: P.Style.spaceMd
-                        Column {
-                            width: parent.width * 0.6
-                            spacing: 3
+                    // body 是 Column——内部一律用 Item 承载 anchors 布局（6.2）
+                    Item {
+                        height: 56
+                        width: parent ? parent.width : 0
+                        Rectangle {
+                            id: hub
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            width: 44; height: 44; radius: 22
+                            color: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
+                                    || page.hubSpec.neutral).bg
                             Text {
-                                text: model.stationName || "充电站"
-                                font.pixelSize: P.Style.fontMd; color: P.Style.ink
-                            }
-                            Text {
-                                text: model.orderNo + " · " + model.chargerCode
-                                font.pixelSize: P.Style.fontSm; color: P.Style.faint
-                            }
-                            Text {
-                                text: model.createdAt + "  ·  "
-                                      + (model.energyWh / 1000).toFixed(2) + " kWh"
-                                font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                                anchors.centerIn: parent
+                                text: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
+                                       || page.hubSpec.neutral).g
+                                font.pixelSize: 18
                             }
                         }
-                        Item { width: parent.width * 0.1; height: 1 }
-                        Column {
-                            width: parent.width * 0.3
-                            spacing: 3
-                            Text {
-                                horizontalAlignment: Text.AlignRight
-                                width: parent.width
-                                text: "¥ " + page.money(model.amountCents)
-                                font.pixelSize: P.Style.fontMd; color: P.Style.ink
+                        Item {
+                            id: rightCol
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            width: 92; height: 52
+                            Row {
+                                id: moneyRow
+                                anchors.right: parent.right; anchors.top: parent.top
+                                spacing: 2
+                                Text {
+                                    text: "¥"
+                                    font.pixelSize: P.Style.fontSm; font.weight: Font.Bold
+                                    color: P.Style.muted
+                                    height: moneyVal.height
+                                    verticalAlignment: Text.AlignBottom
+                                    bottomPadding: 3
+                                }
+                                Text {
+                                    id: moneyVal
+                                    text: page.money(card.o.amountCents || 0)
+                                    font.pixelSize: 17; font.weight: Font.ExtraBold
+                                    color: P.Style.ink
+                                }
                             }
                             P.StatusTag {
                                 objectName: "uiOrderCardStatus"
-                                anchors.right: parent.right
-                                tone: page.statusTone[model.status] || "neutral"
-                                text: page.statusCn[model.status] || model.status
+                                anchors.right: parent.right; anchors.bottom: parent.bottom
+                                tone: page.statusTone[card.o.status] || "neutral"
+                                text: page.statusCn[card.o.status] || card.o.status || ""
                             }
                         }
+                        Column {
+                            anchors.left: hub.right; anchors.right: rightCol.left
+                            anchors.leftMargin: P.Style.spaceMd
+                            anchors.rightMargin: P.Style.spaceMd
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+                            Text {
+                                width: parent.width; elide: Text.ElideRight
+                                text: card.o.stationName || "充电站"
+                                font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
+                                color: P.Style.ink
+                            }
+                            Text {
+                                width: parent.width; elide: Text.ElideRight
+                                text: (card.o.orderNo || "--") + " · 桩号 " + (card.o.chargerCode || "--")
+                                font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                            }
+                            Text {
+                                width: parent.width; elide: Text.ElideRight
+                                text: (card.o.createdAt || "") + " · "
+                                      + ((card.o.energyWh || 0) / 1000).toFixed(2) + " kWh"
+                                font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- empty state（数据落定且确无订单）----
+            Item {
+                width: listScroll.width
+                height: 240
+                visible: page.rows.length === 0 && !page.reqActive
+                Column {
+                    anchors.centerIn: parent
+                    spacing: P.Style.spaceSm
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "🧾"; font.pixelSize: 36
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "暂无订单"
+                        font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
+                        color: P.Style.ink
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "下拉刷新，或换个筛选看看"
+                        font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                 }
             }
