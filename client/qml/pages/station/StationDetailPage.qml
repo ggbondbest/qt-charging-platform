@@ -98,6 +98,12 @@ Item {
         spacing: P.Style.spaceMd
         // 头卡用列表传来的 arg 即出（不等详情桥）；桩区单独走状态门。
 
+        // 页面标题（widgets titleLabel "站点详情" 同位）
+        Text {
+            objectName: "detailTitle"; text: "站点详情"
+            font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
+        }
+
         // 站点信息头卡
         P.Card {
             objectName: "detailHeaderCard"
@@ -120,14 +126,15 @@ Item {
                         text: isActive() ? "营业中" : "已离线"
                     }
                 }
-                Text {
-                    text: "距您 " + distText(station.distanceMeters)
-                          + " · ¥" + money(station.priceCentsPerKwh || 0) + "/kWh"
-                    font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
-                }
+                // 行序对齐 widgets：名称+状态 → 地址 → 价格·距离
                 Text {
                     width: parent.width; wrapMode: Text.WordWrap
                     text: station.address || ""; font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                }
+                Text {
+                    text: "¥" + money(station.priceCentsPerKwh || 0) + "/kWh · 距您 "
+                          + distText(station.distanceMeters)
+                    font.pixelSize: P.Style.fontMd; color: P.Style.brandDeep
                 }
             }
         }
@@ -182,6 +189,7 @@ Item {
 
         // 桩列表（故障红框 = 原属性选择器的绑定化）
         ListView {
+            id: chargerList
             objectName: "chargerList"
             width: parent.width
             height: parent.height - y

@@ -138,6 +138,7 @@ Item {
         }
 
         P.Card {
+            id: countdownCard
             objectName: "countdownCard"
             width: (page.width - cols.spacing * 2) / 3
             height: parent.height
@@ -145,12 +146,7 @@ Item {
                 width: parent.width                // Card 内容进 Column 容器：anchors 被忽略且告警
                 spacing: P.Style.spaceSm
                 Text { text: "⏱ 预约倒计时"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                Text {
-                    objectName: "reservationCountdownLabel"
-                    text: page.countdownText
-                    font.pixelSize: P.Style.fontXl; font.bold: true
-                    color: page.countdownColor
-                }
+                // 行序对齐 widgets（info 在前、大号倒计时其后）
                 Text {
                     objectName: "reservationInfoLabel"
                     width: parent.width
@@ -161,7 +157,16 @@ Item {
                           + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
                     font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
-                Item { width: 1; height: parent.height - 200 }
+                Text {
+                    objectName: "reservationCountdownLabel"
+                    text: page.countdownText
+                    font.pixelSize: P.Style.fontXl; font.bold: true
+                    color: page.countdownColor
+                }
+                // 弹簧占位：撑到卡片底部。绑 Card 固定高而非本 Column 自身
+                // 高度（Column 高=子项和 → polish() 死循环，桥补全后列表
+                // 非空才暴露，2026-09-07 修）。
+                Item { width: 1; height: Math.max(0, countdownCard.height - 200) }
                 P.ActionButton {
                     objectName: "reservationCancelButton"
                     variant: "danger"; text: "取消预约"
