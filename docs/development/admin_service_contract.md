@@ -104,10 +104,46 @@ details_json。该接口只读，不提供日志删除或编辑操作。
 示例：`operation_logs.list {page:1,pageSize:20,sort:"createdAtDesc",adminId:"1",action:"station.edit"}`；
 `recharges.list {page:1,pageSize:20,sort:"createdAtDesc",userId:"1",createdAtFrom:"2026-09-05T00:00:00.000Z",createdAtTo:"2026-09-06T00:00:00.000Z"}`。
 
-Dashboard 复用现有仓储的 UTC 日/月口径，并在读事务中获取一致统计快照：只汇总
+Dashboard 按 Asia/Shanghai 日/月口径，在读事务中获取一致统计快照：只汇总
 COMPLETED 订单 amountCents，以 paidAt 归属日期，充值不是营收。趋势缺失日期补零。
 activeOrders 包括预约、充电中、待支付。在线率=(总桩数-离线数)/总桩数，无设备返回 0；
-预约、故障、离线分别计数，不计入空闲。页面应标注 UTC，不得按本地日期误标。
+预约、故障、离线分别计数，不计入空闲。timeZone 返回 Asia/Shanghai；observedAt 等
+时间戳仍为 UTC ISO-8601。trend.date 是北京时间日历日期，不是 UTC 时间戳。
+新增 totalRevenueCents 为全部已支付完成订单的累计金额，不限今日或本月。
+
+### 管理页汇总接口（数据与接口契约需求）
+
+下列接口通过同一个 AdminRequestGateway 调用，沿用管理员会话校验、超时、请求编号、
+销毁和过期响应处理。没有新增普通用户 TCP action。成功返回 `{success:true,data:{...}}`。
+所有汇总都返回 `timeZone:"Asia/Shanghai"` 和 UTC `observedAt`，金额为整数分。
+
+| action | data 核心字段 |
+| --- | --- |
+| chargers.summary | totalChargers、onlineChargers、faultChargers、totalChargeCount |
+| stations.summary | totalStations、activeStations、totalChargers、onlineChargers、todayOrderCount |
+| users.summary | totalUsers、todayNewUsers、frozenUsers、totalBalanceCents |
+| orders.summary | todayOrderCount、todayRevenueCents、chargingOrderCount、waitingPaymentOrderCount；另含 monthRevenueCents、totalRevenueCents |
+| recharges.summary | todayCount、todayAmountCents、failedCountToday、monthAmountCents |
+| operation_logs.summary | todayCount、monthCount、adminInitiatedCountToday、systemInitiatedCountToday |
+
+筛选字段与各自 `.list` 完全相同，**不接受 page、pageSize、sort、id**。统计整个筛选范围，
+不受列表当前页影响。实现共用列表的 FROM、WHERE 和参数绑定，不在页面逐页求和。
+例如 `chargers.summary {stationId:"1",status:"FAULT",type:"FAST",keyword:"A"}`。
+列表刷新时，将同一组筛选条件同时交给列表和汇总；两个请求各自为一致快照，若中间有写入，
+不能假定两个独立响应属于同一时刻。Dashboard 仍为全局概览，仅接受 days=7/30。
+
+- 在线为非 OFFLINE（包含 FAULT）；累计次数为电桩 total_charge_count 之和。
+- 站点在线率用 onlineChargers/totalChargers，零分母显示 0。今日订单按筛选站点下订单创建日统计。
+- 用户今日新增按 created_at；余额为筛选用户余额之和。
+- 订单今日数量按 created_at，营收按 COMPLETED 且 paid_at 的北京时间日期。
+  createdAtFrom/To 仍筛选创建时间，与营收支付日期条件取交集。
+- 充值笔数包含成功和失败；金额只累计 SUCCESS，充值金额不是订单营收。
+- 操作日志以 admin_id 非空/空区分管理员发起/系统发起，不从 action 名称推断。
+- 今日和本月使用北京时间日历的半开区间，先将边界转 UTC，再比较持久化时间。
+- 空集合计数和金额返回 0。聚合超过 JSON 安全整数范围返回 DATABASE_ERROR，禁止静默损失精度。
+
+接入示例：`gateway->request("users.summary", {{"status", "FROZEN"}}, this, "user-summary")`。
+在 finished 中核对请求编号，再读取 data 更新卡片，不直接查询 SQLite。
 
 ### 运营概览两张摘要表（PR #26 审查补充）
 
@@ -175,5 +211,5 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 
 新增 admin_service、admin_gateway、admin_login 测试覆盖：鉴权/禁用/改凭据/过期、
 非法查询参数/脱敏、站点原子创建与编辑、旧版本冲突、持久化并发重试、审计失败回滚、
-冻结和充电占用冲突、重启模拟、UTC 营收口径、GUI 不阻塞、请求超时/销毁/覆盖/退出、
+冻结和充电占用冲突、重启模拟、北京时间营收口径、GUI 不阻塞、请求超时/销毁/覆盖/退出、
 真实登录页。其余管理页面接线需按本文契约做 UI 联调，不以原 Mock 按钮提示作为验收。

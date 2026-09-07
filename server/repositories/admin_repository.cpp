@@ -9,6 +9,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSqlRecord>
+#include <QTimeZone>
 
 namespace charging::server {
 namespace {
@@ -103,7 +104,23 @@ QJsonObject AdminRepository::read(const QString& entity, const QJsonObject& p) c
     }
 }
 
-QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& p) const
+QJsonObject AdminRepository::summary(const QString& entity, const QJsonObject& p,
+                                     const QDateTime& now) const
+{
+    execute(database_, QStringLiteral("BEGIN"));
+    try {
+        const auto result = readRows(entity, p, true, now);
+        execute(database_, QStringLiteral("COMMIT"));
+        return result;
+    } catch (...) {
+        auto db = database_;
+        db.rollback();
+        throw;
+    }
+}
+
+QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& p, bool aggregate,
+                                      const QDateTime& now) const
 {
     QString select, from, search, statusColumn;
     if (entity == QStringLiteral("stations")) {
@@ -227,6 +244,92 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         where += QStringLiteral(" AND s.user_id=?");
         bindings << p.value(QStringLiteral("userId")).toString();
     }
+    if (aggregate) {
+        const QTimeZone zone("Asia/Shanghai");
+        if (!zone.isValid() || !now.isValid())
+            throw AdminFailure("DATABASE_ERROR");
+        const auto date = now.toTimeZone(zone).date();
+        const auto boundary = [&zone](const QDate& d) {
+            return QDateTime(d, QTime(0, 0), zone).toUTC().toString(Qt::ISODateWithMs);
+        };
+        // Values are generated internally, never interpolated from request text.
+        const QString today = boundary(date), tomorrow = boundary(date.addDays(1));
+        const QString month = boundary(QDate(date.year(), date.month(), 1));
+        const QString nextMonth = boundary(QDate(date.year(), date.month(), 1).addMonths(1));
+        const auto between = [](const QString& column, const QString& a, const QString& b) {
+            return column + QStringLiteral(">='") + a + QStringLiteral("' AND ") + column +
+                   QStringLiteral("<'") + b + QStringLiteral("'");
+        };
+        const QString dayCreated = between("s.created_at", today, tomorrow);
+        const QString monthCreated = between("s.created_at", month, nextMonth);
+        const auto sum = [](const QString& expression, const QString& alias) {
+            return QStringLiteral("COALESCE(SUM(") + expression + QStringLiteral("),0) AS ") +
+                   alias;
+        };
+        QStringList columns;
+        if (entity == "chargers") {
+            columns = {"COUNT(*) AS totalChargers", sum("s.status!='OFFLINE'", "onlineChargers"),
+                       sum("s.status='FAULT'", "faultChargers"),
+                       sum("s.total_charge_count", "totalChargeCount")};
+        } else if (entity == "stations") {
+            columns = {
+                "COUNT(*) AS totalStations", sum("s.status='ACTIVE'", "activeStations"),
+                sum("(SELECT COUNT(*) FROM chargers c WHERE c.station_id=s.id)", "totalChargers"),
+                sum("(SELECT COUNT(*) FROM chargers c WHERE c.station_id=s.id AND "
+                    "c.status!='OFFLINE')",
+                    "onlineChargers"),
+                sum("(SELECT COUNT(*) FROM orders o JOIN chargers c ON c.id=o.charger_id WHERE "
+                    "c.station_id=s.id AND " +
+                        between("o.created_at", today, tomorrow) + ")",
+                    "todayOrderCount")};
+        } else if (entity == "users") {
+            columns = {"COUNT(*) AS totalUsers", sum(dayCreated, "todayNewUsers"),
+                       sum("s.status='FROZEN'", "frozenUsers"),
+                       sum("s.balance_cents", "totalBalanceCents")};
+        } else if (entity == "orders") {
+            const QString paid = "s.status='COMPLETED' AND s.paid_at IS NOT NULL";
+            columns = {
+                sum(dayCreated, "todayOrderCount"),
+                sum("CASE WHEN " + paid + " AND " + between("s.paid_at", today, tomorrow) +
+                        " THEN s.amount_cents ELSE 0 END",
+                    "todayRevenueCents"),
+                sum("CASE WHEN " + paid + " AND " + between("s.paid_at", month, nextMonth) +
+                        " THEN s.amount_cents ELSE 0 END",
+                    "monthRevenueCents"),
+                sum("CASE WHEN " + paid + " THEN s.amount_cents ELSE 0 END", "totalRevenueCents"),
+                sum("s.status='CHARGING'", "chargingOrderCount"),
+                sum("s.status='WAITING_PAYMENT'", "waitingPaymentOrderCount")};
+        } else if (entity == "recharges") {
+            columns = {sum(dayCreated, "todayCount"),
+                       sum("CASE WHEN s.status='SUCCESS' AND " + dayCreated +
+                               " THEN s.amount_cents ELSE 0 END",
+                           "todayAmountCents"),
+                       sum("s.status='FAILED' AND " + dayCreated, "failedCountToday"),
+                       sum("CASE WHEN s.status='SUCCESS' AND " + monthCreated +
+                               " THEN s.amount_cents ELSE 0 END",
+                           "monthAmountCents")};
+        } else if (entity == "operation_logs") {
+            columns = {sum(dayCreated, "todayCount"), sum(monthCreated, "monthCount"),
+                       sum("s.admin_id IS NOT NULL AND " + dayCreated, "adminInitiatedCountToday"),
+                       sum("s.admin_id IS NULL AND " + dayCreated, "systemInitiatedCountToday")};
+        } else
+            throw AdminFailure("INVALID_ARGUMENT");
+        auto query =
+            execute(database_, "SELECT " + columns.join(',') + " FROM " + from + where, bindings);
+        if (!query.next())
+            throw AdminFailure("DATABASE_ERROR");
+        QJsonObject result;
+        for (int i = 0; i < query.record().count(); ++i) {
+            bool valid = false;
+            const qint64 value = query.value(i).toLongLong(&valid);
+            if (!valid || value < 0 || value > 9007199254740991LL)
+                throw AdminFailure("DATABASE_ERROR");
+            result.insert(query.record().fieldName(i), value);
+        }
+        result.insert("timeZone", "Asia/Shanghai");
+        result.insert("observedAt", now.toUTC().toString(Qt::ISODateWithMs));
+        return result;
+    }
     const qint64 total =
         scalar(database_, QStringLiteral("SELECT COUNT(*) FROM ") + from + where, bindings);
     const int page = p.value(QStringLiteral("page")).toInt(1),
@@ -276,17 +379,16 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             {QStringLiteral("pageSize"), size}};
 }
 
-QJsonObject AdminRepository::dashboard(int days) const
+QJsonObject AdminRepository::dashboard(int days, const QDateTime& now) const
 {
-    // Match the existing repository contract: calendar boundaries are UTC,
-    // paid COMPLETED orders only, recharges are not operating revenue.
+    if ((days != 7 && days != 30) || !now.isValid())
+        throw AdminFailure("INVALID_ARGUMENT");
+    // UTC timestamps on the wire, Shanghai calendar boundaries for management.
     execute(database_, QStringLiteral("BEGIN"));
     try {
         DashboardRepository repo(database_);
-        const auto now = QDateTime::currentDateTimeUtc();
         const auto summary = repo.summary(now);
-        const auto trend = repo.revenueTrend(now.date().addDays(1 - days), now.date());
-        if (!summary.ok || !trend.ok)
+        if (!summary.ok)
             throw AdminFailure("DATABASE_ERROR");
         const auto& s = summary.summary;
         QJsonObject data{{QStringLiteral("totalUsers"), s.totalUsers},
@@ -300,18 +402,38 @@ QJsonObject AdminRepository::dashboard(int days) const
                          {QStringLiteral("activeOrders"), s.activeOrders},
                          {QStringLiteral("todayRevenueCents"), s.todayRevenueCents},
                          {QStringLiteral("monthRevenueCents"), s.monthRevenueCents},
-                         {QStringLiteral("timeZone"), QStringLiteral("UTC")},
+                         {QStringLiteral("timeZone"), QStringLiteral("Asia/Shanghai")},
                          {QStringLiteral("observedAt"), now.toString(Qt::ISODateWithMs)},
                          {QStringLiteral("onlineRatio"),
                           s.totalChargers
                               ? double(s.totalChargers - s.offlineChargers) / s.totalChargers
                               : 0.0}};
         QJsonArray points;
-        for (const auto& v : trend.points)
-            points.append(
-                QJsonObject{{QStringLiteral("date"), v.date.toString(Qt::ISODate)},
-                            {QStringLiteral("completedOrderCount"), v.completedOrderCount},
-                            {QStringLiteral("revenueCents"), v.revenueCents}});
+        const auto revenues = readRows("orders", {}, true, now);
+        for (const auto& key : {"todayRevenueCents", "monthRevenueCents", "totalRevenueCents"})
+            data.insert(key, revenues.value(key));
+        const QTimeZone zone("Asia/Shanghai");
+        const auto today = now.toTimeZone(zone).date();
+        for (int i = days - 1; i >= 0; --i) {
+            const auto date = today.addDays(-i);
+            const QString start =
+                QDateTime(date, QTime(0, 0), zone).toUTC().toString(Qt::ISODateWithMs);
+            const QString end =
+                QDateTime(date.addDays(1), QTime(0, 0), zone).toUTC().toString(Qt::ISODateWithMs);
+            auto q =
+                execute(database_,
+                        QStringLiteral("SELECT COUNT(*), COALESCE(SUM(amount_cents),0) FROM orders "
+                                       "WHERE status='COMPLETED' AND paid_at>=? AND paid_at<?"),
+                        {start, end});
+            if (!q.next())
+                throw AdminFailure("DATABASE_ERROR");
+            const qint64 amount = q.value(1).toLongLong();
+            if (amount < 0 || amount > 9007199254740991LL)
+                throw AdminFailure("DATABASE_ERROR");
+            points.append(QJsonObject{{"date", date.toString(Qt::ISODate)},
+                                      {"completedOrderCount", q.value(0).toLongLong()},
+                                      {"revenueCents", amount}});
+        }
         data.insert(QStringLiteral("trend"), points);
         // Reuse exactly the management-list DTOs and filters in the same read
         // transaction as the aggregates. No nested transaction or Mock source.

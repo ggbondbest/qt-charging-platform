@@ -33,7 +33,27 @@ Item {
         loading = true; failed = false
         // TODO(contract): reservationService.fetchList() 桥 invokable。
         try { reservationService.fetchList() }
-        catch (e) { loading = false; failed = true; failMessage = "预约服务尚未就绪，请稍后重试。" }
+        catch (e) { loadDemo() }   // 桥缺位：页内演示记录（标注"演示数据"），展示逻辑可走通
+    }
+    property bool demo: false
+    function loadDemo() {
+        const now = Date.now(), min = 60000
+        page.raw = [
+            { reservationId: 9001, stationName: "滨海快充站", chargerCode: "A-07",
+              chargerSpec: "直流快充 120kW", durationMinutes: 40, estimatedFeeCents: 853,
+              vehiclePlate: "粤B·DA1234", distanceMeters: 2400,
+              startAtUtc: now - 5 * min, expiresAtUtc: now + 25 * min, status: "active" },
+            { reservationId: 9002, stationName: "科技园慢充站", chargerCode: "B-02",
+              chargerSpec: "交流慢充 7kW", durationMinutes: 120, estimatedFeeCents: 472,
+              vehiclePlate: "粤B·DA1234", distanceMeters: 1200,
+              startAtUtc: now - 3 * 60 * min, expiresAtUtc: now - min, status: "fulfilled" },
+            { reservationId: 9003, stationName: "深圳湾超充站", chargerCode: "A-11",
+              chargerSpec: "直流快充 160kW", durationMinutes: 30, estimatedFeeCents: 0,
+              vehiclePlate: "粤B·DA1234", distanceMeters: 3600,
+              startAtUtc: now - 26 * 60 * min, expiresAtUtc: now - 25 * 60 * min, status: "cancelled" }
+        ]
+        demo = true
+        loading = false; loaded = true; failed = false
     }
 
     Connections {
@@ -41,6 +61,7 @@ Item {
         function onListStarted() { page.loading = true; page.failed = false }
         function onListSucceeded(records) {
             page.loading = false; page.loaded = true; page.failed = false
+            page.demo = false                       // 真数据到位，演示记录退位
             page.raw = records || []
         }
         function onListFailed(message) {
@@ -55,64 +76,84 @@ Item {
     }
     Component.onCompleted: refresh()
 
-    Column {
+    // 整页可上下拖拽（用户二轮指定）：头部随页滚动，子页列表在自身视口内滚动。
+    Flickable {
+        id: moduleFlick
         anchors.fill: parent
         anchors.margins: P.Style.spaceLg
-        spacing: P.Style.spaceMd
+        contentWidth: width
+        contentHeight: moduleCol.height
+        clip: true
 
-        Text { text: "我的预约"
-            font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
+        Column {
+            id: moduleCol
+            width: moduleFlick.width
+            spacing: P.Style.spaceMd
 
-        // 二级 Tab
-        Row {
-            objectName: "reservationTabs"
-            spacing: P.Style.spaceSm
-            P.ActionButton {
-                objectName: "orderTabButton"
-                variant: "chip"
-                selected: page.tab === 0
-                text: "🕒 预约订单"
-                onClicked: page.tab = 0
+            Text { objectName: "reservationModuleTitle"; text: "我的预约"
+                font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
+
+            // 二级 Tab
+            Row {
+                objectName: "reservationTabs"
+                spacing: P.Style.spaceSm
+                P.ActionButton {
+                    objectName: "reservationOrderTabButton"
+                    variant: "chip"
+                    selected: page.tab === 0
+                    text: "🕒 预约订单"
+                    onClicked: page.tab = 0
+                }
+                P.ActionButton {
+                    objectName: "reservationHistoryTabButton"
+                    variant: "chip"
+                    selected: page.tab === 1
+                    text: "📒 已完成的预约"
+                    onClicked: page.tab = 1
+                }
             }
-            P.ActionButton {
-                objectName: "completedTabButton"
-                variant: "chip"
-                selected: page.tab === 1
-                text: "📒 已完成的预约"
-                onClicked: page.tab = 1
+
+            Text {
+                objectName: "moduleDemoCaption"
+                visible: page.demo
+                width: parent.width
+                wrapMode: Text.WordWrap      // NoWrap 长标注会溢出裁字
+                text: "当前为演示记录（预约桥未就绪，接入后自动替换）"
+                font.pixelSize: P.Style.fontSm; color: P.Style.faint
             }
-        }
 
-        // 整页失败态（子页不再叠加错误横幅）
-        P.NoticePanel {
-            objectName: "moduleNotice"
-            width: parent.width
-            height: 180
-            visible: page.failed
-            glyph: "⚠️"
-            title: "预约列表加载失败"
-            description: page.failMessage
-            actionText: "重试"
-            onActionTriggered: page.refresh()
-        }
+            // 整页失败态（子页不再叠加错误横幅）——保留原失败提示 UI。
+            P.NoticePanel {
+                objectName: "moduleNotice"
+                width: parent.width
+                height: 180
+                visible: page.failed
+                glyph: "⚠️"
+                title: "预约列表加载失败"
+                description: page.failMessage
+                actionText: "重试"
+                onActionTriggered: page.refresh()
+            }
 
-        // 子页装载：Loader 保单一活动视图
-        Loader {
-            objectName: "reservationTabContent"
-            width: parent.width
-            height: page.failed ? 0 : parent.height - y
-            active: !page.failed
-            source: page.tab === 0 ? "ReservationOrderPage.qml"
-                                   : "ReservationCompletedPage.qml"
-            onLoaded: {
-                if (!item) return
-                if (page.tab === 0) {
-                    item.record = Qt.binding(() => page.current)
-                    item.loading = Qt.binding(() => page.loading && !page.loaded)
-                    item.parentFailed = Qt.binding(() => false)
-                } else {
-                    item.records = Qt.binding(() => page.doneRecords)
-                    item.loading = Qt.binding(() => page.loading && !page.loaded)
+            // 子页装载：Loader 保单一活动视图
+            Loader {
+                objectName: "reservationTabContent"
+                width: parent.width
+                height: page.failed ? 0
+                                     : Math.max(320, moduleFlick.height - y - P.Style.spaceMd)
+                active: !page.failed
+                source: page.tab === 0 ? "ReservationOrderPage.qml"
+                                       : "ReservationCompletedPage.qml"
+                onLoaded: {
+                    if (!item) return
+                    if (page.tab === 0) {
+                        item.record = Qt.binding(() => page.current)
+                        item.loading = Qt.binding(() => page.loading && !page.loaded)
+                        item.parentFailed = Qt.binding(() => false)
+                    } else {
+                        item.records = Qt.binding(() => page.doneRecords)
+                        item.loading = Qt.binding(() => page.loading && !page.loaded)
+                    }
                 }
             }
         }

@@ -28,6 +28,31 @@ class AdminGatewayTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void summariesTravelThroughWorker()
+    {
+        QTemporaryDir dir;
+        ServerRuntime runtime;
+        QSignalSpy ready(&runtime, &ServerRuntime::listening);
+        QVERIFY(runtime.start(dir.filePath("summary.sqlite"), true, QHostAddress::LocalHost, 0));
+        QTRY_COMPARE(ready.size(), 1);
+        AdminRequestGateway gateway(&runtime);
+        QObject page;
+        QSignalSpy done(&gateway, &AdminRequestGateway::finished);
+        gateway.request("auth.login", login(), &page);
+        QTRY_COMPARE(done.size(), 1);
+        QVERIFY(response(done).value("success").toBool());
+        for (const auto& entity :
+             {"stations", "chargers", "users", "orders", "recharges", "operation_logs"}) {
+            done.clear();
+            const auto id = gateway.request(QString(entity) + ".summary", {}, &page);
+            QTRY_COMPARE(done.size(), 1);
+            QCOMPARE(done.first().first().toString(), id);
+            QVERIFY(response(done).value("success").toBool());
+            QCOMPARE(response(done).value("data").toObject().value("timeZone").toString(),
+                     QString("Asia/Shanghai"));
+        }
+        runtime.stop();
+    }
     void authenticationOwnershipSupersessionAndStop()
     {
         QTemporaryDir dir;
@@ -93,9 +118,11 @@ private slots:
         QVERIFY(gateway.isAuthenticated());
         for (const auto& action : {QString("operation_logs.list"), QString("recharges.list")}) {
             done.clear();
-            gateway.request(action, {{"sort", "createdAtDesc"},
-                                     {"createdAtFrom", "2000-01-01T00:00:00.000Z"},
-                                     {"createdAtTo", "2100-01-01T00:00:00.000Z"}}, &page);
+            gateway.request(action,
+                            {{"sort", "createdAtDesc"},
+                             {"createdAtFrom", "2000-01-01T00:00:00.000Z"},
+                             {"createdAtTo", "2100-01-01T00:00:00.000Z"}},
+                            &page);
             QTRY_COMPARE(done.size(), 1);
             QVERIFY(response(done).value("success").toBool());
             QVERIFY(response(done).value("data").toObject().value("items").isArray());

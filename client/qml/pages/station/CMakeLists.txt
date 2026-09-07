@@ -16,4 +16,6 @@ set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/FavoritesPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/NotificationPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/CouponPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/StationState.js
     PARENT_SCOPE)

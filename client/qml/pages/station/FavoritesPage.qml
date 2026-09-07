@@ -26,6 +26,8 @@ Item {
     property string failMessage: ""
 
     function money(c) { return ((c || 0) / 100).toFixed(2) }
+    // 供壳顶栏漏斗接线（同 StationHomePage 口径）：成员3 一行接通即活。
+    function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
     function isFav(id) {
         try { return favoritesService ? favoritesService.contains(id) : false }
         catch (e) { return false }
@@ -108,6 +110,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 110
+                objectName: "favoritesPageTitle"
                 text: "我的收藏"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
             }
             P.ActionButton {
