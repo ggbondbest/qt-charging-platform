@@ -4,11 +4,11 @@ import QtQuick
 // Design tokens mirrored from resources/qss/client_platform.qss and
 // client/widgets/include/.../motion.h. Pages must use Style.* — no literals.
 QtObject {
-    // palette
+    // palette（body bg 对齐 QSS 主底色 #F4F6F8）
     readonly property color ink: "#1F2937"
     readonly property color muted: "#6B7280"
     readonly property color faint: "#9CA3AF"
-    readonly property color bg: "#F2F5F8"
+    readonly property color bg: "#F4F6F8"
     readonly property color surface: "#FFFFFF"
     readonly property color line: "#E5E9EF"
     readonly property color lineStrong: "#D5DCE4"
@@ -25,18 +25,30 @@ QtObject {
     readonly property color warningSoft: "#FFF4E0"
     readonly property color info: "#1971C2"
     readonly property color infoSoft: "#E8F3FE"
+    // QSS 三形态补全：solid 按下加深 / disabled 浅化 / hero 对角渐变端
+    readonly property color brandPressed: "#009A66"
+    readonly property color dangerPressed: "#B91C1C"
+    readonly property color disabledFg: "#F2FBF7"
+    readonly property color heroFrom: "#00A46C"
+    readonly property color heroTo: "#2BC98A"
+    readonly property color heroPhone: "#D9F3E7"
 
     // type scale (px, matches QSS font-size ladder)
     readonly property int fontXl: 21
+    readonly property int fontHero: 19   // QSS hero nickname
+    readonly property int fontGlyph: 34  // QSS chargingHero 空态大图标
+    readonly property int fontLg2: 16    // QSS heroTitle/cellChevron
     readonly property int fontLg: 15
     readonly property int fontMd: 14
     readonly property int fontSm: 12
+    readonly property int fontXs: 11     // QSS caption/badge 档
 
     // geometry
     readonly property int radiusSm: 10
     readonly property int radiusMd: 12
     readonly property int radiusLg: 16
-    readonly property int radiusChip: 24
+    readonly property int radiusChip: 24  // QSS primary/danger/secondary 按钮圆角
+    readonly property int radiusTag: 9    // QSS uiStatusTag 小圆角标签
     readonly property int radiusPill: 999
     readonly property int spaceXs: 6
     readonly property int spaceSm: 8
