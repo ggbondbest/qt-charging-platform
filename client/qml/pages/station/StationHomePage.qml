@@ -178,19 +178,22 @@ Item {
             spacing: P.Style.spaceSm
             P.ActionButton {
                 objectName: "sortRecommendedButton"
-                variant: page.sortMode === 2 ? "primary" : "chip"
+                variant: "chip"
+                selected: page.sortMode === 2
                 text: "综合"
                 onClicked: { page.sortMode = 2; page.project() }
             }
             P.ActionButton {
                 objectName: "sortAvailableButton"
-                variant: page.sortMode === 0 ? "primary" : "chip"
+                variant: "chip"
+                selected: page.sortMode === 0
                 text: "空闲优先"
                 onClicked: { page.sortMode = 0; page.project() }
             }
             P.ActionButton {
                 objectName: "sortDistanceButton"
-                variant: page.sortMode === 1 ? "primary" : "chip"
+                variant: "chip"
+                selected: page.sortMode === 1
                 text: "距离最近"
                 onClicked: { page.sortMode = 1; page.project() }
             }

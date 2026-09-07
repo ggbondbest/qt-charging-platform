@@ -69,13 +69,15 @@ Item {
             spacing: P.Style.spaceSm
             P.ActionButton {
                 objectName: "orderTabButton"
-                variant: page.tab === 0 ? "primary" : "chip"
+                variant: "chip"
+                selected: page.tab === 0
                 text: "🕒 预约订单"
                 onClicked: page.tab = 0
             }
             P.ActionButton {
                 objectName: "completedTabButton"
-                variant: page.tab === 1 ? "primary" : "chip"
+                variant: "chip"
+                selected: page.tab === 1
                 text: "📒 已完成的预约"
                 onClicked: page.tab = 1
             }
