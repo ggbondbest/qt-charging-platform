@@ -229,8 +229,10 @@ Item {
             }
             Repeater {
                 model: [
-                    { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
-                    { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
+                    { obj: "openFavoritesButton",   row: "⭐　收藏",     route: "favorites" },
+                    { obj: "openNotificationsButton", row: "🔔　消息通知", route: "notifications" },
+                    { obj: "openCouponButton",      row: "🎟　优惠券",   route: "coupon" },
+                    { obj: "openSettingsButton",    row: "⚙️　设置",     route: "settings" }
                 ]
                 delegate: Rectangle {
                     objectName: modelData.obj

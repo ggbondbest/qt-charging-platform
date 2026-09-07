@@ -440,4 +440,39 @@ set_tests_properties(qml_client_pages PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
+
+# station 域真点击链回归（收藏星被 ClickableCard 盖层吞事件 / 顶栏铃铛→消息页）。
+# 与 qml_client_pages 同门（CHARGING_HAS_QML）；真鼠标事件穿完整命中栈。
+add_executable(test_qml_station_interactions tst_qml_station_interactions.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+)
+target_include_directories(test_qml_station_interactions PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/qml
+)
+target_compile_definitions(test_qml_station_interactions PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml"
+)
+target_link_libraries(test_qml_station_interactions PRIVATE
+    ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME qml_station_interactions COMMAND test_qml_station_interactions)
+set_tests_properties(qml_station_interactions PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 90
+)
 endif()

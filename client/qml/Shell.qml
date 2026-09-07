@@ -26,7 +26,7 @@ Window {
                                      "station", "login", "profile",
                                      "station_detail", "reservation_confirm",
                                      "reservation_module", "navigation",
-                                     "favorites", "notifications", "settings"]
+                                     "favorites", "notifications", "settings", "coupon"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
         const t = {
@@ -48,6 +48,7 @@ Window {
             "favorites":           "pages/station/FavoritesPage.qml",
             "notifications":       "pages/station/NotificationPage.qml",
             "settings":            "pages/station/SettingsPage.qml",
+            "coupon":              "pages/station/CouponPage.qml",
         }
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
@@ -102,7 +103,12 @@ Window {
             onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
-            onFilterRequested: { /* StationFilterDialog.qml — member 2's domain */ }
+            onFilterRequested: {
+                // 找站页/收藏页均暴露 openAdvancedFilter()（station 域组件），
+                // 漏斗即开当前页的 8 组高级筛选弹层。
+                const cur = stack.currentItem
+                if (cur && cur.openAdvancedFilter) cur.openAdvancedFilter()
+            }
             onNotificationsRequested: { if (App) App.navigate("notifications") }
         }
         StackView {
