@@ -55,6 +55,7 @@
 | 地图分栏（WebEngine） | `StationMapItem.qml` Canvas 示意（降级态可视化 + 选卡联动高亮）；真图=明天 QtWebEngineQuick 决策 |
 | PullToRefresh | `P.PullToRefreshArea` 包 ListView，`onRefreshRequested: search(keyword)` |
 | 演示数据通道（桥缺位，二轮修复批） | `refresh()`：服务缺位或调用抛 → `loadDemo()`（demo=true，`homeDemoCaption` 标"演示数据…接入后自动替换"）；4 站带经纬度→地图自动布点、关键词按名称/地址过滤；`onQuerySucceeded` 置 demo=false 自动退位；**真实失败信号 onQueryFailed 仍保留失败 UI+重试钮**（用户要求异常页不撤） |
+| **设计轮（2026-09-08 用户指定"ui 风格相称+按钮布局设计感"）** | 全部 widgets 锚点保留（真点击回归依赖），版式重排：① 出血 hero 绿渐变带（`stationHeroBand`，ProfilePage 同款 x:-margin 出血+Gradient.Horizontal heroFrom→heroTo）承载标题/关键词态+三统计大字（N 座电站/N 枪空闲/均价）；② **map⇄list 分段切换**（`viewModeListButton`/`viewModeMapButton` 双段胶囊，EV 充电 app 通例）——地图态 `stationMapPanel` 高 128⇄300 动画展开+选中 **peek 浮卡**（`stationPeekCard`：名称/地址/空闲/价格大字+`stationPeekOpenButton`"详情"）；③ 筛选整合：原 Flow 六件散排→**单行胶囊工具栏** `stationFilterBar`（排序三 chip〔文案精简"空闲/最近"〕｜分隔线｜电价 combo）+ 漏斗 `advancedFilterButton` 迁到分段行右端固定席位（原 Flow 溢出裁钮问题的布局级根治）带**激活筛选计数徽标** `advancedFilterBadge`（有筛选时按钮自动 primary 化）；关键词非空现 `clearKeywordButton`"✕ kw"；④ 站点卡：价格大字右挂（¥/kWh 上下排 fontLg2 bold brandDeep）+ **空闲比例条**（可用性色彩：brand 充足/warning<34%/danger 0）；状态 Tag+星星锚点不动。锚点行为（selectedMarker 双向联动/pull/四态门）零改动。
 | 筛选栏溢出 | 二轮修复批曾用 `stationFilterBarFlick` 横向 Flickable（原固定宽 Row 把「⛏ 筛选」钮裁成半截）；**变基后按"机制按成员3"口径换成 develop 的 `Flow` 自动换行**（同缺陷同修，六控件 420 宽放不下时折行，无横向滚动残留） |
 | ListView 尺寸 | PullToRefreshArea 内容是 Column（平台禁垂直/fill 锚）：显式 `width: parent.width+2*spaceSm / x: -spaceSm / height: pull.height` 等价还原 -spaceSm 出血 |
 
@@ -87,7 +88,7 @@
 `Popup { modal: false }`；8 组 = Column{Repeater{ActionButton variant:"chip"}}；距离单选（再点取消）、其余多选 toggle；「重置」只清勾选、「确定」`applied(criteria)`→父页 project()。旧组选项字面量（5/10/30/50 km、营业中等）从 widgets 常量 JS 化，TODO(contract)：改由服务层暴露选项。
 
 ### NavigationPage.qml（"navigationPage"）
-arg=record map；进页先模拟口径（distance/eta 兜底公式），`mapGeoService.requestDrivingRoute({lat,lng},{lat,lng})`（桥：参数改 double×4 或 map）→ `onRouteSucceeded(route)` 原地替换 + caption"真实导航路线·腾讯地图"；`onRouteFailed` Toast+保持模拟；`requestDistanceMatrix`/逆地理同桥形状。`StationMapItem` 画 route polyline；代际号 `property int gen` 保留（QML 也要防过期回调）。
+arg=record map。**四轮地图 APP 化（2026-09-08 用户指定）**：进页自动 `requestIpLocation()` IP 定位起点→成功 `setUserLocationLatLng`+起点态 `located`，失败明示"定位失败·请手动输入"（`failed` 态，兜底演示坐标保页面永不空）；起点行 `originRow`（状态提示 `originHintLabel` + 输入框 `originField`〔地址或"纬度,经度"，前者走 `requestAddressGeocode`，后者直用〕+ `originGoButton`"路线" + `originLocateButton`"🎯"重定位）。真路线：`requestDrivingRoute(4 double)`→`qmlRouteReady(requestId, routeMap)`（polyline=[[lat,lng],…]/steps=[{instruction,distanceMeters},…]/distanceMeters/durationMinutes——direction duration 分钟口径；requestId 代际过滤）；距离覆盖 record.distanceMeters 重算 eta。地图=**腾讯静态图优先**（route 到达后 `requestStaticMap(中点, 距离→zoom 阶梯, 真 polyline, 起/终 markers)`→`qmlStaticMapReady(filePath)` 落 TempLocation PNG→`Image.source=Url.fileUrl(…)`；任何失败静默回落 `StationMapItem` Canvas 真折线——QtLocation/QtWebEngine 本环境均无，此为本机可行的"真地图"上限）。**跳转腾讯地图导航**=`navigationExternalButton`→`Qt.openUrlExternally(navigationUriUrl(...))`（URI API routeplan，URL 内嵌 referer=key：绝不打印/入库；无 key `usable()==false` 置灰）。消费面全为 `qml*` 转发信号（原 struct 载荷信号 QML 读不了，见 §桥缺口定形）。无 key 保持模拟先行（与原 widgets 口径一致，不发请求）。
 
 ### StationMapItem.qml（组件，非页）
 Canvas：`property var markers`（{lat,lng,label,selected}）、`property var route`（[[lat,lng],…]）；自动 fit 边界 + 10px 内边距；示意底（网格+对角线河）纯装饰；`onPaint` 里画点/折线；无 WebEngine 依赖、offscreen 可截图。**决策记录**：任务书建议 QQuickPaintedItem C++ 包壳——但类型注册要动 `client/qml/main.cpp`（成员3 禁区），CMake 挂载点只透 .qml；故 Sprint 用 Canvas 等价实现，明天真地图走 QtWebEngineQuick `WebEngineView`（独立进程无 Widgets 互斥问题）时一并定夺。
@@ -106,7 +107,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **SettingsPage.qml**（"settingsPage"）：三模块卡（锚点=settingsSecurityCard/settingsVehicleCard/settingsNotificationCard）；密码弹窗（改密验旧 + ≥4 位 + 两次一致；字段=currentPasswordEdit/newPasswordEdit/confirmPasswordEdit，钮=passwordCancelButton/passwordSaveButton）；**进页密码门已撤销（用户二轮指定口径倒转）**：二级密码作用点在登录环节（见 LoginPage 表），本页只做设置/开关，`protectionSwitchHint` 三态文案同步为登录口径（"已开启：该账号下次在登录页输入手机号时，将要求输入二级保护密码"）；保存时 `StationState.setSecondPassword(plain, 最近登录号)` 把密码绑定到登录用手机号；车辆 CRUD（行钮 vehicleSetDefaultButton/vehicleEditButton/vehicleDeleteButton；弹窗含 vehicleDefaultCheck + 接口双 RadioButton〔对齐旧版，替原 ComboBox〕 + 取消/保存钮组）；通知三开关 `Switch` ↔ `settingsService`；整页 `Flickable`（二轮修复批）。**双通道**：服务 invokable 可读以服务为准，否则落 StationState 会话库——密码哈希/保护开关/车辆跨页往返不丢（真持久化归桥）。
 - **FavoritesPage.qml**（"favoritesPage"）：同构 StationHome 列表源=favoritesService.favoriteIds()∩stationQueryService 结果；状态门三 flag 直译（queryLoaded/queryFailed/viewState）；星星可取消；筛选弹窗复用；暴露 `openAdvancedFilter()`。
 - **NotificationPage.qml**（"notificationPage"）：`notificationService.notifications()` 桥→ListView；`onNotificationsChanged` 重算；空态引导。
-- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（锚点 uiProfileHeroButton；余额=App.currentUser 的 balanceLabel/nicknameLabel，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表五项（openOrdersButton / openReservationsButton / openFavoritesButton / **openCouponsButton（功能增加批）** / openSettingsButton）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
+- **ProfilePage.qml**（"profilePage"，Shell 路由表指向本目录）：渐变头卡（锚点 uiProfileHeroButton；余额=App.currentUser 的 balanceLabel/nicknameLabel，含 wallet/recharge 两入口与 profile_edit 编辑位）+ 入口列表（openOrdersButton / openReservationsButton / openFavoritesButton / **openNotificationsButton / openCouponButton（三/四轮批补——"消息页面进不去"修复的入口位）** / openSettingsButton）+ 退出登录（`authService.logout()` 缺位期以 `App.logout()` mock 兜底）。
 
 ## 功能增加批（2076518，用户实测反馈驱动——注意与纯迁移批次的口径区别：本节是新增功能，无 widgets 对账源）
 
@@ -125,6 +126,16 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **文字裁切族**：Text 默认 NoWrap——homeDemoCaption/detailChargerSummaryLabel/moduleDemoCaption/orderModuleCaption×2 补 width+WordWrap；找站筛选栏套横向 Flickable（"⛏ 筛选"钮原被裁半截，与返回钮同类缺陷）。
 - 冒烟：11 路由 offscreen rc=0 日志门零告警（截图成批同尺寸=克隆 Shell 补丁被仓库版覆盖丢过，重跑 setup-smoke.sh 复原——QML 热加载、翻位表/arg 注入/自动登录三补丁必须在位）；密码流转断言 10/10（StationState.js node 直验）；qmllint 9 页零 Error；截图 12=登录页密码行形态（仅冒烟克隆临时强制 visible 拍摄，仓库绑定未动）。
 
+## 三/四轮用户实测修复批（四合一请求 b/c 项，2026-09-07/08；d 项地图 APP 化见 NavigationPage 节）
+
+- **"收藏按钮点不了"根因（成员3 文件 `ClickableCard.qml` 功能性代修）**：卡内容器盖层 `MouseArea{anchors.fill}` 声明在内容 Column **之后**→Qt 命中栈前→后遍历，卡内子按钮永远被盖层先吃→点击被劫持去详情页。修复=盖层 MA 移到内容之前（附根因注释）；文本区（无 handler）经命中栈下沉仍由盖层接住，卡导航不回归。**曾先试 `z:1` 提权——无效已撤回**（z 仅作用于兄弟节点间，子树出不去父级堆叠）。
+- **"消息页面进不去"定性**：真点击测试证明 HEAD 铃铛链（TopNavBar Text"🔔"→`onNotificationsRequested`→`App.navigate("notifications")`→Shell 翻页）**本就正常**——用户复现的是**入口可发现性**：ProfilePage"账号与服务"缺消息行（PR#41 重写时又丢了优惠券行）。修复=补 `openNotificationsButton`"🔔 消息通知"+`openCouponButton`"🎟 优惠券"两行入口（配合 Shell coupon 翻位，见 §桥缺口 Shell 行）。
+- **回归钉（新测试目标 `test_qml_station_interactions`，tests/CMakeLists.txt append）**：与 qml_client_pages（信号发射驱动）分工——此套专测**事件投递本身**：bootShell 与 preview 同构装配 + `QTest::mouseClick(window,…,QPoint)` 真鼠标穿完整命中栈。① 铃铛真点→notificationPage 上屏；② 卡片 `favoriteStarButton` 真点→星字形翻转+**不得**劫持进详情页，再点站点名长文本→卡导航仍活（盖层下沉链保护）。Qt6.2.4 注意：`QTest::mouseClick` 的 QWindow 重载只收 QPoint；offscreen delegate 惰性→先 `grabToImage` 强制场景图渲染。
+- **MapGeoService QML 面 + 静态图/URI 方案**：本环境 QtLocation 与 QtWebEngine 的 QML 模块均不存在（两处 qml 目录已核）→导航"真地图"= 静态图 API（C++ 拉 PNG 落 temp，Image.source 直挂）+ Canvas 真折线回落 + URI API 跳转外部腾讯地图接力导航；详见 §桥缺口 MapGeoService 行与 NavigationPage 节。
+- **SettingsBridge 实名差异（待成员3 核对）**：页面对二级密码按 CONTRACT.md 盲写的 `hasProtectionPassword/setProtectionPassword/verifyProtectionPassword/clearProtectionPassword` 与桥实际交付的 `hasSecondPassword/setSecondPassword/verifySecondPassword(+protectionEnabled/setSecondProtectionEnabled)` **不同名**——QML try/catch 落到 StationState 会话库（功能仍闭环），但服务通道永不命中。桥/页面二选一改名即可翻正（页面调用点带 TODO(contract) 注释）。
+- **b 项设计轮落地（StationHomePage 重写，全部 widgets 锚点保留）**：出血 hero 绿渐变带（站点/空闲枪/均价三统计）→ map⇄list 分段胶囊（EV 充电 app 通例）→ 单行筛选胶囊条（综合/空闲/最近三 chip + 电价下拉吃满行尾 + 行尾漏斗计数徽标）→ 站点卡价格大字右挂+空闲比例条（danger/warning/brand 三档色）；地图态浮 peek 卡（站点名/地址/空闲/价格+详情按钮）。**运行期守卫**：peek 卡绑定在 `visible=false` 时仍求值，`selectedMarker=-1` 曾穿透 `count > selectedMarker` 上界守卫触发 `get(-1)` TypeError×4——五处绑定统一补 `selectedMarker >= 0`，并新增回归钉（下条）钉死。
+- **截图验收轮（2026-09-08，三图零运行期报错）**：`11-home-redesign-list.png`（重设计列表态全貌）；`12-nav-nostream-mock.png`（导航页无 key 态=诚实降级口径：演示位置提示、🎯置灰、Canvas 两点示意线、跳转腾讯地图按钮置灰——key 仅环境变量注入，本机 shell 未导出即为此态，真链路以 21 例假 HTTP 单测覆盖）；`13-profile-entries.png`（"账号与服务"四行入口含新增消息通知/优惠券）。**ctest 环境口径**：qml 两套必须与 preview 同法导出 `QML2_IMPORT_PATH`，缺失时报 `QtQuick.Controls.Basic is not installed`→page 空指针假失败（非代码回归）；本批复跑 **36/36 全绿**。回归钉扩至 4 例 6/6：profile 消息行真点→消息页、map⇄list 分段真点→peek 浮现（-1 守卫不浮现/选中才浮现）→peek 详情导航链。
+
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
@@ -134,10 +145,10 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 | ReservationService | `fetchList/cancel(id)/expireReservation(id)/submit(map)`；`listStarted/listSucceeded(records)/listFailed/submitStarted(chargerId)/submitSucceeded(record)/submitFailed/cancelStarted/cancelSucceeded/cancelExpired(…)`；record map=ReservationRecord 拍平；`recommendSlotFromTravelMinutes` 以 `Q_INVOKABLE` 暴露；**新增** `activeReservationCount()` / `activeCountForVehicle(qint64)`（详情页预约三重准入的名额判，缺位返回 -1 放行） |
 | SettingsService | 车辆 `vehicles()`（Q_INVOKABLE，map 列表）/`addVehicle(Vehicle)/updateVehicle(Vehicle)/removeVehicle(qint64)/setDefaultVehicle(qint64)/defaultVehicle()` + `vehiclesChanged`；二级密码四件 `hasProtectionPassword()/setProtectionPassword(plain)/verifyProtectionPassword(pw)/clearProtectionPassword()` + 开关 `protectionEnabled()/setProtectionEnabled(bool)` + `protectionStateChanged`（设置页与详情页调用点已按此原名接线，桥一落地即自动翻正）；通知开关按位 `notificationEnabled(key)` + 对应 setter + `settingsChanged` |
 | CouponService（**全新服务，CONTRACT.md 尚无**） | `coupons()` invokable（map 列表：id/title/kind(cash|discount)/valueCents/discountTenths/thresholdCents/condition/expiresAtUtc/status(available|used|expired)/source）+ `redeem(id)`；`couponsChanged`。缺位期 CouponPage 以页内演示数据渲染三态并标"演示数据"，接入后自动替换 |
-| FavoritesService | `contains(id)/toggle(id)/favoriteIds()/favoriteCount()` 全部 `Q_INVOKABLE`；`favoritesChanged` |
-| NotificationService | `notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
-| MapGeoService | `requestDrivingRoute(fromLat,fromLng,toLat,toLng)` / `requestDistanceMatrix(list)` / `requestGeocode(lat,lng)`；`routeSucceeded(routeMap)/routeFailed(err,msg)`（routeMap={polyline:[[lat,lng],…], distanceMeters, durationMinutes, steps:[{instruction,distanceMeters},…]}——导航页折线/距离/步骤三消费位已齐）、`distanceMatrixSucceeded(elements)/distanceMatrixFailed`、`geocodeSucceeded(address)/geocodeFailed` |
-| Shell（非桥，路由表） | station 域 10 条路由已由成员3 翻位落地（develop `0f65111`：migrated+10、pageSource+7）；**仅剩 coupon 两行**（`migrated` +1、`pageSource` +1 行）与顶栏漏斗一行接线 `stack.currentItem.openAdvancedFilter?.()`。`searchVisible` 绑当前页 route、`onSearchSubmitted→App.navigate("station", keyword)`、TopNavBar 返回钮容器尺寸三处=用户点名代修（各带根因注释），已随 rebase 并入本分支 |
+| FavoritesService | **已交付**（成员3 service_bridges.cpp）：`contains(qint64)/toggle(qint64)→bool/favoriteIds()` 全 `Q_INVOKABLE`；`favoritesChanged`。导航页/找站页消费面已翻正 |
+| NotificationService | **已交付**（成员3 service_bridges.cpp）：`notifications()` invokable（新→旧 map 列表）；`notificationsChanged` |
+| MapGeoService | 上下文属性=裸 `MapGeoService*`（非 bridge 类）。成员2 于本类直接扩 **QML 面**（`Q_INVOKABLE` 方法族 + `qml*` QVariant 形转发信号，widgets 消费方仍走原 struct 信号，两不遮蔽）：`requestDrivingRoute(4×double)`、`requestReverseGeocodeLatLng(2×double)`、`requestIpLocation()`、`requestAddressGeocode(address)`、`requestStaticMap(center,zoom,w,h,routePairs,markerPairs)`、`navigationUriUrl(from,to)→QString`（含 referer=key，调用方勿打印）、`setUserLocationLatLng`、`userLocationMap()`、`usable()`。转发信号：`qmlRouteReady(id,map)`/`qmlRouteError`、`qmlIpLocationReady/Error`、`qmlGeocodeReady/Error`、`qmlStaticMapReady(id,filePath)/Error`。静态图成功落 TempLocation（轮换删上一张）。query 值统一 `QUrl::toPercentEncoding(keep=",-.:;|~*")`——坐标串逐字节不变、中文/markers 正确编码；sig 仍对编码前原文计算。无 key 一律异步 `qml*Error(NoApiKey)` 且零网络触达。单测 `test_map_geo_service` 21 例全绿（假 HTTP，永不触网） |
+| Shell（非桥，路由表） | station 域 10 条路由已由成员3 翻位落地（develop `0f65111`：migrated+10、pageSource+7）；**coupon 两行翻位 + 顶栏漏斗接线已由成员2 代修落地**（`migrated` +"coupon"、`pageSource` +"pages/station/CouponPage.qml"、`onFilterRequested`=`stack.currentItem.openAdvancedFilter && …()` 空桩守卫调用——找站/收藏两页均已暴露该方法）。`searchVisible` 绑当前页 route、`onSearchSubmitted→App.navigate("station", keyword)`、TopNavBar 返回钮容器尺寸三处=用户点名代修（各带根因注释），PR#41 变基后仍在位（已核） |
 
 ## 验收自查（19:00 冲刺门）
 - [x] `--view=station`：地图示意+筛选栏渲染；列表区为设计内降级态"站点加载失败·站点查询桥未就绪（等待服务桥今晚补全）"
@@ -157,5 +168,5 @@ QML 自 `CHARGING_QML_SOURCE_DIR` 文件系统加载（改 .qml 无需重编）�
 所有 preview 运行报 "module QtQuick.Window is not installed"——排查一次记一次）。
 **变基轮起**：develop 基底已含路由翻位与 `--arg=`/`--logged-in` 原生支持（成员3 `0f65111`+`d9b8c11`），
 10 路由可**仓库直构直跑、零补丁**；仅 coupon 一条仍需克隆翻位（Shell 两行：migrated +1、pageSource +1）。
-截图产物：`~/qml-station-shots/01..10-*.png`。
+截图产物：`~/qml-station-shots/01..10-*.png`；设计/修复批新增 `11-home-redesign-list / 12-nav-nostream-mock / 13-profile-entries`。
 
