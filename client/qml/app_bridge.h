@@ -31,6 +31,11 @@ namespace charging::qml {
 class WalletBridge;
 class OrderBridge;
 class ChargingBridge;
+class StationQueryBridge;
+class ReservationBridge;
+class SettingsBridge;
+class FavoritesBridge;
+class NotificationBridge;
 
 class QmlApp final : public QObject
 {
@@ -97,6 +102,11 @@ private:
     WalletBridge* walletBridge_ = nullptr;
     OrderBridge* orderBridge_ = nullptr;
     ChargingBridge* chargingBridge_ = nullptr;
+    StationQueryBridge* stationQueryBridge_ = nullptr;
+    ReservationBridge* reservationBridge_ = nullptr;
+    SettingsBridge* settingsBridge_ = nullptr;
+    FavoritesBridge* favoritesBridge_ = nullptr;
+    NotificationBridge* notificationBridge_ = nullptr;
     charging::client::services::reservation::ReservationService* reservationService_ = nullptr;
     charging::client::services::settings::SettingsService* settingsService_ = nullptr;
     charging::client::services::map::MapGeoService* mapGeoService_ = nullptr;
