@@ -1,13 +1,17 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "StationState.js" as StationState
 
 // QML twin of widgets SettingsPage (objectName "settingsPage").
 // 三模块卡：🔐账号安全（二级密码设置/修改 + 保护开关三态提示）、
 // 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 名额提示）、
 // 🔔通知与提醒（三 Switch ↔ settingsService.notificationEnabled）。
-// 服务方法均为裸对象非桥（TODO(contract)：invokable 化，见映射稿 §桥缺口）；
-// 密码只在服务层落哈希，UI 不存任何明文/散列。
+// 双通道：服务 invokable 可读时以服务为准；桥缺位期落 StationState（.pragma
+// library 跨页会话库）——因此密码/车辆/开关在页间往返不丢。
+// 二级密码作用点在登录环节（用户二轮指定口径）：本页只负责设置/开关，
+// 真正的验证发生在 LoginPage——进入本页不再要求解锁。
+// 密码只在库/服务层落哈希，UI 不存任何明文/散列。
 Item {
     id: page
     objectName: "settingsPage"
@@ -25,10 +29,21 @@ Item {
     function call(target, fn, args) {   // 桥缺位期统一吞异常
         try { return target[fn].apply(target, args) } catch (e) { return undefined }
     }
+    // 服务 invokable 化探测：vehicles() 能返回数组 = 桥已落地，以服务为准。
+    function svcOk() { return call(settingsService, "vehicles", []) !== undefined }
     function reload() {
-        // TODO(contract): settingsService.hasSecondPassword()/protectionEnabled()/vehicles()
-        const v = call(settingsService, "vehicles", [])
-        page.vehicles = v || []
+        // TODO(contract): settingsService.hasProtectionPassword()/protectionEnabled()/vehicles()
+        if (svcOk()) {
+            page.vehicles = call(settingsService, "vehicles", []) || []
+            const hp = call(settingsService, "hasProtectionPassword", [])
+            page.hasPassword = (typeof hp === "boolean") ? hp : StationState.hasSecondPassword()
+            const pe = call(settingsService, "protectionEnabled", [])
+            page.protectionOn = (typeof pe === "boolean") ? pe : StationState.protectionEnabled()
+        } else {
+            page.vehicles = StationState.vehicles
+            page.hasPassword = StationState.hasSecondPassword()
+            page.protectionOn = StationState.protectionEnabled()
+        }
     }
     Component.onCompleted: reload()
     Connections {
@@ -48,23 +63,24 @@ Item {
             padding: P.Style.spaceLg
             spacing: P.Style.spaceMd
 
-            Text { text: "设置"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
+            Text { objectName: "settingsPageTitle"; text: "设置"
+                font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
 
             // ---- 🔐 账号安全 ----
             P.Card {
-                objectName: "accountSecurityCard"
+                objectName: "settingsSecurityCard"
                 width: col.width - col.padding * 2
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { text: "🔐 账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "🔐 账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
-                        objectName: "passwordStatusLabel"
+                        objectName: "protectionPasswordLabel"
                         text: page.hasPassword ? "二级保护密码：已设置" : "二级保护密码：未设置"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                     P.ActionButton {
-                        objectName: "passwordButton"
+                        objectName: "setProtectionPasswordButton"
                         variant: "secondary"
                         text: page.hasPassword ? "修改密码" : "设置密码"
                         onClicked: passwordDialog.openFor(page.hasPassword)
@@ -80,15 +96,17 @@ Item {
                             checked: page.protectionOn
                             onToggled: {
                                 page.protectionOn = checked
-                                call(settingsService, "setSecondProtectionEnabled", [checked])
+                                StationState.setProtectionEnabled(checked)
+                                call(settingsService, "setProtectionEnabled", [checked])
                             }
                         }
                     }
                     Text {
+                        objectName: "protectionSwitchHint"
                         width: parent.width; wrapMode: Text.WordWrap
                         text: !page.hasPassword ? "未设置二级保护密码，开关暂不可用——请先点击上方「设置密码」"
-                              : page.protectionOn ? "关键操作（预约/取消）将要求输入二级密码"
-                              : "当前未开启，关键操作不做二次验证"
+                              : page.protectionOn ? "已开启：该账号下次在登录页输入手机号时，将要求输入二级保护密码"
+                              : "当前未开启，登录时不做二级密码验证"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                 }
@@ -96,13 +114,14 @@ Item {
 
             // ---- 🚗 车辆管理 ----
             P.Card {
-                objectName: "vehicleManagementCard"
+                objectName: "settingsVehicleCard"
                 width: col.width - col.padding * 2
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { text: "🚗 车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "🚗 车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
+                        objectName: "vehiclesEmptyLabel"
                         visible: page.vehicles.length === 0
                         text: "暂无车辆，预约需先添加车辆"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
@@ -110,6 +129,7 @@ Item {
                     Repeater {
                         model: page.vehicles
                         delegate: Row {
+                            objectName: "vehicleCard"
                             width: parent.width
                             spacing: P.Style.spaceXs
                             Column {
@@ -119,7 +139,7 @@ Item {
                                     spacing: P.Style.spaceXs
                                     Text { text: modelData.plate
                                         font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
-                                    P.StatusTag { visible: modelData.isDefault; tone: "info"; text: "默认" }
+                                    P.StatusTag { objectName: "vehicleDefaultTag"; visible: modelData.isDefault; tone: "info"; text: "默认" }
                                 }
                                 Text {
                                     width: parent.width; elide: Text.ElideRight
@@ -130,18 +150,28 @@ Item {
                                 }
                             }
                             P.ActionButton {
+                                objectName: "vehicleSetDefaultButton"
                                 variant: "chip"; text: "设为默认"
                                 visible: !modelData.isDefault
-                                onClicked: { call(settingsService, "setDefaultVehicle", [modelData.id]); reload() }
+                                onClicked: {
+                                    call(settingsService, "setDefaultVehicle", [modelData.id])
+                                    if (!svcOk()) StationState.setDefaultVehicle(modelData.id)
+                                    reload()
+                                }
                             }
                             P.ActionButton {
+                                objectName: "vehicleEditButton"
                                 variant: "chip"; text: "编辑"
                                 onClicked: vehicleDialog.openFor(modelData)
                             }
                             P.ActionButton {
                                 objectName: "vehicleDeleteButton"
                                 variant: "chip"; text: "删除"
-                                onClicked: { call(settingsService, "removeVehicle", [modelData.id]); reload() }
+                                onClicked: {
+                                    call(settingsService, "removeVehicle", [modelData.id])
+                                    if (!svcOk()) StationState.removeVehicle(modelData.id)
+                                    reload()
+                                }
                             }
                         }
                     }
@@ -151,6 +181,7 @@ Item {
                         onClicked: vehicleDialog.openFor(null)
                     }
                     Text {
+                        objectName: "settingsCaptionLabel"
                         width: parent.width; wrapMode: Text.WordWrap
                         text: page.vehicles.length === 0
                               ? "当前 0 辆车 → 无法发起预约；添加车辆后即可预约"
@@ -163,13 +194,13 @@ Item {
 
             // ---- 🔔 通知与提醒 ----
             P.Card {
-                objectName: "notificationSettingsCard"
+                objectName: "settingsNotificationCard"
                 width: col.width - col.padding * 2
                 Column {
                     id: notifyCol
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { text: "🔔 通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "🔔 通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Repeater {
                         model: [
                             { obj: "expiryReminderSwitch",     label: "预约到期提醒", key: "expiry" },
@@ -194,7 +225,7 @@ Item {
         }
     }
 
-    // ---- 密码对话框（Popup 直译 widgets QDialog；校验口径同：≥4 位 + 两次一致）----
+    // ---- 密码对话框（Popup 直译 widgets QDialog；校验口径同：改密验旧 + ≥4 位 + 两次一致）----
     Popup {
         id: passwordDialog
         objectName: "passwordDialog"
@@ -220,24 +251,25 @@ Item {
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
             TextField {
                 id: oldField
-                objectName: "oldPasswordField"
+                objectName: "currentPasswordEdit"
                 width: parent.width; visible: passwordDialog.changing
                 placeholderText: "当前密码"
                 echoMode: TextInput.Password
             }
             TextField {
                 id: newField
-                objectName: "newPasswordField"
+                objectName: "newPasswordEdit"
                 width: parent.width; placeholderText: "新密码（至少 4 位）"
                 echoMode: TextInput.Password
             }
             TextField {
                 id: confirmField
-                objectName: "confirmPasswordField"
+                objectName: "confirmPasswordEdit"
                 width: parent.width; placeholderText: "再次输入新密码"
                 echoMode: TextInput.Password
             }
             Text {
+                objectName: "passwordDialogMessage"
                 visible: passwordDialog.note.length > 0
                 text: passwordDialog.note; font.pixelSize: P.Style.fontSm; color: P.Style.danger
             }
@@ -245,20 +277,31 @@ Item {
                 width: parent.width
                 spacing: P.Style.spaceSm
                 P.ActionButton {
+                    objectName: "passwordCancelButton"
                     variant: "ghost"; text: "取消"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: passwordDialog.close()
                 }
                 P.ActionButton {
                     objectName: "passwordSaveButton"
-                    variant: "primary"; text: "保存"
+                    variant: "primary"; text: "保存密码"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: {
+                        if (passwordDialog.changing) {
+                            const okSvc = call(settingsService, "verifyProtectionPassword", [oldField.text])
+                            const ok = (typeof okSvc === "boolean") ? okSvc : StationState.verifySecondPassword(oldField.text)
+                            if (!ok) { passwordDialog.note = "当前密码不正确"; return }
+                        }
                         if (newField.text.length < 4) { passwordDialog.note = "密码长度至少 4 位"; return }
                         if (newField.text !== confirmField.text) { passwordDialog.note = "两次输入的密码不一致"; return }
-                        // 明文只透传给服务层（哈希在服务内落 QSettings，UI 不留存）。
-                        // TODO(contract): settingsService.setSecondPassword(plain) invokable。
-                        call(settingsService, "setSecondPassword", [newField.text])
+                        // 明文只透传给哈希通道（库/服务），UI 不留存；
+                        // 库通道把密码绑定到当前登录手机号——登录页仅对该号码要求验证。
+                        // TODO(contract): settingsService.setProtectionPassword(plain) invokable。
+                        StationState.setSecondPassword(newField.text,
+                            StationState.accountPhone()
+                            || (App && App.currentUser && App.currentUser.phone
+                                ? App.currentUser.phone : ""))
+                        call(settingsService, "setProtectionPassword", [newField.text])
                         page.hasPassword = true
                         passwordDialog.close()
                         if (App) App.showToast("二级保护密码已保存", "success")
@@ -268,12 +311,14 @@ Item {
         }
     }
 
-    // ---- 车辆表单（添加/编辑共用）----
+    // ---- 车辆表单（添加/编辑共用；widgets QDialog 直译：车牌/品牌/电池 spin 位/接口单选/默认勾选）----
     Popup {
         id: vehicleDialog
-        objectName: "vehicleEditDialog"
+        objectName: "vehicleDialog"
         modal: true
         property var editing: null
+        property bool isFast: true
+        property bool wantDefault: false
         anchors.centerIn: parent
         width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
         padding: P.Style.spaceLg
@@ -282,7 +327,9 @@ Item {
             plateField.text = vehicle ? vehicle.plate : ""
             brandField.text = vehicle ? (vehicle.brandModel || "") : ""
             batteryField.text = vehicle ? String(vehicle.batteryKwh || "") : ""
-            typeCombo.currentIndex = vehicle && String(vehicle.connectorType).toLowerCase() === "slow" ? 1 : 0
+            isFast = !(vehicle && String(vehicle.connectorType).toLowerCase() === "slow")
+            wantDefault = vehicle ? !!vehicle.isDefault : page.vehicles.length === 0
+            defaultCheck.checked = wantDefault
             note = ""
             open()
         }
@@ -304,28 +351,45 @@ Item {
             TextField { id: brandField; objectName: "vehicleBrandEdit"
                 width: parent.width; placeholderText: "如：比亚迪 汉 EV" }
             Text { width: parent.width; text: "电池容量（kWh）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-            TextField { id: batteryField; objectName: "vehicleBatteryEdit"
+            // widgets 为 QSpinBox；QML 无同名控件，TextField+IntValidator 等价位（锚点名沿用 spin）。
+            TextField { id: batteryField; objectName: "vehicleBatterySpin"
                 width: parent.width; placeholderText: "如：65"
                 validator: IntValidator { bottom: 1; top: 500 } }
             Text { width: parent.width; text: "接口类型"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-            ComboBox {
-                id: typeCombo; objectName: "vehicleTypeCombo"
-                width: parent.width
-                model: ["快充（直流）", "慢充（交流）"]
+            Row {
+                spacing: P.Style.spaceMd
+                RadioButton {
+                    objectName: "vehicleFastConnectorRadio"
+                    text: "快充（直流）"
+                    checked: vehicleDialog.isFast
+                    onClicked: vehicleDialog.isFast = true
+                }
+                RadioButton {
+                    objectName: "vehicleSlowConnectorRadio"
+                    text: "慢充（交流）"
+                    checked: !vehicleDialog.isFast
+                    onClicked: vehicleDialog.isFast = false
+                }
             }
-            Text { visible: vehicleDialog.note.length > 0
+            CheckBox {
+                objectName: "vehicleDefaultCheck"
+                text: "设为默认车辆（预约时默认选用）"
+                onToggled: vehicleDialog.wantDefault = checked
+            }
+            Text { objectName: "vehicleDialogMessage"; visible: vehicleDialog.note.length > 0
                 text: vehicleDialog.note; font.pixelSize: P.Style.fontSm; color: P.Style.danger }
             Row {
                 width: parent.width
                 spacing: P.Style.spaceSm
                 P.ActionButton {
+                    objectName: "vehicleCancelButton"
                     variant: "ghost"; text: "取消"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: vehicleDialog.close()
                 }
                 P.ActionButton {
                     objectName: "vehicleSaveButton"
-                    variant: "primary"; text: "保存"
+                    variant: "primary"; text: vehicleDialog.editing ? "保存修改" : "保存车辆"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: {
                         if (plateField.text.trim().length === 0) { vehicleDialog.note = "请填写车牌号码"; return }
@@ -334,11 +398,22 @@ Item {
                             plate: plateField.text.trim(),
                             brandModel: brandField.text.trim(),
                             batteryKwh: parseInt(batteryField.text) || 0,
-                            connectorType: typeCombo.currentIndex === 0 ? "fast" : "slow"
+                            connectorType: vehicleDialog.isFast ? "fast" : "slow",
+                            isDefault: vehicleDialog.wantDefault || page.vehicles.length === 0
                         }
                         // TODO(contract): addVehicle/updateVehicle invokable（map 载荷）。
-                        if (vehicleDialog.editing) call(settingsService, "updateVehicle", [v])
-                        else call(settingsService, "addVehicle", [v])
+                        // 桥缺位期落 StationState 本地通道（跨页可见，预约准入同读此库）。
+                        if (vehicleDialog.editing) {
+                            call(settingsService, "updateVehicle", [v])
+                            if (!svcOk()) StationState.updateVehicle(v)
+                        } else {
+                            call(settingsService, "addVehicle", [v])
+                            if (!svcOk()) {
+                                StationState.addVehicle(v)
+                                if (v.isDefault && page.vehicles.length > 0)
+                                    StationState.setDefaultVehicle(StationState.vehicles[StationState.vehicles.length - 1].id)
+                            }
+                        }
                         vehicleDialog.close()
                         page.reload()
                         if (App) App.showToast("车辆已保存", "success")
@@ -347,4 +422,7 @@ Item {
             }
         }
     }
+
+    // 进页密码门已撤销（用户二轮指定口径）：二级密码的作用点在登录环节，
+    // 由 LoginPage 按手机号命中触发验证；本页只做设置与开关。
 }
