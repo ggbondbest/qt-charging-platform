@@ -39,7 +39,8 @@ Item {
                 height: 86
                 radius: P.Style.radiusLg
                 gradient: Gradient {
-                    orientation: Gradient.Diagonal
+                    // Qt 6.2 无 Gradient.Diagonal（6.5 才有）——用横向左→右渐变
+                    orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: P.Style.heroFrom }
                     GradientStop { position: 1.0; color: P.Style.heroTo }
                 }
