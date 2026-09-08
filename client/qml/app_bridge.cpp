@@ -69,6 +69,10 @@ QmlApp::QmlApp(QObject* parent)
     notificationService_ =
         new charging::client::services::favorites::NotificationService(this);
     notificationService_->setSettingsService(settingsService_);
+    // 通知服务端通道（2026-09-08 横闯，PR 置顶报备项）：与券同源 transport，
+    // 进 app 即拉一次；充电结束/支付成功通知由服务端（mock 镜像）落库供此拉取。
+    notificationService_->setTransport(transport);
+    notificationService_->refresh();
     favoritesService_->setCurrentUser(QString::number(user.id));
     stationQueryService_ =
         new charging::client::services::station::StationQueryService(this);

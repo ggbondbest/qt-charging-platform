@@ -244,7 +244,9 @@ public:
         QObject* parent = nullptr);
 
     // [{id, type("reservation_expiry_reminder"|"reservation_success_notice"
-    //     |"reservation_cancel_notice"), title, body, createdAtUtc}] 新→旧
+    //     |"reservation_cancel_notice"|"charging_stopped"|"order_paid"),
+    //   title, body, createdAtUtc}] 新→旧。服务端通道类型由
+    //   NotificationService::refresh() 拉入（2026-09-08）。
     Q_INVOKABLE QVariantList notifications() const;
 
 signals:

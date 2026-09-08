@@ -225,6 +225,10 @@ QString SettingsService::notificationKey(Notification key)
         return QStringLiteral("settings/notifications/reservationSuccessNotice");
     case Notification::ReservationCancelNotice:
         return QStringLiteral("settings/notifications/reservationCancelNotice");
+    case Notification::ChargingStopped:
+        return QStringLiteral("settings/notifications/chargingStopped");
+    case Notification::OrderPaid:
+        return QStringLiteral("settings/notifications/orderPaid");
     }
     return QString();
 }
@@ -250,6 +254,8 @@ void SettingsService::resetForTesting()
     settings.remove(notificationKey(Notification::ReservationExpiryReminder));
     settings.remove(notificationKey(Notification::ReservationSuccessNotice));
     settings.remove(notificationKey(Notification::ReservationCancelNotice));
+    settings.remove(notificationKey(Notification::ChargingStopped));
+    settings.remove(notificationKey(Notification::OrderPaid));
     settings.sync();
     vehicles_.clear();
     nextVehicleId_ = 1;

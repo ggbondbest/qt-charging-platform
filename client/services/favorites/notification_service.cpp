@@ -1,6 +1,14 @@
 #include "services/favorites/notification_service.h"
 
+#include "charging/client/profile_charging/i_request_transport.h"
+#include "charging/common/protocol/protocol.h"
+
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSet>
+
+#include <algorithm>
 
 namespace charging::client::services::favorites {
 
@@ -11,6 +19,44 @@ constexpr int kMaxNotifications = 50;
 
 // 演示历史的时间偏移（分钟）：一条一型，覆盖三类通知的展示样式。
 constexpr int kSeedOffsetsMinutes[3] = {14, 95, 1520};
+
+// 服务端 type 词（协议小写串）→ 本地枚举；未知词返回 false（防御性丢弃，
+// 服务端 schema CHECK 目前只放行 charging_stopped/order_paid）。
+bool typeFromServerWord(const QString& word, NotificationType* out)
+{
+    if (word == QLatin1String("reservation_expiry_reminder")) {
+        *out = NotificationType::ReservationExpiryReminder;
+    } else if (word == QLatin1String("reservation_success_notice")) {
+        *out = NotificationType::ReservationSuccessNotice;
+    } else if (word == QLatin1String("reservation_cancel_notice")) {
+        *out = NotificationType::ReservationCancelNotice;
+    } else if (word == QLatin1String("charging_stopped")) {
+        *out = NotificationType::ChargingStopped;
+    } else if (word == QLatin1String("order_paid")) {
+        *out = NotificationType::OrderPaid;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+// createdAtUtc 双形态兼容：数字 = epoch ms（CouponPage 同款约定），字符串 =
+// ISODateWithMs/ISODate（服务端与 mock 输出均为 UTC 无后缀，按 UTC 解释）。
+QDateTime parseCreatedAt(const QJsonValue& value)
+{
+    if (value.isDouble()) {
+        return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(value.toDouble()), Qt::UTC);
+    }
+    const QString text = value.toString();
+    QDateTime parsed = QDateTime::fromString(text, Qt::ISODateWithMs);
+    if (!parsed.isValid()) {
+        parsed = QDateTime::fromString(text, Qt::ISODate);
+    }
+    if (parsed.isValid()) {
+        parsed.setTimeSpec(Qt::UTC);
+    }
+    return parsed;
+}
 
 } // namespace
 
@@ -32,9 +78,59 @@ void NotificationService::setSettingsService(settings::SettingsService* settings
     }
 }
 
+void NotificationService::setTransport(charging::client::IRequestTransport* transport)
+{
+    transport_ = transport;
+}
+
+bool NotificationService::isRefreshing() const
+{
+    return refreshing_;
+}
+
+void NotificationService::refresh()
+{
+    if (transport_ == nullptr || refreshing_) {
+        return; // 未注入 = 纯本地通道；在途 = 单飞丢弃
+    }
+    refreshing_ = true;
+    // sendFor：回调经 QPointer 守卫，本服务先销毁则迟到响应被安全丢弃。
+    transport_->sendFor(this,
+                        QString::fromLatin1(charging::protocol::request_type::kGetNotifications),
+                        {{QStringLiteral("pageSize"), kMaxNotifications}},
+                        [this](bool ok, const QJsonObject& data,
+                               const charging::protocol::ProtocolError&) {
+                            refreshing_ = false;
+                            if (!ok) {
+                                return; // 失败静默：保留上一次服务端段，本地通道不受影响
+                            }
+                            QVector<NotificationItem> rows;
+                            const QJsonArray notifications =
+                                data.value(QStringLiteral("notifications")).toArray();
+                            for (const QJsonValue& value : notifications) {
+                                const QJsonObject row = value.toObject();
+                                NotificationItem item;
+                                if (!typeFromServerWord(
+                                        row.value(QStringLiteral("type")).toString(), &item.type)) {
+                                    continue; // 未知类型防御性丢弃
+                                }
+                                const QString id = row.value(QStringLiteral("id")).toString();
+                                item.id = id.isEmpty() ? nextServerId_-- : id.toLongLong();
+                                item.title = row.value(QStringLiteral("title")).toString();
+                                item.body = row.value(QStringLiteral("body")).toString();
+                                item.createdAtUtc =
+                                    parseCreatedAt(row.value(QStringLiteral("createdAtUtc")));
+                                rows.append(item); // 服务端已新→旧，按序入列
+                            }
+                            serverItems_ = rows;
+                            emit notificationsChanged();
+                        });
+}
+
 void NotificationService::resetForTesting()
 {
     items_.clear();
+    serverItems_.clear();
     nextId_ = 1;
     seedMockHistory();
     emit notificationsChanged();
@@ -52,9 +148,39 @@ bool NotificationService::enabledForType(NotificationType type) const
 
 QVector<NotificationItem> NotificationService::notifications() const
 {
+    // 本地段独有（未注入 transport / 尚未拉到数据）时走原路径，零额外开销。
+    if (serverItems_.isEmpty()) {
+        QVector<NotificationItem> visible;
+        visible.reserve(items_.size());
+        for (const NotificationItem& item : items_) {
+            if (enabledForType(item.type)) {
+                visible.append(item);
+            }
+        }
+        return visible;
+    }
+    // 双通道合并：本地 push 段 + 服务端段按 createdAtUtc 倒序（stable 保各段内
+    // 原序），(type, body, 秒) 键去重防未来 reservation 类型双发，再开关过滤。
+    QVector<NotificationItem> merged;
+    merged.reserve(items_.size() + serverItems_.size());
+    merged += items_;
+    merged += serverItems_;
+    std::stable_sort(merged.begin(), merged.end(),
+                     [](const NotificationItem& a, const NotificationItem& b) {
+                         return a.createdAtUtc > b.createdAtUtc;
+                     });
     QVector<NotificationItem> visible;
-    visible.reserve(items_.size());
-    for (const NotificationItem& item : items_) {
+    visible.reserve(merged.size());
+    QSet<QString> seen;
+    for (const NotificationItem& item : merged) {
+        const QString key = QStringLiteral("%1|%2|%3")
+                                .arg(static_cast<int>(item.type))
+                                .arg(item.body)
+                                .arg(item.createdAtUtc.toSecsSinceEpoch());
+        if (seen.contains(key)) {
+            continue;
+        }
+        seen.insert(key);
         if (enabledForType(item.type)) {
             visible.append(item);
         }
@@ -76,6 +202,10 @@ QString NotificationService::typeTitle(NotificationType type)
         return QStringLiteral("✅ 预约成功通知");
     case NotificationType::ReservationCancelNotice:
         return QStringLiteral("❌ 预约取消通知");
+    case NotificationType::ChargingStopped:
+        return QStringLiteral("🔌 充电结束通知");
+    case NotificationType::OrderPaid:
+        return QStringLiteral("💰 支付成功通知");
     }
     return QStringLiteral("📣 系统通知");
 }

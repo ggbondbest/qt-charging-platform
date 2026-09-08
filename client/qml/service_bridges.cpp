@@ -101,6 +101,10 @@ QString notificationTypeWord(
         return QStringLiteral("reservation_success_notice");
     case charging::client::services::favorites::NotificationType::ReservationCancelNotice:
         return QStringLiteral("reservation_cancel_notice");
+    case charging::client::services::favorites::NotificationType::ChargingStopped:
+        return QStringLiteral("charging_stopped");
+    case charging::client::services::favorites::NotificationType::OrderPaid:
+        return QStringLiteral("order_paid");
     }
     return QStringLiteral("reservation_success_notice");
 }

@@ -177,26 +177,39 @@ private slots:
             SettingsService::Notification::ReservationSuccessNotice));
         QVERIFY(service_.notificationEnabled(
             SettingsService::Notification::ReservationCancelNotice));
+        // 2026-09-08 服务端通道两值（横闯追加，缺省同样全开）。
+        QVERIFY(service_.notificationEnabled(
+            SettingsService::Notification::ChargingStopped));
+        QVERIFY(service_.notificationEnabled(
+            SettingsService::Notification::OrderPaid));
 
         QSignalSpy spy(&service_, &SettingsService::notificationsChanged);
         service_.setNotificationEnabled(SettingsService::Notification::ReservationSuccessNotice,
                                         false);
         service_.setNotificationEnabled(SettingsService::Notification::ReservationCancelNotice,
                                         false);
-        QCOMPARE(spy.count(), 2);
+        service_.setNotificationEnabled(SettingsService::Notification::ChargingStopped,
+                                        false);
+        QCOMPARE(spy.count(), 3);
 
-        // 重进页面（新实例）回读：仅到期提醒保持开启。
+        // 重进页面（新实例）回读：仅到期提醒与支付成功保持开启。
         SettingsService reopened;
         QVERIFY(reopened.notificationEnabled(
             SettingsService::Notification::ReservationExpiryReminder));
+        QVERIFY(reopened.notificationEnabled(
+            SettingsService::Notification::OrderPaid));
         QVERIFY(!reopened.notificationEnabled(
             SettingsService::Notification::ReservationSuccessNotice));
         QVERIFY(!reopened.notificationEnabled(
             SettingsService::Notification::ReservationCancelNotice));
+        QVERIFY(!reopened.notificationEnabled(
+            SettingsService::Notification::ChargingStopped));
 
         reopened.resetForTesting();
         QVERIFY(reopened.notificationEnabled(
             SettingsService::Notification::ReservationSuccessNotice)); // 复位默认全开
+        QVERIFY(reopened.notificationEnabled(
+            SettingsService::Notification::ChargingStopped)); // 新键同受复位覆盖
     }
 };
 
