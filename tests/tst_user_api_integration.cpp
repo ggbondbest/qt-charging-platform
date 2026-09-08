@@ -17,6 +17,8 @@
 #include "services/reservation/reservation_service.h"
 
 #include <QEventLoop>
+#include <QBuffer>
+#include <QImage>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QSettings>
@@ -107,7 +109,77 @@ private slots:
     void transportTimeout();
     void concurrentDatabaseConnections();
     void persistentRechargeRetry();
+    void uploadedAvatarPersistsAndRejectsInvalidImages();
+    void unfinishedOrderReturnsOwnedRecoveryDetails();
 };
+
+void UserApiIntegrationTest::uploadedAvatarPersistsAndRejectsInvalidImages()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection c("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(c, kUserLogin, {{"phone", "13800138000"}}).success);
+    auto imageUri = [](int width, int height, const char* format) {
+        QImage image(width, height, QImage::Format_RGB32);
+        image.fill(Qt::darkGreen);
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        buffer.open(QIODevice::WriteOnly);
+        image.save(&buffer, format);
+        return QStringLiteral("data:image/png;base64,") + QString::fromLatin1(bytes.toBase64());
+    };
+    const QString avatar = imageUri(256, 256, "PNG");
+    auto response = call(c, kUpdateUserInfo, {{"avatarKey", avatar}});
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data["user"].toObject()["avatarKey"].toString(), avatar);
+    const QStringList invalid{
+        "data:image/png;base64,bm90LWFuLWltYWdl",
+        "data:image/png;base64,!!!",
+        imageUri(513, 1, "PNG"), imageUri(1, 513, "PNG"), imageUri(16, 16, "JPEG"),
+        QStringLiteral("data:image/png;base64,") + QString(180000, QLatin1Char('A'))
+    };
+    for (const auto& value : invalid) {
+        response = call(c, kUpdateUserInfo, {{"avatarKey", value}, {"nickname", "不应写入"}});
+        QCOMPARE(response.error.code, QStringLiteral("INVALID_ARGUMENT"));
+        QCOMPARE(response.error.details["field"].toString(), QStringLiteral("avatarKey"));
+    }
+    ClientConnection reconnected("127.0.0.1", f.server.serverPort());
+    response = call(reconnected, kUserLogin, {{"phone", "13800138000"}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data["user"].toObject()["avatarKey"].toString(), avatar);
+    QCOMPARE(response.data["user"].toObject()["nickname"].toString(), QStringLiteral("用户8000"));
+    charging::server::DatabaseConnection reopened;
+    QVERIFY(reopened.open(f.db.databasePath(), false));
+    QSqlQuery query(reopened.database());
+    QVERIFY(query.exec("SELECT avatar_key FROM users WHERE id=1"));
+    QVERIFY(query.next());
+    QCOMPARE(query.value(0).toString(), avatar);
+}
+
+void UserApiIntegrationTest::unfinishedOrderReturnsOwnedRecoveryDetails()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection c("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(c, kUserLogin, {{"phone", "13800138000"}}).success);
+    const auto reserved = call(c, kReserveCharger, {{"chargerId", "1"}});
+    QVERIFY(reserved.success);
+    const QString orderId = reserved.data["order"].toObject()["id"].toString();
+    const QString reservationId = reserved.data["reservation"].toObject()["id"].toString();
+    for (const QString& status : {QStringLiteral("RESERVED"), QStringLiteral("CHARGING"), QStringLiteral("WAITING_PAYMENT")}) {
+        if (status == "CHARGING") QVERIFY(call(c, kStartCharging, {{"reservationId", reservationId}}).success);
+        if (status == "WAITING_PAYMENT") QVERIFY(call(c, kStopCharging, {{"orderId", orderId}}).success);
+        const auto blocked = call(c, kReserveCharger, {{"chargerId", "3"}});
+        QVERIFY(!blocked.success);
+        QCOMPARE(blocked.error.code, QStringLiteral("INVALID_STATE_TRANSITION"));
+        QCOMPARE(blocked.error.details["reason"].toString(), QStringLiteral("UNFINISHED_ORDER"));
+        QCOMPARE(blocked.error.details["status"].toString(), status);
+        QCOMPARE(blocked.error.details["orderId"].toString(), orderId);
+        QCOMPARE(blocked.error.details["reservationId"].toString(), reservationId);
+    }
+    ClientConnection other("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(other, kUserLogin, {{"phone", "13900000003"}}).success);
+    const auto response = call(other, kReserveCharger, {{"chargerId", "2"}, {"userId", "1"}});
+    QVERIFY(response.error.details["orderId"].isUndefined());
+}
 
 void UserApiIntegrationTest::eightRoutesAndWorkflow()
 {
