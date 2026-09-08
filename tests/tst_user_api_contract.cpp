@@ -140,7 +140,7 @@ void UserApiContractTest::defaultsAndIdentity()
     QVERIFY(output.isEmpty()); // Not an authentication test: Session is the caller's responsibility.
     QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"userId", "999"}, {"page", 2}},
                                  &output));
-    QCOMPARE(output, QJsonObject{{"months", 6}});   // stats is unpaged; page is discarded
+    QCOMPARE(output, (QJsonObject{{QStringLiteral("months"), 6}}));   // stats is unpaged; page is discarded
 }
 
 void UserApiContractTest::invalidRequests_data()
