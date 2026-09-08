@@ -207,11 +207,18 @@ public:
     // key ∈ "expiry" | "success" | "cancel"
     Q_INVOKABLE bool notificationEnabled(const QString& key) const;
     Q_INVOKABLE void setNotificationEnabled(const QString& key, bool enabled);
+    // 外观（2026-09-08 批次A）：值域即 Service 白名单——
+    // theme ∈ "light" | "dark"；fontScale ∈ "standard" | "large" | "extraLarge"。
+    Q_INVOKABLE QString theme() const;
+    Q_INVOKABLE bool setTheme(const QString& theme);
+    Q_INVOKABLE QString fontScale() const;
+    Q_INVOKABLE bool setFontScale(const QString& scale);
 
 signals:
     void vehiclesChanged();
     void protectionStateChanged();
     void notificationsChanged();
+    void appearanceChanged();   // 主题/字号任一变更（批次A，Shell 据此重同步 Style）
 
 private:
     charging::client::services::settings::SettingsService* svc_;

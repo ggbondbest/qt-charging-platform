@@ -539,6 +539,8 @@ SettingsBridge::SettingsBridge(
             this, &SettingsBridge::protectionStateChanged);
     connect(svc_, &charging::client::services::settings::SettingsService::notificationsChanged,
             this, &SettingsBridge::notificationsChanged);
+    connect(svc_, &charging::client::services::settings::SettingsService::appearanceChanged,
+            this, &SettingsBridge::appearanceChanged);
 }
 
 QVariantList SettingsBridge::vehicles() const
@@ -601,6 +603,11 @@ void SettingsBridge::setNotificationEnabled(const QString& key, bool enabled)
 {
     svc_->setNotificationEnabled(notificationFromKey(key), enabled);
 }
+
+QString SettingsBridge::theme() const { return svc_->theme(); }
+bool SettingsBridge::setTheme(const QString& theme) { return svc_->setTheme(theme); }
+QString SettingsBridge::fontScale() const { return svc_->fontScale(); }
+bool SettingsBridge::setFontScale(const QString& scale) { return svc_->setFontScale(scale); }
 
 // ————————————————————————————— FavoritesBridge ——————————————————————————————
 

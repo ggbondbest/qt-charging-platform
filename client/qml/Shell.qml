@@ -90,6 +90,25 @@ Window {
         }
     }
 
+    // —— 外观同步（2026-09-08 批次A）——
+    // Style 的色/字号令牌全是对 theme/fontScale 的绑定，这里只做"服务→单例"
+    // 的值搬运；启动拉一次 + appearanceChanged 持续跟。桥缺位场景（单页测试
+    // 上下文）用 typeof 守卫，Style 保持默认亮色/标准档。
+    function syncAppearance() {
+        if (typeof settingsService === "undefined" || !settingsService) return
+        try {
+            const t = settingsService.theme()
+            if (typeof t === "string" && t.length > 0) P.Style.theme = t
+            const f = settingsService.fontScale()
+            if (typeof f === "string" && f.length > 0) P.Style.fontScale = f
+        } catch (e) { /* 桥未实现外观方法：静默按默认档 */ }
+    }
+    Component.onCompleted: syncAppearance()
+    Connections {
+        target: typeof settingsService !== "undefined" ? settingsService : null
+        function onAppearanceChanged() { shell.syncAppearance() }
+    }
+
     Column {
         anchors.fill: parent
         P.TopNavBar {

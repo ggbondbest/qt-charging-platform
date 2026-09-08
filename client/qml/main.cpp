@@ -83,6 +83,17 @@ int main(int argc, char* argv[])
     ctx->setContextProperty(QStringLiteral("statsService"), qmlApp.statsService());
     ctx->setContextProperty(QStringLiteral("couponService"), qmlApp.couponService());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
+    // --theme=light|dark / --font=standard|large|extraLarge（批次A）：覆盖式
+    // 设置外观持久化（Service 白名单自拒非法值），Shell 启动同步即生效——
+    // 给暗色截图验收与演示用；不传则维持本机已存值。
+    const QString themeArg = valueOf("--theme=");
+    if (!themeArg.isEmpty())
+        QMetaObject::invokeMethod(qmlApp.settingsService(), "setTheme",
+                                  Q_ARG(QString, themeArg));
+    const QString fontArg = valueOf("--font=");
+    if (!fontArg.isEmpty())
+        QMetaObject::invokeMethod(qmlApp.settingsService(), "setFontScale",
+                                  Q_ARG(QString, fontArg));
     QQmlComponent component(&engine);
     component.loadUrl(QUrl::fromLocalFile(
         QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
