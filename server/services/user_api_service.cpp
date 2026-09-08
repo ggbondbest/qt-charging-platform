@@ -16,7 +16,10 @@ const QMap<QString, UserApiAction> actions{
     {request_type::kUpdateUserInfo, UserApiAction::UpdateProfile},
     {request_type::kRecharge, UserApiAction::Recharge},
     {request_type::kGetRechargeRecords, UserApiAction::RechargeRecords},
-    {request_type::kGetOrders, UserApiAction::Orders}
+    {request_type::kGetOrders, UserApiAction::Orders},
+    {request_type::kGetUserStats, UserApiAction::Stats},
+    {request_type::kGetCoupons, UserApiAction::Coupons},
+    {request_type::kGetNotifications, UserApiAction::Notifications}
 };
 UserApiReply fail(const char* code, const QString& message)
 {
@@ -88,6 +91,7 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     query.avatarKey = input.value("avatarKey").toString();
     query.amountCents = static_cast<qint64>(input.value("amountCents").toDouble());
     query.transactionNo = input.value("transactionNo").toString();
+    query.months = input.value("months").toInt(6);
     query.nowUtc = clock_ ? clock_().toUTC() : QDateTime::currentDateTimeUtc();
     const UserApiResult result = repository_->execute(query);
     switch (result.error) {
@@ -103,6 +107,60 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
         return reply;
     case UserApiError::TooManyRows: return fail(error_code::kInternalError, QStringLiteral("查询结果超出支持范围"));
     case UserApiError::Database: return fail(error_code::kDatabaseError, QStringLiteral("数据库操作失败，请稍后重试"));
+    }
+    // ---- new read actions: raw wire rows (no model::canonical counterparts) ----
+    if (query.action == UserApiAction::Stats) {
+        // co2 = energyWh × 0.5568 g/Wh (national grid average emission factor
+        // 0.5568 tCO2/MWh). TODO(contract): factor & rounding business sign-off.
+        QJsonArray months;
+        for (const auto& row : result.rows) {
+            QJsonObject item = wireRow(row);
+            item.insert("co2Grams", qRound64(item.value("energyWh").toDouble() * 0.5568));
+            months.append(item);
+        }
+        reply.data.insert("months", months);
+        reply.success = true;
+        return reply;
+    }
+    if (query.action == UserApiAction::Coupons) {
+        QJsonArray coupons;
+        for (const auto& row : result.rows) {
+            QJsonObject item = wireRow(row);
+            item.insert("kind", item.value("kind").toString().toLower());
+            item.insert("status", item.value("status").toString().toLower());
+            const QDateTime expires = QDateTime::fromString(
+                item.value("expiresAt").toString(), Qt::ISODateWithMs);
+            item.insert("expiresAtUtc", expires.isValid()
+                ? static_cast<double>(expires.toMSecsSinceEpoch()) : 0.0);
+            const qint64 threshold = item.value("thresholdCents").toVariant().toLongLong();
+            item.insert("condition", threshold > 0
+                ? QStringLiteral("充电满 ¥%1 可用").arg(threshold / 100.0, 0, 'f', 0)
+                : QStringLiteral("无门槛"));
+            coupons.append(item);
+        }
+        reply.data.insert("coupons", coupons);
+        reply.data.insert("page", query.page);
+        reply.data.insert("pageSize", query.pageSize);
+        reply.data.insert("total", result.total);
+        reply.success = true;
+        return reply;
+    }
+    if (query.action == UserApiAction::Notifications) {
+        QJsonArray notifications;
+        for (const auto& row : result.rows) {
+            QJsonObject item = wireRow(row);
+            item.insert("type", item.value("type").toString().toLower());
+            item.insert("createdAtUtc", item.take("createdAt"));  // page contract key
+            item.remove("userId");    // never echo internal identity columns
+            item.remove("readAt");    // read-state sync is phase 2, TODO(contract)
+            notifications.append(item);
+        }
+        reply.data.insert("notifications", notifications);
+        reply.data.insert("page", query.page);
+        reply.data.insert("pageSize", query.pageSize);
+        reply.data.insert("total", result.total);
+        reply.success = true;
+        return reply;
     }
     QJsonArray items;
     for (const auto& row : result.rows) {
@@ -130,6 +188,7 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
         case UserApiAction::UpdateProfile: ok = canonical<charging::model::User>(source, &item); break;
         case UserApiAction::Recharge:
         case UserApiAction::RechargeRecords: ok = canonical<charging::model::RechargeRecord>(source, &item); break;
+        default: break;   // Stats/Coupons/Notifications returned above
         }
         if (!ok) return fail(error_code::kDatabaseError, QStringLiteral("存储的数据无效"));
         items.append(item);

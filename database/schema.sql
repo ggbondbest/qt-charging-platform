@@ -197,6 +197,42 @@ CREATE TABLE IF NOT EXISTS operation_logs (
         ON UPDATE CASCADE ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('CHARGING_STOPPED', 'ORDER_PAID')),
+    title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 64),
+    body TEXT NOT NULL CHECK (length(trim(body)) BETWEEN 1 AND 512),
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    read_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('CASH', 'DISCOUNT')),
+    title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 64),
+    value_cents INTEGER NOT NULL DEFAULT 0
+        CHECK (value_cents BETWEEN 0 AND 9007199254740991),
+    discount_tenths INTEGER
+        CHECK (discount_tenths IS NULL OR discount_tenths BETWEEN 1 AND 99),
+    threshold_cents INTEGER NOT NULL DEFAULT 0
+        CHECK (threshold_cents BETWEEN 0 AND 9007199254740991),
+    status TEXT NOT NULL DEFAULT 'AVAILABLE'
+        CHECK (status IN ('AVAILABLE', 'USED', 'EXPIRED')),
+    source TEXT NOT NULL CHECK (length(trim(source)) BETWEEN 1 AND 32),
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
 CREATE INDEX IF NOT EXISTS idx_stations_status
     ON stations(status);
 CREATE INDEX IF NOT EXISTS idx_chargers_station_status
@@ -217,6 +253,12 @@ CREATE INDEX IF NOT EXISTS idx_recharge_records_user_created_at
     ON recharge_records(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_admin_created_at
     ON operation_logs(admin_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created_at
+    ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coupons_user_status
+    ON coupons(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_coupons_user_created_at
+    ON coupons(user_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reservations_active_user
     ON reservations(user_id)

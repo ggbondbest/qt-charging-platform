@@ -111,6 +111,35 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
                  {{"txn", in.transactionNo}}) || !q.next()) return {};
         result.rows.append(row(q));
         q.finish();
+        // Recharge-reward coupon: rule constants live in user_api_contract.h,
+        // TODO(contract): business sign-off pending. Idempotent replays returned
+        // above, so one SUCCESS recharge grants at most one coupon.
+        if (in.amountCents >= charging::protocol::user_api::kCouponRechargeThresholdCents) {
+            const QString expires = in.nowUtc
+                .addDays(charging::protocol::user_api::kCouponValidityDays)
+                .toUTC().toString(Qt::ISODateWithMs);
+            if (!run(q, "INSERT INTO coupons (user_id,kind,title,value_cents,threshold_cents,"
+                        "status,source,expires_at,created_at,updated_at) "
+                        "VALUES (:uid,'CASH','充值回馈 ¥5 充电券',:value,0,'AVAILABLE','充值回馈',"
+                        ":expires,:now,:now)",
+                     {{"uid", in.userId},
+                      {"value", charging::protocol::user_api::kCouponValueCents},
+                      {"expires", expires}, {"now", now}})) return {};
+        }
+        return finish();
+    }
+    if (in.action == UserApiAction::Stats) {
+        if (in.months < 1 || in.months > charging::protocol::user_api::kMaximumStatsMonths)
+            return failure(UserApiError::Invalid);
+        if (!run(q, "SELECT strftime('%Y-%m', created_at) AS month_key, "
+                    "COUNT(*) AS order_count, SUM(energy_wh) AS energy_wh, "
+                    "SUM(amount_cents) AS amount_cents, SUM(duration_seconds) AS duration_seconds "
+                    "FROM orders WHERE user_id=:uid AND status='COMPLETED' "
+                    "GROUP BY month_key ORDER BY month_key DESC LIMIT :months",
+                 {{"uid", in.userId}, {"months", in.months}})) return {};
+        while (q.next()) result.rows.append(row(q));
+        if (q.lastError().isValid()) return {};
+        q.finish();
         return finish();
     }
 
@@ -164,6 +193,18 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
     case UserApiAction::RechargeRecords:
         from = "recharge_records r"; columns = "r.*"; where = "r.user_id=:uid";
         sort = "r.created_at DESC,r.id DESC"; binds.insert("uid", in.userId);
+        break;
+    case UserApiAction::Coupons:
+        from = "coupons c"; columns = "c.*"; where = "c.user_id=:uid";
+        sort = "c.created_at DESC,c.id DESC"; binds.insert("uid", in.userId);
+        if (!in.status.isEmpty()) {
+            where += " AND c.status=:status";
+            binds.insert("status", in.status.toUpper());   // wire lowercase → stored uppercase
+        }
+        break;
+    case UserApiAction::Notifications:
+        from = "notifications n"; columns = "n.*"; where = "n.user_id=:uid";
+        sort = "n.created_at DESC,n.id DESC"; binds.insert("uid", in.userId);
         break;
     default: return failure(UserApiError::Invalid);
     }

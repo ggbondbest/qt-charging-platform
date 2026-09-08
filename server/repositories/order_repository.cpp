@@ -330,6 +330,21 @@ OrderRepositoryResult OrderRepository::pay(qint64 userId, qint64 orderId,
                        QStringLiteral("The conditional payment update affected no row"));
     }
 
+    // Notify the user of the successful payment in the same transaction; the
+    // idempotent branch returned above, so one payment writes one row.
+    // TODO(contract): draft wording pending review.
+    QString notificationError;
+    if (!repository_detail::insertNotificationInTransaction(
+            database_, userId, QStringLiteral("ORDER_PAID"),
+            QStringLiteral("支付成功"),
+            QStringLiteral("订单 %1 已支付 ¥%2，当前余额 ¥%3")
+                .arg(result.order.orderNo)
+                .arg(result.order.amountCents / 100.0, 0, 'f', 2)
+                .arg((currentBalance - result.order.amountCents) / 100.0, 0, 'f', 2),
+            paidAtUtc, &notificationError)) {
+        return failure(RepositoryError::Database, notificationError);
+    }
+
     if (!loadOrder(database_, orderId, &result.order, &found, &result.diagnostic) || !found ||
         !loadBalance(database_, userId, &result.balanceCents, &found, &result.diagnostic) ||
         !found) {

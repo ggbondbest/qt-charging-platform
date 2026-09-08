@@ -51,6 +51,9 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     const bool profile = type == QLatin1String(kGetUserInfo);
     const bool update = type == QLatin1String(kUpdateUserInfo);
     const bool recharge = type == QLatin1String(kRecharge);
+    const bool stats = type == QLatin1String(kGetUserStats);
+    const bool coupons = type == QLatin1String(kGetCoupons);
+    const bool notices = type == QLatin1String(kGetNotifications);
     const auto fail = [error](const char* code, const QString& field) {
         if (error != nullptr) {
             *error = {};
@@ -61,12 +64,12 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         return false;
     };
     if (!(stations || chargers || reservations || orders || records || profile || update
-          || recharge)) {
+          || recharge || stats || coupons || notices)) {
         return fail(error_code::kUnknownRequestType, QStringLiteral("type"));
     }
 
     QJsonObject result;
-    if (stations || chargers || reservations || orders || records) {
+    if (stations || chargers || reservations || orders || records || coupons || notices) {
         for (const QString& key : {QStringLiteral("page"), QStringLiteral("pageSize")}) {
             const bool isPage = key == QLatin1String("page");
             const QJsonValue value = data.contains(key)
@@ -98,6 +101,27 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         if (!value.isString()
             || (reservations && !validStatus<charging::model::ReservationStatus>(value.toString()))
             || (orders && !validStatus<charging::model::OrderStatus>(value.toString()))) {
+            return fail(error_code::kInvalidArgument, key);
+        }
+        result.insert(key, value);
+    }
+    if (stats) {
+        const QString key = QStringLiteral("months");
+        const QJsonValue value = data.contains(key)
+            ? data.value(key) : QJsonValue(6);
+        if (!integerInRange(value, 1, kMaximumStatsMonths)) {
+            return fail(error_code::kInvalidArgument, key);
+        }
+        result.insert(key, value);
+    }
+    if (coupons) {
+        // Wire statuses are the CouponPage contract's lowercase trio; empty = all.
+        const QString key = QStringLiteral("status");
+        const QJsonValue value = data.contains(key) ? data.value(key) : QJsonValue(QString());
+        const QString status = value.toString();
+        if (!value.isString()
+            || (!status.isEmpty() && status != QLatin1String("available")
+                && status != QLatin1String("used") && status != QLatin1String("expired"))) {
             return fail(error_code::kInvalidArgument, key);
         }
         result.insert(key, value);

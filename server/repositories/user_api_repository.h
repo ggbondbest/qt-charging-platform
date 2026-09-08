@@ -10,7 +10,7 @@ namespace charging::server {
 // Application-specific queries, separate from the member-5 admin repositories.
 // Rows use SQL column names; only the Service knows the wire representation.
 enum class UserApiAction { Stations, Chargers, Reservations, Profile, UpdateProfile,
-                           Recharge, RechargeRecords, Orders };
+                           Recharge, RechargeRecords, Orders, Stats, Coupons, Notifications };
 enum class UserApiError { None, Database, Unauthorized, Frozen, NotFound, Invalid,
                           Conflict, RechargeFailed, TooManyRows };
 struct UserApiQuery {
@@ -27,6 +27,7 @@ struct UserApiQuery {
     QString avatarKey;
     QString transactionNo;
     qint64 amountCents = 0;
+    int months = 6;               // Stats window (1..kMaximumStatsMonths)
     QDateTime nowUtc;
 };
 struct UserApiResult {

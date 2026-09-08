@@ -807,6 +807,21 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
         return failure(RepositoryError::Database, result.diagnostic);
     }
 
+    // Surface the stop in the user's notification list in the same
+    // transaction; idempotent replays returned above, so one stop writes one
+    // row. TODO(contract): draft wording pending review.
+    QString notificationError;
+    if (!repository_detail::insertNotificationInTransaction(
+            database_, userId, QStringLiteral("CHARGING_STOPPED"),
+            QStringLiteral("充电已结束"),
+            QStringLiteral("本次充电 %1 kWh，用时 %2 分钟，产生费用 ¥%3，请及时支付")
+                .arg(energyWh / 1000.0, 0, 'f', 2)
+                .arg(durationSeconds / 60)
+                .arg(amountCents / 100.0, 0, 'f', 2),
+            stoppedAtUtc, &notificationError)) {
+        return failure(RepositoryError::Database, notificationError);
+    }
+
     if (!loadWorkflowByOrder(database_, orderId, &result)) {
         return failure(RepositoryError::Database, result.diagnostic);
     }

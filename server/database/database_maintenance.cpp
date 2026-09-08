@@ -301,7 +301,15 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("operation_logs"), {QStringLiteral("id"), QStringLiteral("admin_id"),
             QStringLiteral("action"), QStringLiteral("target_type"),
             QStringLiteral("target_id"), QStringLiteral("details_json"),
-            QStringLiteral("created_at")}}
+            QStringLiteral("created_at")}},
+        {QStringLiteral("notifications"), {QStringLiteral("id"), QStringLiteral("user_id"),
+            QStringLiteral("type"), QStringLiteral("title"), QStringLiteral("body"),
+            QStringLiteral("created_at"), QStringLiteral("read_at")}},
+        {QStringLiteral("coupons"), {QStringLiteral("id"), QStringLiteral("user_id"),
+            QStringLiteral("kind"), QStringLiteral("title"), QStringLiteral("value_cents"),
+            QStringLiteral("discount_tenths"), QStringLiteral("threshold_cents"),
+            QStringLiteral("status"), QStringLiteral("source"), QStringLiteral("expires_at"),
+            QStringLiteral("created_at"), QStringLiteral("updated_at")}}
     };
     for (const auto& table : tables) {
         if (!validateTableColumns(database, table.first, table.second, errorMessage)) {
@@ -320,7 +328,12 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
             QStringLiteral("reservation_id INTEGER UNIQUE")}},
         {QStringLiteral("recharge_records"), {
             QStringLiteral("transaction_no TEXT NOT NULL UNIQUE"),
-            QStringLiteral("status IN ('SUCCESS', 'FAILED')")}}
+            QStringLiteral("status IN ('SUCCESS', 'FAILED')")}},
+        {QStringLiteral("notifications"), {
+            QStringLiteral("type IN ('CHARGING_STOPPED', 'ORDER_PAID')")}},
+        {QStringLiteral("coupons"), {
+            QStringLiteral("kind IN ('CASH', 'DISCOUNT')"),
+            QStringLiteral("status IN ('AVAILABLE', 'USED', 'EXPIRED')")}}
     };
     for (const auto& table : tableConstraints) {
         if (!validateTableDefinition(database, table.first, table.second, errorMessage)) {
@@ -336,7 +349,9 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("orders"), QStringLiteral("charger_id"), QStringLiteral("chargers")},
         {QStringLiteral("orders"), QStringLiteral("reservation_id"), QStringLiteral("reservations")},
         {QStringLiteral("recharge_records"), QStringLiteral("user_id"), QStringLiteral("users")},
-        {QStringLiteral("operation_logs"), QStringLiteral("admin_id"), QStringLiteral("admins")}
+        {QStringLiteral("operation_logs"), QStringLiteral("admin_id"), QStringLiteral("admins")},
+        {QStringLiteral("notifications"), QStringLiteral("user_id"), QStringLiteral("users")},
+        {QStringLiteral("coupons"), QStringLiteral("user_id"), QStringLiteral("users")}
     };
     for (const QStringList& foreignKey : foreignKeys) {
         if (!validateForeignKey(database, foreignKey.at(0), foreignKey.at(1), foreignKey.at(2),
@@ -368,6 +383,12 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("idx_operation_logs_admin_created_at"),
          QStringLiteral("operation_logs"),
          {QStringLiteral("admin_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_notifications_user_created_at"), QStringLiteral("notifications"),
+         {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_coupons_user_status"), QStringLiteral("coupons"),
+         {QStringLiteral("user_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_coupons_user_created_at"), QStringLiteral("coupons"),
+         {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
         {QStringLiteral("ux_reservations_active_user"), QStringLiteral("reservations"),
          {QStringLiteral("user_id")}, true, QStringLiteral("status = 'ACTIVE'")},
         {QStringLiteral("ux_reservations_active_charger"), QStringLiteral("reservations"),

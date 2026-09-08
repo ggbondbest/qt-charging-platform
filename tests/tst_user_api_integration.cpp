@@ -92,7 +92,8 @@ const QMap<QString, QJsonObject> requests{
     {kGetStations, {}}, {kGetChargers, {{"stationId", "1"}}}, {kGetReservations, {}},
     {kGetUserInfo, {}}, {kUpdateUserInfo, {{"nickname", "小明"}}},
     {kRecharge, {{"amountCents", 500}, {"transactionNo", "auth-1"}}},
-    {kGetRechargeRecords, {}}, {kGetOrders, {}}
+    {kGetRechargeRecords, {}}, {kGetOrders, {}},
+    {kGetUserStats, {}}, {kGetCoupons, {}}, {kGetNotifications, {}}
 };
 } // namespace
 
@@ -100,6 +101,7 @@ class UserApiIntegrationTest final : public QObject {
     Q_OBJECT
 private slots:
     void eightRoutesAndWorkflow();
+    void statsCouponsAndNotifications();
     void authorizationAndValidation();
     void pagingExpiryAndLiveLists();
     void rechargeRollbackAndReplay();
@@ -180,6 +182,78 @@ void UserApiIntegrationTest::eightRoutesAndWorkflow()
     QSqlQuery query(reopened.database());
     QVERIFY(query.exec("SELECT balance_cents FROM users WHERE id=" + uid));
     QVERIFY(query.next()); QCOMPARE(query.value(0).toInt(), balance);
+}
+
+void UserApiIntegrationTest::statsCouponsAndNotifications()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+    QCOMPARE(call(a, kGetNotifications).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 0);
+    QVERIFY(call(a, kGetUserStats).data.value("months").toArray().isEmpty());
+    QCOMPARE(call(a, kGetUserStats, {{"months", 13}}).error.code, QStringLiteral("INVALID_ARGUMENT"));
+
+    const auto wf = call(a, kReserveCharger, {{"chargerId", "1"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString reservationId = wf.data.value("reservation").toObject().value("id").toString();
+    const QString orderId = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId", reservationId}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", orderId}}).success);
+
+    auto response = call(a, kGetNotifications);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    QJsonObject note = response.data.value("notifications").toArray().first().toObject();
+    QCOMPARE(note.value("type").toString(), QStringLiteral("charging_stopped"));
+    QVERIFY(note.value("body").toString().contains(QStringLiteral("kWh")));
+    QVERIFY(note.value("createdAtUtc").isString());
+    QVERIFY(!note.contains("userId"));
+
+    QVERIFY(call(a, kPayOrder, {{"orderId", orderId}}).success);
+    response = call(a, kGetNotifications, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);
+    QCOMPARE(response.data.value("notifications").toArray().first().toObject().value("type").toString(),
+             QStringLiteral("order_paid"));   // newest first within one clock tick (id DESC)
+
+    response = call(a, kGetUserStats);
+    QVERIFY(response.success);
+    const QJsonArray months = response.data.value("months").toArray();
+    QCOMPARE(months.size(), 1);
+    const QJsonObject month = months.first().toObject();
+    QCOMPARE(month.value("orderCount").toInt(), 1);
+    QVERIFY(month.value("monthKey").toString().size() == 7);
+    QVERIFY(month.value("energyWh").toDouble() > 0);
+    QCOMPARE(month.value("co2Grams").toDouble(), qRound64(month.value("energyWh").toDouble() * 0.5568));
+
+    // Coupon grant: >= ¥50 recharge once; below threshold none; idempotent
+    // replay of the same transaction never re-grants.
+    QVERIFY(call(a, kRecharge, {{"amountCents", 4999}, {"transactionNo", "coupon-below"}}).success);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 0);
+    QVERIFY(call(a, kRecharge, {{"amountCents", 5000}, {"transactionNo", "coupon-hit"}}).success);
+    response = call(a, kGetCoupons);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    const QJsonObject coupon = response.data.value("coupons").toArray().first().toObject();
+    QCOMPARE(coupon.value("kind").toString(), QStringLiteral("cash"));
+    QCOMPARE(coupon.value("status").toString(), QStringLiteral("available"));
+    QCOMPARE(coupon.value("valueCents").toInt(), 500);
+    QCOMPARE(coupon.value("condition").toString(), QStringLiteral("无门槛"));
+    QVERIFY(coupon.value("expiresAtUtc").toDouble() > 0);
+    QVERIFY(!coupon.value("id").toString().isEmpty());
+    QVERIFY(call(a, kRecharge, {{"amountCents", 5000}, {"transactionNo", "coupon-hit"}}).success);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 1);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "AVAILABLE"}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+    QCOMPARE(f.number("SELECT COUNT(*) FROM coupons WHERE status='AVAILABLE' AND value_cents=500"), 1);
+    // Coupons belong to the session user only; the second account sees none.
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kGetCoupons).data.value("total").toInt(), 0);
+    QCOMPARE(call(b, kGetNotifications).data.value("total").toInt(), 0);
 }
 
 void UserApiIntegrationTest::authorizationAndValidation()

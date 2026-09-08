@@ -126,7 +126,8 @@ void UserApiContractTest::documentedExamples()
 void UserApiContractTest::defaultsAndIdentity()
 {
     for (const char* type : {request_type::kGetStations, request_type::kGetReservations,
-                             request_type::kGetOrders, request_type::kGetRechargeRecords}) {
+                             request_type::kGetOrders, request_type::kGetRechargeRecords,
+                             request_type::kGetCoupons, request_type::kGetNotifications}) {
         QJsonObject output;
         QVERIFY(normalizeRequestData(type, {{"userId", "999"}, {"futureField", true}}, &output));
         QCOMPARE(output.value("page").toInt(), kDefaultPage);
@@ -137,6 +138,9 @@ void UserApiContractTest::defaultsAndIdentity()
     QJsonObject output;
     QVERIFY(normalizeRequestData(request_type::kGetUserInfo, {{"userId", "999"}}, &output));
     QVERIFY(output.isEmpty()); // Not an authentication test: Session is the caller's responsibility.
+    QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"userId", "999"}, {"page", 2}},
+                                 &output));
+    QCOMPARE(output, QJsonObject{{"months", 6}});   // stats is unpaged; page is discarded
 }
 
 void UserApiContractTest::invalidRequests_data()
@@ -167,6 +171,20 @@ void UserApiContractTest::invalidRequests_data()
         << QJsonObject{{"status", QJsonValue::Null}};
     QTest::newRow("keyword-long") << QString(request_type::kGetStations)
         << QJsonObject{{"keyword", QString(65, QLatin1Char('x'))}};
+    for (const QJsonValue& months : {QJsonValue(0), QJsonValue(-1), QJsonValue(1.5),
+                                      QJsonValue("6"), QJsonValue(13)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{months}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("stats-months-" + tag).constData())
+            << QString(request_type::kGetUserStats) << QJsonObject{{"months", months}};
+    }
+    for (const QJsonValue& status : {QJsonValue("AVAILABLE"), QJsonValue("pending"),
+                                     QJsonValue(1), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{status}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("coupon-status-" + tag).constData())
+            << QString(request_type::kGetCoupons) << QJsonObject{{"status", status}};
+    }
+    QTest::newRow("notifications-page-size-limit") << QString(request_type::kGetNotifications)
+        << QJsonObject{{"pageSize", 101}};
     QTest::newRow("empty-update") << QString(request_type::kUpdateUserInfo) << QJsonObject{};
     QTest::newRow("protected-update") << QString(request_type::kUpdateUserInfo)
         << QJsonObject{{"balanceCents", 100}};
@@ -232,6 +250,14 @@ void UserApiContractTest::boundariesAndNormalization()
     }
     for (const char* status : {"ACTIVE", "FULFILLED", "CANCELLED", "EXPIRED", ""}) {
         QVERIFY(normalizeRequestData(request_type::kGetReservations, {{"status", status}}, &output));
+    }
+    for (const int months : {1, 6, kMaximumStatsMonths}) {
+        QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"months", months}}, &output));
+        QCOMPARE(output.value("months").toInt(), months);
+    }
+    for (const char* status : {"available", "used", "expired", ""}) {
+        QVERIFY(normalizeRequestData(request_type::kGetCoupons, {{"status", status}}, &output));
+        QCOMPARE(output.value("status").toString(), QLatin1String(status));
     }
 }
 
