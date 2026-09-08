@@ -21,8 +21,10 @@
 #include "service_bridges.h"
 
 using charging::qml::ChargingBridge;
+using charging::qml::CouponBridge;
 using charging::qml::OrderBridge;
 using charging::qml::QmlApp;
+using charging::qml::StatsBridge;
 using charging::qml::WalletBridge;
 
 namespace {
@@ -112,6 +114,35 @@ signals:
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
     void operationFailed(const QString& type, const QString& code, const QString& message);
+};
+
+// 假月报桥：与 StatsBridge 同名（CONTRACT §1），页面对它无感知。
+class FakeStatsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE void fetchStats(int months = 6)
+    {
+        ++calls;
+        lastMonths = months;
+    }
+    Q_INVOKABLE bool isFetchingStats() const { return false; }
+
+    void emitRows(const QVariantList& rows) { emit statsLoaded(rows); }
+    void emitFailure()
+    {
+        emit operationFailed(QStringLiteral("GET_USER_STATS"), QStringLiteral("MOCK"),
+                             QStringLiteral("模拟月报加载失败"));
+    }
+
+signals:
+    void statsLoaded(const QVariantList& months);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int calls = 0;
+    int lastMonths = 0;
 };
 
 } // namespace
@@ -426,6 +457,115 @@ private slots:
     }
 
     // P2·复审⑤：支付成功 → QmlApp 用 paymentCompleted 的余额回写并广播 userChanged。
+    // 月报页 × 假桥：进页即拉 6 个月；响应落 ListModel、hero 总计重算、
+    // 空态在数据落定后现身；失败回执清在途。
+    void statsPageRendersBridgeMonths()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStatsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("statsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("StatsPage.qml"), &holder);
+        QVERIFY(page);
+
+        QCOMPARE(fake.calls, 1);
+        QCOMPARE(fake.lastMonths, 6);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitRows({QVariantMap{{QStringLiteral("monthKey"), QStringLiteral("2026-09")},
+                                   {QStringLiteral("orderCount"), 2},
+                                   {QStringLiteral("energyWh"), 20000},
+                                   {QStringLiteral("amountCents"), 3000},
+                                   {QStringLiteral("durationSeconds"), 3600},
+                                   {QStringLiteral("co2Grams"), 11136}}});
+
+        auto* model = page->findChild<QObject*>("uiStatsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        const QVariantMap totals = page->property("totals").toMap();
+        QCOMPARE(totals.value(QStringLiteral("wh")).toInt(), 20000);
+        QCOMPARE(totals.value(QStringLiteral("cents")).toInt(), 3000);
+        QCOMPARE(totals.value(QStringLiteral("count")).toInt(), 2);
+        QCOMPARE(totals.value(QStringLiteral("hours")).toDouble(), 1.0);
+        QCOMPARE(totals.value(QStringLiteral("co2Kg")).toDouble(), 11.136);
+
+        // 下拉：刷新请求再发一路；空响应 → 空态可见。
+        auto* pull = page->findChild<QQuickItem*>("uiStatsListStack");
+        QVERIFY(pull);
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls, 2);
+        fake.emitRows({});
+        auto* notice = page->findChild<QQuickItem*>("uiStatsEmptyNotice");
+        QVERIFY(notice);
+        QVERIFY(notice->isVisible());
+
+        // 失败回执：在途清空、页面保留上一次数据（不清屏）。
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls, 3);
+        fake.emitFailure();
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(page->property("loadedOnce").toBool()); // 失败不回滚已落定状态
+        QVERIFY(notice->isVisible());                   // 保留上一次数据（仍空态）
+    }
+
+    // 月报桥 × 真 mock 通道：端到端有当月聚合，碳排公式对拍；越界月份 INVALID。
+    void statsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* stats = qobject_cast<StatsBridge*>(app.statsService());
+        QVERIFY(stats);
+
+        QSignalSpy spy(stats, &StatsBridge::statsLoaded);
+        stats->fetchStats(6);
+        QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 4000);
+        const QVariantList months = spy.at(0).at(0).toList();
+        QVERIFY(!months.isEmpty()); // mock 种子含当月已完成订单
+        const QVariantMap first = months.first().toMap();
+        QCOMPARE(first.value(QStringLiteral("monthKey")).toString().size(), 7);
+        const double expectedCo2 =
+            qRound64(first.value(QStringLiteral("energyWh")).toLongLong() * 0.5568);
+        QCOMPARE(first.value(QStringLiteral("co2Grams")).toDouble(), expectedCo2);
+
+        QSignalSpy failSpy(stats, &StatsBridge::operationFailed);
+        stats->fetchStats(13); // 越界：contract 层拒
+        QTRY_VERIFY_WITH_TIMEOUT(failSpy.count() >= 1, 4000);
+        QCOMPARE(failSpy.at(0).at(0).toString(), QStringLiteral("GET_USER_STATS"));
+        QCOMPARE(failSpy.at(0).at(1).toString(), QStringLiteral("INVALID_ARGUMENT"));
+    }
+
+    // 券桥 × 真 mock 通道：app 接线即拉满缓存（CouponPage 只同步读缓存），
+    // 5 张种子券、3 张可用，页面契约字段形态齐。
+    void couponBridgeServesMockWallet()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* coupons = qobject_cast<CouponBridge*>(app.couponService());
+        QVERIFY(coupons);
+
+        // mock 回执经事件循环延迟派发：QmlApp ctor 的 fetchCoupons 要等一圈
+        // 事件才落缓存（QTRY 兼作“接线时自动拉一次”契约本身的验证）。
+        QTRY_VERIFY_WITH_TIMEOUT(coupons->couponCount() == 5, 4000);
+        const QVariantList rows = coupons->coupons();
+        QCOMPARE(rows.size(), 5);
+        int available = 0;
+        for (const QVariant& row : rows) {
+            const QVariantMap item = row.toMap();
+            if (item.value(QStringLiteral("status")).toString() == QLatin1String("available"))
+                ++available;
+            QVERIFY(!item.value(QStringLiteral("id")).toString().isEmpty());
+            QVERIFY(item.value(QStringLiteral("expiresAtUtc")).toDouble() > 0.0);
+        }
+        QCOMPARE(available, 3);
+    }
+
     void paymentSyncsTopBarBalance()
     {
         QmlApp app;
