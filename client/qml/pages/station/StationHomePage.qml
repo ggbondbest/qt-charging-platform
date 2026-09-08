@@ -30,7 +30,8 @@ Item {
     property int sortMode: 2            // 2=综合（服务端顺序，widgets 默认）0=空闲优先 1=距离最近
     property var criteria: ({ maxDistanceKm: 0, statuses: [], operators: [],
                               accessTypes: [], parkingFees: [], features: [],
-                              chargerTypes: [], voltageBands: [] })
+                              chargerTypes: [], voltageBands: [],
+                              priceMinCents: -1, priceMaxCents: -1 })
     property var raw: []
     property bool loading: false
     property bool loaded: false         // 状态门（缺陷4 模式）：未落定不进"空"
@@ -40,9 +41,85 @@ Item {
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
+    // 球面距离（米）：地点检索后"周边"距离口径（haversine，R=6371km）。
+    function haversineMeters(lat1, lng1, lat2, lng2) {
+        const r = Math.PI / 180
+        const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(lat1 * r) * Math.cos(lat2 * r)
+                  * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    }
+    // ---- 地点搜索 + 周边电站检索（2026-09-08；仅 mapGeoService 在线且有 key）----
+    // 关键词先正地理编码成中心点 → 电站全量拉取（避免服务端把"北京大学"当站名
+    // 子串误杀零命中）→ 各站距离按中心重算 → "📍X 周边"列表。无 key 行为逐字节不变。
+    property var searchCenter: null     // {lat,lng,display}
+    property int geocodeReqId: 0        // 代际过滤：只认最近一次检索的 geocode 回调
+    function stationLatLng(s) {
+        const lat = s.latitude !== undefined ? s.latitude
+                  : (s.station && s.station.latitude !== undefined ? s.station.latitude : NaN)
+        const lng = s.longitude !== undefined ? s.longitude
+                  : (s.station && s.station.longitude !== undefined ? s.station.longitude : NaN)
+        return { lat: lat, lng: lng }
+    }
+    function applySearchCenter() {
+        // raw 与 center 两条异步到达（query / geocode），后到者补齐：幂等重算。
+        if (!page.searchCenter) return
+        const c = page.searchCenter
+        const out = []
+        for (const s of (page.raw || [])) {
+            const p = stationLatLng(s)
+            const t = Object.assign({}, s)
+            if (!isNaN(p.lat) && !isNaN(p.lng))
+                t.distanceMeters = Math.round(haversineMeters(c.lat, c.lng, p.lat, p.lng))
+            out.push(t)
+        }
+        page.raw = out
+        page.project()
+    }
+    function mapGeoUsable() {
+        try { return !!(mapGeoService && mapGeoService.usable()) } catch (e) { return false }
+    }
     function isFav(id) { // 桥未补时容错为未收藏
         try { return favoritesService ? favoritesService.contains(id) : false }
         catch (e) { return false }
+    }
+    // ---- 筛选维度标签行（批量指令⑤）：八组筛选逐维渲染 + 命中高亮 ----
+    // 数据取 raw 按 id 回查（真桥/demo 两路同函数）；"字段有值即渲染、
+    // 匹配不上只是不高亮"（演示通道枚举错位零裁撤）。criteria 整组重赋值
+    // 触发绑定重算，高亮随筛选即时更新。
+    function tagHit(group, label) {
+        const list = page.criteria[group] || []
+        return list.indexOf(label) >= 0
+    }
+    function chargerLabel(t) {   // 演示枚举 fast/slow → 选项字面量；真桥值原样
+        return t === "fast" ? "快充" : t === "slow" ? "慢充" : t === "ultra" ? "超充" : String(t)
+    }
+    function stationTagsFor(id) {
+        let s = null
+        for (const r of (page.raw || [])) if (r && r.id === id) { s = r; break }
+        if (!s) return []
+        const out = []
+        if (s.operatorName)
+            out.push({ label: s.operatorName, tone: "neutral", hit: tagHit("operators", s.operatorName) })
+        if (s.accessType)
+            out.push({ label: s.accessType, tone: "neutral", hit: tagHit("accessTypes", s.accessType) })
+        for (const t of (s.chargerTypes || [])) {
+            const lab = chargerLabel(t)
+            out.push({ label: lab, tone: "info", hit: tagHit("chargerTypes", lab) })
+        }
+        for (const f of (s.features || []))
+            out.push({ label: f, tone: "neutral", hit: tagHit("features", f) })
+        if (s.parkingFee)
+            out.push({ label: s.parkingFee,
+                       tone: (String(s.parkingFee).indexOf("免费") >= 0 || s.parkingFee === "停车减免")
+                             ? "info" : "neutral",
+                       hit: tagHit("parkingFees", s.parkingFee) })
+        if (s.hasVoltageBelow700)
+            out.push({ label: "低于700V", tone: "neutral", hit: tagHit("voltageBands", "低于700V") })
+        if (s.hasVoltageAtLeast700)
+            out.push({ label: "700V及以上", tone: "neutral", hit: tagHit("voltageBands", "700V及以上") })
+        return out
     }
     function viewState() {
         if (!loaded) return failed ? "error" : "loading"
@@ -52,12 +129,16 @@ Item {
         const c = page.criteria
         let n = 0
         if (page.priceMax > 0) ++n
+        if ((c.priceMinCents >= 0 || c.priceMaxCents >= 0)) ++n
         if (c.maxDistanceKm > 0) ++n
         n += (c.statuses.length > 0) + (c.operators.length > 0) + (c.accessTypes.length > 0)
            + (c.parkingFees.length > 0) + (c.features.length > 0)
            + (c.chargerTypes.length > 0) + (c.voltageBands.length > 0)
         return n
     }
+    // 2026-09-08：全局唯一高级筛选入口=顶栏漏斗（页面右上 ⛏ 已撤），
+    // Shell 把本属性绑到 nav.filterBadgeCount。
+    readonly property int activeFilterBadge: page.activeFilterCount()
     // hero 统计（当前投影结果的实时聚合）
     readonly property int statAvailable: {
         let n = 0
@@ -72,19 +153,30 @@ Item {
     }
 
     function refresh() {
-        if (!stationQueryService) { loadDemo(); return }
+        if (!stationQueryService) { loadDemo(false); return }
         loading = true; failed = false
-        try { stationQueryService.search(keyword) }   // TODO(contract): 桥补 invokable search
-        catch (e) {                                    // 桥缺位：退页内演示数据（标注清楚），
-            loadDemo()                                 // 真桥落地后信号即替换，不再走到这
+        const kw = page.keyword.trim()
+        searchCenter = null; geocodeReqId = 0
+        var geocoding = false
+        if (kw.length > 0 && mapGeoUsable()) {
+            try { geocodeReqId = mapGeoService.requestAddressGeocode(kw) } catch (e) { geocodeReqId = 0 }
+            geocoding = geocodeReqId > 0
+        }
+        try {
+            // 周边检索态：站名关键词交距离/坐标语义承载，服务端全量拉取；
+            // 否则维持现 keyword 子串/服务端过滤口径（TODO(contract): 桥 search）。
+            stationQueryService.search(geocoding ? "" : keyword)
+        } catch (e) {
+            loadDemo(geocoding)        // 桥缺位：演示数据（geocoding 时跳过站名过滤）
         }
     }
     property string failMessage: ""
     property bool demo: false
 
     // ---- 演示数据通道（同优惠券页口径：标"演示数据"，不冒充真实查询结果）----
-    // 带经纬度点位 → 地图示意自动布点；关键词搜索在演示通道内同样生效。
-    function demoStations() {
+    // 带经纬度点位 → 地图示意自动布点；关键词搜索在演示通道内同样生效
+    //（ignoreKeyword=周边检索态：站名过滤让位给"中心点周边"语义）。
+    function demoStations(ignoreKeyword) {
         const base = [
             { id: 9001, name: "滨海快充站", address: "南山区滨海大道 2012 号",
               priceCentsPerKwh: 128, availableChargers: 6, totalChargers: 12,
@@ -107,15 +199,16 @@ Item {
               operatorName: "国网电动", features: [], chargerTypes: ["fast", "slow"],
               parkingFee: "免停车费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: true }
         ]
-        const kw = page.keyword.trim()
+        const kw = ignoreKeyword ? "" : page.keyword.trim()
         return kw.length === 0 ? base
              : base.filter(s => s.name.indexOf(kw) >= 0 || s.address.indexOf(kw) >= 0)
     }
-    function loadDemo() {
+    function loadDemo(ignoreKeyword) {
         demo = true
-        raw = demoStations()
+        raw = demoStations(!!ignoreKeyword)
         loading = false; loaded = true; failed = false
-        project()
+        if (page.searchCenter) applySearchCenter()   // 中心点先到（真 geocode + 桥缺位演示兜底）
+        else project()
         try { pull.setRefreshing(false) } catch (e) {}
     }
 
@@ -126,6 +219,10 @@ Item {
         const rows = []
         for (const s of (page.raw || [])) {
             if (page.priceMax > 0 && s.priceCentsPerKwh > page.priceMax) continue
+            // 自定义电价区间（批量指令④，高级筛选弹窗手输）：-1/undefined=不限；
+            // 与胶囊条预设档 AND 叠加（预设 combo 行为不变）。0 是合法边界，勿用 || 短路。
+            if (c.priceMinCents >= 0 && s.priceCentsPerKwh < c.priceMinCents) continue
+            if (c.priceMaxCents >= 0 && s.priceCentsPerKwh > c.priceMaxCents) continue
             if (c.maxDistanceKm > 0 && !(s.distanceMeters >= 0
                                          && s.distanceMeters <= c.maxDistanceKm * 1000)) continue
             if (c.statuses.length > 0) {
@@ -177,12 +274,14 @@ Item {
                || c.operators.length > 0 || c.accessTypes.length > 0
                || c.parkingFees.length > 0 || c.features.length > 0
                || c.chargerTypes.length > 0 || c.voltageBands.length > 0
+               || c.priceMinCents >= 0 || c.priceMaxCents >= 0
     }
     function resetFilters() {          // 缺陷2 口径：只回退筛选两源，不误清关键词
         page.priceMax = -1
         priceCombo.currentIndex = 0
         page.criteria = ({ maxDistanceKm: 0, statuses: [], operators: [], accessTypes: [],
-                           parkingFees: [], features: [], chargerTypes: [], voltageBands: [] })
+                           parkingFees: [], features: [], chargerTypes: [], voltageBands: [],
+                           priceMinCents: -1, priceMaxCents: -1 })
         if (!anyFilterActive()) { clearKeywordAndSearch(); return }
         project()
     }
@@ -201,7 +300,8 @@ Item {
             page.loading = false; page.loaded = true; page.failed = false
             page.demo = false                      // 真数据到位，演示通道退位
             page.raw = stations || []
-            page.project()
+            if (page.searchCenter) page.applySearchCenter()   // 中心点已先到：重算周边距离
+            else page.project()
             pull.setRefreshing(false)
         }
         function onQueryFailed(message) {
@@ -213,6 +313,23 @@ Item {
     Connections {
         target: favoritesService
         function onFavoritesChanged() { page.project() }   // 重算星星绑定
+    }
+    // 地点检索回调对（周边模式）：requestId 代际过滤过期响应。
+    Connections {
+        target: mapGeoService
+        function onQmlGeocodeReady(requestId, pointMap) {
+            if (requestId !== page.geocodeReqId || !pointMap) return
+            page.searchCenter = ({ lat: pointMap.latitude, lng: pointMap.longitude,
+                                   display: page.keyword })
+            page.applySearchCenter()
+        }
+        function onQmlGeocodeError(requestId, message) {
+            if (requestId !== page.geocodeReqId) return
+            page.geocodeReqId = 0
+            if (App) App.showToast("地点解析失败，已退回关键词过滤", "warning")
+            // 退回旧口径：上一发全量查询按关键词重查（演示/服务端两通道同 refresh）。
+            page.refresh()
+        }
     }
     // 壳顶栏搜索→路由参数（arg 变更响应）。
     onArgChanged: { const k = typeof arg === "string" ? arg : ""; if (k !== keyword) { keyword = k; refresh() } }
@@ -252,7 +369,8 @@ Item {
                 spacing: 6
                 Text {
                     objectName: "stationHeroTitle"
-                    text: page.keyword.length > 0 ? "搜索：" + page.keyword : "附近充电站"
+                    text: page.searchCenter ? "📍" + page.searchCenter.display + " 周边"
+                        : page.keyword.length > 0 ? "搜索：" + page.keyword : "附近充电站"
                     width: parent.width; elide: Text.ElideRight
                     font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
                 }
@@ -324,7 +442,7 @@ Item {
                     }
                 }
             }
-            Item { width: parent.width - 164 - (clearKeywordButton.visible ? clearKeywordButton.width + P.Style.spaceSm : 0) - advancedFilterButton.width - P.Style.spaceSm; height: 1 }
+            Item { width: parent.width - 164 - (clearKeywordButton.visible ? clearKeywordButton.width + P.Style.spaceSm : 0); height: 1 }
             P.ActionButton {
                 id: clearKeywordButton
                 objectName: "clearKeywordButton"
@@ -334,31 +452,8 @@ Item {
                 height: 36
                 onClicked: page.clearKeywordAndSearch()
             }
-            // 漏斗（含激活计数徽标）钉行尾——原 Flow 里被裁的 ⛏ 有了固定席位
-            P.ActionButton {
-                id: advancedFilterButton
-                objectName: "advancedFilterButton"
-                variant: page.activeFilterCount() > 0 ? "primary" : "ghost"
-                text: "⛏ 筛选"
-                height: 36
-                onClicked: filterDialog.openDialog(page.criteria)
-                Rectangle {
-                    objectName: "advancedFilterBadge"
-                    visible: page.activeFilterCount() > 0
-                    width: Math.max(18, badgeText.implicitWidth + 8); height: 18
-                    radius: 9
-                    color: P.Style.danger
-                    border.width: 2; border.color: P.Style.surface
-                    anchors.left: parent.right; anchors.leftMargin: -10
-                    anchors.top: parent.top; anchors.topMargin: -6
-                    Text {
-                        id: badgeText
-                        anchors.centerIn: parent
-                        text: String(page.activeFilterCount())
-                        font.pixelSize: 10; font.bold: true; color: P.Style.surface
-                    }
-                }
-            }
+            // 高级筛选入口已上收顶栏漏斗（2026-09-08 全局唯一入口；行内 ⛏+徽标撤除，
+            // 激活计数经 activeFilterBadge 由 Shell 绑到 nav.filterBadgeCount）。
         }
 
         // ---------- ③ 地图：列表态紧凑条 / 地图态大图 + peek 卡 ----------
@@ -377,6 +472,10 @@ Item {
             StationMapItem {
                 objectName: "stationMapPanel"
                 anchors.fill: parent
+                // 周边检索态：视域兜底中心移过去（markers 有值时组件自拟合，
+                // 空列表/单点时以此为中心）。
+                centerLat: page.searchCenter ? page.searchCenter.lat : 22.541
+                centerLng: page.searchCenter ? page.searchCenter.lng : 113.943
                 markers: {
                     const out = []
                     for (let i = 0; i < stationModel.count; ++i) {
@@ -583,6 +682,22 @@ Item {
                                     width: parent.width; elide: Text.ElideRight
                                     text: address; font.pixelSize: P.Style.fontSm; color: P.Style.muted
                                 }
+                                // 八维筛选标签行（⑤）：命中当前筛选条件的标签绿底描边，其余基色
+                                Flow {
+                                    width: parent.width
+                                    spacing: 4
+                                    Repeater {
+                                        model: page.stationTagsFor(stationId)
+                                        P.StatusTag {
+                                            required property var modelData
+                                            objectName: "stationTagChip"
+                                            tone: modelData.hit ? "success" : modelData.tone
+                                            text: modelData.label
+                                            border.width: modelData.hit ? 1 : 0
+                                            border.color: P.Style.brand
+                                        }
+                                    }
+                                }
                                 // 空闲比例条（可用性色彩：充足 brand / 紧张 warning / 无 danger）
                                 Item {
                                     width: parent.width; height: 14
@@ -643,13 +758,13 @@ Item {
                                     MouseArea {
                                         objectName: "favoriteStarButton"
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        width: 34
-                                        height: 24
+                                        width: 42
+                                        height: 30
                                         Text {
                                             anchors.centerIn: parent
                                             text: page.isFav(stationId) ? "★" : "☆"
-                                            font.pixelSize: 18
-                                            color: page.isFav(stationId) ? P.Style.warning : P.Style.faint
+                                            font.pixelSize: 26
+                                            color: page.isFav(stationId) ? P.Style.starGold : P.Style.faint
                                         }
                                         onClicked: {
                                             // toggle 返回操作后状态；桥未补时静默（TODO(contract)）

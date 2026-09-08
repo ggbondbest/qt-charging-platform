@@ -13,6 +13,10 @@ import "../../platform" as P
 //    Canvas 真折线；无 key 保持模拟先行（与 widgets 口径逐字节一致）。
 // ③ "跳转腾讯地图导航" = URI API routeplan 页（Qt.openUrlExternally）——URL 内嵌
 //    referer=key，绝不打印/入库；无 key 时按钮置灰。
+// ④ 目的地行（2026-09-08 批量指令③）：下方输入框显示选中的充电站目标位置，
+//    右侧【更换】→ 弹层站列表（名+价+距当前起点实时 haversine，全量检索/
+//    演示清单兜底）→ 选中即换 record 目标并重算路线/静态图；主按钮文案
+//    "点击导航"（唤起外部腾讯地图，语义同③）。
 // 消费面 = MapGeoService 的 qml* 转发信号（载荷 QVariantMap，见映射稿 §桥缺口）；
 // requestId 代际过滤丢弃过期回调（信号广播，其他页面的请求也会到这里）。
 Item {
@@ -148,6 +152,75 @@ Item {
         page.pendingGeoReq = mapGeoService.requestAddressGeocode(t)
     }
 
+    // —— 目的地更换（2026-09-08 批量指令③）——
+    // 弹层数据 = stationQueryService.search("") 全量；桥缺位/失败 → 演示清单兜底
+    //（同 StationHomePage 演示通道口径，行=名+价+距当前起点直线距离）。
+    property var pickList: []
+    property bool pickLoading: false
+    function haversineMeters(lat1, lng1, lat2, lng2) {
+        const r = Math.PI / 180
+        const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(lat1 * r) * Math.cos(lat2 * r)
+                  * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    }
+    function pickLatLng(s) {
+        const lat = s.latitude !== undefined ? s.latitude
+                  : (s.station && s.station.latitude !== undefined ? s.station.latitude : NaN)
+        const lng = s.longitude !== undefined ? s.longitude
+                  : (s.station && s.station.longitude !== undefined ? s.station.longitude : NaN)
+        return { lat: lat, lng: lng }
+    }
+    function pickName(s) { return s.name || (s.station && s.station.name) || "充电站" }
+    function pickAddress(s) { return s.address || (s.station && s.station.address) || "" }
+    function pickDistText(s) {
+        const p = pickLatLng(s)
+        if (isNaN(p.lat) || isNaN(p.lng)) return "无坐标"
+        const d = Math.round(haversineMeters(originLat, originLng, p.lat, p.lng))
+        return d >= 1000 ? "约 " + (d / 1000).toFixed(1) + " km" : "约 " + d + " m"
+    }
+    function demoPickRows() {
+        return [
+            { id: 9001, name: "滨海快充站", address: "南山区滨海大道 2012 号",
+              priceCentsPerKwh: 128, latitude: 22.5372, longitude: 113.9401 },
+            { id: 9002, name: "科技园慢充站", address: "高新区科苑南路 3188 号",
+              priceCentsPerKwh: 98, latitude: 22.5448, longitude: 113.9512 },
+            { id: 9003, name: "深圳湾超充站", address: "东滨路 1008 号",
+              priceCentsPerKwh: 145, latitude: 22.5233, longitude: 113.9438 },
+            { id: 9004, name: "世界之窗充电站", address: "深南大道 9037 号",
+              priceCentsPerKwh: 119, latitude: 22.5391, longitude: 113.9716 }
+        ]
+    }
+    function openPick() {
+        if (page.pickList.length === 0) {
+            page.pickLoading = true
+            try { stationQueryService.search("") }
+            catch (e) { page.pickList = page.demoPickRows(); page.pickLoading = false }
+        }
+        destPickPopup.open()
+    }
+    function chooseDestination(s) {
+        const p = pickLatLng(s)
+        if (isNaN(p.lat) || isNaN(p.lng)) {
+            if (App) App.showToast("该站点暂无坐标，无法作为导航目标", "warning")
+            return
+        }
+        page.record = Object.assign({}, page.record, {
+            stationName: pickName(s), stationAddress: pickAddress(s),
+            stationLatitude: p.lat, stationLongitude: p.lng,
+            hasStationLocation: true,
+            chargerCode: "", chargerSpec: "",
+            distanceMeters: Math.round(haversineMeters(originLat, originLng, p.lat, p.lng))
+        })
+        page.usingRealRoute = false          // 旧路线作废，按新目标重算
+        page.realPolyline = []
+        page.realSteps = []
+        page.staticMapFile = ""
+        destPickPopup.close()
+        requestRealRoute()                   // 在线：requestDrivingRoute→静态图链自动跟进
+    }
+
     // 静态图落盘文件（qmlStaticMapReady 给路径；file:// URL 挂 Image）
     property string staticMapFile: ""
     readonly property url staticMapUrl: staticMapFile.length ? Url.fileUrl(staticMapFile) : ""
@@ -212,6 +285,20 @@ Item {
             if (requestId !== page.pendingStaticReq) return
             page.pendingStaticReq = -1
             page.staticMapFile = ""
+        }
+    }
+    // 目的地弹层数据源（桥广播信号，pickLoading 门控只认本页发起的检索）。
+    Connections {
+        target: stationQueryService
+        function onQuerySucceeded(stations) {
+            if (!page.pickLoading) return
+            page.pickLoading = false
+            page.pickList = stations || []
+        }
+        function onQueryFailed(message) {
+            if (!page.pickLoading) return
+            page.pickLoading = false
+            page.pickList = page.demoPickRows()   // 失败重试 UI 之外再兜一层演示清单
         }
     }
     Component.onCompleted: autoLocate()
@@ -294,6 +381,63 @@ Item {
                         width: 40; height: 36
                         enabled: page.mapOnline
                         onClicked: page.autoLocate()
+                    }
+                }
+            }
+        }
+
+        // —— 目的地行（批量指令③）：输入框=选中的充电站目标位置，右侧【更换】 ——
+        Rectangle {
+            objectName: "destinationRow"
+            width: parent.width
+            height: 76
+            radius: P.Style.radiusLg
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+            Column {
+                anchors.left: parent.left; anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: P.Style.spaceMd; anchors.rightMargin: P.Style.spaceMd
+                spacing: P.Style.spaceXs
+                Text {
+                    objectName: "destinationHintLabel"
+                    text: "🎯 目标充电站（可更换）"
+                    font.pixelSize: P.Style.fontSm
+                    color: P.Style.muted
+                }
+                Row {
+                    width: parent.width
+                    spacing: P.Style.spaceSm
+                    Rectangle {
+                        width: parent.width - destChangeButton.width - P.Style.spaceSm
+                        height: 36
+                        radius: P.Style.radiusSm
+                        color: P.Style.ghost
+                        border.width: 1
+                        border.color: P.Style.line
+                        TextField {
+                            id: destField
+                            objectName: "destinationField"
+                            anchors.fill: parent
+                            anchors.leftMargin: P.Style.spaceSm
+                            anchors.rightMargin: P.Style.spaceSm
+                            readOnly: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            text: hasLoc ? (record.stationName || "已选充电站")
+                                          + (record.stationAddress ? " · " + record.stationAddress : "")
+                                 : "尚未选择充电站（点右侧更换）"
+                            color: hasLoc ? P.Style.ink : P.Style.faint
+                            font.pixelSize: P.Style.fontSm
+                            background: Item {}
+                        }
+                    }
+                    P.ActionButton {
+                        id: destChangeButton
+                        objectName: "destinationChangeButton"
+                        variant: "secondary"; text: "更换"
+                        width: 64; height: 36
+                        onClicked: page.openPick()
                     }
                 }
             }
@@ -394,9 +538,10 @@ Item {
         }
 
         // —— 跳转腾讯地图导航（URI API 接力真导航；无 key 置灰）——
+        // —— 点击导航：唤起外部腾讯地图（URI API routeplan；无 key 置灰）——
         P.ActionButton {
             objectName: "navigationExternalButton"
-            variant: "primary"; text: "跳转腾讯地图导航"
+            variant: "primary"; text: "点击导航"
             width: parent.width
             enabled: page.mapOnline && hasLoc
             onClicked: {
@@ -416,6 +561,117 @@ Item {
             variant: "secondary"; text: "返回"
             width: parent.width
             onClicked: { if (App) App.back() }
+        }
+    }
+
+    // —— 目标充电站选择弹层（【更换】入口；行=名+价+距起点直线距离）——
+    Popup {
+        id: destPickPopup
+        objectName: "navigationPickPopup"
+        modal: true
+        x: Math.max(P.Style.spaceLg, (page.width - width) / 2)
+        y: Math.max(P.Style.spaceLg, (page.height - height) / 2)
+        width: Math.min(360, page.width - 2 * P.Style.spaceLg)
+        height: Math.min(420, page.height - 2 * P.Style.spaceLg)
+        padding: P.Style.spaceMd
+        background: Rectangle {
+            radius: P.Style.radiusLg
+            color: P.Style.surface
+            border.width: 1
+            border.color: P.Style.line
+        }
+        Column {
+            // anchors.fill 而非裸 width：Column 默认高度=implicitHeight 由子项
+            // 反推，下面 ListView 又写 parent.height - y（parent=本 Column），
+            // 裸宽时是自我循环→polish() loop 每帧刷（2026-09-08 用户实测导航
+            // 弹窗冻结根因）。显式定高切断回边。
+            anchors.fill: parent
+            spacing: P.Style.spaceSm
+            Text {
+                text: "选择目标充电站"
+                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink
+            }
+            ListView {
+                id: pickListView
+                objectName: "navigationPickList"
+                width: parent.width
+                height: parent.height - y - P.Style.spaceXs
+                clip: true
+                spacing: P.Style.spaceXs
+                model: page.pickList
+                delegate: Rectangle {
+                    id: pickRow
+                    required property var modelData
+                    objectName: "navigationPickRow"
+                    width: pickListView.width
+                    height: 50
+                    radius: P.Style.radiusSm
+                    color: pickRowMa.containsMouse ? P.Style.ghost : P.Style.surface
+                    border.width: 1
+                    border.color: P.Style.line
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                    Row {
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: P.Style.spaceSm; anchors.rightMargin: P.Style.spaceSm
+                        spacing: P.Style.spaceSm
+                        Column {
+                            width: parent.width - 96
+                            spacing: 2
+                            Text {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: page.pickName(pickRow.modelData)
+                                      + (page.pickName(pickRow.modelData) === (page.record.stationName || "")
+                                         ? " · 当前" : "")
+                                font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
+                            }
+                            Text {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: page.pickAddress(pickRow.modelData)
+                                font.pixelSize: P.Style.fontXs; color: P.Style.faint
+                            }
+                        }
+                        Column {
+                            width: 92
+                            spacing: 2
+                            Text {
+                                anchors.right: parent.right
+                                text: {
+                                    const v = pickRow.modelData.priceCentsPerKwh
+                                    return v !== undefined ? "¥" + (v / 100).toFixed(2) + "/度" : "--"
+                                }
+                                font.pixelSize: P.Style.fontSm; color: P.Style.brandDeep
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                text: page.pickDistText(pickRow.modelData)
+                                font.pixelSize: P.Style.fontXs; color: P.Style.muted
+                            }
+                        }
+                    }
+                    MouseArea {
+                        id: pickRowMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: page.chooseDestination(pickRow.modelData)
+                    }
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: page.pickLoading
+                    text: "正在加载站点…"
+                    font.pixelSize: P.Style.fontSm; color: P.Style.muted
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: !page.pickLoading && page.pickList.length === 0
+                    text: "暂无可选站点"
+                    font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                }
+            }
         }
     }
 }

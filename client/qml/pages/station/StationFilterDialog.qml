@@ -3,7 +3,8 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 
 // QML twin of widgets StationFilterDialog (objectName "stationFilterDialog").
-// 8 组条件 = 距离单选（再点=取消）+ 7 组多选 chips（组内 OR，组间 AND 由父页 project() 执行）。
+// 8 组条件 = 距离单选（再点=取消）+ 7 组多选 chips（组内 OR，组间 AND 由父页 project() 执行）
+// + 电价自定义区间（批量指令④：双输入框 ¥/度，applied 载荷 priceMinCents/priceMaxCents，-1=不限）。
 // 选项字面量与 station_query_service.h station_filter::*Options() 逐字一致（字符串即匹配键）。
 // TODO(contract): 选项改由服务层 invokable 暴露后，此处删掉常量数组。
 Popup {
@@ -34,6 +35,23 @@ Popup {
                              features: [], chargerTypes: [], voltageBands: [] })
 
     function isChecked(key, label) { return (checked[key] || []).indexOf(label) >= 0 }
+    // —— 电价自定义区间（批量指令④）：¥/度，最多两位小数；-1=不限，-2=非法 ——
+    property string priceMinText: ""
+    property string priceMaxText: ""
+    function parsePriceCents(t) {
+        const s = (t || "").trim()
+        if (s.length === 0) return -1
+        if (!/^\d+(\.\d{1,2})?$/.test(s)) return -2
+        const v = Math.round(parseFloat(s) * 100)
+        return v > 99900 ? -2 : v
+    }
+    readonly property int pMin: parsePriceCents(priceMinText)
+    readonly property int pMax: parsePriceCents(priceMaxText)
+    readonly property string priceRangeError: {
+        if (pMin === -2 || pMax === -2) return "请输入最多两位小数的非负金额（如 1.28）"
+        if (pMin >= 0 && pMax >= 0 && pMin > pMax) return "最低电价不能大于最高电价"
+        return ""
+    }
     function toggle(key, label) {          // 数组必须整体重赋值才触发绑定重算
         const next = ({})
         for (const g of groups) next[g.key] = (checked[g.key] || []).slice()
@@ -45,20 +63,29 @@ Popup {
     function setDistance(km) { maxDistanceKm = (maxDistanceKm === km ? 0 : km) }
     function resetChecks() {               // 「重置」只清勾选（与 widgets 同口径）
         maxDistanceKm = 0
+        priceMinText = ""; priceMaxText = ""
         const next = ({})
         for (const g of groups) next[g.key] = []
         checked = next
     }
+    function centsToText(c) { return c >= 0 ? (c / 100).toFixed(2) : "" }
     function openDialog(initial) {         // 以父页当前条件预勾选
         maxDistanceKm = (initial && initial.maxDistanceKm) || 0
+        priceMinText = centsToText(initial ? initial.priceMinCents : -1)
+        priceMaxText = centsToText(initial ? initial.priceMaxCents : -1)
         const next = ({})
         for (const g of groups) next[g.key] = ((initial && initial[g.key]) || []).slice()
         checked = next
         open()
     }
     function applyAndClose() {
+        if (priceRangeError.length > 0) {   // 非法区间不提交（红字已明示原因）
+            if (App) App.showToast("请先修正电价区间：" + priceRangeError, "warning")
+            return
+        }
         applied({
             maxDistanceKm: dialog.maxDistanceKm,
+            priceMinCents: pMin, priceMaxCents: pMax,   // -1=不限
             statuses: checked.statuses, operators: checked.operators,
             accessTypes: checked.accessTypes, parkingFees: checked.parkingFees,
             features: checked.features, chargerTypes: checked.chargerTypes,
@@ -106,6 +133,76 @@ Popup {
                                 onClicked: dialog.setDistance(modelData)
                             }
                         }
+                    }
+                }
+
+                // 电价区间组（批量指令④）：最低 ¥ … 最高 ¥，留空=不限
+                Column {
+                    objectName: "filterGroupPriceRange"
+                    spacing: P.Style.spaceXs
+                    Text { objectName: "stationFilterGroupTitle"; text: "电价区间（¥/度）"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    Row {
+                        spacing: P.Style.spaceSm
+                        Rectangle {
+                            width: (scroller.availableWidth - rowSep.width - 2 * P.Style.spaceSm) / 2
+                            height: 36
+                            radius: P.Style.radiusSm
+                            color: P.Style.ghost
+                            border.width: 1
+                            border.color: priceMinField.activeFocus ? P.Style.brand : P.Style.line
+                            TextField {
+                                id: priceMinField
+                                objectName: "priceMinField"
+                                anchors.fill: parent
+                                anchors.leftMargin: P.Style.spaceSm
+                                anchors.rightMargin: P.Style.spaceSm
+                                verticalAlignment: TextInput.AlignVCenter
+                                placeholderText: "最低"
+                                placeholderTextColor: P.Style.faint
+                                color: P.Style.ink
+                                font.pixelSize: P.Style.fontSm
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                background: Item {}
+                                text: dialog.priceMinText
+                                onTextChanged: dialog.priceMinText = text
+                            }
+                        }
+                        Text {
+                            id: rowSep
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "~"; color: P.Style.muted
+                            font.pixelSize: P.Style.fontMd
+                        }
+                        Rectangle {
+                            width: (scroller.availableWidth - rowSep.width - 2 * P.Style.spaceSm) / 2
+                            height: 36
+                            radius: P.Style.radiusSm
+                            color: P.Style.ghost
+                            border.width: 1
+                            border.color: priceMaxField.activeFocus ? P.Style.brand : P.Style.line
+                            TextField {
+                                id: priceMaxField
+                                objectName: "priceMaxField"
+                                anchors.fill: parent
+                                anchors.leftMargin: P.Style.spaceSm
+                                anchors.rightMargin: P.Style.spaceSm
+                                verticalAlignment: TextInput.AlignVCenter
+                                placeholderText: "最高"
+                                placeholderTextColor: P.Style.faint
+                                color: P.Style.ink
+                                font.pixelSize: P.Style.fontSm
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                background: Item {}
+                                text: dialog.priceMaxText
+                                onTextChanged: dialog.priceMaxText = text
+                            }
+                        }
+                    }
+                    Text {
+                        objectName: "priceRangeErrorLabel"
+                        visible: dialog.priceRangeError.length > 0
+                        text: dialog.priceRangeError
+                        font.pixelSize: P.Style.fontXs; color: P.Style.danger
                     }
                 }
 
