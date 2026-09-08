@@ -15,8 +15,10 @@ Item {
     property var detailRecord: null
 
     function hhmm(v) {
-        if (typeof v === "number") { const d = new Date(v); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2) }
-        if (typeof v === "string" && v.length) { const d = new Date(v); if (!isNaN(d)) return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2) }
+        if (typeof v === "string" && /(Z|[+-]\d\d:\d\d)$/.test(v)) {
+            const ms = Date.parse(v)
+            if (!isNaN(ms)) return new Date(ms + 8 * 3600000).toISOString().slice(11, 19)
+        }
         return "--"
     }
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
@@ -69,13 +71,13 @@ Item {
                         width: parent.width; elide: Text.ElideRight
                         text: "充电桩 " + (modelData.chargerCode || "--")
                               + " · " + (modelData.chargerSpec || "充电桩")
-                              + " · 预约时长 " + (modelData.durationMinutes || 0) + " 分钟"
+                              + " · 服务端预约记录"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                     Text {
-                        text: "预约 · 时段 " + page.hhmm(modelData.startAtUtc)
+                        text: "保留时间 " + page.hhmm(modelData.startAtUtc)
                               + "—" + page.hhmm(modelData.expiresAtUtc)
-                              + " · 预估 ¥" + page.money(modelData.estimatedFeeCents)
+                              + "（北京时间）"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                     Text {
@@ -120,10 +122,8 @@ Item {
             Repeater {
                 model: detailRecord ? [
                     { k: "充电桩", v: (detailRecord.chargerCode || "--") + " · " + (detailRecord.chargerSpec || "") },
-                    { k: "预约时长", v: (detailRecord.durationMinutes || 0) + " 分钟" },
-                    { k: "时段", v: page.hhmm(detailRecord.startAtUtc) + "—" + page.hhmm(detailRecord.expiresAtUtc) },
-                    { k: "预估费用", v: "¥" + page.money(detailRecord.estimatedFeeCents) },
-                    { k: "车辆", v: detailRecord.vehiclePlate || "未关联" },
+                    { k: "保留时间", v: page.hhmm(detailRecord.startAtUtc) + "—" + page.hhmm(detailRecord.expiresAtUtc) + "（北京时间）" },
+                    { k: "费用", v: "预约不扣费，实际账单见充电订单" },
                     { k: "状态", v: page.doneText(detailRecord) }
                 ] : []
                 Row {

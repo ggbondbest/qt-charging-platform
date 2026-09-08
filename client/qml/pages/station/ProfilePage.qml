@@ -73,12 +73,23 @@ Item {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         width: 64; height: 64; radius: 32
-                        color: P.Style.brand
+                        color: "#9AA4B2"
                         border.width: 2; border.color: "#66FFFFFF"
                         Text {
                             anchors.centerIn: parent
                             text: page.user && page.user.nickname ? page.user.nickname[0] : "用"
                             font.pixelSize: 22; font.bold: true; color: P.Style.surface
+                            visible: profileAvatar.status !== Image.Ready
+                        }
+                        Image {
+                            id: profileAvatar
+                            objectName: "profileAvatarImage"
+                            anchors.fill: parent
+                            anchors.margins: 2
+                            source: page.user && String(page.user.avatarKey || "").indexOf("data:image/png;base64,") === 0
+                                    ? page.user.avatarKey : ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
                         }
                     }
                     Column {
