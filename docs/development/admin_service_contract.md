@@ -81,6 +81,7 @@ requestId_ = gateway->request("stations.list",
 sort（默认 idAsc；所有列表允许 idAsc / idDesc，订单、充值、操作日志额外允许 createdAtDesc，电桩额外允许
 updatedAtDesc）。时间倒序相同时按 idDesc 打破平局，保证稳定分页，不用 ID 大小代替创建时间。
 默认 page=1、pageSize=20；不接受任意 SQL 排序或不适用于该实体的排序。
+keyword 按字面子串匹配，`%`、`_` 不作为 SQL 通配符，调用方无需自行转义。
 输出 `{items,total,page,pageSize}`；详情输出 `{item}`。类型、枚举、未知字段都严格校验。
 站点 ACTIVE/INACTIVE；桩 AVAILABLE/RESERVED/CHARGING/FAULT/OFFLINE；用户 ACTIVE/FROZEN；
 订单 RESERVED/CHARGING/WAITING_PAYMENT/COMPLETED/CANCELLED；充值 SUCCESS/FAILED。

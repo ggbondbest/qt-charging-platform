@@ -25,6 +25,7 @@ public:
 
 private:
     bool executeResourceScript(const QString& resourcePath, QString* errorMessage);
+    bool migrateManagedIndexes(QString* errorMessage);
 
     QString connectionName_;
     QString databasePath_;
