@@ -74,7 +74,9 @@ private:
     QString writeRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
-    QString stationFilterId_;
+    // This is only used while station options are loading.  The combo box is
+    // the sole source of the actual list filter, so it cannot be overridden.
+    QString pendingStationFilterId_;
     QString stationOptionsRequestId_;
     class AdminRequestGateway* gateway_ = nullptr;
 

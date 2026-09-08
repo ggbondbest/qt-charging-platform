@@ -46,7 +46,7 @@ private:
     QPushButton* refreshButton_ = nullptr;
     RevenueTrendWidget* trendWidget_ = nullptr;
     DeviceStatusWidget* deviceStatusWidget_ = nullptr;
-    QLabel* onlineLegendValue_ = nullptr;
+    QLabel* normalLegendValue_ = nullptr;
     QLabel* offlineLegendValue_ = nullptr;
     QLabel* faultLegendValue_ = nullptr;
     int requestedDays_ = 7;

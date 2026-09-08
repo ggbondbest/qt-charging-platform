@@ -391,9 +391,9 @@ DeviceStatusWidget::DeviceStatusWidget(QWidget* parent) : QWidget(parent)
     setFixedSize(172, 172);
 }
 
-void DeviceStatusWidget::setCounts(int online, int offline, int fault)
+void DeviceStatusWidget::setCounts(int normal, int offline, int fault)
 {
-    online_ = qMax(0, online);
+    normal_ = qMax(0, normal);
     offline_ = qMax(0, offline);
     fault_ = qMax(0, fault);
     update();
@@ -407,9 +407,9 @@ void DeviceStatusWidget::paintEvent(QPaintEvent*)
     QPen pen;
     pen.setWidth(28);
     pen.setCapStyle(Qt::FlatCap);
-    const int total = online_ + offline_ + fault_;
+    const int total = normal_ + offline_ + fault_;
     const QList<QPair<QColor, qreal>> segments = total > 0
-        ? QList<QPair<QColor, qreal>>{{QColor("#43c7bc"), 100.0 * online_ / total},
+        ? QList<QPair<QColor, qreal>>{{QColor("#43c7bc"), 100.0 * normal_ / total},
                                       {QColor("#c2cad5"), 100.0 * offline_ / total},
                                       {QColor("#f5a130"), 100.0 * fault_ / total}}
         : QList<QPair<QColor, qreal>>{{QColor("#dfe6f0"), 100.0}};

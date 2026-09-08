@@ -491,10 +491,13 @@ void UserManagementPage::updateDetailActions()
 
 void UserManagementPage::toggleSelectedUserStatus()
 {
-    if (selectedRecordIndex_ < 0) {
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) {
         return;
     }
-    UserRecord& record = records_[selectedRecordIndex_];
+    // QMessageBox has a nested event loop: retain a value snapshot, never a
+    // QVector element reference, across the confirmation interaction.
+    const int recordIndex = selectedRecordIndex_;
+    const UserRecord record = records_.at(recordIndex);
     const bool isFrozen = record.status == tr("冻结");
     const QString action = isFrozen ? tr("解冻") : tr("冻结");
     const auto choice = QMessageBox::question(
@@ -507,6 +510,10 @@ void UserManagementPage::toggleSelectedUserStatus()
         return;
     }
     if (realMode_) {
+        if (!gateway_ || !gateway_->isAuthenticated()) {
+            setFeedback(tr("管理员会话已失效，请重新登录后再提交。"), true);
+            return;
+        }
         writeRequestId_ = gateway_->request(QStringLiteral("user.status"),
             {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
              {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
@@ -514,8 +521,8 @@ void UserManagementPage::toggleSelectedUserStatus()
             QStringLiteral("user-write"));
         setFeedback(tr("正在提交用户状态更新…")); return;
     }
-    record.status = isFrozen ? tr("正常") : tr("冻结");
-    const int recordIndex = selectedRecordIndex_;
+    auto& currentRecord = records_[recordIndex];
+    currentRecord.status = isFrozen ? tr("正常") : tr("冻结");
     applyFilters();
     showUserDetails(recordIndex);
     setFeedback(tr("已%1 %2（仅本地 Mock）").arg(action, record.nickname));

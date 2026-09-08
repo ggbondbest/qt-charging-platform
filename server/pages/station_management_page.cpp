@@ -182,6 +182,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    tableWidget_->setObjectName(QStringLiteral("stationManagementTable"));
     tableWidget_->setColumnCount(7);
     tableWidget_->setHorizontalHeaderLabels(
         {tr("电站编号"), tr("电站名称"), tr("详细地址"), tr("电桩总数"), tr("可用电桩"),
@@ -512,6 +513,12 @@ void StationManagementPage::showEditStationDialog()
 void StationManagementPage::showStationDialog(int recordIndex)
 {
     const bool isEditing = recordIndex >= 0;
+    if (isEditing && (recordIndex < 0 || recordIndex >= records_.size())) {
+        return;
+    }
+    // A modal dialog continues to process timer and gateway events.  Copy the
+    // target before entering it so a refreshed list cannot retarget a write.
+    const StationRecord editingRecord = isEditing ? records_.at(recordIndex) : StationRecord{};
     QDialog dialog(this);
     dialog.setWindowTitle(isEditing ? (realMode_ ? tr("编辑电站") : tr("编辑电站（Mock）"))
                                     : (realMode_ ? tr("新增电站") : tr("新增电站（Mock）")));
@@ -547,11 +554,17 @@ void StationManagementPage::showStationDialog(int recordIndex)
     chargerTypeComboBox->addItem(tr("慢充"), QStringLiteral("SLOW"));
     configureManagementComboBox(chargerTypeComboBox);
     auto* chargerPowerSpinBox = new QSpinBox(&dialog);
+    codeLineEdit->setObjectName(QStringLiteral("stationCodeLineEdit"));
+    nameLineEdit->setObjectName(QStringLiteral("stationNameLineEdit"));
+    addressLineEdit->setObjectName(QStringLiteral("stationAddressLineEdit"));
+    latitudeLineEdit->setObjectName(QStringLiteral("stationLatitudeLineEdit"));
+    longitudeLineEdit->setObjectName(QStringLiteral("stationLongitudeLineEdit"));
+    priceLineEdit->setObjectName(QStringLiteral("stationPriceLineEdit"));
     chargerPowerSpinBox->setRange(1, 1000);
     chargerPowerSpinBox->setSuffix(tr(" kW"));
     chargerPowerSpinBox->setValue(60);
     if (isEditing) {
-        const StationRecord& record = records_.at(recordIndex);
+        const StationRecord& record = editingRecord;
         codeLineEdit->setText(record.code);
         codeLineEdit->setReadOnly(true);
         nameLineEdit->setText(record.name);
@@ -639,16 +652,24 @@ void StationManagementPage::showStationDialog(int recordIndex)
     double latitude = 0.0;
     double longitude = 0.0;
     qint64 priceCents = 0;
-    Q_ASSERT(parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude));
-    Q_ASSERT(parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude));
-    Q_ASSERT(parsePriceCents(priceLineEdit->text(), &priceCents));
+    // Q_ASSERT expressions are omitted in Release builds.  Parse again in
+    // normal control flow so the submitted values cannot silently become 0.
+    if (!parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude)
+        || !parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude)
+        || !parsePriceCents(priceLineEdit->text(), &priceCents)) {
+        setFeedback(tr("电站参数解析失败，请重新填写后提交。"));
+        return;
+    }
     if (realMode_) {
+        if (!gateway_ || !gateway_->isAuthenticated()) {
+            setFeedback(tr("管理员会话已失效，请重新登录后再提交。"));
+            return;
+        }
         const auto operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         if (isEditing) {
-            const auto& record = records_.at(recordIndex);
             writeRequestId_ = gateway_->request(QStringLiteral("station.edit"),
-                {{QStringLiteral("operationId"), operationId}, {QStringLiteral("id"), record.serverId},
-                 {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
+                {{QStringLiteral("operationId"), operationId}, {QStringLiteral("id"), editingRecord.serverId},
+                 {QStringLiteral("expectedUpdatedAt"), editingRecord.expectedUpdatedAt},
                  {QStringLiteral("name"), nameLineEdit->text().trimmed()},
                  {QStringLiteral("address"), addressLineEdit->text().trimmed()},
                  {QStringLiteral("latitude"), latitude}, {QStringLiteral("longitude"), longitude},
@@ -714,7 +735,8 @@ void StationManagementPage::toggleSelectedStationStatus()
     if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) {
         return;
     }
-    StationRecord& record = records_[selectedRecordIndex_];
+    const int recordIndex = selectedRecordIndex_;
+    const StationRecord record = records_.at(recordIndex);
     const bool isStopped = record.status == tr("已停用");
     const auto choice = QMessageBox::question(
         this, isStopped ? tr("确认恢复运营") : tr("确认暂停运营"),
@@ -726,6 +748,10 @@ void StationManagementPage::toggleSelectedStationStatus()
         return;
     }
     if (realMode_) {
+        if (!gateway_ || !gateway_->isAuthenticated()) {
+            setFeedback(tr("管理员会话已失效，请重新登录后再提交。"));
+            return;
+        }
         writeRequestId_ = gateway_->request(QStringLiteral("station.status"),
             {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
              {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
@@ -734,9 +760,10 @@ void StationManagementPage::toggleSelectedStationStatus()
         setFeedback(tr("正在提交电站状态更新…"));
         return;
     }
-    record.status = isStopped ? tr("运营中") : tr("已停用");
+    auto& currentRecord = records_[recordIndex];
+    currentRecord.status = isStopped ? tr("运营中") : tr("已停用");
     applyFilters();
-    showStationDetails(selectedRecordIndex_);
+    showStationDetails(recordIndex);
     setFeedback(tr("已%1 %2（仅本地 Mock）").arg(isStopped ? tr("恢复运营") : tr("暂停运营"), record.name));
 }
 

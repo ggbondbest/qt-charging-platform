@@ -204,6 +204,8 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     const auto onlineLabels = onlineCard->findChildren<QLabel*>();
     onlineChargersValue_ = onlineLabels.at(1);
     onlineChargersHint_ = onlineLabels.at(2);
+    onlineChargersValue_->setObjectName(QStringLiteral("dashboardOnlineChargersValue"));
+    onlineChargersHint_->setObjectName(QStringLiteral("dashboardOnlineChargersHint"));
     summaryLayout->addWidget(onlineCard);
     auto* totalCard = createMetricCard(
         tr("累计营收"), tr("¥ —"), QString(),
@@ -336,7 +338,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         const char* data;
         const char* color;
     } statuses[] = {
-        {"在线", "—", "#43c7bc"},
+        {"正常", "—", "#43c7bc"},
         {"离线", "—", "#aab4c2"},
         {"故障", "—", "#f5a130"},
     };
@@ -353,7 +355,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         row->addStretch();
         auto* value = makeLabel(QString::fromUtf8(status.data),
                                 QStringLiteral("color:#3c4c67; font-size:13px;"), deviceCard);
-        if (statusIndex == 0) onlineLegendValue_ = value;
+        if (statusIndex == 0) normalLegendValue_ = value;
         else if (statusIndex == 1) offlineLegendValue_ = value;
         else faultLegendValue_ = value;
         ++statusIndex;
@@ -490,7 +492,7 @@ void DashboardPage::clearDashboardData()
     onlineChargersValue_->setText(tr("—"));
     onlineChargersHint_->setText(tr("在线率待加载"));
     totalChargersLabel_->setText(tr("总电桩数：—"));
-    onlineLegendValue_->setText(tr("—"));
+    normalLegendValue_->setText(tr("—"));
     offlineLegendValue_->setText(tr("—"));
     faultLegendValue_->setText(tr("—"));
     exceptionCountBadge_->setText(tr("—"));
@@ -516,16 +518,22 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     if (data.contains("totalRevenueCents")) {
         totalRevenueValue_->setText(cents(data.value("totalRevenueCents").toInteger()));
     }
-    const qint64 online = data.value("availableChargers").toInteger() + data.value("reservedChargers").toInteger() + data.value("chargingChargers").toInteger();
     const int total = data.value("totalChargers").toInt();
+    const int offline = data.value("offlineChargers").toInt();
+    // The frozen contract defines online as every non-OFFLINE charger,
+    // including FAULT.  Use the service ratio rather than deriving a second
+    // definition in the UI.
+    const int online = qMax(0, total - offline);
     onlineChargersValue_->setText(QString::number(online) + tr(" 台"));
     onlineChargersHint_->setText(
-        tr("在线率 %1%（北京时间快照）").arg(total ? 100.0 * online / total : 0.0, 0, 'f', 1));
-    const int offline = data.value("offlineChargers").toInt();
+        tr("在线率 %1%（北京时间快照）").arg(data.value("onlineRatio").toDouble() * 100, 0, 'f', 1));
     const int fault = data.value("faultChargers").toInt();
-    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(online, offline, fault);
+    // The status ring uses mutually exclusive categories, unlike the online
+    // headline above where a faulted charger is still online.
+    const int normal = qMax(0, total - offline - fault);
+    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(normal, offline, fault);
     const auto legend = [total](int count) { return total ? QObject::tr("%1（%2%）").arg(count).arg(100.0 * count / total, 0, 'f', 1) : QObject::tr("0（0.0%）"); };
-    if (onlineLegendValue_) onlineLegendValue_->setText(legend(online));
+    if (normalLegendValue_) normalLegendValue_->setText(legend(normal));
     if (offlineLegendValue_) offlineLegendValue_->setText(legend(offline));
     if (faultLegendValue_) faultLegendValue_->setText(legend(fault));
     totalChargersLabel_->setText(tr("总电桩数：%1 台").arg(data.value("totalChargers").toInteger()));
