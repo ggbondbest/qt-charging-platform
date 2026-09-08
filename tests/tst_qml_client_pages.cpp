@@ -794,6 +794,67 @@ private slots:
         QCOMPARE(title->property("text").toString(), QStringLiteral("充电周报"));
     }
 
+    // 审查 P2#5 回归：响应在途时切档——陈旧档位响应必须被丢弃（不入模型、
+    // caption 不动），并在在途收口后立即补发最后选中的档位；失败回执同款。
+    void statsPageIgnoresStalePeriodResponse()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStatsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("statsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("StatsPage.qml"), &holder);
+        QVERIFY(page);
+        auto* model = page->findChild<QObject*>("uiStatsModel");
+        QVERIFY(model);
+
+        QCOMPARE(fake.calls, 1);                       // 进页自动发月档（在途）
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("week")));
+        QCOMPARE(fake.calls, 1);                       // 在途不发第二条
+        QVERIFY(page->property("reqActive").toBool());
+
+        QVariantMap monthRow;
+        monthRow.insert(QStringLiteral("monthKey"), QStringLiteral("2026-09"));
+        monthRow.insert(QStringLiteral("orderCount"), 5);
+        fake.emitRows({monthRow});                     // 月档陈旧响应到达
+        QCOMPARE(model->property("count").toInt(), 0); // 丢弃：不入模型
+        QVERIFY(!page->property("loadedOnce").toBool());
+        QCOMPARE(page->property("periodCaption").toString(),
+                 QStringLiteral("近 6 个月 · 已完成订单"));  // 未接受不动 caption
+        QCOMPARE(fake.calls, 2);                       // 立即补发周档
+        QCOMPARE(fake.lastPeriod, QStringLiteral("week"));
+        QCOMPARE(fake.lastMonths, 8);
+
+        QVariantMap weekRow;
+        weekRow.insert(QStringLiteral("monthKey"), QStringLiteral("2026-W36"));
+        weekRow.insert(QStringLiteral("orderCount"), 2);
+        fake.emitRows({weekRow});
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QCOMPARE(page->property("periodCaption").toString(),
+                 QStringLiteral("近 8 周 · 已完成订单"));
+
+        // 失败归属同款：年档在途时切回月档，年档失败不得弹错、不得清屏，
+        // 只静默补发当前（月）档位，已落定数据保留。
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("year")));
+        QCOMPARE(fake.calls, 3);                       // 周档已落定：年档即发
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("month")));
+        QCOMPARE(fake.calls, 3);                       // 年档在途：不发第二条
+        fake.emitFailure();                            // 年档失败回执
+        QCOMPARE(fake.calls, 4);                       // 静默补发月档
+        QCOMPARE(fake.lastPeriod, QStringLiteral("month"));
+        QCOMPARE(model->property("count").toInt(), 1); // 已落定数据未被清屏
+        QVERIFY(page->property("loadedOnce").toBool());
+        fake.emitRows({monthRow});                     // 月档响应落定
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+    }
+
     // 月报桥 × 真 mock 通道：端到端有当月聚合，碳排公式对拍；越界月份 INVALID。
     void statsBridgeEndToEndOnMockChannel()
     {
@@ -1053,6 +1114,83 @@ private slots:
         const int fetchBefore = fake.fetchCalls;   // 已评后幂等不重拉
         QMetaObject::invokeMethod(page, "loadRating");
         QCOMPARE(fake.fetchCalls, fetchBefore);
+    }
+
+    // 审查 P2#6 回归：提交 A 在途 → 切到订单 B → A 的迟到响应不得写入 B 页
+    // （不污染 myRating、不误弹 toast），且不得卡死 B 的提交入口。
+    void orderDetailIgnoresRatingResponseForStaleOrder()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        FakeOrderBridge orders;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &orders);
+        engine.rootContext()->setContextProperty(QStringLiteral("chargingService"),
+                                                 app.chargingService());
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("OrderDetailPage.qml"), &holder);
+        QVERIFY(page);
+
+        QVariantMap orderA;
+        orderA.insert(QStringLiteral("id"), QStringLiteral("77"));
+        orderA.insert(QStringLiteral("status"), QStringLiteral("completed"));
+        orderA.insert(QStringLiteral("amountCents"), 2400);
+        page->setProperty("arg", orderA);
+
+        // 提交 A（响应留在在途窗口）。
+        page->setProperty("pickedStars", 4);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 1);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("77"));
+        QVERIFY(page->property("ratingSubmitting").toBool());
+
+        // 用户切到订单 B：页面实例复用，展示态必须清零。
+        QVariantMap orderB = orderA;
+        orderB.insert(QStringLiteral("id"), QStringLiteral("88"));
+        page->setProperty("arg", orderB);
+        QVERIFY(page->property("myRating").isNull());
+        QCOMPARE(page->property("pickedStars").toInt(), 0);
+
+        // A 的迟到响应：归属不匹配 → 只收口在途标志，不写 B 页。
+        QVariantMap rowA;
+        rowA.insert(QStringLiteral("orderId"), QStringLiteral("77"));
+        rowA.insert(QStringLiteral("rating"), 4);
+        fake.emitSubmitted(rowA, false);
+        QVERIFY(page->property("myRating").isNull());             // 未污染
+        QVERIFY(!page->property("ratingSubmitting").toBool());    // 未卡死
+
+        // B 自身提交正常：成功响应归属匹配 → 正常落页。
+        page->setProperty("pickedStars", 5);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 2);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("88"));
+        QVariantMap rowB;
+        rowB.insert(QStringLiteral("orderId"), QStringLiteral("88"));
+        rowB.insert(QStringLiteral("rating"), 5);
+        fake.emitSubmitted(rowB, false);
+        QVERIFY(!page->property("myRating").isNull());
+        QCOMPARE(page->property("myRating").toMap()
+                     .value(QStringLiteral("rating")).toInt(), 5);
+
+        // 失败回执同款：提交 B（响应在途）→ 切到 C → B 的失败迟到：
+        // 只收口在途标志，不误弹到 C 页，更不卡 C 的提交入口。
+        QVariantMap orderC = orderA;
+        orderC.insert(QStringLiteral("id"), QStringLiteral("99"));
+        page->setProperty("pickedStars", 3);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 3);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("88"));
+        page->setProperty("arg", orderC);
+        fake.emitFailure(QStringLiteral("SUBMIT_CHARGER_RATING"));  // B 的失败迟到
+        QVERIFY(!page->property("ratingSubmitting").toBool());      // 在途收口
+        QVERIFY(page->property("myRating").isNull());               // 失败不写状态
+        page->setProperty("pickedStars", 2);
+        QMetaObject::invokeMethod(page, "submitRatingNow");         // C 正常提交
+        QCOMPARE(fake.submitCalls, 4);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("99"));
     }
 
     // 评价桥 × 真 mock 通道端到端：种子 1 行（id=3 完成单）→ 订单 2 首评 →

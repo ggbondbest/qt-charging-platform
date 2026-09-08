@@ -17,8 +17,11 @@ Item {
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
     // 在途身份镜像（服务层单飞静默丢弃同款口径）：本页面同时至多一条在途。
+    // requestedPeriod 记录在途请求归属档位：响应回来时若用户已切档，
+    // 丢弃陈旧响应并在在途结束后补发当前档位（快速切换不串数据）。
     property bool reqActive: false
     property bool loadedOnce: false
+    property string requestedPeriod: ""
     // 聚合档（批次B）：week=近8周 / month=近6月 / year=近5年。
     // 期数窗口是展示口径，数据契约只认 months=窗口内期数。
     property string period: "month"
@@ -54,6 +57,11 @@ Item {
         const p = s.split("-")
         return p[0] + "年" + parseInt(p[1], 10) + "月"
     }
+    function periodTab(key) {
+        for (var i = 0; i < periodTabs.length; ++i)
+            if (periodTabs[i].key === key) return periodTabs[i]
+        return null
+    }
     function load() {
         if (reqActive) return               // 自己那路在途：不发第二条
         if (statsService.isFetchingStats()) {
@@ -61,34 +69,48 @@ Item {
             listScroll.setRefreshing(false)
             return
         }
+        var tab = periodTab(period)
+        if (tab === null) return
         reqActive = true
-        for (var i = 0; i < periodTabs.length; ++i) {
-            if (periodTabs[i].key === period) {
-                statsService.fetchStats(periodTabs[i].span, period)
-                page.periodCaption = periodTabs[i].caption
-                break
-            }
-        }
+        requestedPeriod = period
+        statsService.fetchStats(tab.span, period)
     }
     function switchPeriod(key) {
         if (key === period) return
         period = key
+        // 在途时不发第二条：旧响应到达后按归属丢弃并立即补发当前档位。
         load()
     }
 
     Connections {
         target: statsService
         function onStatsLoaded(rows) {
+            reqActive = false
+            if (!page.periodTab(period)) return
+            if (requestedPeriod !== period) {
+                // 陈旧响应（用户已切档）：不入模型，按当前档位补发。
+                requestedPeriod = ""
+                load()
+                return
+            }
+            requestedPeriod = ""
             monthsModel.clear()
             for (var i = 0; i < rows.length; ++i)
                 monthsModel.append(rows[i])
-            reqActive = false
+            page.periodCaption = page.periodTab(period).caption
             loadedOnce = true
             listScroll.setRefreshing(false)
         }
         function onOperationFailed(type, code, message) {
             if (type !== "GET_USER_STATS") return
             reqActive = false
+            if (requestedPeriod !== period) {
+                // 与所选档位无关的失败：静默补发当前档位，不误弹旧档错误。
+                requestedPeriod = ""
+                load()
+                return
+            }
+            requestedPeriod = ""
             listScroll.setRefreshing(false)
             if (App) App.showToast("月报加载失败：" + message, "danger")
         }

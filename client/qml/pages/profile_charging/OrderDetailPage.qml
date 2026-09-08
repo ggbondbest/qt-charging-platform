@@ -41,6 +41,9 @@ Item {
     property var myRating: null            // 非 null = 已评价（服务端行形）
     property bool ratingReqActive: false
     property bool ratingSubmitting: false
+    // 在途 SUBMIT 归属戳（审查 P2#6）：记录发起提交的订单 id。响应到达时
+    // 与当前页面订单比对——提交 A → 切到 B → A 的延迟响应不得写入 B 页。
+    property string ratingSubmitOrder: ""
     property int pickedStars: 0
     function loadRating() {
         const a = page.arg
@@ -57,6 +60,7 @@ Item {
             return
         }
         page.ratingSubmitting = true
+        page.ratingSubmitOrder = String(page.arg.id)
         ratingsService.submitRating(String(page.arg.id), page.pickedStars,
                                     ratingCommentField.text)
     }
@@ -74,7 +78,17 @@ Item {
             }
         }
         function onRatingSubmitted(row, alreadyRated) {
-            page.ratingSubmitting = false
+            const id = page.arg && page.arg.id !== undefined ? String(page.arg.id) : ""
+            // 单飞保证同刻只有一笔在途提交：响应到达即解除在途标志，
+            // 但仅当归属匹配（本页发起 + 响应行同单）才展示结果。
+            const mine = page.ratingSubmitOrder !== ""
+                         && page.ratingSubmitOrder === id
+                         && row && String(row.orderId) === id
+            if (page.ratingSubmitOrder !== "") {
+                page.ratingSubmitting = false
+                page.ratingSubmitOrder = ""
+            }
+            if (!mine) return   // 旧订单的迟到响应：忽略，不污染当前页面
             page.myRating = row
             if (App) App.showToast(alreadyRated
                 ? "该订单已评价过，为你展示首次评价" : "评价成功，感谢反馈",
@@ -83,12 +97,25 @@ Item {
         function onOperationFailed(type, code, message) {
             if (type === "GET_MY_RATINGS") { page.ratingReqActive = false; return }
             if (type !== "SUBMIT_CHARGER_RATING") return
-            page.ratingSubmitting = false
+            const id = page.arg && page.arg.id !== undefined ? String(page.arg.id) : ""
+            const mine = page.ratingSubmitOrder !== "" && page.ratingSubmitOrder === id
+            if (page.ratingSubmitOrder !== "") {
+                page.ratingSubmitting = false
+                page.ratingSubmitOrder = ""
+            }
+            if (!mine) return   // 旧订单提交的失败：不向当前订单页弹错误
             if (App) App.showToast("评价提交失败：" + message, "danger")
         }
     }
     // 深链截图模式 arg 异步补齐（onOrdersLoaded）时再尝试拉评价。
-    onArgChanged: loadRating()
+    // 页面实例跨订单复用（Shell 只换 arg）：清展示态防上一单残留；
+    // 在途提交标志不动，由响应按归属戳自行收口。
+    onArgChanged: {
+        page.myRating = null
+        page.pickedStars = 0
+        page.ratingReqActive = false
+        loadRating()
+    }
     // arg may arrive empty when deep-linked by route id alone (screenshot mode):
     // fall back to fetching the first order so the page always renders.
     function ensureData() {
