@@ -54,6 +54,7 @@ export TENCENT_MAP_API_KEY='自己的地图Key'
 ```
 
 如控制台启用 WebService 签名校验，再配置 `TENCENT_MAP_SECRET_KEY`，不要提交任何真实密钥。
+JavaScript 底图使用独立 Key 时配置 `TENCENT_MAP_JS_KEY`；未设置时使用上述 API Key。
 需授权地址编码、驾驶和步行路线接口，以及页面使用的地图 JavaScript API。
 网络或权限错误会明确显示，不会把示意图、固定起点或伪造路线当作查询成功。
 附近站点按手动地址解析后的坐标计算**直线距离**排序；导航里程以路线服务返回值为准。

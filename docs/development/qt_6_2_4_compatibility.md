@@ -74,11 +74,13 @@ set(CMAKE_AUTORCC ON)
 |---|---|
 | `Qt6::Core` | 核心类型、JSON、时间、文件和线程基础 |
 | `Qt6::Gui` | 图像、图标和窗口基础 |
-| `Qt6::Widgets` | Client 与 PC 管理端界面 |
+| `Qt6::Widgets` | PC 管理端、原生选图对话框和旧用户端回归 |
+| `Qt6::Quick` / `Qt6::QuickControls2` | 正式 QML 用户端 |
 | `Qt6::Network` | TCP Socket 与 HTTP 请求 |
 | `Qt6::Sql` | QSQLITE 数据访问 |
 | `Qt6::Charts` | 后台营收与状态图表 |
-| `Qt6::WebEngineWidgets` | 腾讯地图和路线页面 |
+| `Qt6::WebEngineQuick` | 正式 QML 腾讯地图和路线页面 |
+| `Qt6::WebEngineWidgets` | 旧地图页面回归 |
 | `Qt6::Test` | 单元测试和集成测试 |
 
 新增 Qt 模块前必须说明用途、Qt 6.2.4 可用性、Ubuntu 安装方式和许可证/部署影响。不得仅为一个简单工具函数引入大型第三方依赖。
