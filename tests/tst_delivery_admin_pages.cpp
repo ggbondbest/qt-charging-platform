@@ -169,6 +169,7 @@ void DeliveryAdminPagesTest::pagesReadRealGatewayAndDatabase()
     auto* userDetail = users.findChild<QLabel*>("managementUserDetails");
     QVERIFY(userTable && userDetail);
     QTRY_COMPARE(userTable->rowCount(), 1);
+    QCOMPARE(userTable->columnCount(), 8);
     QCOMPARE(userTable->item(0, 4)->text(), QString("2026-09-02 07:30:00"));
     QVERIFY(userTable->horizontalHeaderItem(4)->text().contains("北京时间"));
     QTRY_VERIFY(userDetail->text().contains("2026-09-02 07:30:00"));
@@ -177,21 +178,62 @@ void DeliveryAdminPagesTest::pagesReadRealGatewayAndDatabase()
 
     StationManagementPage stations;
     stations.setAdminGateway(&gateway);
-    auto* stationTable = stations.findChild<QTableWidget*>("managementStationsTable");
+    auto* stationTable = stations.findChild<QTableWidget*>("stationManagementTable");
     auto* stationDetail = stations.findChild<QLabel*>("managementStationConfiguration");
     QVERIFY(stationTable && stationDetail);
     QTRY_COMPARE(stationTable->rowCount(), 3);
-    QCOMPARE(stationTable->item(0, 7)->text(), QString("50.0% / 1 台"));
-    QCOMPARE(stationTable->item(2, 7)->text(), QString("100.0% / 3 台"));
+    QCOMPARE(stationTable->columnCount(), 8);
+    QCOMPARE(stationTable->horizontalHeaderItem(0)->text(), QString("电站编号"));
+    QCOMPARE(stationTable->horizontalHeaderItem(4)->text(), QString("可用电桩"));
+    QCOMPARE(stationTable->horizontalHeaderItem(5)->text(), QString("在线率 / 在线桩"));
+    QCOMPARE(stationTable->item(0, 0)->text(), QString("STA-DEMO-003"));
+    QCOMPARE(stationTable->item(0, 4)->text(), QString("1"));
+    QCOMPARE(stationTable->item(0, 5)->text(), QString("50.0% / 1 台"));
+    QCOMPARE(stationTable->item(2, 4)->text(), QString("2"));
+    QCOMPARE(stationTable->item(2, 5)->text(), QString("100.0% / 3 台"));
+    QVERIFY(stationTable->cellWidget(0, 6));
+    QVERIFY(stationTable->cellWidget(0, 7));
     QTRY_VERIFY(stationDetail->text().contains("在线率　50.0%"));
     QTRY_VERIFY(stationDetail->text().contains("在线电桩　1 台"));
     optionalSnapshot(stations, "stations-page");
+
+    // Keep PR #42's ID-based selection and jump after adding the new column:
+    // a list refresh inserts a newer station before the selected seed station.
+    stationTable->cellClicked(2, 0);
+    QTRY_VERIFY(stationDetail->text().contains("在线率　100.0%"));
+    {
+        DatabaseConnection insert;
+        QVERIFY(insert.open(path, false));
+        QSqlQuery query(insert.database());
+        QVERIFY(query.exec("INSERT INTO stations(code,name,address,latitude,longitude,price_cents_per_kwh,status) "
+                           "VALUES('STA-EMPTY','零桩回归站','测试路',30,120,100,'ACTIVE')"));
+    }
+    stations.refreshData();
+    QTRY_COMPARE(stationTable->rowCount(), 4);
+    QCOMPARE(stationTable->item(0, 0)->text(), QString("STA-EMPTY"));
+    QCOMPARE(stationTable->item(0, 4)->text(), QString("0"));
+    QCOMPARE(stationTable->item(0, 5)->text(), QString("0.0% / 0 台"));
+    QVERIFY(stationDetail->text().contains("在线率　100.0%"));
+    auto* stationJump = buttonWithText(stations, "查看站内电桩");
+    QVERIFY(stationJump && stationJump->isEnabled());
+    QSignalSpy jump(&stations, &StationManagementPage::stationChargersRequested);
+    stationJump->click();
+    QCOMPARE(jump.size(), 1);
+    QCOMPARE(jump.first().first().toString(), QString("1"));
+    stationTable->cellClicked(0, 0);
+    QTRY_VERIFY(stationDetail->text().contains("在线率　0.0%"));
+    QVERIFY(stationDetail->text().contains("在线电桩　0 台"));
 
     DashboardPage dashboard;
     dashboard.setAdminGateway(&gateway);
     auto* chart = dashboard.findChild<DeliveryRevenueTrendWidget*>();
     QVERIFY(chart);
     QTRY_COMPARE(lineSeries(*chart)->count(), 7);
+    auto* online = dashboard.findChild<QLabel*>("dashboardOnlineChargersValue");
+    auto* onlineHint = dashboard.findChild<QLabel*>("dashboardOnlineChargersHint");
+    QVERIFY(online && onlineHint);
+    QCOMPARE(online->text(), QString("6 台"));
+    QCOMPARE(onlineHint->text(), QString("在线率 85.7%（北京时间快照）"));
     const QStringList expected{"5（71.4%）", "0（0.0%）", "1（14.3%）", "0（0.0%）", "1（14.3%）"};
     for (int i = 0; i < 5; ++i) {
         auto* value = dashboard.findChild<QLabel*>(QString("deviceStateCount%1").arg(i));

@@ -23,6 +23,10 @@ class StationManagementPage final : public QWidget
 public:
     explicit StationManagementPage(QWidget* parent = nullptr);
     void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
+
+signals:
+    void stationChargersRequested(const QString& stationId);
 
 private slots:
     void applyFilters();
@@ -68,6 +72,7 @@ private:
     bool recordMatchesFilters(const StationRecord& record) const;
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
     QString statusCode(const QString& display) const;
@@ -78,15 +83,15 @@ private:
     int currentPage_ = 0;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
     QString listRequestId_;
+    QString summaryRequestId_;
     QString writeRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
-    QComboBox* cityComboBox_ = nullptr;
-    QComboBox* districtComboBox_ = nullptr;
     QComboBox* statusComboBox_ = nullptr;
     QTableWidget* tableWidget_ = nullptr;
     QLabel* tableTitleLabel_ = nullptr;
@@ -104,6 +109,7 @@ private:
     QPushButton* nextPageButton_ = nullptr;
     QPushButton* editButton_ = nullptr;
     QPushButton* toggleStatusButton_ = nullptr;
+    QPushButton* viewChargersButton_ = nullptr;
 };
 
 } // namespace charging::server

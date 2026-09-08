@@ -191,12 +191,12 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     summaryLayout->setSpacing(16);
     auto* todayCard = createMetricCard(
         tr("今日营收"), tr("¥ —"), QString(),
-        tr("服务数据加载后显示（UTC）"), QColor("#347cf6"), 0, this);
+        tr("服务数据加载后显示（北京时间）"), QColor("#347cf6"), 0, this);
     todayRevenueValue_ = todayCard->findChildren<QLabel*>().at(1);
     summaryLayout->addWidget(todayCard);
     auto* monthCard = createMetricCard(
         tr("本月营收"), tr("¥ —"), QString(),
-        tr("服务数据加载后显示（UTC）"), QColor("#43c7bc"), 1, this);
+        tr("服务数据加载后显示（北京时间）"), QColor("#43c7bc"), 1, this);
     monthRevenueValue_ = monthCard->findChildren<QLabel*>().at(1);
     summaryLayout->addWidget(monthCard);
     auto* onlineCard = createMetricCard(
@@ -205,11 +205,14 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     const auto onlineLabels = onlineCard->findChildren<QLabel*>();
     onlineChargersValue_ = onlineLabels.at(1);
     onlineChargersHint_ = onlineLabels.at(2);
+    onlineChargersValue_->setObjectName(QStringLiteral("dashboardOnlineChargersValue"));
+    onlineChargersHint_->setObjectName(QStringLiteral("dashboardOnlineChargersHint"));
     summaryLayout->addWidget(onlineCard);
-    summaryLayout->addWidget(createMetricCard(
-        tr("当前连接"), tr("0"), tr(" 个"),
-        tr("服务连接数"), QColor("#43c7bc"), 3, this));
-    clientCountValue_ = summaryLayout->itemAt(3)->widget()->findChildren<QLabel*>().at(1);
+    auto* totalCard = createMetricCard(
+        tr("累计营收"), tr("¥ —"), QString(),
+        tr("服务数据加载后显示（北京时间）"), QColor("#43c7bc"), 3, this);
+    totalRevenueValue_ = totalCard->findChildren<QLabel*>().at(1);
+    summaryLayout->addWidget(totalCard);
     layout->addLayout(summaryLayout);
 
     auto* dataLayout = new QHBoxLayout();
@@ -461,11 +464,6 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(tableLayout);
 }
 
-void DashboardPage::setClientCount(int count)
-{
-    if (clientCountValue_ != nullptr) clientCountValue_->setText(QString::number(count) + tr(" 个"));
-}
-
 void DashboardPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway;
@@ -477,7 +475,7 @@ void DashboardPage::setAdminGateway(AdminRequestGateway* gateway)
     if (gateway_->isAuthenticated()) refresh();
 }
 
-void DashboardPage::refresh(int days)
+void DashboardPage::refresh(int days, bool clearExisting)
 {
     if (gateway_ == nullptr) return;
     requestedDays_ = days;
@@ -485,8 +483,10 @@ void DashboardPage::refresh(int days)
     refreshButton_->setEnabled(false);
     // A newly authenticated session must never briefly show the preceding
     // administrator's snapshot while its replacement is pending.
-    clearDashboardData();
-    refreshedAtLabel_->setText(tr("刷新时间：正在加载服务数据…"));
+    if (clearExisting) {
+        clearDashboardData();
+        refreshedAtLabel_->setText(tr("刷新时间：正在加载服务数据…"));
+    }
     requestId_ = gateway_->request(QStringLiteral("dashboard.get"), {{QStringLiteral("days"), days}}, this,
                                    QStringLiteral("dashboard"));
 }
@@ -495,6 +495,7 @@ void DashboardPage::clearDashboardData()
 {
     todayRevenueValue_->setText(tr("¥ —"));
     monthRevenueValue_->setText(tr("¥ —"));
+    totalRevenueValue_->setText(tr("¥ —"));
     onlineChargersValue_->setText(tr("—"));
     onlineChargersHint_->setText(tr("在线率待加载"));
     totalChargersLabel_->setText(tr("总电桩数：—"));
@@ -523,16 +524,25 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     const auto cents = [](qint64 value) { return QStringLiteral("¥ %1.%2").arg(value / 100).arg(value % 100, 2, 10, QLatin1Char('0')); };
     todayRevenueValue_->setText(cents(data.value("todayRevenueCents").toInteger()));
     monthRevenueValue_->setText(cents(data.value("monthRevenueCents").toInteger()));
-    const qint64 online = data.value("availableChargers").toInteger() + data.value("reservedChargers").toInteger() + data.value("chargingChargers").toInteger();
-    onlineChargersValue_->setText(QString::number(online) + tr(" 台"));
-    onlineChargersHint_->setText(tr("在线率 %1%（UTC 快照）").arg(data.value("onlineRatio").toDouble() * 100, 0, 'f', 1));
+    if (data.contains("totalRevenueCents")) {
+        totalRevenueValue_->setText(cents(data.value("totalRevenueCents").toInteger()));
+    }
+    const int total = data.value("totalChargers").toInt();
     const int offline = data.value("offlineChargers").toInt();
+    // The frozen contract defines online as every non-OFFLINE charger,
+    // including FAULT.  Use the service ratio rather than deriving a second
+    // definition in the UI.
+    const int online = qMax(0, total - offline);
+    onlineChargersValue_->setText(QString::number(online) + tr(" 台"));
+    onlineChargersHint_->setText(
+        tr("在线率 %1%（北京时间快照）").arg(data.value("onlineRatio").toDouble() * 100, 0, 'f', 1));
     const int fault = data.value("faultChargers").toInt();
+    // The status ring uses mutually exclusive categories, unlike the online
+    // headline above where a faulted charger is still online.
     const int available = data.value("availableChargers").toInt();
     const int charging = data.value("chargingChargers").toInt();
     const int reserved = data.value("reservedChargers").toInt();
     if (deviceStatusWidget_) deviceStatusWidget_->setCounts(available, charging, fault, reserved, offline);
-    const int total = data.value("totalChargers").toInt();
     const auto legend = [total](int count) { return total ? QObject::tr("%1（%2%）").arg(count).arg(100.0 * count / total, 0, 'f', 1) : QObject::tr("0（0.0%）"); };
     if (availableLegendValue_) availableLegendValue_->setText(legend(available));
     if (chargingLegendValue_) chargingLegendValue_->setText(legend(charging));
@@ -540,7 +550,7 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     if (offlineLegendValue_) offlineLegendValue_->setText(legend(offline));
     if (faultLegendValue_) faultLegendValue_->setText(legend(fault));
     totalChargersLabel_->setText(tr("总电桩数：%1 台").arg(data.value("totalChargers").toInteger()));
-    refreshedAtLabel_->setText(tr("刷新时间：%1（UTC）").arg(data.value("observedAt").toString()));
+    refreshedAtLabel_->setText(tr("刷新时间：%1（北京时间）").arg(formatBeijingDateTime(data.value("observedAt").toString())));
     QStringList dates; QVector<qint64> revenue; QVector<int> orders;
     for (const auto& pointValue : data.value("trend").toArray()) {
         const auto point = pointValue.toObject();
@@ -551,13 +561,17 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     trendWidget_->setServiceSeries(dates, revenue, orders);
     const auto abnormalities = data.value("abnormalChargers").toObject();
     exceptionCountBadge_->setText(QString::number(abnormalities.value("total").toInteger()));
+    // Rebuild both small tables off-screen so a periodic snapshot never paints
+    // an empty table between the old and new rows.
+    exceptionTable_->setUpdatesEnabled(false);
+    latestOrdersTable_->setUpdatesEnabled(false);
     exceptionTable_->setRowCount(0);
     const auto abnormalItems = abnormalities.value("items").toArray();
     for (const auto& value : abnormalItems) {
         const auto item = value.toObject(); const int row = exceptionTable_->rowCount();
         const auto exception = item.value("exceptionType").toString() == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
         setRow(exceptionTable_, row, {item.value("code").toString(), item.value("stationName").toString(),
-               exception, item.value("updatedAt").toString(), tr("请至电桩管理处理")});
+               exception, formatBeijingDateTime(item.value("updatedAt").toString()), tr("请至电桩管理处理")});
     }
     if (abnormalItems.isEmpty()) {
         setEmptyRow(exceptionTable_, tr("当前没有异常电桩（服务端实时数据）"));
@@ -570,11 +584,15 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
         const auto status = code == QStringLiteral("CHARGING") ? tr("充电中") : code == QStringLiteral("WAITING_PAYMENT") ? tr("待支付") : code == QStringLiteral("COMPLETED") ? tr("已完成") : code == QStringLiteral("CANCELLED") ? tr("已取消") : tr("已预约");
         setRow(latestOrdersTable_, row, {item.value("orderNo").toString(), item.value("phone").toString(),
                item.value("stationName").toString(), cents(item.value("amountCents").toInteger()),
-               status, item.value("createdAt").toString()});
+               status, formatBeijingDateTime(item.value("createdAt").toString())});
     }
     if (latestOrderItems.isEmpty()) {
         setEmptyRow(latestOrdersTable_, tr("当前数据库暂无订单；完成一次用户端充电支付后会显示在这里"));
     }
+    exceptionTable_->setUpdatesEnabled(true);
+    latestOrdersTable_->setUpdatesEnabled(true);
+    exceptionTable_->viewport()->update();
+    latestOrdersTable_->viewport()->update();
 }
 
 } // namespace charging::server
