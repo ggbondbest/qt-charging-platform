@@ -86,8 +86,24 @@ JavaScript 底图使用独立 Key 时配置 `TENCENT_MAP_JS_KEY`；未设置时�
 后一个 PR 的 base 是前一个分支，以便差异只显示本板块。前一个合入 develop 后，将下一个
 PR 的 base 切回 develop，再重新跑严格 CI。未授权自动合并任何 PR。
 
-**PR #42 和 #31 按要求不修改、不合并。** #42 的管理新增/汇总接入及其评审问题，
-#31 的索引/迁移/备份兼容与其测试仍属于原 PR；它们不能因为本轮新增代码通过测试就算作已解决。
+| 顺序 | 板块 | PR |
+| --- | --- | --- |
+| 1 | 数据库契约与预约到期事务 | [#43](https://github.com/ggbondbest/qt-charging-platform/pull/43) |
+| 2 | 业务与通信 | [#44](https://github.com/ggbondbest/qt-charging-platform/pull/44) |
+| 3 | PC 管理端 | [#45](https://github.com/ggbondbest/qt-charging-platform/pull/45) |
+| 4 | QML 客户端与完整联调 | [#46](https://github.com/ggbondbest/qt-charging-platform/pull/46) |
+
+完整联调代码位于最后一个分支，可以提前检出验收：
+
+```bash
+git fetch origin
+git switch feature/delivery-qml-client
+git pull --ff-only
+```
+
+**本轮不修改原 PR #42/#31。** 工作期间，仓库方已将 #31 合入 develop（`9fa012d`）；
+本轮仅同步该新基线并做兼容回归，没有代替原作者修改 #31。#42 仍未包含，管理新增/汇总接入
+及其评审问题属于原 PR，不能因为本轮新增代码通过测试就算作已解决。
 尤其 #42 中的 Release 写入问题、刷新与弹窗竞态等未解决前，不应宣称整个仓库无条件可交付。
 由于新增注册时间/在线率也涉及管理页面，合入 #42 时需保留两侧功能并做页面回归。
 
