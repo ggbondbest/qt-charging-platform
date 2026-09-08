@@ -522,6 +522,24 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             return;
         }
         const int months = normalized.value(QStringLiteral("months")).toInt(6);
+        // 批次B：聚合档透传（normalize 已注入 "month" 缺省）。周档与服务端
+        // strftime('%Y-W%W') 同语义：周一为始的年度周序号（tm 公式，00-53），
+        // 不用 ISO 周（%G-%V 需 SQLite 3.44+）。字典序即时间序。
+        const QString period = normalized.value(QStringLiteral("period")).toString(
+            QStringLiteral("month"));
+        auto periodKey = [&period](const QDateTime& utc) {
+            const QDate date = utc.date();
+            if (period == QLatin1String("year")) {
+                return utc.toString(QStringLiteral("yyyy"));
+            }
+            if (period == QLatin1String("week")) {
+                const int wday = date.dayOfWeek() % 7;     // Qt Mon=1..Sun=7 → tm Sun=0
+                const int week = (date.dayOfYear() - 1 + 7 - wday) / 7;
+                return QStringLiteral("%1-W%2").arg(date.year()).arg(week, 2, 10,
+                                                                     QLatin1Char('0'));
+            }
+            return utc.toString(QStringLiteral("yyyy-MM"));
+        };
         struct MonthAggregate
         {
             int orderCount = 0;
@@ -535,7 +553,7 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             if (order.status != charging::model::OrderStatus::Completed) {
                 continue;
             }
-            const QString key = order.createdAtUtc.toUTC().toString(QStringLiteral("yyyy-MM"));
+            const QString key = periodKey(order.createdAtUtc.toUTC());
             if (!byMonth.contains(key)) {
                 monthKeys.append(key);
             }

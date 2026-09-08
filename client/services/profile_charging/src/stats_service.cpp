@@ -16,7 +16,7 @@ bool StatsService::isFetchingStats() const
     return fetching_;
 }
 
-void StatsService::fetchStats(int months)
+void StatsService::fetchStats(int months, const QString& period)
 {
     if (transport_ == nullptr || fetching_) {
         return;
@@ -24,7 +24,8 @@ void StatsService::fetchStats(int months)
     fetching_ = true;
     const QString type =
         QString::fromLatin1(charging::protocol::request_type::kGetUserStats);
-    transport_->send(type, {{QStringLiteral("months"), months}},
+    transport_->send(type, {{QStringLiteral("months"), months},
+                            {QStringLiteral("period"), period}},
                      [this, type](bool ok, const QJsonObject& data,
                                   const charging::protocol::ProtocolError& error) {
                          fetching_ = false;

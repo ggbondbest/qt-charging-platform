@@ -28,6 +28,7 @@ struct UserApiQuery {
     QString transactionNo;
     qint64 amountCents = 0;
     int months = 6;               // Stats window (1..kMaximumStatsMonths)
+    QString period;               // Stats 聚合档 "week"|"month"|"year"（2026-09-08 批次B；空=month）
     QDateTime nowUtc;
 };
 struct UserApiResult {

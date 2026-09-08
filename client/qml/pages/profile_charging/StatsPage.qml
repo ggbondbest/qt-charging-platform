@@ -19,6 +19,15 @@ Item {
     // 在途身份镜像（服务层单飞静默丢弃同款口径）：本页面同时至多一条在途。
     property bool reqActive: false
     property bool loadedOnce: false
+    // 聚合档（批次B）：week=近8周 / month=近6月 / year=近5年。
+    // 期数窗口是展示口径，数据契约只认 months=窗口内期数。
+    property string period: "month"
+    readonly property var periodTabs: [
+        { key: "week",  obj: "uiPeriodWeekButton",  label: "周",   span: 8, caption: "近 8 周 · 已完成订单" },
+        { key: "month", obj: "uiPeriodMonthButton", label: "月",   span: 6, caption: "近 6 个月 · 已完成订单" },
+        { key: "year",  obj: "uiPeriodYearButton",  label: "年",   span: 5, caption: "近 5 年 · 已完成订单" }
+    ]
+    property string periodCaption: "近 6 个月 · 已完成订单"
 
     ListModel { id: monthsModel; objectName: "uiStatsModel" }
 
@@ -37,6 +46,10 @@ Item {
 
     function monthLabel(key) {
         const s = String(key || "")
+        // 周档键："2026-W36"（%W 年度周序号，周一为始）→ "2026年 第36周"
+        const wk = /^(\d{4})-W(\d{2})$/.exec(s)
+        if (wk) return wk[1] + "年 第" + parseInt(wk[2], 10) + "周"
+        if (/^\d{4}$/.test(s)) return s + "年 · 年度汇总"     // 年档
         if (!/^\d{4}-\d{2}$/.test(s)) return "更早"
         const p = s.split("-")
         return p[0] + "年" + parseInt(p[1], 10) + "月"
@@ -49,7 +62,18 @@ Item {
             return
         }
         reqActive = true
-        statsService.fetchStats(6)
+        for (var i = 0; i < periodTabs.length; ++i) {
+            if (periodTabs[i].key === period) {
+                statsService.fetchStats(periodTabs[i].span, period)
+                page.periodCaption = periodTabs[i].caption
+                break
+            }
+        }
+    }
+    function switchPeriod(key) {
+        if (key === period) return
+        period = key
+        load()
     }
 
     Connections {
@@ -85,14 +109,32 @@ Item {
             height: 40
             Text {
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                text: "充电月报"
+                objectName: "uiStatsTitle"
+                text: "充电" + (page.period === "week" ? "周报"
+                     : page.period === "year" ? "年报" : "月报")
                 font.pixelSize: P.Style.fontXl; font.weight: Font.Bold; color: P.Style.ink
             }
             Text {
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                 objectName: "uiStatsCaption"
-                text: "近 6 个月 · 已完成订单"
+                text: page.periodCaption
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
+            }
+        }
+
+        // ---- 档位切换（批次B：周/月/年 三 chip，选中=primary）----
+        Row {
+            objectName: "uiPeriodRow"
+            width: listScroll.width
+            spacing: P.Style.spaceSm
+            Repeater {
+                model: page.periodTabs
+                delegate: P.ActionButton {
+                    objectName: modelData.obj
+                    variant: page.period === modelData.key ? "primary" : "secondary"
+                    text: modelData.label
+                    onClicked: page.switchPeriod(modelData.key)
+                }
             }
         }
 

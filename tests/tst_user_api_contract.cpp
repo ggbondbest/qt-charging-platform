@@ -181,7 +181,9 @@ void UserApiContractTest::defaultsAndIdentity()
     QVERIFY(output.isEmpty()); // Not an authentication test: Session is the caller's responsibility.
     QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"userId", "999"}, {"page", 2}},
                                  &output));
-    QCOMPARE(output, (QJsonObject{{QStringLiteral("months"), 6}}));   // stats is unpaged; page is discarded
+    // stats is unpaged; page is discarded; period 缺省注入 "month"（=冻结行为）。
+    QCOMPARE(output, (QJsonObject{{QStringLiteral("months"), 6},
+                                  {QStringLiteral("period"), QStringLiteral("month")}}));
 }
 
 void UserApiContractTest::invalidRequests_data()
@@ -217,6 +219,12 @@ void UserApiContractTest::invalidRequests_data()
         const QByteArray tag = QJsonDocument(QJsonArray{months}).toJson(QJsonDocument::Compact);
         QTest::newRow(("stats-months-" + tag).constData())
             << QString(request_type::kGetUserStats) << QJsonObject{{"months", months}};
+    }
+    for (const QJsonValue& period : {QJsonValue("WEEK"), QJsonValue("daily"),
+                                     QJsonValue(1), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{period}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("stats-period-" + tag).constData())
+            << QString(request_type::kGetUserStats) << QJsonObject{{"period", period}};
     }
     for (const QJsonValue& status : {QJsonValue("AVAILABLE"), QJsonValue("pending"),
                                      QJsonValue(1), QJsonValue(QJsonValue::Null)}) {
@@ -295,6 +303,12 @@ void UserApiContractTest::boundariesAndNormalization()
     for (const int months : {1, 6, kMaximumStatsMonths}) {
         QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"months", months}}, &output));
         QCOMPARE(output.value("months").toInt(), months);
+    }
+    for (const char* period : {"week", "month", "year"}) {
+        QVERIFY(normalizeRequestData(request_type::kGetUserStats,
+                                     {{"period", period}}, &output));
+        QCOMPARE(output.value("period").toString(), QLatin1String(period));
+        QCOMPARE(output.value("months").toInt(), 6);   // 缺省窗口随同注入
     }
     for (const char* status : {"available", "used", "expired", ""}) {
         QVERIFY(normalizeRequestData(request_type::kGetCoupons, {{"status", status}}, &output));

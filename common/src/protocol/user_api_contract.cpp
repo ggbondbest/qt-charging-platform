@@ -113,6 +113,19 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
             return fail(error_code::kInvalidArgument, key);
         }
         result.insert(key, value);
+        // 2026-09-08 批次B 追加：period ∈ "week"|"month"|"year"，缺省注入
+        // "month"（即冻结时行为——monthKey 恒 "YYYY-MM"）。week 档 monthKey 为
+        // ISO 周 "YYYY-Www"，year 档为 "YYYY"；字段名沿用 monthKey 不动。
+        const QString periodKey = QStringLiteral("period");
+        const QJsonValue periodValue = data.contains(periodKey)
+            ? data.value(periodKey) : QJsonValue(QStringLiteral("month"));
+        const QString period = periodValue.toString();
+        if (!periodValue.isString()
+            || (period != QLatin1String("week") && period != QLatin1String("month")
+                && period != QLatin1String("year"))) {
+            return fail(error_code::kInvalidArgument, periodKey);
+        }
+        result.insert(periodKey, periodValue);
     }
     if (coupons) {
         // Wire statuses are the CouponPage contract's lowercase trio; empty = all.

@@ -122,10 +122,12 @@ class FakeStatsBridge final : public QObject
     Q_OBJECT
 
 public:
-    Q_INVOKABLE void fetchStats(int months = 6)
+    Q_INVOKABLE void fetchStats(int months = 6,
+                                const QString& period = QStringLiteral("month"))
     {
         ++calls;
         lastMonths = months;
+        lastPeriod = period;
     }
     Q_INVOKABLE bool isFetchingStats() const { return false; }
 
@@ -143,6 +145,7 @@ signals:
 public:
     int calls = 0;
     int lastMonths = 0;
+    QString lastPeriod;
 };
 
 } // namespace
@@ -513,6 +516,18 @@ private slots:
         QVERIFY(!page->property("reqActive").toBool());
         QVERIFY(page->property("loadedOnce").toBool()); // 失败不回滚已落定状态
         QVERIFY(notice->isVisible());                   // 保留上一次数据（仍空态）
+
+        // 档位切换（批次B）：周报=近 8 周；period 透传给桥；标题联动。
+        // delegate 在 offscreen 不可 findChild（CONTRACT.md 已知问题），
+        // 走页面级 switchPeriod——与 chip onClicked 同一代码路径。
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("week")));
+        QCOMPARE(fake.calls, 4);
+        QCOMPARE(fake.lastMonths, 8);
+        QCOMPARE(fake.lastPeriod, QStringLiteral("week"));
+        auto* title = page->findChild<QQuickItem*>("uiStatsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("充电周报"));
     }
 
     // 月报桥 × 真 mock 通道：端到端有当月聚合，碳排公式对拍；越界月份 INVALID。

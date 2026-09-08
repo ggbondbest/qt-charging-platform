@@ -196,7 +196,8 @@
   {
     "type": "GET_USER_STATS",
     "requestData": {
-      "months": 6
+      "months": 6,
+      "period": "month"
     },
     "responseData": {
       "months": [

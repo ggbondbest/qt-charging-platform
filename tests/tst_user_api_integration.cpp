@@ -228,6 +228,27 @@ void UserApiIntegrationTest::statsCouponsAndNotifications()
     QVERIFY(month.value("energyWh").toDouble() > 0);
     QCOMPARE(month.value("co2Grams").toDouble(), qRound64(month.value("energyWh").toDouble() * 0.5568));
 
+    // 批次B 聚合档：同一单数据，year 档键为 4 位年份、week 档为 "YYYY-Www"，
+    // 聚合总量必须与 month 档一致（三档只是 GROUP BY 表达式不同）。
+    response = call(a, kGetUserStats, {{"period", "year"}});
+    QVERIFY(response.success);
+    const QJsonArray years = response.data.value("months").toArray();
+    QCOMPARE(years.size(), 1);
+    const QJsonObject year = years.first().toObject();
+    QCOMPARE(year.value("monthKey").toString().size(), 4);
+    QCOMPARE(year.value("orderCount").toInt(), 1);
+    QCOMPARE(year.value("energyWh").toDouble(), month.value("energyWh").toDouble());
+    response = call(a, kGetUserStats, {{"period", "week"}});
+    QVERIFY(response.success);
+    const QJsonArray weeks = response.data.value("months").toArray();
+    QCOMPARE(weeks.size(), 1);
+    const QJsonObject week = weeks.first().toObject();
+    QVERIFY(QRegularExpression(QStringLiteral("^\\d{4}-W\\d{2}$"))
+               .match(week.value("monthKey").toString()).hasMatch());
+    QCOMPARE(week.value("amountCents").toDouble(), month.value("amountCents").toDouble());
+    QCOMPARE(call(a, kGetUserStats, {{"period", "WEEK"}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));   // 白名单只收小写
+
     // Coupon grant: >= ¥50 recharge once; below threshold none; idempotent
     // replay of the same transaction never re-grants.
     QVERIFY(call(a, kRecharge, {{"amountCents", 4999}, {"transactionNo", "coupon-below"}}).success);

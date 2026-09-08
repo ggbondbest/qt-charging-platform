@@ -92,6 +92,8 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     query.amountCents = static_cast<qint64>(input.value("amountCents").toDouble());
     query.transactionNo = input.value("transactionNo").toString();
     query.months = input.value("months").toInt(6);
+    // 批次B：normalize 缺省注入 "month"（=冻结行为），此处透传给 repo 选聚合档。
+    query.period = input.value("period").toString(QStringLiteral("month"));
     query.nowUtc = clock_ ? clock_().toUTC() : QDateTime::currentDateTimeUtc();
     const UserApiResult result = repository_->execute(query);
     switch (result.error) {

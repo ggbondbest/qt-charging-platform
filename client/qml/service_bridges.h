@@ -271,7 +271,8 @@ class StatsBridge final : public QObject
 public:
     explicit StatsBridge(charging::client::StatsService* svc, QObject* parent = nullptr);
 
-    Q_INVOKABLE void fetchStats(int months = 6);
+    Q_INVOKABLE void fetchStats(int months = 6,
+                                const QString& period = QStringLiteral("month"));
     Q_INVOKABLE bool isFetchingStats() const;
 
 signals:

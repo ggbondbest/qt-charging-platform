@@ -131,11 +131,22 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
     if (in.action == UserApiAction::Stats) {
         if (in.months < 1 || in.months > charging::protocol::user_api::kMaximumStatsMonths)
             return failure(UserApiError::Invalid);
-        if (!run(q, "SELECT strftime('%Y-%m', created_at) AS month_key, "
+        // 聚合档（2026-09-08 批次B）：period 已过 normalize 白名单；空串按
+        // "month" 兜底（同 service 缺省），三种格式串都是单点常量、不外泄。
+        // 周档用 %W（年度周序号，周一为始，00-53）而非 ISO %G-%V——后者要
+        // SQLite 3.44+，本机 3.37 直接返回 NULL（实测），跨年归属差异作为
+        // 展示口径记录在契约文档。
+        const QString period = in.period.isEmpty() ? QStringLiteral("month") : in.period;
+        const char* format = "%Y-%m";
+        if (period == QLatin1String("week")) format = "%Y-W%W";
+        else if (period == QLatin1String("year")) format = "%Y";
+        else if (period != QLatin1String("month")) return failure(UserApiError::Invalid);
+        if (!run(q, QStringLiteral(
+                    "SELECT strftime('%1', created_at) AS month_key, "
                     "COUNT(*) AS order_count, SUM(energy_wh) AS energy_wh, "
                     "SUM(amount_cents) AS amount_cents, SUM(duration_seconds) AS duration_seconds "
                     "FROM orders WHERE user_id=:uid AND status='COMPLETED' "
-                    "GROUP BY month_key ORDER BY month_key DESC LIMIT :months",
+                    "GROUP BY month_key ORDER BY month_key DESC LIMIT :months").arg(format),
                  {{"uid", in.userId}, {"months", in.months}})) return {};
         while (q.next()) result.rows.append(row(q));
         if (q.lastError().isValid()) return {};

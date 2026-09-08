@@ -666,7 +666,10 @@ StatsBridge::StatsBridge(charging::client::StatsService* svc, QObject* parent)
             });
 }
 
-void StatsBridge::fetchStats(int months) { svc_->fetchStats(months); }
+void StatsBridge::fetchStats(int months, const QString& period)
+{
+    svc_->fetchStats(months, period);
+}
 bool StatsBridge::isFetchingStats() const { return svc_->isFetchingStats(); }
 
 CouponBridge::CouponBridge(charging::client::CouponService* svc, QObject* parent)
