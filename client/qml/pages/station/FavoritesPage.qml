@@ -28,6 +28,18 @@ Item {
     function money(c) { return ((c || 0) / 100).toFixed(2) }
     // 供壳顶栏漏斗接线（同 StationHomePage 口径）：成员3 一行接通即活。
     function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
+    // 2026-09-08：页面右上"▽ 高级筛选"钮撤除（全局唯一入口=顶栏漏斗），
+    // 激活组数经本属性由 Shell 绑到 nav.filterBadgeCount。
+    function activeFilterCount() {
+        const c = page.criteria
+        let n = 0
+        if (c.maxDistanceKm > 0) ++n
+        n += (c.statuses.length > 0) + (c.operators.length > 0) + (c.accessTypes.length > 0)
+           + (c.parkingFees.length > 0) + (c.features.length > 0)
+           + (c.chargerTypes.length > 0) + (c.voltageBands.length > 0)
+        return n
+    }
+    readonly property int activeFilterBadge: activeFilterCount()
     function isFav(id) {
         try { return favoritesService ? favoritesService.contains(id) : false }
         catch (e) { return false }
@@ -105,20 +117,11 @@ Item {
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
 
-        Row {
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
             width: parent.width
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 110
-                objectName: "favoritesPageTitle"
-                text: "我的收藏"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
-            }
-            P.ActionButton {
-                objectName: "favoritesFilterButton"
-                variant: "ghost"; text: "▽ 高级筛选"
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: filterDialog.openDialog(page.criteria)
-            }
+            objectName: "favoritesPageTitle"
+            text: "我的收藏"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
         }
 
         ListView {
@@ -162,11 +165,11 @@ Item {
                     }
                     MouseArea {
                         objectName: "unfavoriteStarButton"
-                        width: 34; height: parent.height
+                        width: 42; height: parent.height
                         Text {
                             anchors.centerIn: parent
-                            text: "★"; font.pixelSize: 20
-                            color: P.Style.warning
+                            text: "★"; font.pixelSize: 26
+                            color: P.Style.starGold
                         }
                         onClicked: {   // 取消收藏
                             try { favoritesService.toggle(stationId) } catch (e) {}

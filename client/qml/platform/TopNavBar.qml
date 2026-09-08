@@ -15,6 +15,9 @@ Rectangle {
     // filter/notifications entries ride with the search group (C++ semantics).
     readonly property bool filterVisible: searchVisible
     readonly property bool notificationsVisible: searchVisible
+    // 2026-09-08：全局唯一高级筛选入口在本栏——漏斗右侧红点计数由宿主页绑定
+    //（StationHomePage/FavoritesPage 的 activeFilterBadge，缺位=0）。
+    property int filterBadgeCount: 0
     objectName: "topNavBar"
 
     // Signal set verbatim from top_nav_bar.h:
@@ -76,14 +79,49 @@ Rectangle {
                 onAccepted: nav.searchSubmitted(text.trim())
             }
         }
-        Text { // 高级筛选漏斗
+        Item { // 高级筛选漏斗（原 "⛛" U+26DB 字体缺字渲染成豆腐块 → Canvas 标准漏斗形）
             anchors.verticalCenter: parent.verticalCenter
             visible: nav.filterVisible
-            text: "⛛"
-            font.pixelSize: Style.fontXl
-            color: Style.muted
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                onClicked: nav.filterRequested() }
+            width: 26; height: 30
+            objectName: "topFilterButton"
+            Canvas {
+                id: funnelIcon
+                anchors.centerIn: parent
+                width: 22; height: 20
+                property color ink: funnelMa.pressed ? Style.brand : Style.muted
+                onInkChanged: requestPaint()
+                onPaint: {
+                    const c = getContext("2d")
+                    c.reset()
+                    c.fillStyle = ink
+                    // 标准 filter 形：上宽杯体收腰 + 短柄
+                    c.beginPath()
+                    c.moveTo(1.5, 2.5); c.lineTo(20.5, 2.5)
+                    c.lineTo(12.8, 11.2); c.lineTo(12.8, 17.8)
+                    c.lineTo(9.2, 19.2); c.lineTo(9.2, 11.2)
+                    c.closePath(); c.fill()
+                }
+            }
+            Rectangle { // 红色计数徽标（沿用原页面右上 ⛏ 的 danger 计数视觉）
+                visible: nav.filterBadgeCount > 0
+                anchors.left: funnelIcon.right; anchors.leftMargin: -6
+                anchors.top: parent.top; anchors.topMargin: 1
+                width: Math.max(15, badgeText.implicitWidth + 8)
+                height: 15; radius: 7.5
+                color: Style.danger
+                Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: nav.filterBadgeCount > 9 ? "9+" : String(nav.filterBadgeCount)
+                    font.pixelSize: 9; font.bold: true; color: "#FFFFFF"
+                }
+            }
+            MouseArea {
+                id: funnelMa
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: nav.filterRequested()
+            }
         }
         Text { // 通知铃铛
             anchors.verticalCenter: parent.verticalCenter
