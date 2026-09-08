@@ -61,7 +61,8 @@ sudo apt install -y \
   qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-charts-dev \
   qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
   qml6-module-qtquick-controls qml6-module-qtquick-templates \
-  qml6-module-qtquick-dialogs qml6-module-qtqml-workerscript qml6-module-qtwebengine
+  qml6-module-qtquick-dialogs qml6-module-qtqml qml6-module-qtqml-models \
+  qml6-module-qtqml-workerscript qml6-module-qtwebengine
 
 cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
