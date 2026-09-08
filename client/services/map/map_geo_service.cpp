@@ -16,6 +16,12 @@ namespace charging::client::services::map {
 
 namespace {
 
+#ifdef CHARGING_MAP_CONFIG_FILE
+constexpr char kMapConfigFile[] = CHARGING_MAP_CONFIG_FILE;
+#else
+constexpr char kMapConfigFile[] = "";   // 库外目标未注入宏（不该发生；空=不读文件）
+#endif
+
 constexpr int kHttpRateLimitStatus1 = 120; // 触发并发/限流
 constexpr int kHttpRateLimitStatus2 = 121; // 每日配额超限
 constexpr int kInvalidKeyStatus1 = 111;    // 请求源未通过验证（key 无效）
@@ -47,6 +53,23 @@ MapError errorFromBusinessStatus(int status)
     }
 }
 
+// git 托管配置文件读取（2026-09-08 key 入库批）：解析失败/文件缺失静默回空对象。
+QJsonObject readMapConfig(const QString& configPath)
+{
+    QString path = configPath;
+    if (path.isEmpty())
+        path = QString::fromLatin1(kMapConfigFile);
+    if (path.isEmpty())
+        return {};
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    return doc.isObject() ? doc.object() : QJsonObject{};
+}
+
+const QString kDefaultEndpointBase = QStringLiteral("https://apis.map.qq.com/ws");
+
 } // namespace
 
 QString mapErrorMessage(MapError error)
@@ -73,7 +96,8 @@ QString mapErrorMessage(MapError error)
 MapGeoService::MapGeoService(QObject* parent)
     : QObject(parent), network_(new QNetworkAccessManager(this))
 {
-    apiKey_ = apiKeyFromEnvironment();
+    apiKey_ = resolveApiKey();
+    endpointBase_ = resolveBaseUrl();
     // SK 仅当控制台开启签名校验时才需要；为空则请求不带 sig。
     secretKey_ = qEnvironmentVariable("TENCENT_MAP_SECRET_KEY").trimmed();
     if (secretKey_.isEmpty()) {
@@ -90,6 +114,41 @@ QString MapGeoService::apiKeyFromEnvironment()
         key = qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
     }
     return key;
+}
+
+bool MapGeoService::environmentKeyAuthoritative()
+{
+    // "已定义即权威"（含空串）：测试 initTestCase 的 qputenv(name,"") 与
+    // ctest ENVIRONMENT 注入都落在此分支 → 配置文件永不生效，零真实请求。
+    return qEnvironmentVariableIsSet("TENCENT_MAP_API_KEY")
+           || qEnvironmentVariableIsSet("CHARGING_TENCENT_MAP_KEY");
+}
+
+QString MapGeoService::apiKeyFromConfigFile(const QString& configPath)
+{
+    return readMapConfig(configPath).value(QStringLiteral("tencentMapKey")).toString().trimmed();
+}
+
+QString MapGeoService::baseUrlFromConfigFile(const QString& configPath)
+{
+    QString base = readMapConfig(configPath).value(QStringLiteral("baseUrl")).toString().trimmed();
+    while (base.endsWith(QLatin1Char('/')))
+        base.chop(1);   // 拼接点 endpointBase_+path（path 以 / 开头），去尾斜杠防双斜杠
+    return base;
+}
+
+QString MapGeoService::resolveApiKey(const QString& configPath)
+{
+    return environmentKeyAuthoritative() ? apiKeyFromEnvironment()
+                                         : apiKeyFromConfigFile(configPath);
+}
+
+QString MapGeoService::resolveBaseUrl(const QString& configPath)
+{
+    if (environmentKeyAuthoritative())
+        return kDefaultEndpointBase;
+    const QString base = baseUrlFromConfigFile(configPath);
+    return base.isEmpty() ? kDefaultEndpointBase : base;
 }
 
 bool MapGeoService::hasUsableKey() const

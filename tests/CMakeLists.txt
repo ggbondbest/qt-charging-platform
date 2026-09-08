@@ -19,6 +19,9 @@ target_link_libraries(test_admin_login PRIVATE ChargingPlatform::ServerPages
     ChargingPlatform::DatabaseResources Qt6::Test)
 add_test(NAME admin_login COMMAND test_admin_login)
 set_tests_properties(admin_service admin_gateway admin_login PROPERTIES TIMEOUT 40)
+# admin_login 建 QWidget 页，无 DISPLAY 机器上裸跑会因 xcb 直接 abort
+# （与 station_map_panel 等同一注入口径）。
+set_tests_properties(admin_login PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(test_qt_baseline tst_qt_baseline.cpp)
 target_link_libraries(test_qt_baseline PRIVATE
@@ -262,7 +265,9 @@ target_link_libraries(test_home_shell PRIVATE
 )
 add_test(NAME home_shell COMMAND test_home_shell)
 set_tests_properties(home_shell PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    # 2026-09-08 key 入库批："已定义且空"= env 权威无 key → 壳内 MapGeoService
+    # 绝不读 client/config/map_services.json 兜底 key，测试永不发真实请求。
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
 )
 
 add_executable(test_station_map_panel tst_station_map_panel.cpp)
@@ -437,7 +442,7 @@ target_link_libraries(test_qml_client_pages PRIVATE
 )
 add_test(NAME qml_client_pages COMMAND test_qml_client_pages)
 set_tests_properties(qml_client_pages PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
 
@@ -472,7 +477,7 @@ target_link_libraries(test_qml_station_interactions PRIVATE
 )
 add_test(NAME qml_station_interactions COMMAND test_qml_station_interactions)
 set_tests_properties(qml_station_interactions PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
     TIMEOUT 90
 )
 endif()
