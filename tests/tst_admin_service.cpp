@@ -814,10 +814,15 @@ private slots:
         DatabaseConnection setup;
         QVERIFY(setup.open(path, true));
         QJsonObject results[2];
+        std::atomic<int> openTurn{0};
         std::atomic<int> ready{0};
         const auto worker = [&](int index) {
+            while (openTurn.load() != index)
+                std::this_thread::yield();
             DatabaseConnection connection;
-            if (!connection.open(path, false)) {
+            const bool opened = connection.open(path, false);
+            ++openTurn;
+            if (!opened) {
                 ++ready;
                 return;
             }
