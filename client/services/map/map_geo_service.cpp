@@ -2,6 +2,7 @@
 
 #include <QCryptographicHash>
 #include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -310,29 +311,52 @@ quint64 MapGeoService::requestStaticMap(double centerLat, double centerLng, int 
                       .arg(qBound(64, width, 1024)).arg(qBound(64, height, 1024)));
     params.insert(QStringLiteral("scale"), QStringLiteral("2"));   // 高清（Retina）出图
     if (!routePairs.isEmpty()) {
-        QStringList routePoints;
-        for (const QVariant& pair : routePairs) {
-            routePoints << formatLatLng(pairLatLng(pair));
+        // v2 活体二分（2026-09-08）：复数 `paths=` 逗号式被 v2 **静默忽略**
+        // （出图与无参基线逐字节相同——线根本没画）；真正画线的是单数
+        // `path=color:0xRRGGBB|lat,lng|lat,lng|…` kv 管道式。长折线降采样保留：
+        // 京→深数千点全量注入曾把 URL 冲到几十 KB → 414 URI Too Long（活体案，
+        // 假 HTTP 短折线撞不到）。等距步长 ≤120 点、首尾必含；≤120 点时步长 1。
+        constexpr int kMaxPathPoints = 120;
+        const int total = routePairs.size();
+        const int stride = total > kMaxPathPoints ? (total + kMaxPathPoints - 1) / kMaxPathPoints : 1;
+        QStringList routePoints{QStringLiteral("color:0x00B578")};
+        for (int index = 0; index < total; index += stride) {
+            routePoints << formatLatLng(pairLatLng(routePairs.at(index)));
         }
-        params.insert(QStringLiteral("paths"),
-                      QStringLiteral("6,0x00B578,255:") + routePoints.join(QLatin1Char(';')));
+        if ((total - 1) % stride != 0) {
+            routePoints << formatLatLng(pairLatLng(routePairs.at(total - 1)));
+        }
+        params.insert(QStringLiteral("path"), routePoints.join(QLatin1Char('|')));
     }
     if (!markerPairs.isEmpty()) {
-        // 官方 markers 语法 size,color,opacity,label:lat,lng；每点带自己的前缀，
-        // 用 | 串接。个别版本不认重复前缀 → JSON 错误 → emitFailure，页面回落 Canvas。
-        QStringList markerSpecs;
+        // v2 活体二分：markers = `color:0xRRGGBB|label:单ASCII字符|lat,lng` kv 管道式，
+        // 多标记走 markers1/markers2…编号参数（单标记用 markers）。Google 逗号式、
+        // opacity 段、中文 label 各自独立触发 348 请求参数非法。中文语义标签映射
+        // 起→A、终→B；单 ASCII 字母数字原样透传；其余省略 label（只画点不炸请求）。
+        static const QHash<QString, QString> kLabelGlyphs = {
+            {QStringLiteral("起"), QStringLiteral("A")},
+            {QStringLiteral("终"), QStringLiteral("B")},
+        };
+        const int markerTotal = markerPairs.size();
+        int ordinal = 0;
         for (const QVariant& marker : markerPairs) {
+            ++ordinal;
             const QVariantMap map = marker.toMap();
-            QString spec = QStringLiteral("5,0x00A46C,255");
+            QStringList spec{QStringLiteral("color:0x00A46C")};
             const QString label = map.value(QStringLiteral("label")).toString();
-            if (!label.isEmpty()) {
-                spec += QLatin1Char(',') + label;
+            const QString mapped = kLabelGlyphs.value(label);
+            if (!mapped.isEmpty()) {
+                spec << QStringLiteral("label:") + mapped;
+            } else if (label.size() == 1 && label.at(0).unicode() < 0x80
+                       && label.at(0).isLetterOrNumber()) {
+                spec << QStringLiteral("label:") + label;
             }
-            markerSpecs << spec + QLatin1Char(':')
-                        + formatLatLng(LatLng{map.value(QStringLiteral("latitude")).toDouble(),
-                                              map.value(QStringLiteral("longitude")).toDouble()});
+            spec << formatLatLng(LatLng{map.value(QStringLiteral("latitude")).toDouble(),
+                                        map.value(QStringLiteral("longitude")).toDouble()});
+            params.insert(markerTotal == 1 ? QStringLiteral("markers")
+                                           : QStringLiteral("markers%1").arg(ordinal),
+                          spec.join(QLatin1Char('|')));
         }
-        params.insert(QStringLiteral("markers"), markerSpecs.join(QLatin1Char('|')));
     }
     sendRequest(requestId, Kind::StaticMap, QStringLiteral("/staticmap/v2/"), params);
     return requestId;
@@ -449,8 +473,8 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                                 const QMap<QString, QString>& params)
 {
     // 2026-09-08 merge：查询串保留手工百分号编码而非上游 QUrlQuery——keep set
-    // 含 : ; | 等，静态图 paths/markers 测试锚（0x00B578,255:22.541000,...）要求
-    // 逐字节；QUrlQuery 会把 ':' 编成 %3A 破锚。sig 路径则采纳上游口径
+    // 含 : ; | 等，静态图 path/markers 测试锚（color:0x00B578|22.541000,...）要求
+    // 逐字节；QUrlQuery 会把 ':' '|' 编成 %3A 破锚。sig 路径则采纳上游口径
     // = baseUrl 自身路径段 + path（官方规则即完整 URI path，测试锚
     // /ws/distance/v1/matrix/?...）。
     QString query;

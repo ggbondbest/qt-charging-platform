@@ -103,6 +103,7 @@ private slots:
     void addressGeocodeEncodesChineseAndRelays();
     void routeRelayCarriesQmlFriendlyMap();
     void staticMapWritesPngAndRotatesFile();
+    void staticMapDownsamplesLongPolyline();
     void staticMapJsonBodyClassifiesError();
     void navigationUriUrlShapeAndEncoding();
     void forwardGeocodeUsesAddressAndReturnsCoordinates();
@@ -723,19 +724,67 @@ void MapGeoServiceTest::staticMapWritesPngAndRotatesFile()
     QCOMPARE(file.read(4), QByteArray("\x89" "PNG", 4));
     file.close();
 
-    // 参数口径：paths 折线品牌绿 + markers 中文标签编码 + 坐标 keep 不编码。
+    // 参数口径（2026-09-08 活体二分后 v2 契约）：path= 单数 kv 才画线（复数 paths=
+    // 逗号式被 v2 静默忽略）；markers 用 markers1/markers2 编号、label 仅收单 ASCII
+    // 字母数字（中文语义映射 A/B）。线上形态 ':' keep 不编码、'|' 恒 %7C（Qt
+    // toPercentEncoding 的 keep 不覆盖 |；服务端百分号解码后等价，活体 PNG 已证）。
     const QString target = server.lastRequestTarget();
     QVERIFY(target.startsWith(QStringLiteral("/ws/staticmap/v2/")));
     QVERIFY(target.contains(QStringLiteral("center=22.545500,113.944000")));
     QVERIFY(target.contains(QStringLiteral("size=600*400")));
-    QVERIFY(target.contains(QStringLiteral("paths=6,0x00B578,255:22.541000,113.943000;22.542500,113.945000")));
-    QVERIFY(target.contains(QStringLiteral("markers=5,0x00A46C,255,%E8%B5%B7")));
+    QVERIFY(target.contains(QStringLiteral("path=color:0x00B578%7C22.541000,113.943000%7C22.542500,113.945000")));
+    QVERIFY(target.contains(QStringLiteral("markers1=color:0x00A46C%7Clabel:A%7C22.541000,113.943000")));
+    QVERIFY(target.contains(QStringLiteral("markers2=color:0x00A46C%7C22.550000,113.950000")));
 
     // 第二张成功后上一张落盘文件被轮换清理（temp 不累积）。
     service.requestStaticMap(22.5455, 113.944, 12, 600, 400, routePairs, markerPairs);
     QVERIFY(ready.wait(5000) && ready.count() == 2);
     QVERIFY(!QFile::exists(firstFile));
     QVERIFY(QFile::exists(ready.at(1).at(1).toString()));
+}
+
+// 活体 414 回归钉（2026-09-08）：京→深驾车折线数千点全量注入 → URL 几十 KB
+// → 服务端回 414 URI Too Long（假 HTTP 短折线撞不到）。requestStaticMap 现等距
+// 步长抽点 ≤120 + 首尾必含；点数 ≤120 时步长 1、逐字节等价（上一用例的锚即证）。
+void MapGeoServiceTest::staticMapDownsamplesLongPolyline()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    QByteArray png;
+    png.append("\x89" "PNG\r\n\x1a\n", 8);
+    png.append(QByteArray(64, 'x'));
+    server.setResponse(200, png);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy ready(&service, &MapGeoService::qmlStaticMapReady);
+    QSignalSpy failed(&service, &MapGeoService::qmlStaticMapError);
+
+    QVariantList routePairs;   // 长路线量级：500 点。append(QVariant(list)) 显式包
+                               // 一层——`<<` 会命中 QList 拼接重载，塞成散点。
+    for (int index = 0; index < 500; ++index) {
+        routePairs.append(QVariant(QVariantList{22.0 + index * 0.0001, 113.0 + index * 0.0001}));
+    }
+    service.requestStaticMap(22.0, 113.0, 12, 600, 400, routePairs, {});
+    QVERIFY2(ready.wait(5000),
+             failed.count() ? qPrintable(failed.at(0).at(1).toString()) : "no png response");
+
+    const QString target = server.lastRequestTarget();
+    QString pathValue;
+    const QStringList segments = target.split(QLatin1Char('&'));
+    for (const QString& segment : segments) {
+        if (segment.startsWith(QStringLiteral("path="))) {
+            pathValue = segment;
+        }
+    }
+    QVERIFY(!pathValue.isEmpty());
+    const QStringList drawn = pathValue.split(QStringLiteral("%7C")).mid(1);
+    QVERIFY2(!drawn.isEmpty() && drawn.size() <= 120,
+             qPrintable(QStringLiteral("drawn=%1").arg(drawn.size())));
+    QCOMPARE(drawn.first(), QStringLiteral("22.000000,113.000000"));
+    QCOMPARE(drawn.last(), QStringLiteral("22.049900,113.049900"));
+    QVERIFY2(target.size() < 4096, qPrintable(QStringLiteral("url=%1").arg(target.size())));
 }
 
 void MapGeoServiceTest::staticMapJsonBodyClassifiesError()

@@ -131,7 +131,9 @@ public:
     // 地址正地理编码（ws/geocoder/v1?address=）：输入框起点文本 → 坐标。
     Q_INVOKABLE quint64 requestAddressGeocode(const QString& address);
     // 腾讯静态地图图（ws/staticmap/v2）：真实地图瓦片合成 PNG，
-    // routePairs=[[lat,lng],…] 画路线、markerPairs={latitude,longitude,label} 画标记。
+    // routePairs=[[lat,lng],…] 画路线（>120 点等距降采样防 414）、
+    // markerPairs={latitude,longitude,label} 画标记——label 仅收单 ASCII 字母数字，
+    // 中文语义 起→A/终→B（v2 实测 348 红线，详见 .cpp 活体二分注记）。
     // 成功后 qmlStaticMapReady 带临时文件路径（Image.source 直挂）；
     // 失败/无 key 走 qmlStaticMapError，页面回落 Canvas 示意底。
     Q_INVOKABLE quint64 requestStaticMap(double centerLat, double centerLng, int zoom,
