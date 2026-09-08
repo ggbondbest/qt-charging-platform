@@ -106,7 +106,10 @@ Window {
             onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
-            onFilterRequested: { /* StationFilterDialog.qml — member 2's domain */ }
+            onFilterRequested: {
+                if (stack.currentItem && typeof stack.currentItem.openAdvancedFilter === "function")
+                    stack.currentItem.openAdvancedFilter()
+            }
             onNotificationsRequested: { if (App) App.navigate("notifications") }
         }
         StackView {

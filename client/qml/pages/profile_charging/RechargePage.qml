@@ -94,6 +94,7 @@ Item {
             text: "模拟充值将真实记入平台余额与充值记录，不会从银行卡扣款。网络超时可重试原金额，不会重复入账。"
             font.pixelSize: P.Style.fontSm
             color: P.Style.faint
+            wrapMode: Text.Wrap
         }
     }
 }

@@ -46,6 +46,8 @@ public:
 
 signals:
     void profileLoaded(const charging::model::User& user); // also after UPDATE_USER_INFO
+    // Only successful writes emit this; GET_USER_INFO must never advance a save workflow.
+    void profileUpdated(const QString& field, const charging::model::User& user);
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVector<charging::model::RechargeRecord>& records,
                                int total, bool hasMore);

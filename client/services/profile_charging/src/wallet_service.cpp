@@ -110,7 +110,7 @@ void WalletService::updateNickname(const QString& nickname)
 {
     const QString type =
         QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
-    if (updatingNickname_) {
+    if (updatingNickname_ || updatingAvatar_) {
         return; // An update is in flight; never send a second one.
     }
     if (transport_ == nullptr) {
@@ -152,6 +152,7 @@ void WalletService::updateNickname(const QString& nickname)
                 return;
             }
             emit profileLoaded(user);
+            emit profileUpdated(QStringLiteral("nickname"), user);
         });
 }
 
@@ -194,6 +195,7 @@ void WalletService::updateAvatar(const QString& avatarKey)
                 return;
             }
             emit profileLoaded(user);
+            emit profileUpdated(QStringLiteral("avatar"), user);
         });
 }
 

@@ -286,6 +286,10 @@ QVariantMap orderToMap(const charging::model::Order& order,
 WalletBridge::WalletBridge(charging::client::WalletService* svc, QObject* parent)
     : QObject(parent), svc_(svc)
 {
+    connect(svc_, &charging::client::WalletService::profileUpdated, this,
+            [this](const QString& field, const charging::model::User& user) {
+        emit profileUpdated(field, marshalling::userToMap(user));
+    });
     connect(svc_, &charging::client::WalletService::profileLoaded, this,
             [this](const charging::model::User& user) {
                 emit profileLoaded(marshalling::userToMap(user));
@@ -308,6 +312,8 @@ void WalletBridge::updateAvatar(const QString& avatarKey) { svc_->updateAvatar(a
 void WalletBridge::recharge(qint64 amountCents) { svc_->recharge(amountCents); }
 void WalletBridge::fetchRechargeRecords(int page) { svc_->fetchRechargeRecords(page); }
 bool WalletBridge::isFetchingRecords() const { return svc_->isFetchingRecords(); }
+bool WalletBridge::isUpdatingProfile() const
+{ return svc_->isUpdatingNickname() || svc_->isUpdatingAvatar(); }
 
 // ————————————————————————————— OrderBridge —————————————————————————————
 
@@ -376,6 +382,7 @@ void ChargingBridge::stopTracking() { svc_->stopTracking(); }
 void ChargingBridge::fetchStatusNow() { svc_->fetchStatusNow(); }
 void ChargingBridge::stopCharging() { svc_->stopCharging(); }
 void ChargingBridge::startCharging(const QVariant& reservationId) { svc_->startCharging(reservationId.toLongLong()); }
+bool ChargingBridge::isStarting() const { return svc_->isStarting(); }
 void ChargingBridge::payOrder(const QVariant& orderId) { svc_->payOrder(orderId.toLongLong()); }
 
 // ————————————————————————————— StationQueryBridge ————————————————————————————

@@ -59,9 +59,11 @@ public:
     Q_INVOKABLE void recharge(qint64 amountCents);
     Q_INVOKABLE void fetchRechargeRecords(int page);
     Q_INVOKABLE bool isFetchingRecords() const;
+    Q_INVOKABLE bool isUpdatingProfile() const;
 
 signals:
     void profileLoaded(const QVariantMap& user);
+    void profileUpdated(const QString& field, const QVariantMap& user);
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
     void operationFailed(const QString& type, const QString& code, const QString& message);
@@ -103,6 +105,7 @@ public:
     Q_INVOKABLE void fetchStatusNow();
     Q_INVOKABLE void stopCharging();
     Q_INVOKABLE void startCharging(const QVariant& reservationId);
+    Q_INVOKABLE bool isStarting() const;
     Q_INVOKABLE void payOrder(const QVariant& orderId);
 
 signals:

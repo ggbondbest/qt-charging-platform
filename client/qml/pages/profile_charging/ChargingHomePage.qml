@@ -30,6 +30,13 @@ Item {
     property bool ordersRequested: false
     property bool queuedOrders: false
     property string loadError: ""
+    property bool startPending: false
+    function startReservation(id) {
+        if (page.startPending || chargingService.isStarting()) return
+        page.startPending = true
+        page.loadError = ""
+        chargingService.startCharging(String(id))
+    }
     property int seconds: 0
     property real breath: 1.0            // charging_pulse breath_ parity
 
@@ -118,6 +125,14 @@ Item {
     }
     Connections {
         target: chargingService
+        function onStartCompleted(s) { page.startPending = false }
+        function onOperationFailed(type, code, message) {
+            if (type !== "START_CHARGING" || !page.startPending) return
+            page.startPending = false
+            page.refreshAll()
+            page.loadError = message
+            if (App) App.showToast("启动失败：" + message, "danger")
+        }
         function onStatusLoaded(s) {
             page.status = s
             page.seconds = s.durationSeconds || 0
@@ -178,7 +193,8 @@ Item {
                             P.ActionButton {
                                 objectName: "startReservationButton"
                                 text: "开始充电"; variant: "primary"
-                                onClicked: chargingService.startCharging(String(modelData.reservationId || modelData.id))
+                                enabled: !page.startPending
+                                onClicked: page.startReservation(modelData.reservationId || modelData.id)
                             }
                         }
                     }

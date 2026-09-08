@@ -91,6 +91,7 @@ public:
     QStringList calls; // "nick:<v>" / "avatar:<k>"
 
     Q_INVOKABLE void fetchProfile() {}
+    Q_INVOKABLE bool isUpdatingProfile() const { return false; }
     Q_INVOKABLE void updateNickname(const QString& nickname)
     {
         calls << (QStringLiteral("nick:") + nickname);
@@ -100,7 +101,12 @@ public:
         calls << (QStringLiteral("avatar:") + avatarKey);
     }
 
-    void emitProfileLoaded() { emit profileLoaded(QVariantMap{}); }
+    void emitProfileLoaded()
+    {
+        emit profileLoaded(QVariantMap{});
+        emit profileUpdated(calls.last().startsWith("nick:") ? "nickname" : "avatar", {});
+    }
+    void emitReadProfile() { emit profileLoaded(QVariantMap{}); }
     void emitFailure()
     {
         emit operationFailed(QStringLiteral("UPDATE_USER_INFO"), QStringLiteral("MOCK"),
@@ -109,6 +115,7 @@ public:
 
 signals:
     void profileLoaded(const QVariantMap& user);
+    void profileUpdated(const QString& field, const QVariantMap& user);
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
     void operationFailed(const QString& type, const QString& code, const QString& message);
@@ -311,10 +318,20 @@ private slots:
         QCOMPARE(fake.calls, QStringList{QStringLiteral("nick:小荷")}); // 头像只登记不抢发
         QCOMPARE(backSpy.count(), 0);
 
+        // An earlier GET_USER_INFO completes while nickname saving is in flight.
+        // It must not send avatar prematurely or mark the write as successful.
+        fake.emitReadProfile();
+        QCOMPARE(fake.calls.size(), 1);
+        QCOMPARE(backSpy.count(), 0);
+        QVERIFY(page->property("sending").toBool());
+
         fake.emitProfileLoaded(); // 昵称落定 → 自动补发头像
         QCOMPARE(fake.calls.size(), 2);
         QCOMPARE(fake.calls.at(1), QStringLiteral("avatar:cat"));
         QCOMPARE(backSpy.count(), 0); // 原 bug：第一步成功就退出，头像丢失
+
+        fake.emitReadProfile(); // Reads during the second write are not ACKs either.
+        QCOMPARE(backSpy.count(), 0);
 
         fake.emitProfileLoaded(); // 头像也落定 → 才许退出
         QCOMPARE(backSpy.count(), 1);
@@ -347,6 +364,34 @@ private slots:
         QCOMPARE(backSpy.count(), 0);
         QVERIFY(!page->property("sending").toBool());          // 保存按钮恢复可点
         QCOMPARE(toastSpy.last().at(1).toString(), QStringLiteral("danger"));
+    }
+
+    void chargingStartFailureClearsPendingAndExplainsWhy()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("App", &app);
+        engine.rootContext()->setContextProperty("walletService", app.walletService());
+        engine.rootContext()->setContextProperty("orderService", app.orderService());
+        engine.rootContext()->setContextProperty("chargingService", app.chargingService());
+        engine.rootContext()->setContextProperty("reservationService", app.reservationService());
+        QObject holder;
+        auto* page = createPage(engine, "ChargingHomePage.qml", &holder);
+        QVERIFY(page);
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QSignalSpy failures(charging, &ChargingBridge::operationFailed);
+        QSignalSpy toasts(&app, &QmlApp::toastRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QVERIFY(page->property("startPending").toBool());
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QTRY_VERIFY(!page->property("startPending").toBool());
+        QVERIFY(!page->property("loadError").toString().isEmpty());
+        QVERIFY(!toasts.isEmpty());
+        int startFailures = 0;
+        for (const auto& failure : failures)
+            if (failure.at(0).toString() == "START_CHARGING") ++startFailures;
+        QCOMPARE(startFailures, 1); // The duplicate click did not submit another request.
     }
 
     // P2·复审③：QML 头像清单与 widgets AvatarLibrary 逐键对拍（双源治理）。
