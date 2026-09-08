@@ -181,7 +181,7 @@ Item {
         // ---- header（anchors 布局：Row 子项 anchors 在 6.2 是未定义行为）----
         Item {
             width: parent.width
-            height: 40
+            height: Math.round(40 * P.Style.fontScaleFactor)   // 字号档呼吸（2026-09-08）
             Text {
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                 text: "我的订单"
@@ -196,24 +196,34 @@ Item {
             }
         }
 
-        Row {
+        // 胶囊行：放大档下 4 枚总宽会超页宽 → 横向 Flickable 兜底（批次A 字号
+        // 档适配补漏，2026-09-08）。
+        Flickable {
             width: parent.width
-            spacing: P.Style.spaceSm
-            Repeater {
-                model: page.filters
-                P.ActionButton {
-                    objectName: "uiOrderFilter" + modelData.id
-                    variant: "chip"
-                    selected: page.filter === modelData.id
-                    text: modelData.label + (modelData.id !== "all"
-                          ? " " + ({ charging: page.counts.charging,
-                                     waiting_payment: page.counts.waitingPayment,
-                                     completed: page.counts.completed }[modelData.id] || 0)
-                          : "")
-                    onClicked: {
-                        if (page.filter === modelData.id) return
-                        page.filter = modelData.id
-                        load(true)   // 在途时是意图登记：过期检测负责落定后重查
+            height: filterRow.implicitHeight
+            contentWidth: filterRow.implicitWidth
+            contentHeight: filterRow.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            Row {
+                id: filterRow
+                spacing: P.Style.spaceSm
+                Repeater {
+                    model: page.filters
+                    P.ActionButton {
+                        objectName: "uiOrderFilter" + modelData.id
+                        variant: "chip"
+                        selected: page.filter === modelData.id
+                        text: modelData.label + (modelData.id !== "all"
+                              ? " " + ({ charging: page.counts.charging,
+                                         waiting_payment: page.counts.waitingPayment,
+                                         completed: page.counts.completed }[modelData.id] || 0)
+                              : "")
+                        onClicked: {
+                            if (page.filter === modelData.id) return
+                            page.filter = modelData.id
+                            load(true)   // 在途时是意图登记：过期检测负责落定后重查
+                        }
                     }
                 }
             }
@@ -264,7 +274,7 @@ Item {
                 id: monthHeaderComp
                 Item {
                     property var row: ({})
-                    height: 30
+                    height: Math.round(30 * P.Style.fontScaleFactor)
                     objectName: "uiMonthHeader"
                     Text {
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
@@ -288,31 +298,37 @@ Item {
                     readonly property var o: row.order || ({})
                     objectName: "uiOrderCard"
                     width: listScroll.width
-                    height: 88
+                    height: Math.round(88 * P.Style.fontScaleFactor)
                     onClicked: {
                         if (App && row.order) App.navigate("order_detail", row.order)
                     }
                     // body 是 Column——内部一律用 Item 承载 anchors 布局（6.2）
                     Item {
-                        height: 56
+                        height: Math.max(Math.round(56 * P.Style.fontScaleFactor),
+                                         bodyCol.implicitHeight + 8)
                         width: parent ? parent.width : 0
                         Rectangle {
                             id: hub
                             anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                            width: 44; height: 44; radius: 22
+                            width: Math.round(44 * P.Style.fontScaleFactor)
+                            height: Math.round(44 * P.Style.fontScaleFactor)
+                            radius: width / 2
                             color: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
                                     || page.hubSpec.neutral).bg
                             Text {
                                 anchors.centerIn: parent
                                 text: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
                                        || page.hubSpec.neutral).g
-                                font.pixelSize: 18
+                                font.pixelSize: Math.round(18 * P.Style.fontScaleFactor)
                             }
                         }
                         Item {
                             id: rightCol
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                            width: 92; height: 52
+                            width: Math.round(92 * P.Style.fontScaleFactor)
+                            height: Math.max(Math.round(52 * P.Style.fontScaleFactor),
+                                             moneyRow.implicitHeight
+                                             + statusTag.implicitHeight + 6)
                             Row {
                                 id: moneyRow
                                 anchors.right: parent.right; anchors.top: parent.top
@@ -328,11 +344,13 @@ Item {
                                 Text {
                                     id: moneyVal
                                     text: page.money(card.o.amountCents || 0)
-                                    font.pixelSize: 17; font.weight: Font.ExtraBold
+                                    font.pixelSize: Math.round(17 * P.Style.fontScaleFactor)
+                                    font.weight: Font.ExtraBold
                                     color: P.Style.ink
                                 }
                             }
                             P.StatusTag {
+                                id: statusTag
                                 objectName: "uiOrderCardStatus"
                                 anchors.right: parent.right; anchors.bottom: parent.bottom
                                 tone: page.statusTone[card.o.status] || "neutral"
@@ -340,6 +358,7 @@ Item {
                             }
                         }
                         Column {
+                            id: bodyCol
                             anchors.left: hub.right; anchors.right: rightCol.left
                             anchors.leftMargin: P.Style.spaceMd
                             anchors.rightMargin: P.Style.spaceMd

@@ -127,7 +127,9 @@ Item {
                 Rectangle {
                     objectName: "uiChargingHero"
                     width: parent.width
-                    height: 250
+                    // 字号档位（批次A）下固定高容器必须随 fontScaleFactor 呼吸，
+                    // 否则放大档文字溢出/碰撞（2026-09-08 用户实测 large 档修复）。
+                    height: Math.round(250 * P.Style.fontScaleFactor)
                     radius: P.Style.radiusLg
                     // Qt6.2: GradientStop bindings never re-evaluate → two
                     // constant layers switched by visible.
@@ -176,7 +178,8 @@ Item {
                         anchors.right: parent.right; anchors.top: parent.top
                         anchors.rightMargin: 22; anchors.topMargin: 16
                         visible: page.ordersArrived && page.busy
-                        width: livePillText.implicitWidth + 22; height: 24
+                        width: livePillText.implicitWidth + 22
+                        height: Math.round(24 * P.Style.fontScaleFactor)
                         radius: 12
                         color: "#33FFFFFF"
                         Row {
@@ -273,7 +276,7 @@ Item {
                         }
                         Item {
                             width: powerCol.implicitWidth
-                            height: 56
+                            height: powerCol.implicitHeight + 8
                             Column {
                                 id: powerCol
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -328,8 +331,9 @@ Item {
                                 { val: "¥" + page.yuan.toFixed(2), unit: "", k: "预估费用" },
                             ]
                             delegate: Item {
-                                width: heroStats.colW; height: 50
+                                width: heroStats.colW; height: statCol.implicitHeight
                                 Column {
+                                    id: statCol
                                     anchors.centerIn: parent
                                     spacing: 3
                                     Row {
@@ -365,7 +369,7 @@ Item {
                     Repeater {
                         model: 2
                         delegate: Rectangle {
-                            width: 1; height: 30
+                            width: 1; height: Math.round(30 * P.Style.fontScaleFactor)
                             x: heroStats.x + (index + 1) * heroStats.colW + index
                             y: heroStats.y - (height - heroStats.height) / 2
                             visible: page.ordersArrived && page.busy

@@ -111,20 +111,26 @@ Item {
                             width: parent.width
                             spacing: P.Style.spaceMd
                             Column {
-                                width: parent.width * 0.55
+                                // 等比三列在放大档挤爆右列（余额串被裁）——改弹性：
+                                // 右列按内容实宽、左列吃剩余（字号档适配 2026-09-08）
+                                width: Math.max(80, parent.width - midSp.width
+                                                - rightCol.width - parent.spacing * 2)
                                 spacing: 2
                                 Text {
+                                    width: parent.width; elide: Text.ElideRight
                                     text: model.transactionNo
                                     font.pixelSize: P.Style.fontMd; color: P.Style.ink
                                 }
                                 Text {
+                                    width: parent.width; elide: Text.ElideRight
                                     text: model.createdAt
                                     font.pixelSize: P.Style.fontSm; color: P.Style.faint
                                 }
                             }
-                            Item { width: parent.width * 0.2; height: 1 }
+                            Item { id: midSp; width: parent.width * 0.1; height: 1 }
                             Column {
-                                width: parent.width * 0.25
+                                id: rightCol
+                                width: Math.min(parent.width * 0.42, implicitWidth)
                                 spacing: 2
                                 Text {
                                     horizontalAlignment: Text.AlignRight

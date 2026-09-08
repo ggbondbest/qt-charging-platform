@@ -188,7 +188,7 @@ Item {
 
         Item {
             width: listScroll.width
-            height: 40
+            height: Math.round(40 * P.Style.fontScaleFactor)   // 字号档呼吸（批次F 补）
             Text {
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                 objectName: "uiScanTitle"
@@ -274,7 +274,8 @@ Item {
             Rectangle {
                 objectName: "uiScanCodeCard"
                 width: listScroll.width
-                height: 56
+                height: Math.max(Math.round(56 * P.Style.fontScaleFactor),
+                                 codeCol.implicitHeight + 16)
                 radius: P.Style.radiusLg
                 color: P.Style.surface
                 border.width: 1
@@ -288,6 +289,7 @@ Item {
                         text: "🔳"; font.pixelSize: 20
                     }
                     Column {
+                        id: codeCol
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 2
                         Text {
