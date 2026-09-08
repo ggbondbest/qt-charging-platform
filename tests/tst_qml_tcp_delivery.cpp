@@ -11,6 +11,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTcpServer>
 #include <QtTest>
@@ -21,6 +22,7 @@ using namespace charging::server;
 class QmlTcpDeliveryTest : public QObject
 {
     Q_OBJECT
+    QTemporaryDir settingsDir_;
     QJsonObject admin(AdminRequestGateway& gateway, const QString& action,
                       const QJsonObject& data = {})
     {
@@ -51,6 +53,25 @@ class QmlTcpDeliveryTest : public QObject
         return item;
     }
 private slots:
+    void initTestCase()
+    {
+        QVERIFY(settingsDir_.isValid());
+        // Production main supplies this identity before constructing QmlApp.
+        // Linux's INI backend rejects an empty organization with AccessError;
+        // a test using a different native backend must not hide that failure.
+        QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatformTests"));
+        QCoreApplication::setApplicationName(QStringLiteral("qml-tcp-delivery"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir_.path());
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir_.path());
+        QSettings settings;
+        settings.setValue(QStringLiteral("testStartupProbe"), true);
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+        settings.remove(QStringLiteral("testStartupProbe"));
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+    }
     void loginTimeoutNeverFallsBackToDemo()
     {
         QTcpServer silentServer;
@@ -111,8 +132,20 @@ private slots:
         auto* field = recharge->findChild<QObject*>("rechargeAmountField");
         auto* confirm = recharge->findChild<QObject*>("rechargeConfirmButton");
         QVERIFY(field); QVERIFY(confirm);
-        field->setProperty("text", "100");
+        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
+        QVERIFY(wallet);
+        QSignalSpy recharged(wallet, &WalletBridge::rechargeCompleted);
+        QSignalSpy rechargeFailed(wallet, &WalletBridge::operationFailed);
+        QVERIFY(field->setProperty("text", QStringLiteral("100")));
+        // Check real bindings before submitting, then diagnose failures at the
+        // service ACK instead of timing out on an unchanged cached balance.
+        QTRY_COMPARE(recharge->property("amountCents").toInt(), 10000);
+        QTRY_VERIFY(confirm->property("enabled").toBool());
         QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QTRY_VERIFY(!recharged.isEmpty() || !rechargeFailed.isEmpty());
+        if (!rechargeFailed.isEmpty()) qWarning() << "recharge result:" << rechargeFailed.first();
+        QCOMPARE(rechargeFailed.size(), 0);
+        QCOMPARE(recharged.size(), 1);
         QTRY_COMPARE(app.currentUser().value("balanceCents").toLongLong(), qint64(10000));
         delete recharge;
         auto adminUser = admin(gateway, "users.get", {{"id", userId}}).value("data").toObject()
@@ -126,8 +159,6 @@ private slots:
         QVERIFY(image.save(imagePath));
         const QString avatar = app.prepareAvatar(imagePath);
         QVERIFY(avatar.startsWith("data:image/png;base64,"));
-        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
-        QVERIFY(wallet);
         wallet->updateAvatar(avatar);
         QTRY_COMPARE(app.currentUser().value("avatarKey").toString(), avatar);
         wallet->updateNickname("真实QML用户");
