@@ -18,11 +18,9 @@
 namespace charging::qml {
 namespace {
 
-constexpr const char* kIsoDate = "yyyy-MM-dd hh:mm";
-
 QString when(const QDateTime& dt)
 {
-    return dt.isValid() ? dt.toString(QLatin1String(kIsoDate)) : QString();
+    return dt.isValid() ? dt.toUTC().toString(Qt::ISODateWithMs) : QString();
 }
 
 QVariantList recordList(const QVector<charging::model::RechargeRecord>& records)
@@ -31,7 +29,7 @@ QVariantList recordList(const QVector<charging::model::RechargeRecord>& records)
     out.reserve(records.size());
     for (const auto& r : records) {
         out.push_back(QVariantMap{
-            {QStringLiteral("id"), r.id},
+            {QStringLiteral("id"), QString::number(r.id)},
             {QStringLiteral("transactionNo"), r.transactionNo},
             {QStringLiteral("amountCents"), r.amountCents},
             {QStringLiteral("balanceAfterCents"), r.balanceAfterCents},
@@ -105,7 +103,7 @@ QString notificationTypeWord(
 QVariantMap stationToMap(const charging::model::Station& station)
 {
     return QVariantMap{
-        {QStringLiteral("id"), station.id},
+        {QStringLiteral("id"), QString::number(station.id)},
         {QStringLiteral("code"), station.code},
         {QStringLiteral("name"), station.name},
         {QStringLiteral("address"), station.address},
@@ -154,8 +152,8 @@ QVariantMap stationItemToMap(
 QVariantMap chargerToMap(const charging::model::Charger& charger)
 {
     return QVariantMap{
-        {QStringLiteral("id"), charger.id},
-        {QStringLiteral("stationId"), charger.stationId},
+        {QStringLiteral("id"), QString::number(charger.id)},
+        {QStringLiteral("stationId"), QString::number(charger.stationId)},
         {QStringLiteral("code"), charger.code},
         {QStringLiteral("type"), chargerTypeWord(charger.type)},
         {QStringLiteral("powerWatts"), charger.powerWatts},
@@ -183,11 +181,11 @@ QVariantMap reservationRecordToMap(
     const charging::client::services::reservation::ReservationRecord& r)
 {
     return QVariantMap{
-        {QStringLiteral("id"), r.reservation.id},
-        {QStringLiteral("reservationId"), r.reservation.id},
-        {QStringLiteral("chargerId"), r.reservation.chargerId},
+        {QStringLiteral("id"), QString::number(r.reservation.id)},
+        {QStringLiteral("reservationId"), QString::number(r.reservation.id)},
+        {QStringLiteral("chargerId"), QString::number(r.reservation.chargerId)},
         {QStringLiteral("status"), reservationStatusWord(r.reservation.status)},
-        {QStringLiteral("orderId"), r.orderId},
+        {QStringLiteral("orderId"), QString::number(r.orderId)},
         {QStringLiteral("stationName"), r.stationName},
         {QStringLiteral("chargerCode"), r.chargerCode},
         {QStringLiteral("chargerSpec"), r.chargerSpec},
@@ -195,7 +193,7 @@ QVariantMap reservationRecordToMap(
         {QStringLiteral("expiresAtUtc"), when(r.reservation.expiresAtUtc)},
         {QStringLiteral("reservedAtUtc"), when(r.reservation.reservedAtUtc)},
         {QStringLiteral("endedAtUtc"), when(r.reservation.endedAtUtc)},
-        {QStringLiteral("vehicleId"), r.vehicleId},
+        {QStringLiteral("vehicleId"), QString::number(r.vehicleId)},
         {QStringLiteral("vehiclePlate"), r.vehiclePlate},
         {QStringLiteral("lateCancelled"), r.lateCancelled},
         {QStringLiteral("durationMinutes"), r.durationMinutes},
@@ -211,7 +209,7 @@ QVariantMap vehicleToMap(
     const charging::client::services::settings::Vehicle& v)
 {
     return QVariantMap{
-        {QStringLiteral("id"), v.id},
+        {QStringLiteral("id"), QString::number(v.id)},
         {QStringLiteral("plate"), v.plate},
         {QStringLiteral("brandModel"), v.brandModel},
         {QStringLiteral("batteryKwh"), v.batteryKwh},
@@ -241,7 +239,7 @@ namespace marshalling {
 QVariantMap userToMap(const charging::model::User& user)
 {
     return QVariantMap{
-        {QStringLiteral("id"), user.id},
+        {QStringLiteral("id"), QString::number(user.id)},
         {QStringLiteral("phone"), user.phone},
         {QStringLiteral("nickname"), user.nickname},
         {QStringLiteral("avatarKey"), user.avatarKey},
@@ -266,7 +264,7 @@ QVariantMap orderToMap(const charging::model::Order& order,
                        const QString& chargerCode)
 {
     return QVariantMap{
-        {QStringLiteral("id"), order.id},
+        {QStringLiteral("id"), QString::number(order.id)},
         {QStringLiteral("orderNo"), order.orderNo},
         {QStringLiteral("status"), orderStatusWord(order.status)},
         {QStringLiteral("unitPriceCentsPerKwh"), order.unitPriceCentsPerKwh},
@@ -288,6 +286,10 @@ QVariantMap orderToMap(const charging::model::Order& order,
 WalletBridge::WalletBridge(charging::client::WalletService* svc, QObject* parent)
     : QObject(parent), svc_(svc)
 {
+    connect(svc_, &charging::client::WalletService::profileUpdated, this,
+            [this](const QString& field, const charging::model::User& user) {
+        emit profileUpdated(field, marshalling::userToMap(user));
+    });
     connect(svc_, &charging::client::WalletService::profileLoaded, this,
             [this](const charging::model::User& user) {
                 emit profileLoaded(marshalling::userToMap(user));
@@ -309,6 +311,9 @@ void WalletBridge::updateNickname(const QString& nickname) { svc_->updateNicknam
 void WalletBridge::updateAvatar(const QString& avatarKey) { svc_->updateAvatar(avatarKey); }
 void WalletBridge::recharge(qint64 amountCents) { svc_->recharge(amountCents); }
 void WalletBridge::fetchRechargeRecords(int page) { svc_->fetchRechargeRecords(page); }
+bool WalletBridge::isFetchingRecords() const { return svc_->isFetchingRecords(); }
+bool WalletBridge::isUpdatingProfile() const
+{ return svc_->isUpdatingNickname() || svc_->isUpdatingAvatar(); }
 
 // ————————————————————————————— OrderBridge —————————————————————————————
 
@@ -372,12 +377,13 @@ ChargingBridge::ChargingBridge(charging::client::ChargingService* svc, QObject* 
             });
 }
 
-void ChargingBridge::startTracking(qint64 orderId) { svc_->startTracking(orderId); }
+void ChargingBridge::startTracking(const QVariant& orderId) { svc_->startTracking(orderId.toLongLong()); }
 void ChargingBridge::stopTracking() { svc_->stopTracking(); }
 void ChargingBridge::fetchStatusNow() { svc_->fetchStatusNow(); }
 void ChargingBridge::stopCharging() { svc_->stopCharging(); }
-void ChargingBridge::startCharging(qint64 reservationId) { svc_->startCharging(reservationId); }
-void ChargingBridge::payOrder(qint64 orderId) { svc_->payOrder(orderId); }
+void ChargingBridge::startCharging(const QVariant& reservationId) { svc_->startCharging(reservationId.toLongLong()); }
+bool ChargingBridge::isStarting() const { return svc_->isStarting(); }
+void ChargingBridge::payOrder(const QVariant& orderId) { svc_->payOrder(orderId.toLongLong()); }
 
 // ————————————————————————————— StationQueryBridge ————————————————————————————
 
@@ -415,8 +421,9 @@ StationQueryBridge::StationQueryBridge(
 
 void StationQueryBridge::search(const QString& keyword) { svc_->search(keyword); }
 
-void StationQueryBridge::fetchDetailById(qint64 stationId, int distanceMeters)
+void StationQueryBridge::fetchDetailById(const QVariant& stationIdValue, int distanceMeters)
 {
+    const qint64 stationId = stationIdValue.toLongLong();
     // 详情页只带 id（列表 navigate 的 arg 可能不含全量字段）：优先用查询缓存
     // 重建 Station struct；缓存缺失时以 id 转发，服务端桩列表仍按 id 取。
     const QVariantMap cached = stationCache_.value(stationId);
@@ -453,21 +460,25 @@ ReservationBridge::ReservationBridge(
     connect(svc_, &charging::client::services::reservation::ReservationService::listFailed,
             this, &ReservationBridge::listFailed);
     connect(svc_, &charging::client::services::reservation::ReservationService::submitStarted,
-            this, &ReservationBridge::submitStarted);
+            this, [this](qint64 id) { emit submitStarted(QString::number(id)); });
     connect(svc_, &charging::client::services::reservation::ReservationService::submitSucceeded,
             this, [this](const charging::client::services::reservation::ReservationRecord& r) {
                 emit submitSucceeded(reservationRecordToMap(r));
             });
     connect(svc_, &charging::client::services::reservation::ReservationService::submitFailed,
             this, &ReservationBridge::submitFailed);
+    connect(svc_, &charging::client::services::reservation::ReservationService::submitRejected,
+            this, [this](const charging::protocol::ProtocolError& error) {
+        emit submitRejected(error.code, error.details.toVariantMap(), error.message);
+    });
     connect(svc_, &charging::client::services::reservation::ReservationService::cancelStarted,
-            this, &ReservationBridge::cancelStarted);
+            this, [this](qint64 id) { emit cancelStarted(QString::number(id)); });
     connect(svc_, &charging::client::services::reservation::ReservationService::cancelSucceeded,
-            this, &ReservationBridge::cancelSucceeded);
+            this, [this](qint64 id) { emit cancelSucceeded(QString::number(id)); });
     connect(svc_, &charging::client::services::reservation::ReservationService::cancelFailed,
             this, &ReservationBridge::cancelFailed);
     connect(svc_, &charging::client::services::reservation::ReservationService::reservationExpired,
-            this, &ReservationBridge::reservationExpired);
+            this, [this](qint64 id) { emit reservationExpired(QString::number(id)); });
 }
 
 void ReservationBridge::fetchList() { svc_->fetchList(); }
@@ -488,6 +499,16 @@ void ReservationBridge::submit(const QVariantMap& draft)
     charging::model::Station station;
     station.id = charger.stationId;
     station.name = draft.value(QStringLiteral("stationName")).toString();
+    station.latitude = draft.value(QStringLiteral("stationLatitude")).toDouble();
+    station.longitude = draft.value(QStringLiteral("stationLongitude")).toDouble();
+    station.priceCentsPerKwh = draft.value(QStringLiteral("priceCentsPerKwh")).toLongLong();
+
+    if (svc_->liveMode()) {
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        svc_->submit(charger, station, now, now.addSecs(15 * 60), 0, {},
+                     draft.value(QStringLiteral("distanceMeters"), -1).toInt());
+        return;
+    }
 
     // 确认页只传"当日分钟位"（本地时区，与推荐时段计算同基准）。桥据今天
     // 本地日期重建 QDateTime 再转 UTC；end<start 视为跨零点，end 顺延一天。
@@ -508,10 +529,10 @@ void ReservationBridge::submit(const QVariantMap& draft)
                  draft.value(QStringLiteral("distanceMeters"), -1).toInt());
 }
 
-void ReservationBridge::cancel(qint64 reservationId) { svc_->cancel(reservationId); }
-void ReservationBridge::expireReservation(qint64 reservationId)
+void ReservationBridge::cancel(const QVariant& reservationId) { svc_->cancel(reservationId.toLongLong()); }
+void ReservationBridge::expireReservation(const QVariant& reservationId)
 {
-    svc_->expireReservation(reservationId);
+    svc_->expireReservation(reservationId.toLongLong());
 }
 int ReservationBridge::cancelLateReservations() { return svc_->cancelLateReservations(); }
 int ReservationBridge::activeReservationCount() const
@@ -544,9 +565,9 @@ QVariantList SettingsBridge::vehicles() const
 
 int SettingsBridge::vehicleCount() const { return svc_->vehicleCount(); }
 
-qint64 SettingsBridge::addVehicle(const QVariantMap& vehicle)
+QString SettingsBridge::addVehicle(const QVariantMap& vehicle)
 {
-    return svc_->addVehicle(vehicleFromMap(vehicle));
+    return QString::number(svc_->addVehicle(vehicleFromMap(vehicle)));
 }
 
 bool SettingsBridge::updateVehicle(const QVariantMap& vehicle)
@@ -554,8 +575,8 @@ bool SettingsBridge::updateVehicle(const QVariantMap& vehicle)
     return svc_->updateVehicle(vehicleFromMap(vehicle));
 }
 
-bool SettingsBridge::removeVehicle(qint64 id) { return svc_->removeVehicle(id); }
-void SettingsBridge::setDefaultVehicle(qint64 id) { svc_->setDefaultVehicle(id); }
+bool SettingsBridge::removeVehicle(const QVariant& id) { return svc_->removeVehicle(id.toLongLong()); }
+void SettingsBridge::setDefaultVehicle(const QVariant& id) { svc_->setDefaultVehicle(id.toLongLong()); }
 
 bool SettingsBridge::hasSecondPassword() const { return svc_->hasProtectionPassword(); }
 bool SettingsBridge::setSecondPassword(const QString& plain)
@@ -605,13 +626,15 @@ FavoritesBridge::FavoritesBridge(
             this, &FavoritesBridge::favoritesChanged);
 }
 
-bool FavoritesBridge::contains(qint64 stationId) const { return svc_->contains(stationId); }
-bool FavoritesBridge::toggle(qint64 stationId) { return svc_->toggle(stationId); }
+bool FavoritesBridge::contains(const QVariant& stationId) const { return svc_->contains(stationId.toLongLong()); }
+bool FavoritesBridge::toggle(const QVariant& stationId) { return svc_->toggle(stationId.toLongLong()); }
 
 QVariantList FavoritesBridge::favoriteIds() const
 {
     const QVector<qint64> ids = svc_->favoriteIds();
-    return QVariantList(ids.begin(), ids.end());
+    QVariantList result;
+    for (qint64 id : ids) result.append(QString::number(id));
+    return result;
 }
 
 // ———————————————————————————— NotificationBridge ————————————————————————————

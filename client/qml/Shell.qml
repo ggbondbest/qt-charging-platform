@@ -53,6 +53,7 @@ Window {
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
     }
     function pushRoute(r, arg) {
+        if ((!App || !App.loggedIn) && r !== "login") r = "login"
         const src = pageSource(r)
         if (src.length === 0) return
         const url = Qt.resolvedUrl(src)
@@ -62,9 +63,10 @@ Window {
         // bare push piled page instances whose countdown Timers / polling
         // Connections / looping animations kept running forever → progressive
         // lag + "frozen" animations (2026-09-07 user feedback).
-        const isTab = tabIds.indexOf(r) >= 0
+        const isTab = tabIds.indexOf(r) >= 0 || r === "login"
+                      || r === "charging_run" || r === "settlement"
         if (isTab) {
-            if (stack.depth > 1) stack.clear()
+            stack.clear(StackView.Immediate)
             if (stack.depth > 0) stack.replace(url, props)
             else stack.push(url, props)
         } else {
@@ -82,6 +84,8 @@ Window {
         function onBackRequested() { shell.pop() }
         function onToastRequested(text, tone) { toast.show(text, tone) }
         function onLoginStateChanged() {
+            P.TabCache.charging = null
+            stack.clear(StackView.Immediate)
             if (!App.loggedIn) shell.pushRoute("login")
             else shell.pushRoute("station")
         }
@@ -102,7 +106,10 @@ Window {
             onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
-            onFilterRequested: { /* StationFilterDialog.qml — member 2's domain */ }
+            onFilterRequested: {
+                if (stack.currentItem && typeof stack.currentItem.openAdvancedFilter === "function")
+                    stack.currentItem.openAdvancedFilter()
+            }
             onNotificationsRequested: { if (App) App.navigate("notifications") }
         }
         StackView {
@@ -147,11 +154,12 @@ Window {
                    { id: "charging", text: "⚡ 充电" }, { id: "profile", text: "👤 我的" }]
             currentTab: "station"
             // pushRoute now clears/replaces for tab targets — no manual pop loop.
-            onTabChanged: (id) => { shell.pushRoute(id) }
+            enabled: !!(App && App.loggedIn)
+            onTabChanged: (id) => { if (App && App.loggedIn) App.navigate(id) }
         }
     }
 
     P.Toast { id: toast }
 
-    P.LoadingOverlay { id: overlay; running: false }
+    P.LoadingOverlay { id: overlay; running: !!(App && App.checkingOrders) }
 }

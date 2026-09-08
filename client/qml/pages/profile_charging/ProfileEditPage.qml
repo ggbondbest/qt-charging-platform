@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 
 // QML twin of widgets ProfileEditPage (route: "profile_edit", from 我的页).
-// Nickname/avatar persist through UPDATE_USER_INFO (mock echoes profileLoaded).
+// Nickname/avatar persist through UPDATE_USER_INFO with an explicit write ACK.
 Item {
     id: page
     objectName: "profileEditPage"
@@ -14,9 +14,15 @@ Item {
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
-    property string nickname: App && App.currentUser ? (App.currentUser.nickname || "") : ""
-    // "" = 默认「昵称首字字母头像」（契约 v1 §3 冻结语义，同 widgets）。
-    property string avatarKey: App && App.currentUser ? (App.currentUser.avatarKey || "") : ""
+    // Copy the initial profile into a local draft. A read or the first write ACK
+    // may update App.currentUser, but must never overwrite unsaved draft fields.
+    property string nickname: ""
+    property string avatarKey: ""
+    Component.onCompleted: {
+        var user = App && App.currentUser ? App.currentUser : ({})
+        nickname = user.nickname || ""
+        avatarKey = user.avatarKey || ""
+    }
 
     // QML twin of widgets AvatarLibrary — 提交的永远是 key（契约白名单），
     // glyph/色底只做展示。test_qml_client_pages 的 parity 用例逐键比对
@@ -36,23 +42,29 @@ Item {
     // 因此双改必须串行：昵称落定 → 再发头像 → 全部成功才退出；任一步失败停在页上。
     property bool sending: false
     property string pendingStep: ""    // "avatar" = 昵称成功后待补发的头像改动
+    property string pendingField: ""
 
     Connections {
         target: walletService
-        function onProfileLoaded(user) {
+        function onProfileUpdated(field, user) {
+            if (!page.sending || field !== page.pendingField) return
             // Bridge syncs App.currentUser — 每步成功后差异自动缩小。
             if (page.pendingStep === "avatar") {
                 page.pendingStep = ""
+                page.pendingField = "avatar"
                 walletService.updateAvatar(page.avatarKey)   // sending 保持 true
                 return
             }
             page.sending = false
+            page.pendingField = ""
             if (App) App.showToast("资料已更新", "success")
             if (App) App.back()
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "UPDATE_USER_INFO" || !page.sending) return
             page.sending = false
             page.pendingStep = ""
+            page.pendingField = ""
             // 留在编辑页：已落定字段桥已写回 currentUser，再按保存只会补发剩余改动。
             if (App) App.showToast("保存失败：" + message, "danger")
         }
@@ -66,13 +78,36 @@ Item {
         Text { text: "编辑资料"; font.pixelSize: P.Style.fontXl; color: P.Style.ink }
 
         Text { text: "头像"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+        Row {
+            spacing: P.Style.spaceMd
+            Image {
+                width: 56; height: 56
+                visible: page.avatarKey.indexOf("data:image/png;base64,") === 0
+                source: visible ? page.avatarKey : ""
+                fillMode: Image.PreserveAspectCrop
+            }
+            P.ActionButton {
+                objectName: "uploadAvatarButton"
+                text: "选择本地图片"; variant: "secondary"
+                enabled: !page.sending
+                onClicked: {
+                    if (walletService.isUpdatingProfile()) {
+                        if (App) App.showToast("资料正在保存，请稍后再试", "warning")
+                        return
+                    }
+                    var image = App ? App.chooseAvatar() : ""
+                    if (image.length > 0) page.avatarKey = image
+                }
+            }
+        }
         Grid {
             objectName: "uiAvatarChoice"
+            enabled: !page.sending
             columns: 5
             columnSpacing: P.Style.spaceMd
             rowSpacing: P.Style.spaceMd
 
-            // 默认格（key ""）：昵称首字字母头像，同 widgets「默」格。
+            // An empty key uses the same gray default user avatar as the shell.
             Rectangle {
                 objectName: "uiAvatarCell_default"
                 width: 56; height: 56; radius: P.Style.radiusMd
@@ -85,7 +120,7 @@ Item {
                     color: P.Style.line
                     Text {
                         anchors.centerIn: parent
-                        text: page.nickname.length > 0 ? page.nickname.charAt(0) : "默"
+                        text: "👤"
                         font.pixelSize: 18; color: P.Style.surface
                     }
                 }
@@ -126,6 +161,7 @@ Item {
         Text { text: "昵称"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
         TextField {
             objectName: "uiNicknameEdit"
+            enabled: !page.sending
             width: parent.width
             text: page.nickname
             placeholderText: "输入昵称"
@@ -147,6 +183,10 @@ Item {
                 variant: "primary"; text: "保存"
                 enabled: page.nickname.trim().length > 0 && !page.sending
                 onClicked: {
+                    if (walletService.isUpdatingProfile()) {
+                        if (App) App.showToast("资料正在保存，请稍后再试", "warning")
+                        return
+                    }
                     var cur = App && App.currentUser ? App.currentUser : null
                     var curNick = cur && cur.nickname ? cur.nickname : ""
                     var curKey = cur ? (cur.avatarKey || "") : ""
@@ -156,8 +196,10 @@ Item {
                     page.sending = true
                     if (nickChanged) {
                         page.pendingStep = avatarChanged ? "avatar" : ""
+                        page.pendingField = "nickname"
                         walletService.updateNickname(page.nickname)
                     } else {
+                        page.pendingField = "avatar"
                         walletService.updateAvatar(page.avatarKey)
                     }
                 }
@@ -170,7 +212,7 @@ Item {
 
         Text {
             width: parent.width
-            text: "头像键与 widgets avatar_library 同源对拍；持久化走 UPDATE_USER_INFO"
+            text: "本地图片将压缩为 PNG，保存后在其他设备登录也可显示。"
             font.pixelSize: P.Style.fontSm; color: P.Style.faint
         }
     }
