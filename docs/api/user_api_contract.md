@@ -12,6 +12,9 @@
 
 PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由、`UserApiService`、
 `UserApiRepository` 和 `NetworkRequestTransport`，八个动作可通过 TCP 查询/修改真实 SQLite。
+2026-09-08 迭代追加数据域三个只读动作 `GET_USER_STATS`/`GET_COUPONS`/`GET_NOTIFICATIONS`
+（冻结只新增），动作总数达十一个；配套 `notifications`/`coupons` 两张新表与两个写挂点
+（`STOP_CHARGING` 落充电结束通知、`PAY_ORDER` 落支付成功通知；`RECHARGE` 达标同事务发券）。
 本次不依赖 PR #19，不引入其管理查询或备份恢复代码，不修改 schema v1。
 运行、验证及剩余 UI 工作见 [用户业务接入说明](../development/user_api_runtime.md)。
 
@@ -25,6 +28,9 @@ PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由�
 | `RECHARGE` | 流水幂等、余额和流水同事务 | 已实现 | 持久保存流水号、同金额重试、读取当前余额 |
 | `GET_RECHARGE_RECORDS` | 本人充值流水分页 | 已实现 | 真实传输、分页校验 |
 | `GET_ORDERS` | 本人订单/状态/关联名称/分页 | 已实现 | 真实传输；点击 CHARGING 订单进入实时页面 |
+| `GET_USER_STATS` | 本人已完成订单按月聚合 + 碳排换算 | 已实现 | 月报页 StatsPage（statsService 桥），mock 同形 |
+| `GET_COUPONS` | 本人券状态过滤 + 分页 | 已实现 | 券页 CouponPage（couponService 桥），接线即拉缓存 |
+| `GET_NOTIFICATIONS` | 本人站内通知分页（充电结束/支付成功） | 已实现 | NotificationPage（NotificationService 服务端通道） |
 
 仍已实现的七个动作：`USER_LOGIN`、`RESERVE_CHARGER`、`CANCEL_RESERVATION`、
 `START_CHARGING`、`GET_CHARGING_STATUS`、`STOP_CHARGING`、`PAY_ORDER`。
@@ -74,7 +80,7 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 以上是已接入接口的业务错误；其余未注册动作仍返回 `UNKNOWN_REQUEST_TYPE`。
 失败 `data` 为 `{}`，不返回部分业务结果；`success: false` 与主协议一致。
 
-## 3. 八个接口
+## 3. 十一个接口
 
 完整成功示例位于 [user_api_examples.json](user_api_examples.json)，由测试读取。
 表中 User/Station/Charger/Reservation/Order/RechargeRecord 均指现有
@@ -171,6 +177,39 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
   `status + page=1 + pageSize=1` 查询 `total`。
 - 当前详情可用列表完整 Order；充电中的实时金额仍调用 `GET_CHARGING_STATUS`，
   不把旧列表快照当最终结算金额。支付以 `PAY_ORDER` 返回结果为准。
+
+### GET_USER_STATS
+
+- 请求：`months?` 整数 `1..12`，缺省 6。
+- 返回：`{months: [{monthKey: "YYYY-MM", orderCount, energyWh, amountCents,
+  durationSeconds, co2Grams}]}`，新→旧；**仅 COMPLETED 订单**按 `created_at` 所在月
+  聚合。不分页。
+- `co2Grams = round(energyWh × 0.5568)`（生态环境部全国电网平均排放因子
+  0.5568 tCO₂/MWh）；TODO(contract)：因子与取整口径业务终确认。
+- 金额为分、电量 Wh、时长秒；展示单位换算留在页面层。
+
+### GET_COUPONS
+
+- 请求：`status?` ∈ `"available" | "used" | "expired"`（线上小写；缺省为全部）、
+  `page?`、`pageSize?`。
+- 返回：`{coupons: [{id, kind: "cash"|"discount", title, valueCents,
+  discountTenths|null, thresholdCents, condition, expiresAt, expiresAtUtc, status,
+  source, createdAt, updatedAt}], page, pageSize, total}`，`createdAt DESC, id DESC`。
+- `expiresAtUtc` 为 epoch 毫秒数字（CouponPage 展示口径）；`condition` 是服务端生成
+  的展示文案（"充电满 ¥X 可用" / "无门槛"）。
+- 发券规则（一期）：单笔充值 ≥ ¥50 同事务发 ¥5 现金券、30 天有效；
+  幂等重放不重发（发券点在充值写库分支内，重放路径提前返回）。TODO(contract)：
+  规则业务终确认。核销/抵扣不在本契约（TODO(contract)：PAY_ORDER 抵扣规则二期）。
+
+### GET_NOTIFICATIONS
+
+- 请求：`page?`、`pageSize?`。
+- 返回：`{notifications: [{id, type, title, body, createdAtUtc}], page, pageSize,
+  total}`，`createdAt DESC, id DESC`；`type` ∈ `"charging_stopped" | "order_paid"`
+  （线上小写）。不回显 `userId`/`readAt`。
+- 服务端生成挂点：`STOP_CHARGING` 事务落充电结束通知、`PAY_ORDER` 事务落支付成功
+  通知；两者幂等重放不重复落库（重放分支在挂点前返回）。
+- 已读标记（`read_at`）与推送通道一期不冻结；TODO(contract)。
 
 ## 4. 本次不冻结为必填的扩展
 

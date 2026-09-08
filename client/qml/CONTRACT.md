@@ -15,7 +15,7 @@
 ## 1. 服务注入（context properties，不包壳不改名）
 C++ 服务对象直接以 context property 注入根作用域，名字=类名首字母小写；其 **全部 public slot / signal / Q_PROPERTY 原样透传**，QML 里 `on<Signal名>` 直接接：
 
-`authService` `walletService` `orderService` `chargingService` `reservationService` `stationQueryService` `mapGeoService` `settingsService` `favoritesService` `notificationService`
+`authService` `walletService` `orderService` `chargingService` `reservationService` `stationQueryService` `mapGeoService` `settingsService` `favoritesService` `notificationService` `statsService` `couponService`
 
 另有 `App` 对象：`App.currentUser`（登录态，`loginStateChanged()` 信号）、`App.navigate(route[, arg])` / `App.back()`（`arg` 可选路由参数，如 order_detail 的订单 map，页面用 `property var arg` 接收）、`App.showToast(text, tone)`（tone 同 §2 StatusTag）。通道选择 `CHARGING_CHANNEL=mock|tcp`，默认 mock。
 
@@ -23,6 +23,8 @@ C++ 服务对象直接以 context property 注入根作用域，名字=类名首
 > - **`fetchDetailById(stationId, distanceMeters)`**（新增桥方法）：裸服务 `fetchDetail(Station,int)` 的 struct 参数 QML 传不动，桥按 id 从上次 `querySucceeded` 缓存重建 Station 再转发；缓存缺失时以占位 Station（仅 id）转发，mock 服务按 id 查自有数据。
 > - **`reservationService.submit(map)`**：`startMinutes`/`endMinutes` 为**当日分钟位**（本地，与推荐时段同基准），桥据今日重建 QDateTime 再转 UTC；`end < start` 视作跨零点顺延一天（与 widgets `QDateTimeEdit` 口径一致）。
 > - **`settingsService` 的 `second*` 别名**（`hasSecondPassword`/`setSecondPassword`/`verifySecondPassword`）→ 裸服务 `protection*`，语义同一（二级保护密码）；`notificationEnabled(key)` 的 key ∈ `"expiry" | "success" | "cancel"`。
+>
+> **数据域桥批（2026-09-08）**：①`statsService`（StatsBridge）——`fetchStats(months=6)`、`isFetchingStats()`；信号 `statsLoaded([{monthKey,orderCount,energyWh,amountCents,durationSeconds,co2Grams}])` 新→旧 + `operationFailed` 三参（GET_USER_STATS 单飞口径同 OrderBridge：页面记在途身份）。②`couponService`（CouponBridge）——**同步缓存型**：`coupons()` 返回全量缓存（`[{id,kind,valueCents,discountTenths,thresholdCents,condition,expiresAtUtc(ms),status,source,…}]`）、`fetchCoupons()`、`couponCount()`；信号 `couponsChanged`/`operationFailed`。`QmlApp` 接线时自动拉一次（CouponPage 只读缓存不触发请求）；`redeem` 不提供（TODO(contract) 抵扣二期）。③`notificationService.notifications()` 的 `type` 词表扩 `charging_stopped`/`order_paid`（服务端通道，`NotificationService::refresh()` 拉 GET_NOTIFICATIONS 与本地段合并）；settings 通知开关枚举尾部同步扩两值，`notificationEnabled` 的 UI key 三值不变。
 >
 > **OrderBridge 增补（2026-09-06 PR #33 两轮评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它，且**按 type 过滤**（计数类失败别动列表在途状态）。②补 `isFetchingOrders()`：服务层对在途重复提交**静默丢弃且无回执**，响应也不携带请求参数——因此**页面必须单飞并记住在途身份** `(filter, page, first)`：在途时新指令只登记意图（切筛选→落定判过期丢弃+重查；他页占用通道→queuedReload），**绝不允许清掉在途请求的状态或应用过期响应**。③分页口径：`loadedPage`（已成功页）与 `reqPage`（在途页）分离，加载更多永远发 `loadedPage+1`，失败只置重试态、页码不漂移；接 `ordersLoaded` 第三参 `hasMore`。④头像键双源治理：`ProfileEditPage.avatarChoices` 是 widgets `AvatarLibrary::all()` 的 QML 镜像，`test_qml_client_pages` 逐键对拍（同三方字面量+测试钉死模式）；展示 glyph 与提交 key 分离，`""`=默认昵称首字头像。⑤余额同步矩阵：改 `balanceCents` 的三事件 `profileLoaded` / `rechargeCompleted` / `paymentCompleted` 都必须在 `QmlApp` 回写并 `userChanged`，顶栏才不滞后。
 

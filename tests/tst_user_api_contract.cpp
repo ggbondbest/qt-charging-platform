@@ -45,7 +45,8 @@ void UserApiContractTest::documentedExamples()
     const QSet<QString> expected{
         request_type::kGetStations, request_type::kGetChargers, request_type::kGetReservations,
         request_type::kGetUserInfo, request_type::kUpdateUserInfo, request_type::kRecharge,
-        request_type::kGetRechargeRecords, request_type::kGetOrders};
+        request_type::kGetRechargeRecords, request_type::kGetOrders, request_type::kGetUserStats,
+        request_type::kGetCoupons, request_type::kGetNotifications};
     QSet<QString> seen;
     for (const QJsonValue& value : doc.array()) {
         const QJsonObject example = value.toObject();
@@ -116,6 +117,46 @@ void UserApiContractTest::documentedExamples()
             QVERIFY(output.value("idempotent").isBool());
             QVERIFY(!output.value("idempotent").toBool());
             QVERIFY(!output.contains("balanceAfterCents"));
+        } else if (type == QLatin1String(request_type::kGetUserStats)) {
+            const QJsonArray rows = output.value("months").toArray();
+            QCOMPARE(rows.size(), 1);
+            const QJsonObject row = rows.first().toObject();
+            QCOMPARE(row.value("monthKey").toString().size(), 7);
+            for (const char* key : {"orderCount", "energyWh", "amountCents",
+                                    "durationSeconds", "co2Grams"}) {
+                QVERIFY(row.value(QLatin1String(key)).isDouble());
+            }
+            // 碳排公式与服务端单点对拍：co2 = round(energyWh × 0.5568)。
+            QCOMPARE(row.value("co2Grams").toDouble(),
+                     qRound64(row.value("energyWh").toDouble() * 0.5568));
+        } else if (type == QLatin1String(request_type::kGetCoupons)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("coupons").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("kind").toString() == QLatin1String("cash")
+                    || item.value("kind").toString() == QLatin1String("discount"));
+            QVERIFY(item.value("status").toString() == QLatin1String("available")
+                    || item.value("status").toString() == QLatin1String("used")
+                    || item.value("status").toString() == QLatin1String("expired"));
+            QVERIFY(item.value("expiresAtUtc").isDouble());   // 页面契约：epoch ms 数字
+            QVERIFY(!item.value("condition").toString().isEmpty());
+        } else if (type == QLatin1String(request_type::kGetNotifications)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("notifications").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("type").toString() == QLatin1String("charging_stopped")
+                    || item.value("type").toString() == QLatin1String("order_paid"));
+            QVERIFY(!item.value("title").toString().isEmpty());
+            QVERIFY(!item.value("body").toString().isEmpty());
+            QVERIFY(item.value("createdAtUtc").isString());   // 页面契约 key（非 createdAt）
+            QVERIFY(!item.contains("userId"));                // 内部身份列不回显
+            QVERIFY(!item.contains("readAt"));
         } else {
             verifyModel<charging::model::User>(output.value("user").toObject());
         }
