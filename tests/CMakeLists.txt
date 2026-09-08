@@ -18,6 +18,20 @@ add_executable(test_admin_login tst_admin_login.cpp)
 target_link_libraries(test_admin_login PRIVATE ChargingPlatform::ServerPages
     ChargingPlatform::DatabaseResources Qt6::Test)
 add_test(NAME admin_login COMMAND test_admin_login)
+
+add_executable(test_admin_management_pages tst_admin_management_pages.cpp)
+target_link_libraries(test_admin_management_pages PRIVATE
+    ChargingPlatform::ServerPages
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME admin_management_pages COMMAND test_admin_management_pages)
+set_tests_properties(admin_management_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 40
+)
 set_tests_properties(admin_service admin_gateway admin_login PROPERTIES TIMEOUT 40)
 
 add_executable(test_qt_baseline tst_qt_baseline.cpp)

@@ -25,6 +25,7 @@ class OrderManagementPage final : public QWidget
 public:
     explicit OrderManagementPage(QWidget* parent = nullptr);
     void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
 
     void showLatestOrders();
 
@@ -46,8 +47,12 @@ private:
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const OrderRecord& record) const;
     void requestList();
+    void requestFilterOptions();
     void handleListResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
+    void handleStationOptionsResponse(const QJsonObject& response);
+    void handleChargerOptionsResponse(const QJsonObject& response);
 
     QVector<OrderRecord> records_;
     QVector<int> filteredRecordIndexes_;
@@ -55,9 +60,13 @@ private:
     int currentPage_ = 0;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
     QString listRequestId_;
+    QString summaryRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
+    QString stationOptionsRequestId_;
+    QString chargerOptionsRequestId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* orderNumberLineEdit_ = nullptr;

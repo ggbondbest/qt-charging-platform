@@ -60,13 +60,13 @@ class DeviceStatusWidget final : public QWidget
 {
 public:
     explicit DeviceStatusWidget(QWidget* parent = nullptr);
-    void setCounts(int online, int offline, int fault);
+    void setCounts(int normal, int offline, int fault);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
-    int online_ = 0;
+    int normal_ = 0;
     int offline_ = 0;
     int fault_ = 0;
 };
