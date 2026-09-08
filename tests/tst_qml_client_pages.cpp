@@ -23,6 +23,7 @@
 using charging::qml::ChargingBridge;
 using charging::qml::CouponBridge;
 using charging::qml::OrderBridge;
+using charging::qml::PointBridge;
 using charging::qml::QmlApp;
 using charging::qml::StatsBridge;
 using charging::qml::WalletBridge;
@@ -146,6 +147,48 @@ public:
     int calls = 0;
     int lastMonths = 0;
     QString lastPeriod;
+};
+
+// 批次C 签到/积分桥替身：镜像 PointBridge 的 QML 可见接口。checkIn 不自动回
+// 执（由测试显式 emitCheckIn 驱动），fetchPoints 记账参数供断言。
+class FakePointsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE bool isBusy() const { return false; }
+    Q_INVOKABLE void fetchPoints(int page = 1, int pageSize = 20)
+    {
+        ++fetchCalls;
+        lastPage = page;
+        lastPageSize = pageSize;
+    }
+    Q_INVOKABLE void checkIn() { ++checkInCalls; }
+
+    void emitPoints(qint64 points, const QVariantList& entries, int total)
+    {
+        emit pointsLoaded(points, entries, total);
+    }
+    void emitCheckIn(const QString& day, qint64 points, qint64 gained, bool already)
+    {
+        emit checkInCompleted(day, points, gained, already);
+    }
+    void emitFailure(const QString& type)
+    {
+        emit operationFailed(type, QStringLiteral("MOCK"), QStringLiteral("模拟积分失败"));
+    }
+
+signals:
+    void pointsLoaded(qint64 points, const QVariantList& entries, int total);
+    void checkInCompleted(const QString& day, qint64 points, qint64 gained,
+                          bool alreadyCheckedIn);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int fetchCalls = 0;
+    int checkInCalls = 0;
+    int lastPage = 0;
+    int lastPageSize = 0;
 };
 
 } // namespace
@@ -579,6 +622,102 @@ private slots:
             QVERIFY(item.value(QStringLiteral("expiresAtUtc")).toDouble() > 0.0);
         }
         QCOMPARE(available, 3);
+    }
+
+    // 批次C 签到/积分页 × 桥替身：进页自拉流水、流水卡入模、签到回执驱动
+    // 按钮三态（未签 → 签到成功 → 重放不反悔），失败回执解锁在途。
+    void pointsPageRendersBridgeLedger()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构（Stats 用例同款时序约定）
+        auto* page = createPage(engine, QStringLiteral("PointsPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPage, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitPoints(60, {QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+                                         {QStringLiteral("amount"), 10},
+                                         {QStringLiteral("reason"), QStringLiteral("每日签到")},
+                                         {QStringLiteral("createdAtUtc"),
+                                          QStringLiteral("2026-09-08T08:00:00.000Z")}},
+                            QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                                        {QStringLiteral("amount"), 50},
+                                        {QStringLiteral("reason"), QStringLiteral("注册礼包")},
+                                        {QStringLiteral("createdAtUtc"),
+                                         QStringLiteral("2026-09-05T08:00:00.000Z")}}}, 2);
+        auto* model = page->findChild<QObject*>("uiPointsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 2);
+        QCOMPARE(page->property("points").toInt(), 60);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        // 签到按钮路径（delegate 在 offscreen 不可 findChild——走页面函数，
+        // 与 onClicked 同一代码路径）：请求发出、checkingIn 置真。
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+        QVERIFY(page->property("checkingIn").toBool());
+
+        // 成功回执：总分更新、按钮进入"今日已签"态（重放同样置真，不反悔）。
+        fake.emitCheckIn(QStringLiteral("2026-09-08"), 70, 10, false);
+        QVERIFY(!page->property("checkingIn").toBool());
+        QCOMPARE(page->property("points").toInt(), 70);
+        QVERIFY(page->property("todayCheckedIn").toBool());
+
+        auto* title = page->findChild<QQuickItem*>("uiPointsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("签到 · 积分"));
+
+        // 失败回执（CHECK_IN 在途挂掉）：checkingIn 解锁、已签态保持。
+        QMetaObject::invokeMethod(page, "checkInNow");   // todayCheckedIn 拦路：不发请求
+        QCOMPARE(fake.checkInCalls, 1);
+        fake.emitFailure(QStringLiteral("GET_POINTS"));
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // 签到桥 × 真 mock 通道端到端：种子礼包 50 → 签到 +10 → 流水两行新在前。
+    void pointsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* points = qobject_cast<PointBridge*>(app.pointsService());
+        QVERIFY(points);
+
+        QSignalSpy loaded(points, &PointBridge::pointsLoaded);
+        points->fetchPoints();
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toLongLong(), 50);   // 注册礼包 seed
+        QCOMPARE(loaded.at(0).at(2).toInt(), 1);
+
+        QSignalSpy done(points, &PointBridge::checkInCompleted);
+        points->checkIn();
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 1, 4000);
+        QCOMPARE(done.at(0).at(1).toLongLong(), 60);
+        QCOMPARE(done.at(0).at(2).toLongLong(), 10);
+        QCOMPARE(done.at(0).at(3).toBool(), false);
+        QCOMPARE(done.at(0).at(0).toString().size(), 10);  // "YYYY-MM-DD"
+
+        // 同日重放：already=true、gained=0（幂等镜像）。
+        points->checkIn();
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 2, 4000);
+        QCOMPARE(done.at(1).at(2).toLongLong(), 0);
+        QCOMPARE(done.at(1).at(3).toBool(), true);
+
+        loaded.clear();
+        points->fetchPoints(1, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(1).toList().size(), 2);
+        QCOMPARE(loaded.at(0).at(1).toList().first().toMap()
+                     .value(QStringLiteral("reason")).toString(),
+                 QStringLiteral("每日签到"));              // 新→旧
     }
 
     void paymentSyncsTopBarBalance()

@@ -234,6 +234,7 @@ Item {
                     // 月报为成员3 新页，优惠券接成员2 CouponPage。
                     { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
                     { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
+                    { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
                     { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
                 delegate: Rectangle {

@@ -4,6 +4,7 @@
 #include "charging/client/profile_charging/coupon_service.h"
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/stats_service.h"
+#include "charging/client/profile_charging/point_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/protocol.h"
@@ -689,6 +690,26 @@ CouponBridge::CouponBridge(charging::client::CouponService* svc, QObject* parent
 QVariantList CouponBridge::coupons() const { return svc_->coupons(); }
 void CouponBridge::fetchCoupons() { svc_->fetchCoupons(); }
 int CouponBridge::couponCount() const { return static_cast<int>(svc_->coupons().size()); }
+
+// ————— 2026-09-08 批次C：签到/积分桥 —————
+PointBridge::PointBridge(charging::client::PointService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::PointService::pointsLoaded,
+            this, &PointBridge::pointsLoaded);
+    connect(svc_, &charging::client::PointService::checkInCompleted,
+            this, &PointBridge::checkInCompleted);
+    connect(svc_, &charging::client::PointService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm: the page pulls on entry (Component.onCompleted fetchPoints),
+    // same as CouponBridge — an eager GET would eat the mock's scripted failures.
+}
+
+bool PointBridge::isBusy() const { return svc_->isBusy(); }
+void PointBridge::fetchPoints(int page, int pageSize) { svc_->fetchPoints(page, pageSize); }
+void PointBridge::checkIn() { svc_->checkIn(); }
 
 
 } // namespace charging::qml

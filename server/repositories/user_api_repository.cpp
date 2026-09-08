@@ -153,6 +153,51 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
         q.finish();
         return finish();
     }
+    if (in.action == UserApiAction::CheckIn) {
+        // 批次C（2026-09-08）：日粒度幂等——user_checkins (user_id, day) 主键
+        // + INSERT OR IGNORE；changed==0 即当日已签（返回现总分、gained=0，
+        // 重放不算错误，RECHARGE 幂等同款语义）。day=UTC 日历日，与响应 day
+        // 字段单点同源。总分为 SUM(points_ledger)——单一事实源，无余额列。
+        const QString day = in.nowUtc.toUTC().toString(QStringLiteral("yyyy-MM-dd"));
+        if (!run(q, "INSERT OR IGNORE INTO user_checkins (user_id, day, created_at) "
+                    "VALUES (:uid,:day,:now)",
+                 {{"uid", in.userId}, {"day", day}, {"now", now}})) return {};
+        if (q.numRowsAffected() == 0) {
+            result.alreadyCheckedIn = true;
+        } else if (!run(q, "INSERT INTO points_ledger (user_id, amount, reason, created_at) "
+                           "VALUES (:uid,:amount,'CHECK_IN',:now)",
+                        {{"uid", in.userId},
+                         {"amount", charging::protocol::user_api::kCheckInRewardPoints},
+                         {"now", now}})) return {};
+        q.finish();
+        if (!run(q, "SELECT COALESCE(SUM(amount), 0) AS points FROM points_ledger "
+                    "WHERE user_id=:uid", {{"uid", in.userId}}) || !q.next()) return {};
+        result.points = q.value(0).toLongLong();
+        result.pointsGained = result.alreadyCheckedIn
+            ? 0 : charging::protocol::user_api::kCheckInRewardPoints;
+        q.finish();
+        return finish();
+    }
+    if (in.action == UserApiAction::GetPoints) {
+        // 批次C：流水分页（新→旧）+ 总分单查合一（同 COUNT 顺路 SUM，一条 SQL）。
+        if (!run(q, "SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS points "
+                    "FROM points_ledger WHERE user_id=:uid", {{"uid", in.userId}})
+            || !q.next()) return {};
+        const qint64 count = q.value("cnt").toLongLong();
+        result.points = q.value("points").toLongLong();
+        q.finish();
+        if (count < 0 || count > std::numeric_limits<int>::max())
+            return failure(UserApiError::TooManyRows);
+        result.total = static_cast<int>(count);
+        if (!run(q, "SELECT * FROM points_ledger WHERE user_id=:uid "
+                    "ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset",
+                 {{"uid", in.userId}, {"limit", in.pageSize},
+                  {"offset", (qint64(in.page) - 1) * in.pageSize}})) return {};
+        while (q.next()) result.rows.append(row(q));
+        if (q.lastError().isValid()) return {};
+        q.finish();
+        return finish();
+    }
 
     // Reuse the existing state-machine expiry updates within this transaction.
     if (in.action != UserApiAction::RechargeRecords) {

@@ -26,6 +26,7 @@ class OrderService;
 class ChargingService;
 class StatsService;
 class CouponService;
+class PointService;
 struct OrderSummary;
 namespace services::station { class StationQueryService; }
 namespace services::reservation { class ReservationService; }
@@ -304,6 +305,30 @@ signals:
 
 private:
     charging::client::CouponService* svc_;
+};
+
+// ————— 2026-09-08 批次C：签到/积分桥（成员3 新页 StatsPage 同目录的
+// PointsPage 消费；context property 名 pointsService）。
+
+class PointBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit PointBridge(charging::client::PointService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE bool isBusy() const;
+    Q_INVOKABLE void fetchPoints(int page = 1, int pageSize = 20);
+    Q_INVOKABLE void checkIn();
+
+signals:
+    // entries 行 = GET_POINTS 响应形 [{id,amount,reason,createdAtUtc}] 新→旧
+    void pointsLoaded(qint64 points, const QVariantList& entries, int total);
+    void checkInCompleted(const QString& day, qint64 points, qint64 gained,
+                          bool alreadyCheckedIn);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::PointService* svc_;
 };
 
 } // namespace charging::qml

@@ -46,7 +46,8 @@ void UserApiContractTest::documentedExamples()
         request_type::kGetStations, request_type::kGetChargers, request_type::kGetReservations,
         request_type::kGetUserInfo, request_type::kUpdateUserInfo, request_type::kRecharge,
         request_type::kGetRechargeRecords, request_type::kGetOrders, request_type::kGetUserStats,
-        request_type::kGetCoupons, request_type::kGetNotifications};
+        request_type::kGetCoupons, request_type::kGetNotifications,
+        request_type::kCheckIn, request_type::kGetPoints};
     QSet<QString> seen;
     for (const QJsonValue& value : doc.array()) {
         const QJsonObject example = value.toObject();
@@ -157,6 +158,25 @@ void UserApiContractTest::documentedExamples()
             QVERIFY(item.value("createdAtUtc").isString());   // 页面契约 key（非 createdAt）
             QVERIFY(!item.contains("userId"));                // 内部身份列不回显
             QVERIFY(!item.contains("readAt"));
+        } else if (type == QLatin1String(request_type::kCheckIn)) {
+            // CHECK_IN 无参：input 必须显式 {}（normalize 对空 result，注入即挂）。
+            QVERIFY(input.isEmpty());
+            QCOMPARE(output.value("day").toString().size(), 10);   // "YYYY-MM-DD"
+            QVERIFY(output.value("points").isDouble());
+            QVERIFY(output.value("gained").isDouble());
+            QVERIFY(output.value("alreadyCheckedIn").isBool());
+        } else if (type == QLatin1String(request_type::kGetPoints)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QVERIFY(output.value("points").isDouble());   // SUM 总分与流水同响应
+            const QJsonArray items = output.value("entries").toArray();
+            QCOMPARE(items.size(), 1);
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("amount").isDouble());
+            QVERIFY(!item.value("reason").toString().isEmpty());
+            QVERIFY(item.value("createdAtUtc").isString());
+            QVERIFY(!item.contains("userId"));
         } else {
             verifyModel<charging::model::User>(output.value("user").toObject());
         }
@@ -168,7 +188,8 @@ void UserApiContractTest::defaultsAndIdentity()
 {
     for (const char* type : {request_type::kGetStations, request_type::kGetReservations,
                              request_type::kGetOrders, request_type::kGetRechargeRecords,
-                             request_type::kGetCoupons, request_type::kGetNotifications}) {
+                             request_type::kGetCoupons, request_type::kGetNotifications,
+                             request_type::kGetPoints}) {
         QJsonObject output;
         QVERIFY(normalizeRequestData(type, {{"userId", "999"}, {"futureField", true}}, &output));
         QCOMPARE(output.value("page").toInt(), kDefaultPage);
@@ -177,6 +198,9 @@ void UserApiContractTest::defaultsAndIdentity()
         QVERIFY(!output.contains("futureField"));
     }
     QJsonObject output;
+    QVERIFY(normalizeRequestData(request_type::kCheckIn, {{"userId", "999"}, {"futureField", true}},
+                                 &output));
+    QVERIFY(output.isEmpty());   // CHECK_IN 无参：身份来自 Session，未知键丢弃（同 GET_USER_INFO）。
     QVERIFY(normalizeRequestData(request_type::kGetUserInfo, {{"userId", "999"}}, &output));
     QVERIFY(output.isEmpty()); // Not an authentication test: Session is the caller's responsibility.
     QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"userId", "999"}, {"page", 2}},
@@ -234,6 +258,10 @@ void UserApiContractTest::invalidRequests_data()
     }
     QTest::newRow("notifications-page-size-limit") << QString(request_type::kGetNotifications)
         << QJsonObject{{"pageSize", 101}};
+    QTest::newRow("points-page-size-limit") << QString(request_type::kGetPoints)
+        << QJsonObject{{"pageSize", 101}};
+    QTest::newRow("points-page-zero") << QString(request_type::kGetPoints)
+        << QJsonObject{{"page", 0}};
     QTest::newRow("empty-update") << QString(request_type::kUpdateUserInfo) << QJsonObject{};
     QTest::newRow("protected-update") << QString(request_type::kUpdateUserInfo)
         << QJsonObject{{"balanceCents", 100}};

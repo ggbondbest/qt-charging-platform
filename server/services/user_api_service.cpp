@@ -19,7 +19,9 @@ const QMap<QString, UserApiAction> actions{
     {request_type::kGetOrders, UserApiAction::Orders},
     {request_type::kGetUserStats, UserApiAction::Stats},
     {request_type::kGetCoupons, UserApiAction::Coupons},
-    {request_type::kGetNotifications, UserApiAction::Notifications}
+    {request_type::kGetNotifications, UserApiAction::Notifications},
+    {request_type::kCheckIn, UserApiAction::CheckIn},
+    {request_type::kGetPoints, UserApiAction::GetPoints}
 };
 UserApiReply fail(const char* code, const QString& message)
 {
@@ -158,6 +160,38 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
             notifications.append(item);
         }
         reply.data.insert("notifications", notifications);
+        reply.data.insert("page", query.page);
+        reply.data.insert("pageSize", query.pageSize);
+        reply.data.insert("total", result.total);
+        reply.success = true;
+        return reply;
+    }
+    // ---- 批次C（2026-09-08）：签到 / 积分流水（无 model::canonical 对应）----
+    if (query.action == UserApiAction::CheckIn) {
+        // day 与 repo 写入用同一个 query.nowUtc——单点换算，不会出现
+        // 响应 day 与落库 day 跨 UTC 午夜的漂移。
+        reply.data.insert("day", query.nowUtc.toUTC().toString(QStringLiteral("yyyy-MM-dd")));
+        reply.data.insert("points", static_cast<double>(result.points));
+        reply.data.insert("gained", static_cast<double>(result.pointsGained));
+        reply.data.insert("alreadyCheckedIn", result.alreadyCheckedIn);
+        reply.success = true;
+        return reply;
+    }
+    if (query.action == UserApiAction::GetPoints) {
+        // 响应形冻结为 {points, entries:[{id, amount, reason, createdAtUtc}],
+        // page, pageSize, total}；reason 词表只映射 CHECK_IN，其余运营文案
+        // 原样透传（TODO(contract): 词表评审）。
+        QJsonArray entries;
+        for (const auto& row : result.rows) {
+            QJsonObject item = wireRow(row);
+            if (item.value("reason").toString() == QLatin1String("CHECK_IN"))
+                item.insert("reason", QStringLiteral("每日签到"));
+            item.insert("createdAtUtc", item.take("createdAt"));
+            item.remove("userId");    // never echo internal identity columns
+            entries.append(item);
+        }
+        reply.data.insert("points", static_cast<double>(result.points));
+        reply.data.insert("entries", entries);
         reply.data.insert("page", query.page);
         reply.data.insert("pageSize", query.pageSize);
         reply.data.insert("total", result.total);

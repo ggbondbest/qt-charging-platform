@@ -233,6 +233,34 @@ CREATE TABLE IF NOT EXISTS coupons (
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
+-- 批次C（2026-09-08）签到/积分：total = SUM(amount)，无独立余额列——
+-- 单一事实源，杜绝余额与流水对不上账。reason 词表 CHECK_IN 之外
+-- TODO(contract) 运营扩展（任务/活动发放）。
+CREATE TABLE IF NOT EXISTS points_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL
+        CHECK (amount BETWEEN -9007199254740991 AND 9007199254740991),
+    reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 1 AND 32),
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+-- 日粒度签到幂等表：(user_id, day) 主键即唯一约束，day 为 UTC 日历日
+-- "YYYY-MM-DD"（与 CHECK_IN 响应 day 字段同口径）。
+CREATE TABLE IF NOT EXISTS user_checkins (
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL
+        CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (user_id, day),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
 CREATE INDEX IF NOT EXISTS idx_stations_status
     ON stations(status);
 CREATE INDEX IF NOT EXISTS idx_chargers_station_status
@@ -259,6 +287,8 @@ CREATE INDEX IF NOT EXISTS idx_coupons_user_status
     ON coupons(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_coupons_user_created_at
     ON coupons(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_points_ledger_user_created_at
+    ON points_ledger(user_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reservations_active_user
     ON reservations(user_id)

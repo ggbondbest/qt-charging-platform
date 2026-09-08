@@ -54,6 +54,10 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     const bool stats = type == QLatin1String(kGetUserStats);
     const bool coupons = type == QLatin1String(kGetCoupons);
     const bool notices = type == QLatin1String(kGetNotifications);
+    // 批次C：CHECK_IN 写型无参（profile 同款，result 为空对象，未知键照例丢弃）；
+    // GET_POINTS 加入分页族。
+    const bool checkIn = type == QLatin1String(kCheckIn);
+    const bool points = type == QLatin1String(kGetPoints);
     const auto fail = [error](const char* code, const QString& field) {
         if (error != nullptr) {
             *error = {};
@@ -64,12 +68,13 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         return false;
     };
     if (!(stations || chargers || reservations || orders || records || profile || update
-          || recharge || stats || coupons || notices)) {
+          || recharge || stats || coupons || notices || checkIn || points)) {
         return fail(error_code::kUnknownRequestType, QStringLiteral("type"));
     }
 
     QJsonObject result;
-    if (stations || chargers || reservations || orders || records || coupons || notices) {
+    if (stations || chargers || reservations || orders || records || coupons || notices
+        || points) {
         for (const QString& key : {QStringLiteral("page"), QStringLiteral("pageSize")}) {
             const bool isPage = key == QLatin1String("page");
             const QJsonValue value = data.contains(key)

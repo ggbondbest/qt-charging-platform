@@ -61,6 +61,7 @@ MockRequestTransport::MockRequestTransport()
     seedDemoData();
     seedDemoOrders();
     seedDemoCoupons();
+    seedDemoPoints();
 }
 
 void MockRequestTransport::seedDemoData()
@@ -251,6 +252,21 @@ void MockRequestTransport::grantRechargeCoupon(qint64 amountCents, const QDateTi
     coupons_.prepend(object);
 }
 
+void MockRequestTransport::seedDemoPoints()
+{
+    // 批次C 演示流水：注册礼包 +50（3 天前）。不预置今日签到——签到按钮
+    // 的首演留给 CHECK_IN 本身（与真机语义一致：日粒度幂等由 checkInDay_ 记）。
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    QJsonObject welcome;
+    welcome.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+    welcome.insert(QStringLiteral("amount"), 50);
+    welcome.insert(QStringLiteral("reason"), QStringLiteral("注册礼包"));
+    welcome.insert(QStringLiteral("createdAtUtc"),
+                   now.addDays(-3).toUTC().toString(Qt::ISODateWithMs));
+    pointsLedger_.append(welcome);
+    pointsTotal_ += 50;
+}
+
 void MockRequestTransport::setNextFailure(const QString& code, int times)
 {
     nextFailureCode_ = code;
@@ -375,6 +391,10 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kGetCoupons);
     const QString getNotificationsType =
         QString::fromLatin1(charging::protocol::request_type::kGetNotifications);
+    const QString checkInType =
+        QString::fromLatin1(charging::protocol::request_type::kCheckIn);
+    const QString getPointsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetPoints);
 
     if (type == getUserInfoType) {
         QJsonObject payload;
@@ -644,6 +664,68 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                                    {QStringLiteral("page"), page},
                                    {QStringLiteral("pageSize"), pageSize},
                                    {QStringLiteral("total"), notifications_.size()}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == checkInType) {
+        // 批次C：日粒度幂等——镜像服务端 user_checkins (user_id, day) 主键；
+        // 重放返回现总分 + gained=0，不报错。reason 存显示词（服务端对
+        // CHECK_IN 映射"每日签到"，输出侧同款）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString day = QDateTime::currentDateTimeUtc().toUTC()
+                                .toString(QStringLiteral("yyyy-MM-dd"));
+        bool already = false;
+        qint64 gained = 0;
+        if (checkInDay_ == day) {
+            already = true;
+        } else {
+            checkInDay_ = day;
+            gained = charging::protocol::user_api::kCheckInRewardPoints;
+            pointsTotal_ += gained;
+            QJsonObject entry;
+            entry.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+            entry.insert(QStringLiteral("amount"), static_cast<double>(gained));
+            entry.insert(QStringLiteral("reason"), QStringLiteral("每日签到"));
+            entry.insert(QStringLiteral("createdAtUtc"),
+                         QDateTime::currentDateTimeUtc().toUTC().toString(Qt::ISODateWithMs));
+            pointsLedger_.prepend(entry);
+        }
+        callback(true, QJsonObject{{QStringLiteral("day"), day},
+                                   {QStringLiteral("points"), static_cast<double>(pointsTotal_)},
+                                   {QStringLiteral("gained"), static_cast<double>(gained)},
+                                   {QStringLiteral("alreadyCheckedIn"), already}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getPointsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < pointsLedger_.size() && index < start + pageSize;
+             ++index) {
+            array.append(pointsLedger_.at(index));
+        }
+        callback(true, QJsonObject{{QStringLiteral("points"), static_cast<double>(pointsTotal_)},
+                                   {QStringLiteral("entries"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), pointsLedger_.size()}},
                  charging::protocol::ProtocolError{});
         return;
     }

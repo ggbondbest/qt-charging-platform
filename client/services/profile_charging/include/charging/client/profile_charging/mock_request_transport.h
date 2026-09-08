@@ -59,6 +59,7 @@ private:
     void seedDemoData();
     void seedDemoOrders();
     void seedDemoCoupons();
+    void seedDemoPoints();
     void appendMockNotification(const QString& type, const QString& title,
                                 const QString& body, const QDateTime& createdAtUtc);
     void grantRechargeCoupon(qint64 amountCents, const QDateTime& nowUtc);
@@ -74,6 +75,13 @@ private:
     // decimal string the server emits), newest first.
     QVector<QJsonObject> coupons_;
     QVector<MockNotification> notifications_; // newest first
+    // 批次C（2026-09-08）积分：流水行即 GET_POINTS entries 响应形（id 十进制
+    // 字符串、createdAtUtc ISO 串），新→旧；pointsTotal_ 镜像 SUM 单一事实源。
+    // checkInDay_ 记最近一次签到的 UTC 日历日（日粒度幂等，user_checkins 同款）。
+    QVector<QJsonObject> pointsLedger_; // newest first
+    qint64 pointsTotal_ = 0;
+    QString checkInDay_;
+    qint64 nextLedgerId_ = 1;
     QHash<qint64, QPair<QString, QString>> chargerDisplays_; // chargerId -> (station, code)
     // reservationId -> (chargerId, display) mirrored from the reservation
     // service's mock channel (see registerMockReservation).

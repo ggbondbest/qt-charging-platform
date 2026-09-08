@@ -262,5 +262,36 @@
       "pageSize": 20,
       "total": 1
     }
+  },
+  {
+    "type": "CHECK_IN",
+    "requestData": {},
+    "responseData": {
+      "day": "2026-09-08",
+      "points": 10,
+      "gained": 10,
+      "alreadyCheckedIn": false
+    }
+  },
+  {
+    "type": "GET_POINTS",
+    "requestData": {
+      "page": 1,
+      "pageSize": 20
+    },
+    "responseData": {
+      "points": 10,
+      "entries": [
+        {
+          "id": "1",
+          "amount": 10,
+          "reason": "每日签到",
+          "createdAtUtc": "2026-09-08T08:00:00.000Z"
+        }
+      ],
+      "page": 1,
+      "pageSize": 20,
+      "total": 1
+    }
   }
 ]

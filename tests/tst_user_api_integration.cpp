@@ -93,7 +93,8 @@ const QMap<QString, QJsonObject> requests{
     {kGetUserInfo, {}}, {kUpdateUserInfo, {{"nickname", "小明"}}},
     {kRecharge, {{"amountCents", 500}, {"transactionNo", "auth-1"}}},
     {kGetRechargeRecords, {}}, {kGetOrders, {}},
-    {kGetUserStats, {}}, {kGetCoupons, {}}, {kGetNotifications, {}}
+    {kGetUserStats, {}}, {kGetCoupons, {}}, {kGetNotifications, {}},
+    {kCheckIn, {}}, {kGetPoints, {}}
 };
 } // namespace
 
@@ -102,6 +103,7 @@ class UserApiIntegrationTest final : public QObject {
 private slots:
     void eightRoutesAndWorkflow();
     void statsCouponsAndNotifications();
+    void checkInAndPoints();
     void authorizationAndValidation();
     void pagingExpiryAndLiveLists();
     void rechargeRollbackAndReplay();
@@ -275,6 +277,73 @@ void UserApiIntegrationTest::statsCouponsAndNotifications()
     QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
     QCOMPARE(call(b, kGetCoupons).data.value("total").toInt(), 0);
     QCOMPARE(call(b, kGetNotifications).data.value("total").toInt(), 0);
+}
+
+void UserApiIntegrationTest::checkInAndPoints()
+{
+    // 批次C（2026-09-08）：CHECK_IN 日粒度幂等 + GET_POINTS 分页/隔离。
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+
+    auto response = call(a, kGetPoints);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 0);
+    QCOMPARE(response.data.value("points").toInt(), 0);
+
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("gained").toInt(), 10);
+    QCOMPARE(response.data.value("alreadyCheckedIn").toBool(), false);
+    QCOMPARE(response.data.value("points").toInt(), 10);
+    const QString day = response.data.value("day").toString();
+    QVERIFY2(QRegularExpression(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}$")).match(day).hasMatch(),
+             qPrintable(day));
+    // 落库对拍：day 与 user_checkins 行一致（响应不是现算的幌子）。
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT COUNT(*) FROM user_checkins WHERE user_id=1 AND day='%1'").arg(day)), 1);
+
+    // 同日重放：幂等成功、不再入账（RECHARGE 同款语义，非错误）。
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("alreadyCheckedIn").toBool(), true);
+    QCOMPARE(response.data.value("gained").toInt(), 0);
+    QCOMPARE(response.data.value("points").toInt(), 10);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM points_ledger WHERE user_id=1"), 1);
+
+    // 跨 UTC 日再签两天 → 三条流水，总分 30；分页 pageSize=1 翻页。
+    f.now = f.now.addDays(1);
+    QVERIFY(call(a, kCheckIn).success);
+    f.now = f.now.addDays(1);
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("gained").toInt(), 10);
+    QCOMPARE(response.data.value("points").toInt(), 30);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM user_checkins WHERE user_id=1"), 3);
+
+    response = call(a, kGetPoints, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 3);
+    QCOMPARE(response.data.value("points").toInt(), 30);   // 总分随每页回传
+    const QJsonObject entry = response.data.value("entries").toArray().first().toObject();
+    QCOMPARE(entry.value("amount").toInt(), 10);
+    QCOMPARE(entry.value("reason").toString(), QStringLiteral("每日签到"));  // CHECK_IN 词映射
+    QVERIFY(entry.value("createdAtUtc").isString());
+    QVERIFY(!entry.contains("userId"));
+    QVERIFY(!entry.value("id").toString().isEmpty());
+    // 新→旧：第 2 页时间戳必须早于第 1 页。
+    const QString newest = entry.value("createdAtUtc").toString();
+    response = call(a, kGetPoints, {{"page", 2}, {"pageSize", 1}});
+    QCOMPARE(response.data.value("entries").toArray().first().toObject()
+                 .value("createdAtUtc").toString().compare(newest) < 0, true);
+    QCOMPARE(call(a, kGetPoints, {{"pageSize", 101}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 账户隔离：另一账号积分从零开始。
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kGetPoints).data.value("total").toInt(), 0);
+    QCOMPARE(call(b, kCheckIn).data.value("points").toInt(), 10);
 }
 
 void UserApiIntegrationTest::authorizationAndValidation()
