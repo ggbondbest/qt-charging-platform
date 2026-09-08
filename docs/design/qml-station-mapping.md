@@ -146,6 +146,46 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **⑦ 实测追加修复（同日用户桌面实测发现）：导航【更换】弹窗打开即冻结**。根因=弹层 `Column` 只给宽不给高（Column 默认高=implicitHeight 由子项反推），其子 `ListView.height: parent.height - y` 的 parent 正是该 Column → 自我循环，Qt 每帧刷 `QQuickItem::polish() loop`（现场 4575 行后 UI 卡死被杀）。修复=`anchors.fill: parent` 显式定高切断回边（页面主 Column 本就是这个写法所以无恙）。教训入册：**Popup 内布局 Column 必须显式定高/anchors.fill，凡"子项读 parent.height 且 parent 是自动高度容器"即循环**；截图/无头测试不点开弹层就测不出来——已补真点击钉 `navigationPickPopupOpensWithoutPolishLoop`（message handler 计数零 loop 行+弹层有候选行；反证：注回旧写法事件循环刷死、ctest TIMEOUT 红）。
 - **⑥ 账与验证**：ctest **36/36 全绿**（新 4 例：map config 回退/env 遮蔽 2 例 + 0车直达确认页/充电中真点拦截 2 例；⑦修复后追加第 5 例循环钉，36 套仍全绿 37 例）；改动 8 文件 qmllint 零 Error；截图 4 张：`21-station-tags-funnel.png`（标签行+顶栏漏斗+黄星一张全含）、`22-confirm-optional-vehicle.png`（"（不绑定车辆）"默认可提交态）、`23-nav-dual-input.png`（双输入+更换+点击导航+190 降级 Toast 实证）、`24-filter-price-range.png`（区间回填 1.00~1.40）。**桌面实机链路（同日⑦轮）**：charging-server --demo-seed 起 9527 + preview 直跑，弹窗候选 6 行渲染截图核验通过。**活体探测在案：两 env key 当日均 `status 190 无效的key`**（config 兜底路真发请求拿到 190→全链诚实降级为模拟路线，UI 与请求链已验证正确）——真地图数据待控制台开通/换发有效 key 后自动激活，QML 零改动。**环境口径增补**：本机 qml6-module-* 运行包缺失（apt 漂移），QML 测试与 preview 需 `QML2_IMPORT_PATH` 指向解包目录（本仓零改动的仓外 workaround：`/home/bit/.qt-qml-local` dpkg -x）；`admin_login` 补 `QT_QPA_PLATFORM=offscreen` ENVIRONMENT（无 DISPLAY 机器裸跑 xcb abort，预存缺口本轮修入）。
 
+## merge 对账轮（2026-09-08 晚：origin/develop 7f0e38b 并入 8c7eacd + 全绿批 671ebe5）
+
+- **merge 逐块对账（12 冲突文件，`git show :2:` 逐 hunk 审计，UU 清零，仓内标记全扫净）**：
+  `sendRequest` 定型为刻意 hybrid——查询串保留本方手工 `QUrl::toPercentEncoding(keep=",-.:;|~*")`
+  （静态图测试锚 `paths=6,0x00B578,255:22.5…` 要求逐字节 `:`，上游 QUrlQuery 必编 `%3A` 破锚；
+  逗号两式皆活），sig 路径采上游口径 `QUrl(endpointBase).path()+path`（官方完整 URI path 规则）。
+  `Kind` 枚举取并集（上游 WalkingRoute/ForwardGeocoder + 本方 IpLocation/GeocodeAddress/StaticMap）。
+  Shell/TopNavBar/FilterDialog 采纳上游登录闸/动态标题/真模式组并逐处挂 typeof 守卫与注释；
+  接受两处舍弃：详情 loadDemo bridge-absent 桩让位上游 `catch→detailFailed`（home 演示列表与 mock
+  提交通道俱在）、上游 origin 面板让位本方 hero 统计带。
+- **预约双闸序**：本方 `chargingBusyPrompt`（指令①"有充电中不可约"，UI 态可注入）先跑 →
+  上游 TCP 前置闸 `checkUnfinished`（getOrders×3 并发、fail-closed：任一失败只 Toast 不放行）后跑，
+  语义叠加不冲突；`navigate("reservation_confirm")` 在 QmlApp 层统一拦截，页面侧无感。
+- **mock 通道迁移**：上游把 mock 判定移到进程 env `CHARGING_CHANNEL`（QML context 属性到不了 C++
+  构造期）——preview 演示真图走默认 TCP→9527，要 mock 须显式带 env；测试 bootShell 补 `qputenv`。
+  mock 种子活动单×上游 TCP 闸死锁以命名测试缝解开：`MockRequestTransport::cancelActiveOrders()` +
+  `QmlApp::clearUnfinishedOrdersForTesting()`（dynamic_cast——IRequestTransport 无 QObject 血统），
+  spin 450→900ms 对齐 `kMockLatencyMs=450`。
+- **WebEngineView 惰性化**：裸建 WebEngineView 在无 `QtWebEngineQuick::initialize()` 的测试进程
+  段错误 → NavigationPage 改 `Loader{active:webRouteReady}`+mapBridge 缺位四 accessor 守卫；
+  导航页 WebEngine 消费 JS key（`TENCENT_MAP_JS_KEY` 运行时 env，**永不入库**——git 配置文件只含
+  WebServiceAPI key，两把 key 用途/配额独立）。
+- **QPA/env 钉**：delivery_admin_pages（上游 Qt Charts 建 QChartView 真 QPA 面）/station_query_service/
+  reservation_service 补 `QT_QPA_PLATFORM=offscreen`；qml_tcp_delivery（写于 key 入库前）补空 env
+  密钥隔离防真实外网；test_qml_station_interactions 随上游 app_bridge 构造补链 map_bridge.cpp；
+  构建机需 `libqt6charts6-dev`（CMake CONFIG 包，运行时 .so 不算数）。
+- **上游自暴露竞态根除（671ebe5，含 server/database 一行面）**：上游 `concurrentDatabaseConnections`
+  要求同库双写者皆 None，本 VM 稳定撞 Database 错。探针定罪不在仓储层 BEGIN IMMEDIATE（schema.sql
+  自带 busy_timeout=5000 已覆盖该窗口），在 `DatabaseConnection::open` 的 migrateManagedIndexes——
+  Qt `transaction()` 发 deferred BEGIN，读 sqlite_master 后 DROP/CREATE 属**读→写锁升级**，SQLite
+  对 pending-upgrade BUSY 按防死锁规则**不触发 busy handler**（timeout 救不了）。改显式 BEGIN
+  IMMEDIATE（COMMIT/ROLLBACK 直发，绕开驱动 transact 状态机）+ `QSQLITE_BUSY_TIMEOUT=5000`
+  connect option 提前到 open 时刻（覆盖 schema.sql 首段 journal_mode=WAL 先于脚本内 PRAGMA 的
+  拿锁窗口）。修复前单跑 ~1/4 挂、修复后 **30/30 绿**。
+- **活体现状改口**：控制台开通 WebServiceAPI 后复核——ip 定位 `status 0 Success`、静态图回真 PNG、
+  驾车路线 `status 0`，**真链路已激活**（本 ledger 上条"当日均 190"为首轮在案记录，保留不改写；
+  降级链彼时已实证正确）。
+- **账**：全量串行 ctest **41/41 全绿**（QML 三套需 `QML2_IMPORT_PATH` 指向 rootless overlay，
+  本 VM 环境专属；标准 apt 全量机系统路径自带）；改动 **12 个 QML 文件 qmllint 零 Error**。
+
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
