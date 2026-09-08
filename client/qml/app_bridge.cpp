@@ -60,7 +60,11 @@ QmlApp::QmlApp(QObject* parent)
     settingsService_ = new charging::client::services::settings::SettingsService(this);
     mapGeoService_ = new charging::client::services::map::MapGeoService(this);
     reservationService_->setUserId(user.id);
-    reservationService_->setSettingsService(settingsService_);
+    // 2026-09-08 业务变更：预约不再强制车辆（QML 侧删闸同步）。撤 settings 注入
+    // = finishMockSubmit 的 0车拒绝/每车唯一两道自然失效，名额闸回退"至多 1 条
+    // 有效预约"（unfinishedSlotLimit 未注入回退 1），恰合"有充电中即不可再约"。
+    // widgets HomeShell 自带注入路径，其车辆语义测试零受影响。
+    // （原 reservationService_->setSettingsService(settingsService_);）
     favoritesService_ = new charging::client::services::favorites::FavoritesService(this);
     notificationService_ =
         new charging::client::services::favorites::NotificationService(this);

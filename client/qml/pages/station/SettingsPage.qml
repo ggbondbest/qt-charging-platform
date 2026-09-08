@@ -5,7 +5,7 @@ import "StationState.js" as StationState
 
 // QML twin of widgets SettingsPage (objectName "settingsPage").
 // 三模块卡：🔐账号安全（二级密码设置/修改 + 保护开关三态提示）、
-// 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 名额提示）、
+// 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 可选车辆说明；预约不再强制车辆），
 // 🔔通知与提醒（三 Switch ↔ settingsService.notificationEnabled）。
 // 双通道：服务 invokable 可读时以服务为准；桥缺位期落 StationState（.pragma
 // library 跨页会话库）——因此密码/车辆/开关在页间往返不丢。
@@ -123,7 +123,7 @@ Item {
                     Text {
                         objectName: "vehiclesEmptyLabel"
                         visible: page.vehicles.length === 0
-                        text: "暂无车辆，预约需先添加车辆"
+                        text: "暂无车辆（预约可不绑定车辆）"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                     Repeater {
@@ -184,9 +184,8 @@ Item {
                         objectName: "settingsCaptionLabel"
                         width: parent.width; wrapMode: Text.WordWrap
                         text: page.vehicles.length === 0
-                              ? "当前 0 辆车 → 无法发起预约；添加车辆后即可预约"
-                              : "当前 " + page.vehicles.length + " 辆车 → 最多可同时持有 "
-                                + page.vehicles.length + " 个有效预约时段（每辆 1 个）"
+                              ? "车辆为可选项：不添加车辆也可直接发起预约，绑定后下单默认选用"
+                              : "当前 " + page.vehicles.length + " 辆车 · 预约时可不绑定；绑定车辆的预约按所选车牌下单"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                 }

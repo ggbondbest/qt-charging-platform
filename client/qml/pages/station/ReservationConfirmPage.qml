@@ -58,9 +58,9 @@ Item {
                                  + " · 约 " + page.travelMinutes + " 分钟车程"
     }
 
-    // ---- 车辆下拉（桥缺位 → 空列表 + 引导文案） ----
+    // ---- 车辆下拉（2026-09-08 业务变更：可选项，"（不绑定车辆）"为默认首项） ----
     property var vehicles: []
-    property int vehicleIndex: -1
+    property int vehicleIndex: -1     // -1 = 不绑定车辆
     function loadVehicles() {
         // TODO(contract): settingsService.vehicles() invokable（map 列表）。
         // 桥缺位期读 StationState（设置页添加的车辆跨页可见）。
@@ -72,14 +72,12 @@ Item {
             if (vehicles[i].isDefault) { vehicleIndex = i; break }
     }
 
-    // ---- 校验行（messageLabel 同语义绑定） ----
+    // ---- 校验行（messageLabel 同语义绑定；车辆行已随业务变更移除） ----
     readonly property string validationMessage: busy ? "提交中…"
-        : vehicles.length === 0 ? "⚠️ 请先在「设置 - 车辆管理」添加车辆，再发起预约"
         : slotMinutes() <= 0 ? "⚠️ 结束时间必须晚于开始时间"
         : slotMinutes() > kMaxSlotMinutes ? "⚠️ 预约时间段不能超过 " + kMaxSlotMinutes + " 分钟，请缩短时段"
         : "模拟通道：预约即时生效；真实通道保留 15 分钟，暂不支持未来时段。"
-    readonly property bool canSubmit: !busy && vehicles.length > 0
-                                      && slotMinutes() > 0 && slotMinutes() <= kMaxSlotMinutes
+    readonly property bool canSubmit: !busy && slotMinutes() > 0 && slotMinutes() <= kMaxSlotMinutes
 
     function confirm() {
         if (!canSubmit) return
@@ -88,7 +86,9 @@ Item {
         //                startMinutesOfDay, endMinutesOfDay, vehicleId, vehiclePlate,
         //                distanceMeters}（今晚成员3 定形）。
         try {
-            const v = vehicles[vehicleIndex >= 0 ? vehicleIndex : 0]
+            // vehicleIndex<0 = 不绑定车辆 → vehicleId 0 / 空牌（preview 通道已撤
+            // settings 注入，finishMockSubmit 对 0 值无车辆门）。
+            const v = vehicleIndex >= 0 ? vehicles[vehicleIndex] : null
             reservationService.submit({
                 chargerId: station.chargerId, stationId: station.stationId,
                 // 桩元数据透传给桥（mock 用 code/type/power 生成桩号与规格文案）
@@ -164,7 +164,7 @@ Item {
                     }
                 }
 
-                // 车辆下拉
+                // 车辆下拉（可选：首项"（不绑定车辆）"，vehicleIndex=-1）
                 Row {
                     width: parent.width
                     spacing: P.Style.spaceMd
@@ -173,15 +173,15 @@ Item {
                     ComboBox {
                         objectName: "reservationVehicleComboBox"
                         width: parent.width - 100 - parent.spacing
-                        enabled: !page.busy && page.vehicles.length > 0
+                        enabled: !page.busy
                         model: {
-                            const out = []
+                            const out = ["（不绑定车辆）"]
                             for (const v of page.vehicles)
                                 out.push(v.isDefault ? v.plate + "（默认）" : v.plate)
-                            return out.length ? out : ["（无车辆，请先到设置添加）"]
+                            return out
                         }
-                        currentIndex: page.vehicleIndex
-                        onActivated: idx => { page.vehicleIndex = idx; page.userEdited = true }
+                        currentIndex: page.vehicleIndex + 1
+                        onActivated: idx => { page.vehicleIndex = idx - 1; page.userEdited = true }
                     }
                 }
             }
@@ -202,7 +202,7 @@ Item {
                     width: parent.width
                     from: 0; to: 1440; stepSize: 15
                     value: page.startMinutes
-                    enabled: !page.busy && page.vehicles.length > 0
+                    enabled: !page.busy
                     onMoved: { page.startMinutes = value; page.userEdited = true }
                 }
                 Text { text: "结束时间  " + page.hhmm(page.endMinutes)
@@ -212,7 +212,7 @@ Item {
                     width: parent.width
                     from: 0; to: 1440; stepSize: 15
                     value: page.endMinutes
-                    enabled: !page.busy && page.vehicles.length > 0
+                    enabled: !page.busy
                     onMoved: { page.endMinutes = value; page.userEdited = true }
                 }
 
