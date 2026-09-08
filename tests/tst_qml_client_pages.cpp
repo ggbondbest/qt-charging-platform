@@ -16,6 +16,7 @@
 #include <QQuickWindow>
 
 #include "charging/client/profile_charging/avatar_library.h"
+#include "services/station/station_query_service.h"
 
 #include "app_bridge.h"
 #include "service_bridges.h"
@@ -234,6 +235,70 @@ public:
     QString lastOrderId;
     int lastRating = 0;
     QString lastComment;
+};
+
+// 批次F 扫码页的站点查询桥替身：镜像 StationQueryBridge 的 QML 可见面（请求
+// 记账、回执由测试显式驱动；detail 回执 = stationDetailToMap 同形——站字段
+// 平铺 + chargers 列表）。
+class FakeStationQueryBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE void search(const QString& keyword = QString())
+    {
+        ++searchCalls;
+        lastKeyword = keyword;
+    }
+    Q_INVOKABLE void fetchDetailById(qint64 stationId, int distanceMeters = -1)
+    {
+        ++detailCalls;
+        lastDetailStationId = stationId;
+        lastDetailDistance = distanceMeters;
+    }
+    Q_INVOKABLE bool isQueryPending() const { return false; }
+
+    void emitStations(const QVariantList& rows) { emit querySucceeded(rows); }
+    void emitQueryFailure(const QString& message) { emit queryFailed(message); }
+    void emitDetail(const QVariantMap& detail) { emit detailSucceeded(detail); }
+    void emitDetailFailure(const QString& message) { emit detailFailed(message); }
+
+signals:
+    void queryStarted();
+    void querySucceeded(const QVariantList& stations);
+    void queryFailed(const QString& message);
+    void detailStarted();
+    void detailSucceeded(const QVariantMap& detail);
+    void detailFailed(const QString& message);
+
+public:
+    int searchCalls = 0;
+    int detailCalls = 0;
+    QString lastKeyword;
+    qint64 lastDetailStationId = 0;
+    int lastDetailDistance = 0;
+};
+
+// 批次F 车辆桥替身：vehicles() 可控列表（准入门第一读数）。无
+// activeReservationCount 法 → 页面 call() 失败返回 -1，名额门放行。
+class FakeVehicleBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE QVariantList vehicles() const { return vehicles_; }
+    void setVehicleCount(int n)
+    {
+        vehicles_.clear();
+        for (int i = 0; i < n; ++i) {
+            vehicles_.push_back(QVariantMap{
+                {QStringLiteral("id"), i + 1},
+                {QStringLiteral("plate"), QStringLiteral("粤B·1000%1").arg(i + 1)}});
+        }
+    }
+
+private:
+    QVariantList vehicles_;
 };
 
 } // namespace
@@ -947,6 +1012,185 @@ private slots:
         QCOMPARE(app.currentUser().value(QStringLiteral("balanceCents")).toLongLong(),
                  paidAfter);                 // 顶栏绑定源立即一致
         QVERIFY(userSpy.count() >= 1);        // userChanged 已广播（TopNavBar 重绑）
+    }
+
+    // 批次F 扫码页 × 桥替身全状态机：入场拉站、速选码→detail 取首台空闲桩、
+    // 手输 CHG://站/桩 精确匹配、准入门（车辆 0 拦 / 1 放行组 8 字段 arg）、
+    // 非法码本地判 miss 不发请求。
+    void scanPageReserveFlowOnBridgeFake()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QObject reservations;   // 无 activeReservationCount → 名额门 -1 放行
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        engine.rootContext()->setContextProperty(QStringLiteral("reservationService"),
+                                                 &reservations);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(query.searchCalls, 1);
+
+        query.emitStations({
+            QVariantMap{{QStringLiteral("id"), 5LL},
+                        {QStringLiteral("name"), QStringLiteral("后海城市广场站")},
+                        {QStringLiteral("priceCentsPerKwh"), 105},
+                        {QStringLiteral("distanceMeters"), 3200}},
+            QVariantMap{{QStringLiteral("id"), 6LL},
+                        {QStringLiteral("name"), QStringLiteral("西丽湖临时站")},
+                        {QStringLiteral("priceCentsPerKwh"), 92},
+                        {QStringLiteral("distanceMeters"), 3800}}});
+        QCOMPARE(page->property("stations").toList().size(), 2);
+
+        // 速选第二站（index 1）→ detail 平铺形 + chargers（首台故障、次台空闲）
+        QMetaObject::invokeMethod(page, "scanStation", Q_ARG(QVariant, 1));
+        QCOMPARE(query.detailCalls, 1);
+        QCOMPARE(query.lastDetailStationId, 6LL);
+        QCOMPARE(query.lastDetailDistance, 3800);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("searching"));
+        query.emitDetail(QVariantMap{
+            {QStringLiteral("id"), 6LL},
+            {QStringLiteral("name"), QStringLiteral("西丽湖临时站")},
+            {QStringLiteral("priceCentsPerKwh"), 92},
+            {QStringLiteral("distanceMeters"), 3800},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 61}, {QStringLiteral("code"), QStringLiteral("L01")},
+                            {QStringLiteral("type"), QStringLiteral("slow")},
+                            {QStringLiteral("powerWatts"), 7000}, {QStringLiteral("status"), QStringLiteral("fault")}},
+                QVariantMap{{QStringLiteral("id"), 62}, {QStringLiteral("code"), QStringLiteral("L02")},
+                            {QStringLiteral("type"), QStringLiteral("fast")},
+                            {QStringLiteral("powerWatts"), 120000}, {QStringLiteral("status"), QStringLiteral("available")}}}}});
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("found"));
+        QVERIFY(!page->property("reqActive").toBool());
+        QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("code")).toString(),
+                 QStringLiteral("L02"));   // 跳过故障桩取首台空闲
+
+        // 准入门：车辆 0 拦下（arg 不落）；补 1 台车后组 ReservationConfirm 同款形。
+        QMetaObject::invokeMethod(page, "reserveNow");
+        QVERIFY(page->property("reserveArg").toMap().isEmpty());
+        vehicles.setVehicleCount(1);
+        QMetaObject::invokeMethod(page, "reserveNow");
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("6"));
+        QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
+                 QStringLiteral("西丽湖临时站"));
+        QCOMPARE(arg.value(QStringLiteral("chargerCode")).toString(), QStringLiteral("L02"));
+        QCOMPARE(arg.value(QStringLiteral("chargerType")).toString(), QStringLiteral("fast"));
+        QCOMPARE(arg.value(QStringLiteral("chargerPowerWatts")).toInt(), 120000);
+        QCOMPARE(arg.value(QStringLiteral("priceCentsPerKwh")).toInt(), 92);
+        QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), 3800);
+        QCOMPARE(arg.value(QStringLiteral("chargerId")).toInt(), 62);
+
+        // 手输：非法码本地 miss 不发请求；CHG://站/桩 精确取桩（不走"首台空闲"）。
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("abc")));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QCOMPARE(query.detailCalls, 1);
+
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("CHG://1/7")));
+        QCOMPARE(query.detailCalls, 2);
+        QCOMPARE(query.lastDetailStationId, 1LL);
+        query.emitDetail(QVariantMap{
+            {QStringLiteral("id"), 1LL},
+            {QStringLiteral("name"), QStringLiteral("科技园充电驿站")},
+            {QStringLiteral("priceCentsPerKwh"), 120},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 7}, {QStringLiteral("code"), QStringLiteral("K07")},
+                            {QStringLiteral("type"), QStringLiteral("fast")},
+                            {QStringLiteral("powerWatts"), 180000}, {QStringLiteral("status"), QStringLiteral("charging")}}}}});
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("found"));
+        // 码上桩占用中：可展示但预约门拦下（arg 不更新——保留上一份 6/L02）。
+        QMetaObject::invokeMethod(page, "reserveNow");
+        QCOMPARE(page->property("reserveArg").toMap().value(QStringLiteral("chargerCode")).toString(),
+                 QStringLiteral("L02"));
+    }
+
+    // 批次F 扫码页失败面：查询失败解锁、detail 失败 miss、站无空闲桩 miss、
+    // 码上桩不存在 miss。
+    void scanPageMissPaths()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+
+        query.emitQueryFailure(QStringLiteral("站点查询服务暂时不可用"));
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(page->property("loadedOnce").toBool());
+
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("99")));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("searching"));
+        query.emitDetailFailure(QStringLiteral("未找到该站点信息"));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QCOMPARE(page->property("failMessage").toString(),
+                 QStringLiteral("未找到该站点信息"));
+
+        // 全占用站 + 未指定桩 → "暂无空闲"；指定不存在的桩 → "不存在或已下线"。
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("2")));
+        const QVariantMap busyOnly{
+            {QStringLiteral("id"), 2LL},
+            {QStringLiteral("name"), QStringLiteral("深大北门超充站")},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 21}, {QStringLiteral("status"), QStringLiteral("charging")}}}}};
+        query.emitDetail(busyOnly);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QVERIFY(page->property("failMessage").toString().contains(
+            QStringLiteral("暂无空闲")));
+
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("CHG://2/99")));
+        query.emitDetail(busyOnly);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QVERIFY(page->property("failMessage").toString().contains(
+            QStringLiteral("不存在")));
+    }
+
+    // 批次F 真桥端到端：真 StationQueryService(mock 站表) + 真 StationQueryBridge
+    // 挂 ScanPage——入场自拉 6 站，速选科技园站命中空闲桩并组成预约 arg。
+    void scanPageEndToEndOnMockStationChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        charging::client::services::station::StationQueryService service;
+        charging::qml::StationQueryBridge bridge(&service);
+        FakeVehicleBridge vehicles;
+        vehicles.setVehicleCount(1);
+        QObject reservations;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &bridge);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        engine.rootContext()->setContextProperty(QStringLiteral("reservationService"),
+                                                 &reservations);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            page->property("stations").toList().size(), 6, 4000);
+
+        QMetaObject::invokeMethod(page, "scanStation", Q_ARG(QVariant, 0));  // 站1：3 空闲
+        QTRY_COMPARE_WITH_TIMEOUT(page->property("phase").toString(),
+                                  QStringLiteral("found"), 4000);
+        QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("status")).toString(),
+                 QStringLiteral("available"));
+        QMetaObject::invokeMethod(page, "reserveNow");
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("1"));
+        QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
+                 QStringLiteral("科技园充电驿站"));
+        QVERIFY(!arg.value(QStringLiteral("chargerCode")).toString().isEmpty());
     }
 };
 

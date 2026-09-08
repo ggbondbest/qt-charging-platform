@@ -417,8 +417,9 @@ Item {
                     width: parent.width
                     variant: "secondary"
                     text: "模拟扫码（demo）"
-                    // TODO(contract): scan-start protocol undefined; keep demo honest.
-                    onClicked: if (App) App.showToast("扫码启动协议未定，走 mock 预约流程（TODO(contract)）", "info")
+                    // 批次F：mock 扫码页落地（ScanPage），真扫码通道仍 TODO(contract)
+                    // ——届时 ScanPage 的 scanSource 接缝切换为摄像头通道。
+                    onClicked: if (App) App.navigate("scan")
                 }
 
                 // Pending-payment — compact reminder ROW (widgets buildPaymentCard
