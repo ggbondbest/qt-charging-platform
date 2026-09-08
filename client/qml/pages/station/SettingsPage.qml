@@ -5,7 +5,7 @@ import "StationState.js" as StationState
 
 // QML twin of widgets SettingsPage (objectName "settingsPage").
 // 三模块卡：🔐账号安全（二级密码设置/修改 + 保护开关三态提示）、
-// 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 可选车辆说明；预约不再强制车辆），
+// 🚗车辆管理（列表 + 添加/编辑/删除/设为默认 + 名额提示）、
 // 🔔通知与提醒（三 Switch ↔ settingsService.notificationEnabled）。
 // 双通道：服务 invokable 可读时以服务为准；桥缺位期落 StationState（.pragma
 // library 跨页会话库）——因此密码/车辆/开关在页间往返不丢。
@@ -140,7 +140,7 @@ Item {
                     Text {
                         objectName: "vehiclesEmptyLabel"
                         visible: page.vehicles.length === 0
-                        text: "暂无车辆（预约可不绑定车辆）"
+                        text: "暂无车辆，预约需先添加车辆"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                     Repeater {
@@ -201,8 +201,9 @@ Item {
                         objectName: "settingsCaptionLabel"
                         width: parent.width; wrapMode: Text.WordWrap
                         text: page.vehicles.length === 0
-                              ? "车辆为可选项：不添加车辆也可直接发起预约，绑定后下单默认选用"
-                              : "当前 " + page.vehicles.length + " 辆车 · 预约时可不绑定；绑定车辆的预约按所选车牌下单"
+                              ? "当前 0 辆车 → 无法发起预约；添加车辆后即可预约"
+                              : "当前 " + page.vehicles.length + " 辆车 → 最多可同时持有 "
+                                + page.vehicles.length + " 个有效预约时段（每辆 1 个）"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                 }
@@ -314,20 +315,20 @@ Item {
             spacing: P.Style.spaceSm
             Text { text: passwordDialog.changing ? "修改二级保护密码" : "设置二级保护密码"
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
-            TextField {
+            P.TextField {
                 id: oldField
                 objectName: "currentPasswordEdit"
                 width: parent.width; visible: passwordDialog.changing
                 placeholderText: "当前密码"
                 echoMode: TextInput.Password
             }
-            TextField {
+            P.TextField {
                 id: newField
                 objectName: "newPasswordEdit"
                 width: parent.width; placeholderText: "新密码（至少 4 位）"
                 echoMode: TextInput.Password
             }
-            TextField {
+            P.TextField {
                 id: confirmField
                 objectName: "confirmPasswordEdit"
                 width: parent.width; placeholderText: "再次输入新密码"
@@ -410,14 +411,14 @@ Item {
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
             Text { width: parent.width; wrapMode: Text.WordWrap
                 text: "车牌号码"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-            TextField { id: plateField; objectName: "vehiclePlateEdit"
+            P.TextField { id: plateField; objectName: "vehiclePlateEdit"
                 width: parent.width; placeholderText: "如：粤B·DA1234" }
             Text { width: parent.width; text: "品牌型号"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-            TextField { id: brandField; objectName: "vehicleBrandEdit"
+            P.TextField { id: brandField; objectName: "vehicleBrandEdit"
                 width: parent.width; placeholderText: "如：比亚迪 汉 EV" }
             Text { width: parent.width; text: "电池容量（kWh）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
             // widgets 为 QSpinBox；QML 无同名控件，TextField+IntValidator 等价位（锚点名沿用 spin）。
-            TextField { id: batteryField; objectName: "vehicleBatterySpin"
+            P.TextField { id: batteryField; objectName: "vehicleBatterySpin"
                 width: parent.width; placeholderText: "如：65"
                 validator: IntValidator { bottom: 1; top: 500 } }
             Text { width: parent.width; text: "接口类型"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }

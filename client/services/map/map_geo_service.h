@@ -24,7 +24,7 @@ struct LatLng
 // 接口失败分类：页面兜底文案与提示按类型区分（密钥无效 / 网络不通 / 限流）。
 enum class MapError {
     None,
-    NoApiKey,     // env 权威无值且配置文件缺 key（不发起任何请求）
+    NoApiKey,     // 环境变量未提供非空 key（不发起任何请求）
     Network,      // DNS/连接/SSL 等传输层失败
     Timeout,      // 请求超时无响应
     RateLimited,  // 短时限流（status 120、HTTP 429）
@@ -66,17 +66,14 @@ struct RouteResult
 // 腾讯地图 WebService 请求工具类（成员 2，任务 #17 地图接入）。
 //
 // 设计口径（队友操作指引）：
-// - 密钥解析三级（2026-09-08 用户拍板演示 key 入库）：
-//   ① 环境变量 TENCENT_MAP_API_KEY / 旧名 CHARGING_TENCENT_MAP_KEY **任一已定义
-//   （含空值）** → env 权威：按原链取值，空 = 无 key；CI/测试据此与真实网络绝缘；
-//   ② 两变量都未定义 → 回退读 git 托管配置 client/config/map_services.json
-//   （编译期宏 CHARGING_MAP_CONFIG_FILE 注入路径，缺宏/读失败静默 = 无 key）；
-//   拉代码即测，无需手动 export。
+// - 密钥只读取环境变量 TENCENT_MAP_API_KEY / 旧名 CHARGING_TENCENT_MAP_KEY；
+//   不读取仓库或用户目录中的配置文件，不内置共享 Key，不自动选择演示密钥。
+//   生产请求端点固定为 https://apis.map.qq.com/ws，配置文件不能重定向凭证。
 //   若控制台开启签名校验，另配 TENCENT_MAP_SECRET_KEY（旧名
 //   CHARGING_TENCENT_MAP_SECRET，SK），本类自动
 //   按官方规则附带 sig 参数。无 key 时**不发起任何请求**，异步回
-//   NoApiKey，由页面走模拟数据兜底——兜底策略归消费方（确认页推荐时段 /
-//   导航页模拟路线），本类只报告成败，不含预约业务语义。密钥与 URL 零打印。
+//   NoApiKey，正式页面显示配置提示，不生成模拟定位或路线。本类只报告成败，
+//   不含预约业务语义。密钥与 URL 零打印。
 // - 接口对：距离矩阵 ws/distance/v1/matrix（用户→站点行驶距离/时长，
 //   供预约推荐时段）；驾车路线规划 ws/direction/v1/driving（导航页路线，
 //   真实响应结构 result.routes[0]）；步行路线 ws/direction/v1/walking；
@@ -95,18 +92,16 @@ public:
     // 读环境变量并 trim（不落日志）：TENCENT_MAP_API_KEY 优先，
     // 兼容旧名 CHARGING_TENCENT_MAP_KEY。
     static QString apiKeyFromEnvironment();
-    // 环境变量是否"已定义即权威"（任一名字 set 即为真，含空值）：
-    // true → 完全走 env 链，不读配置文件；测试隔离锚。
+    // 兼容存在性查询：任一环境变量名已定义即为真，含空值。
+    // 不再参与配置来源选择：不论返回值为何，环境都是唯一 Key 来源。
     static bool environmentKeyAuthoritative();
-    // 读 git 托管配置文件（QFile+QJsonDocument，失败静默返回空）：
-    // key = "tencentMapKey"；configPath 传空 = 用编译期宏路径。
+    // 仅保留源码兼容；不读文件，始终返回空字符串。
     static QString apiKeyFromConfigFile(const QString& configPath = QString());
     static QString baseUrlFromConfigFile(const QString& configPath = QString());
-    // 三级合一解析（构造期唯一入口；configPath 显式传入仅供单测临时文件）：
-    // env 权威 → env 链；否则 → 配置文件。两函数共用同一判据，不矛盾。
+    // 兼容旧调用方：忽略 configPath，分别返回环境 Key 和固定官方端点。
     static QString resolveApiKey(const QString& configPath = QString());
     static QString resolveBaseUrl(const QString& configPath = QString());
-    bool hasUsableKey() const;              // 构造时缓存；false = 纯模拟模式
+    bool hasUsableKey() const;              // 构造时缓存；false = 未配置，禁止联网请求
 
     // 用户（出发）位置：与站点地图面板同口径的南山区演示中心；
     // 真实定位能力就绪后经 setUserLocation 注入，页面零改动。
@@ -139,7 +134,7 @@ public:
     // markerPairs={latitude,longitude,label} 画标记——label 仅收单 ASCII 字母数字，
     // 中文语义 起→A/终→B（v2 实测 348 红线，详见 .cpp 活体二分注记）。
     // 成功后 qmlStaticMapReady 带临时文件路径（Image.source 直挂）；
-    // 失败/无 key 走 qmlStaticMapError，页面回落 Canvas 示意底。
+    // 失败/无 key 走 qmlStaticMapError；正式页面不能把示意图当作请求成功。
     Q_INVOKABLE quint64 requestStaticMap(double centerLat, double centerLng, int zoom,
                                          int width, int height,
                                          const QVariantList& routePairs,

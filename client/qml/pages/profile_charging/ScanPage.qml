@@ -92,33 +92,31 @@ Item {
         stationQueryService.fetchDetailById(stationId, cached ? (cached.distanceMeters || -1) : -1)
     }
     function reserveNow() {
-        if (page.phase !== "found") return
+        if (page.phase !== "found" || page.reqActive) return
         if (!App || !App.loggedIn) {
             if (App) { App.showToast("请先登录再发起预约", "warning"); App.navigate("login") }
             return
         }
+        if (App.checkingOrders) return
         if (String(page.foundCharger.status).toLowerCase() !== "available") {
             if (App) App.showToast("仅空闲充电桩可预约", "warning")
             return
         }
-        if (vehicleCount() === 0) {
-            if (App) { App.showToast("请先在「设置 - 车辆管理」添加车辆", "warning")
-                       App.navigate("settings") }
-            return
-        }
-        const act = activeReservationCount()
-        if (act >= 0 && act >= vehicleCount()) {
-            if (App) App.showToast("可预约名额已全部占用（名额 = 车辆数）", "warning")
-            return
-        }
+        // 与站点详情共用服务器未完成订单检查；真实预约不以本地车辆数为名额。
         const s = page.foundStation
         const c = page.foundCharger
         page.reserveArg = {
-            stationId: s.id, stationName: s.name,
-            priceCentsPerKwh: s.priceCentsPerKwh, distanceMeters: s.distanceMeters,
-            chargerId: c.id, chargerCode: c.code,
+            stationId: String(s.id), stationName: s.name,
+            priceCentsPerKwh: s.priceCentsPerKwh,
+            distanceMeters: s.distanceMeters === undefined ? -1 : s.distanceMeters,
+            stationLatitude: s.latitude, stationLongitude: s.longitude,
+            hasStationLocation: typeof s.latitude === "number" && isFinite(s.latitude)
+                && s.latitude >= -90 && s.latitude <= 90
+                && typeof s.longitude === "number" && isFinite(s.longitude)
+                && s.longitude >= -180 && s.longitude <= 180,
+            chargerId: String(c.id), chargerCode: c.code,
             chargerType: c.type, chargerPowerWatts: c.powerWatts }
-        if (App) App.navigate("reservation_confirm", page.reserveArg)
+        App.checkBeforeReservation(page.reserveArg)
     }
     function statusText(st) {
         return ({ available: "空闲", charging: "占用·充电中", reserved: "占用·已预约",
@@ -243,7 +241,7 @@ Item {
         Row {
             width: listScroll.width
             spacing: P.Style.spaceSm
-            TextField {
+            P.TextField {
                 id: codeField
                 objectName: "uiScanCodeEdit"
                 width: parent.width - scanGoButton.implicitWidth - parent.spacing

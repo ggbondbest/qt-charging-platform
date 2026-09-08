@@ -1,13 +1,12 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Layouts
 import "../../platform" as P
 
 // QML twin of widgets StationDetailPage (objectName "stationDetailPage" kept).
 // arg = 列表页点击卡片带来的 map：{id, name, address, priceCentsPerKwh, distanceMeters, status}。
 // 进页 fetchDetailById（struct 参数版 QML 过不去 → 新桥方法，TODO(contract)）；
-// 桩卡彩签/故障红框按 widgets 同语义直译。
-// 2026-09-08 业务变更：预约准入从"三重门（车辆/名额/每车唯一）"改为
-// "空闲桩 → 登录 → 无充电中订单"；车辆不再强制（widgets 孪生本轮未跟改）。
+// 桩卡彩签/故障红框/预约三重准入均按 widgets 同语义直译。
 Item {
     id: page
     objectName: "stationDetailPage"
@@ -25,7 +24,6 @@ Item {
     property bool detailFailed: false
     property string failMessage: ""
     property var chargers: []
-    property bool demo: false
 
     function money(c) { return (c / 100).toFixed(2) }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
@@ -46,11 +44,15 @@ Item {
     }
 
     function fetch() {
-        if (!stationQueryService || !station.id) return
+        if (!stationQueryService || !station.id) {
+            detailLoading = false; detailLoaded = false; detailFailed = true
+            failMessage = "缺少有效电站信息，请返回首页重新选择"
+            return
+        }
         detailLoading = true; detailFailed = false
         // TODO(contract): struct 参数 fetchDetail(Station,int) QML 不可达，
         //                桥补 fetchDetailById(int stationId, int distanceMeters)。
-        try { stationQueryService.fetchDetailById(station.id, station.distanceMeters || -1) }
+        try { stationQueryService.fetchDetailById(station.id, station.distanceMeters === undefined ? -1 : station.distanceMeters) }
         catch (e) {
             detailLoading = false; detailLoaded = false; detailFailed = true
             failMessage = "站点详情服务不可用，请重新登录后重试"
@@ -64,7 +66,6 @@ Item {
             const incoming = detail && detail.station ? detail.station : detail
             if (!incoming || String(incoming.id) !== String(page.station.id)) return
             page.detailLoading = false; page.detailLoaded = true; page.detailFailed = false
-            page.demo = false                       // 真数据到位，演示桩位退位
             // 桥 map 形状：{station…, distanceMeters, chargers[], hasChargerData}；
             // 兼容 station 子对象与拍平两种形状（TODO(contract) 成员3 定形）。
             const src = (detail && detail.station) ? detail.station : (detail || {})
@@ -78,36 +79,16 @@ Item {
             page.failMessage = message
         }
     }
-    Component.onCompleted: { fetch(); refreshChargingBusy() }
+    Component.onCompleted: fetch()
 
-    // ---- 预约准入（2026-09-08 新口径）：空闲桩 → 登录 → 无"正在充电"订单 ----
-    // 车辆强制/名额=车辆数/每车唯一三道旧门已随业务变更移除；充电中拦截
-    // 数据源 = orderService.fetchOrders("charging",1)（Filter::Charging 转发）。
-    property bool chargingBusy: false
-    function refreshChargingBusy() {
-        // 桥缺位/在途丢弃：默认放行（与旧 activeReservationCount()==-1 放行同口径）。
-        try { orderService.fetchOrders("charging", 1) } catch (e) {}
-    }
-    Connections {
-        target: orderService
-        function onOrdersLoaded(orders, total, hasMore) {
-            // 本页只订"charging"过滤一页；桥在途守卫可能吞并发请求，
-            // 故仅接受非空即真、空列表才判假（保守拦截偏放行）。
-            page.chargingBusy = (orders || []).length > 0 || (total || 0) > 0
-        }
-    }
     function requestReserve(charger) {
+        if (!isActive() || detailLoading || detailFailed || (App && App.checkingUnfinishedOrder)) return
         if (String(charger.status).toLowerCase() !== "available") {
             if (App) App.showToast("仅空闲充电桩可预约", "warning")
             return
         }
         if (!(App && App.loggedIn)) {
             if (App) { App.showToast("请先登录再发起预约", "warning"); App.navigate("login") }
-            return
-        }
-        if (page.chargingBusy) {              // 新门：有车辆正在充电 → 不可再约
-            chargingBusyPrompt.open()
-            refreshChargingBusy()             // 顺手刷新，防陈旧态挡门
             return
         }
         if (App) App.checkBeforeReservation({
@@ -120,51 +101,20 @@ Item {
             chargerType: charger.type, chargerPowerWatts: charger.powerWatts })
     }
 
-    // 充电中拦截引导（旧 vehicleRequiredPrompt/unfinishedReservationPrompt 两弹层
-    // 随车辆门移除；本弹层接替其"去查看"职能 → 充电 tab）
-    Popup {
-        id: chargingBusyPrompt
-        objectName: "chargingBusyPrompt"
-        modal: true
-        anchors.centerIn: parent
-        width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
-        padding: P.Style.spaceLg
-        background: Rectangle {
-            radius: P.Style.radiusLg; color: P.Style.surface
-            border.color: P.Style.line; border.width: 1
-        }
-        Column {
-            width: parent.width
-            spacing: P.Style.spaceMd
-            Text { width: parent.width; wrapMode: Text.WordWrap
-                text: "无法发起新预约"
-                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
-            Text { width: parent.width; wrapMode: Text.WordWrap
-                text: "您有车辆正在充电中，暂无法发起新预约"
-                font.pixelSize: P.Style.fontMd; color: P.Style.muted }
-            Row {
-                width: parent.width
-                spacing: P.Style.spaceSm
-                P.ActionButton {
-                    variant: "ghost"; text: "知道了"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: chargingBusyPrompt.close()
-                }
-                P.ActionButton {
-                    objectName: "chargingBusyGoButton"
-                    variant: "primary"; text: "去查看"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: { chargingBusyPrompt.close(); if (App) App.navigate("charging") }
-                }
-            }
-        }
-    }
-
-    Column {
+    ListView {
+        id: chargerList
+        objectName: "chargerList"
+        model: page.chargers
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { }
         anchors.fill: parent
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
-        // 头卡用列表传来的 arg 即出（不等详情桥）；桩区单独走状态门。
+        header: Column {
+        width: chargerList.width
+        spacing: P.Style.spaceMd
+        // Station information scrolls with chargers on compact windows.
 
         // 页面标题（widgets titleLabel "站点详情" 同位）
         Text {
@@ -225,12 +175,12 @@ Item {
             objectName: "detailOfflineBanner"
             visible: !isActive()
             width: parent.width
-            height: 34
+            height: offlineText.implicitHeight + 20
             radius: P.Style.radiusSm
             color: P.Style.warningSoft
             Text {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left; anchors.leftMargin: P.Style.spaceMd
+                id: offlineText
+                anchors.centerIn: parent; width: parent.width - 24; wrapMode: Text.Wrap
                 text: "⚠️ 该站点当前处于离线状态，暂不可用，请稍后再试或选择其他站点"
                 font.pixelSize: P.Style.fontSm; color: P.Style.ink
             }
@@ -244,7 +194,7 @@ Item {
             height: 120
             glyph: "⏳"
             title: "正在加载充电桩列表…"
-            description: "详情桥补全后展示桩位与预约入口"
+            description: "正在查询电站的实时桩位状态"
             actionText: ""
         }
         P.NoticePanel {
@@ -267,70 +217,60 @@ Item {
             text: (chargers.length > 0
                    ? "充电桩（空闲 " + availableCount() + " / 共 " + chargers.length + "）"
                    : "充电桩")
-                  + (page.demo ? " · 演示数据（详情桥未就绪，接入后自动替换）" : "")
+
             font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
         }
 
-        // 桩列表（故障红框 = 原属性选择器的绑定化）
-        ListView {
-            id: chargerList
-            objectName: "chargerList"
-            width: parent.width
-            height: parent.height - y
-            clip: true
-            spacing: P.Style.spaceSm
-            model: page.chargers
-            visible: chargers.length > 0
+        Item { width: 1; height: P.Style.spaceSm }
+        }
             delegate: P.Card {
                 objectName: "chargerCard"
                 width: chargerList.width
-                height: 96
                 border.color: String(modelData.status).toLowerCase() === "fault"
                                ? P.Style.danger : P.Style.line
                 border.width: String(modelData.status).toLowerCase() === "fault" ? 2 : 1
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceXs
-                    Row {
+                    RowLayout {
                         width: parent.width
                         Text {
-                            width: parent.width - 96
+                            Layout.fillWidth: true; Layout.minimumWidth: 0
+                            elide: Text.ElideRight
                             text: modelData.code
                             font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink
                         }
                         P.StatusTag {
                             objectName: "chargerStatusTag"
-                            anchors.verticalCenter: parent.verticalCenter
                             tone: page.statusTone(modelData.status)
                             text: page.statusText(modelData.status)
                         }
                     }
-                    Row {
+                    RowLayout {
                         width: parent.width
                         spacing: P.Style.spaceMd
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
+                            Layout.fillWidth: true; wrapMode: Text.Wrap
                             text: (String(modelData.type).toLowerCase() === "fast"
                                    ? "直流快充 " : "交流慢充 ")
                                   + Math.round((modelData.powerWatts || 0) / 1000) + " kW"
                             font.pixelSize: P.Style.fontSm; color: P.Style.muted
                         }
-                        Item { width: parent.width - 200; height: 1 }
                         P.ActionButton {
                             objectName: "detailReserveButton"
-                            anchors.verticalCenter: parent.verticalCenter
                             variant: "primary"
                             text: "预约"
-                            enabled: String(modelData.status).toLowerCase() === "available"
+                            enabled: page.isActive() && !page.detailLoading && !page.detailFailed
+                                     && !(App && App.checkingUnfinishedOrder)
+                                     && String(modelData.status).toLowerCase() === "available"
                             onClicked: page.requestReserve(modelData)
                         }
                     }
                 }
             }
-        }
 
         // 站点正常但无桩
-        P.NoticePanel {
+        footer: P.NoticePanel {
             objectName: "detailChargerEmptyNotice"
             visible: page.detailLoaded && chargers.length === 0
             width: parent.width

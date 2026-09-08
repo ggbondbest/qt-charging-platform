@@ -49,7 +49,7 @@ Item {
                 width: parent.width
                 spacing: P.Style.spaceMd
                 Text { text: "充值金额（元）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-                TextField {
+                P.TextField {
                     id: amountField
                     objectName: "rechargeAmountField"
                     width: parent.width

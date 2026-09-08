@@ -8,7 +8,7 @@
 namespace charging::qml {
 
 // QML owns no coordinates or route simulation: this bridge exposes Tencent
-// results and an explicitly selected, simulated GPS origin.
+// results and an explicitly selected address origin (not device GPS).
 class MapBridge final : public QObject
 {
     Q_OBJECT

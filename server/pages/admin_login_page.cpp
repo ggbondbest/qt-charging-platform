@@ -1,4 +1,5 @@
 #include "admin_login_page.h"
+#include "management_page_widgets.h"
 
 #include <QCheckBox>
 #include <QEasingCurve>
@@ -14,6 +15,7 @@
 #include <QPropertyAnimation>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QRadialGradient>
 #include <QSettings>
 #include <QStringList>
@@ -507,6 +509,7 @@ QFrame* createInputShell(QLineEdit* lineEdit, const QString& iconText, QWidget* 
 
 AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
 {
+    applyManagementLightPalette(this);
     setObjectName(QStringLiteral("adminLoginPage"));
     setStyleSheet(QStringLiteral(
         "QWidget#adminLoginPage { background:qlineargradient(x1:0, y1:0, x2:1, y2:1,"
@@ -516,8 +519,12 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
         "QFrame#loginBrandPanel { background:qlineargradient(x1:0, y1:0, x2:1, y2:1,"
         " stop:0 #1376e8, stop:0.54 #198fe9, stop:1 #4ccdde); }"
         "QFrame#loginInputShell { background:#ffffff; border:1px solid #d6e0ef; border-radius:9px; min-height:50px; }"
-        "QLineEdit#loginInput { background:transparent; border:none; color:#1e3152; font-size:15px; min-height:48px; }"
-        "QLineEdit#loginInput:focus { border:none; }"
+        // Inputs retain stable object names for authentication and UI tests.
+        // Match their containing shell instead of the old, overwritten name.
+        "QFrame#loginInputShell QLineEdit { background:transparent; border:none; color:#1e3152;"
+        " selection-background-color:#eaf3ff; selection-color:#1e3152; font-size:15px; min-height:48px; }"
+        "QFrame#loginInputShell QLineEdit:focus { border:none; }"
+        "QFrame#loginInputShell QLineEdit:disabled { color:#8995a7; }"
         "QCheckBox { color:#5f7190; font-size:14px; spacing:8px; }"
         "QCheckBox::indicator { width:19px; height:19px; border:1px solid #9aacc6; border-radius:4px; background:#ffffff; }"
         "QCheckBox::indicator:checked { background:#2878f0; border-color:#2878f0; }"
@@ -542,7 +549,7 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
     auto* formPanel = new QFrame(surface);
     formPanel->setObjectName(QStringLiteral("loginFormPanel"));
     auto* formPanelLayout = new QVBoxLayout(formPanel);
-    formPanelLayout->setContentsMargins(66, 44, 66, 34);
+    formPanelLayout->setContentsMargins(40, 36, 40, 26);
     auto* card = new QFrame(formPanel);
     card->setMaximumWidth(430);
     auto* cardLayout = new QVBoxLayout(card);
@@ -608,6 +615,7 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
     }
     auto* passwordHint = createLabel(tr("密码由管理员统一维护"),
                                      QStringLiteral("color:#2878f0; font-size:13px;"), card);
+    passwordHint->setWordWrap(true);
     accountRow->addWidget(rememberAccountCheckBox_);
     accountRow->addStretch();
     accountRow->addWidget(passwordHint);
@@ -631,23 +639,21 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
     auto* leftLine = new QFrame(card);
     leftLine->setFrameShape(QFrame::HLine);
     leftLine->setStyleSheet(QStringLiteral("color:#e4ebf4;"));
-    auto* dividerText = createLabel(tr("其他登录方式"), QStringLiteral("color:#8b9ab1; font-size:13px;"), card);
+    auto* dividerText = createLabel(tr("安全登录"), QStringLiteral("color:#8b9ab1; font-size:13px;"), card);
     auto* rightLine = new QFrame(card);
     rightLine->setFrameShape(QFrame::HLine);
     rightLine->setStyleSheet(QStringLiteral("color:#e4ebf4;"));
     dividerRow->addWidget(leftLine, 1);
     dividerRow->addWidget(dividerText);
     dividerRow->addWidget(rightLine, 1);
-    auto* ssoHint = createLabel(tr("统一身份登录将在管理员认证服务接入后启用"),
+    auto* ssoHint = createLabel(tr("使用管理员账号登录，操作将按权限执行并记录审计日志。"),
                                 QStringLiteral("color:#637795; font-size:13px;"), card);
     ssoHint->setAlignment(Qt::AlignCenter);
+    ssoHint->setWordWrap(true);
 
-    auto* footerRow = new QHBoxLayout();
+    auto* footerRow = new QVBoxLayout();
     footerRow->setContentsMargins(0, 0, 0, 0);
     footerRow->addWidget(createLabel(tr("© 2026 充电平台运营管理系统 · v1.0.0"),
-                                     QStringLiteral("color:#8b9ab1; font-size:12px;"), card));
-    footerRow->addStretch();
-    footerRow->addWidget(createLabel(tr("帮助中心　|　联系我们"),
                                      QStringLiteral("color:#8b9ab1; font-size:12px;"), card));
 
     cardLayout->addLayout(productRow);
@@ -671,7 +677,8 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
 
     auto* brandPanel = new QFrame(surface);
     brandPanel->setObjectName(QStringLiteral("loginBrandPanel"));
-    brandPanel->setMinimumWidth(570);
+    brandPanel->setMinimumWidth(0);
+    brandPanel_ = brandPanel;
     auto* brandLayout = new QVBoxLayout(brandPanel);
     brandLayout->setContentsMargins(0, 0, 0, 0);
     brandLayout->setSpacing(0);
@@ -683,6 +690,16 @@ AdminLoginPage::AdminLoginPage(QWidget* parent) : QWidget(parent)
     connect(loginButton_, &QPushButton::clicked, this, &AdminLoginPage::handleLoginClicked);
     connect(passwordLineEdit_, &QLineEdit::returnPressed, this,
             &AdminLoginPage::handleLoginClicked);
+}
+
+void AdminLoginPage::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    // Keep the real login form fully usable on the 1024 x 720 acceptance
+    // desktop. The decorative carousel needs a wide canvas and is optional.
+    if (brandPanel_ != nullptr) {
+        brandPanel_->setVisible(width() >= 1200);
+    }
 }
 
 void AdminLoginPage::setBusy(bool busy)

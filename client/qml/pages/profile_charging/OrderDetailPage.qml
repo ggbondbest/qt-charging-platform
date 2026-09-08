@@ -265,7 +265,7 @@ Item {
                             }
                         }
                     }
-                    TextField {
+                    P.TextField {
                         id: ratingCommentField
                         objectName: "uiRatingCommentEdit"
                         width: parent.width

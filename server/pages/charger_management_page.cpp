@@ -183,12 +183,17 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->setFocusPolicy(Qt::NoFocus);
     tableWidget_->setAlternatingRowColors(true);
     tableWidget_->setShowGrid(false);
+    tableWidget_->setWordWrap(false);
     tableWidget_->verticalHeader()->setVisible(false);
     tableWidget_->verticalHeader()->setDefaultSectionSize(46);
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    // The other nine columns can consume all available width. A Stretch-only
+    // station column then collapsed to one character per line on normal
+    // desktop windows. Keep a readable width and let the table scroll.
+    tableWidget_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
+    tableWidget_->setColumnWidth(1, 160);
     tableWidget_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);

@@ -159,7 +159,7 @@ Item {
         }
 
         Text { text: "昵称"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
-        TextField {
+        P.TextField {
             objectName: "uiNicknameEdit"
             enabled: !page.sending
             width: parent.width

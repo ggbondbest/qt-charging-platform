@@ -5,6 +5,8 @@
 
 class QLabel;
 class QCheckBox;
+class QFrame;
+class QResizeEvent;
 class QLineEdit;
 class QPushButton;
 
@@ -24,10 +26,14 @@ public:
 signals:
     void loginSubmitted(const QString& username, const QString& password);
 
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+
 private slots:
     void handleLoginClicked();
 
 private:
+    QFrame* brandPanel_ = nullptr;
     QLineEdit* usernameLineEdit_ = nullptr;
     QLineEdit* passwordLineEdit_ = nullptr;
     QCheckBox* rememberAccountCheckBox_ = nullptr;

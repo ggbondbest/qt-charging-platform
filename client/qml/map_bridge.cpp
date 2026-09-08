@@ -27,9 +27,15 @@ MapBridge::MapBridge(MapGeoService* service, QObject* parent) : QObject(parent),
     connect(service_, &MapGeoService::forwardGeocodeSucceeded, this,
             [this](quint64 id, LatLng point, const QString&) {
         if (id != geocodeRequest_) return;
-        setUserLocation(point.latitude, point.longitude);
+        if (!valid(point.latitude, point.longitude)) return;
+        geocodeRequest_ = 0;
+        cancelRoute();
+        service_->setUserLocation(point);
+        hasLocation_ = true;
+        error_.clear();
         locationLabel_ = requestedAddress_;
         emit locationChanged();
+        emit changed();
     });
     connect(service_, &MapGeoService::forwardGeocodeFailed, this,
             [this](quint64 id, MapError, const QString& message) {
@@ -137,7 +143,9 @@ int MapBridge::distanceMeters(double latitude, double longitude) const
 
 QString MapBridge::mapHtml(const QVariantList& markers) const
 {
-    return hasLocation_ ? html(markers, {}) : QString();
+    // Browsing Dalian is not a GPS fix. Distances/routes still require an
+    // explicitly geocoded origin; no location request runs on page creation.
+    return html(markers, {});
 }
 
 QString MapBridge::html(const QVariantList& markers, const QVariantList& points) const
@@ -150,8 +158,9 @@ QString MapBridge::html(const QVariantList& markers, const QVariantList& points)
     query.addQueryItem(QStringLiteral("v"), QStringLiteral("2.exp"));
     query.addQueryItem(QStringLiteral("key"), key);
     script.setQuery(query);
-    const QVariantMap data{{QStringLiteral("latitude"), latitude()},
-                           {QStringLiteral("longitude"), longitude()},
+    const QVariantMap data{{QStringLiteral("latitude"), hasLocation_ ? latitude() : 38.914},
+                           {QStringLiteral("longitude"), hasLocation_ ? longitude() : 121.614},
+                           {QStringLiteral("hasOrigin"), hasLocation_},
                            {QStringLiteral("markers"), markers},
                            {QStringLiteral("route"), points}};
     // Data comes from the database/API. Never interpolate names as executable JS.
@@ -166,8 +175,14 @@ QString MapBridge::html(const QVariantList& markers, const QVariantList& points)
 <script src="%1" onerror="document.getElementById('error').textContent='腾讯底图加载失败，请检查网络和 TENCENT_MAP_JS_KEY 授权'"></script>
 <script>try{var d=%2;var center=new qq.maps.LatLng(d.latitude,d.longitude);
 var map=new qq.maps.Map(document.getElementById('map'),{center:center,zoom:13,mapTypeControl:false});
-new qq.maps.Marker({position:center,map:map,title:'当前起点'});
-d.markers.forEach(function(s){if(isFinite(s.lat)&&isFinite(s.lng))new qq.maps.Marker({position:new qq.maps.LatLng(s.lat,s.lng),map:map,title:s.label||''});});
+if(d.hasOrigin)new qq.maps.Marker({position:center,map:map,title:'当前起点'});
+var stationBounds=new qq.maps.LatLngBounds(),stationCount=0;
+d.markers.forEach(function(s){if(typeof s.lat==='number'&&typeof s.lng==='number'&&isFinite(s.lat)&&isFinite(s.lng)&&Math.abs(s.lat)<=90&&Math.abs(s.lng)<=180){
+var p=new qq.maps.LatLng(s.lat,s.lng);var marker=new qq.maps.Marker({position:p,map:map,title:s.label||''});
+stationBounds.extend(p);stationCount++;
+qq.maps.event.addListener(marker,'click',function(){window.location.href='charging-station://select/'+encodeURIComponent(String(s.id));});}});
+if(stationCount>1&&!d.hasOrigin)map.fitBounds(stationBounds);
+else if(stationCount===1&&!d.hasOrigin)map.setCenter(stationBounds.getCenter());
 if(d.route.length>1){var path=d.route.map(function(p){return new qq.maps.LatLng(p[0],p[1]);});
 new qq.maps.Polyline({map:map,path:path,strokeColor:'#00B578',strokeWeight:6,strokeOpacity:0.9});
 new qq.maps.Marker({position:path[path.length-1],map:map,title:'目标电站'});

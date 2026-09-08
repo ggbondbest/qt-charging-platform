@@ -16,7 +16,7 @@ Button {
     property bool selected: false      // chip 选中态（排序/tab/筛选 chips 用）
     objectName: "actionButton_" + (text || "")
 
-    implicitHeight: 44
+    implicitHeight: Math.max(44, implicitContentHeight + topPadding + bottomPadding)
     leftPadding: Style.spaceLg
     rightPadding: Style.spaceLg
     topPadding: Style.spaceSm
@@ -28,7 +28,7 @@ Button {
             "secondary": "#B7BFC9", "ghost": Style.faint, "chip": "#B7BFC9",
             "logout": "#FDF3F3"
         })[variant] || Style.faint : ({
-        "primary": Style.surface, "danger": Style.surface,
+        "primary": "#FFFFFF", "danger": "#FFFFFF",
         "secondary": Style.ink, "ghost": Style.ink,
         "chip": root.selected ? Style.brandDeep : Style.ink,
         "logout": Style.danger
@@ -67,6 +67,7 @@ Button {
         color: root.fg
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+        elide: Text.ElideRight
     }
     background: Rectangle {
         radius: root.rad

@@ -1,3 +1,10 @@
+add_executable(test_admin_ui_presentation tst_admin_ui_presentation.cpp)
+target_link_libraries(test_admin_ui_presentation PRIVATE
+    ChargingPlatform::ServerPages ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME admin_ui_presentation COMMAND test_admin_ui_presentation)
+set_tests_properties(admin_ui_presentation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+
 add_executable(test_delivery_admin_pages tst_delivery_admin_pages.cpp)
 target_link_libraries(test_delivery_admin_pages PRIVATE
     ChargingPlatform::ServerPages
@@ -502,6 +509,31 @@ set_tests_properties(map_geocoding_recovery PROPERTIES TIMEOUT 30
 # Same gate as client/qml — configure stays byte-identical without the Qt
 # Quick declarative packages, so the existing CI is unaffected either way.
 if(CHARGING_HAS_QML)
+add_executable(test_qml_map_views tst_qml_map_views.cpp)
+target_compile_definitions(test_qml_map_views PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_map_views PRIVATE
+    Qt6::Test Qt6::Quick Qt6::QuickControls2 Qt6::WebEngineQuick)
+add_test(NAME qml_map_views COMMAND test_qml_map_views)
+set_tests_properties(qml_map_views PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
+
+add_executable(test_qml_navigation_page tst_qml_navigation_page.cpp)
+target_compile_definitions(test_qml_navigation_page PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_navigation_page PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_navigation_page COMMAND test_qml_navigation_page)
+set_tests_properties(qml_navigation_page PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_platform_controls tst_qml_platform_controls.cpp)
+target_compile_definitions(test_qml_platform_controls PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_platform_controls PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_platform_controls COMMAND test_qml_platform_controls)
+set_tests_properties(qml_platform_controls PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 add_executable(test_qml_client_pages tst_qml_client_pages.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp

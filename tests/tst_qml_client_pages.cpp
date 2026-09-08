@@ -1322,15 +1322,16 @@ private slots:
     }
 
     // 批次F 扫码页 × 桥替身全状态机：入场拉站、速选码→detail 取首台空闲桩、
-    // 手输 CHG://站/桩 精确匹配、准入门（车辆 0 拦 / 1 放行组 8 字段 arg）、
+    // 手输 CHG://站/桩 精确匹配、零车辆也交给统一订单准入门、导航坐标完整透传、
     // 非法码本地判 miss 不发请求。
     void scanPageReserveFlowOnBridgeFake()
     {
         QmlApp app;
         QVERIFY(app.login(QStringLiteral("13800138000")));
+        app.clearUnfinishedOrdersForTesting(); // Only the explicit mock transport is changed.
         FakeStationQueryBridge query;
         FakeVehicleBridge vehicles;
-        QObject reservations;   // 无 activeReservationCount → 名额门 -1 放行
+        QObject reservations;   // No local vehicle/reservation-count bridge is required.
         QQmlEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
         engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
@@ -1364,6 +1365,8 @@ private slots:
             {QStringLiteral("name"), QStringLiteral("西丽湖临时站")},
             {QStringLiteral("priceCentsPerKwh"), 92},
             {QStringLiteral("distanceMeters"), 3800},
+            {QStringLiteral("latitude"), 38.88},
+            {QStringLiteral("longitude"), 121.53},
             {QStringLiteral("chargers"), QVariantList{
                 QVariantMap{{QStringLiteral("id"), 61}, {QStringLiteral("code"), QStringLiteral("L01")},
                             {QStringLiteral("type"), QStringLiteral("slow")},
@@ -1376,11 +1379,16 @@ private slots:
         QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("code")).toString(),
                  QStringLiteral("L02"));   // 跳过故障桩取首台空闲
 
-        // 准入门：车辆 0 拦下（arg 不落）；补 1 台车后组 ReservationConfirm 同款形。
-        QMetaObject::invokeMethod(page, "reserveNow");
-        QVERIFY(page->property("reserveArg").toMap().isEmpty());
-        vehicles.setVehicleCount(1);
-        QMetaObject::invokeMethod(page, "reserveNow");
+        // 零车辆不挡预约；先查未完成订单，不能直接跳确认页或要求去设置加车。
+        QVERIFY(vehicles.vehicles().isEmpty());
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow"));
+        QVERIFY(app.checkingOrders());
+        QCOMPARE(routes.size(), 0);
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow")); // rapid second submit is ignored
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QVERIFY(!app.checkingOrders());
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("reservation_confirm"));
         const QVariantMap arg = page->property("reserveArg").toMap();
         QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("6"));
         QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
@@ -1390,7 +1398,13 @@ private slots:
         QCOMPARE(arg.value(QStringLiteral("chargerPowerWatts")).toInt(), 120000);
         QCOMPARE(arg.value(QStringLiteral("priceCentsPerKwh")).toInt(), 92);
         QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), 3800);
-        QCOMPARE(arg.value(QStringLiteral("chargerId")).toInt(), 62);
+        QCOMPARE(arg.value(QStringLiteral("chargerId")).toString(), QStringLiteral("62"));
+        QCOMPARE(arg.value(QStringLiteral("stationId")).metaType().id(), QMetaType::QString);
+        QCOMPARE(arg.value(QStringLiteral("chargerId")).metaType().id(), QMetaType::QString);
+        QCOMPARE(arg.value(QStringLiteral("stationLatitude")).toDouble(), 38.88);
+        QCOMPARE(arg.value(QStringLiteral("stationLongitude")).toDouble(), 121.53);
+        QVERIFY(arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QCOMPARE(routes.first().at(1).toMap(), arg);
 
         // 手输：非法码本地 miss 不发请求；CHG://站/桩 精确取桩（不走"首台空闲"）。
         page->setProperty("phase", QStringLiteral("idle"));
@@ -1414,6 +1428,47 @@ private slots:
         QMetaObject::invokeMethod(page, "reserveNow");
         QCOMPARE(page->property("reserveArg").toMap().value(QStringLiteral("chargerCode")).toString(),
                  QStringLiteral("L02"));
+        QCOMPARE(routes.size(), 1); // occupied charger did not submit another order check
+    }
+
+    void scanPageZeroVehiclesCannotBypassUnfinishedOrder()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        // Keep the seeded charging order. The page must delegate rather than
+        // deciding that no vehicle/no local reservation means it can reserve.
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        query.emitStations({});
+        QVERIFY(page->setProperty("phase", QStringLiteral("found")));
+        QVERIFY(page->setProperty("foundStation", QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("1")},
+            {QStringLiteral("name"), QStringLiteral("测试站")},
+            {QStringLiteral("priceCentsPerKwh"), 120}}));
+        QVERIFY(page->setProperty("foundCharger", QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("7")},
+            {QStringLiteral("code"), QStringLiteral("TEST-7")},
+            {QStringLiteral("type"), QStringLiteral("fast")},
+            {QStringLiteral("powerWatts"), 120000},
+            {QStringLiteral("status"), QStringLiteral("available")}}));
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
+        QVERIFY(vehicles.vehicles().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow"));
+        QVERIFY(app.checkingOrders());
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QVERIFY(!arg.isEmpty());
+        QVERIFY(!arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), -1);
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("charging_run"));
+        QVERIFY(!app.checkingOrders());
     }
 
     // 批次F 扫码页失败面：查询失败解锁、detail 失败 miss、站无空闲桩 miss、
@@ -1470,10 +1525,10 @@ private slots:
     {
         QmlApp app;
         QVERIFY(app.login(QStringLiteral("13800138000")));
+        app.clearUnfinishedOrdersForTesting();
         charging::client::services::station::StationQueryService service;
         charging::qml::StationQueryBridge bridge(&service);
         FakeVehicleBridge vehicles;
-        vehicles.setVehicleCount(1);
         QObject reservations;
         QQmlEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
@@ -1492,12 +1547,16 @@ private slots:
                                   QStringLiteral("found"), 4000);
         QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("status")).toString(),
                  QStringLiteral("available"));
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
         QMetaObject::invokeMethod(page, "reserveNow");
         const QVariantMap arg = page->property("reserveArg").toMap();
         QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("1"));
         QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
                  QStringLiteral("科技园充电驿站"));
         QVERIFY(!arg.value(QStringLiteral("chargerCode")).toString().isEmpty());
+        QVERIFY(arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("reservation_confirm"));
     }
 };
 

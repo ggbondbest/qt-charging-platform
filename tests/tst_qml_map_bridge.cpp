@@ -60,6 +60,7 @@ private slots:
         MapGeoService service;
         service.setEndpointBaseForTesting(server.endpointBase());
         MapBridge bridge(&service, nullptr);
+        QSignalSpy locationChanges(&bridge, &MapBridge::locationChanged);
         bridge.geocodeAddress(QStringLiteral("旧地址"));
         bridge.geocodeAddress(QStringLiteral("新地址"));
         service.forwardGeocodeSucceeded(1, {22.5, 113.9}, {});
@@ -68,6 +69,27 @@ private slots:
         QVERIFY(bridge.hasLocation());
         QCOMPARE(bridge.latitude(), 31.2);
         QCOMPARE(bridge.locationLabel(), QStringLiteral("新地址"));
+        QCOMPARE(locationChanges.count(), 1); // one success must plan only one route
+    }
+
+    void homeMapDoesNotInventCurrentLocation()
+    {
+        MapBridge bridge;
+        QVERIFY(bridge.mapHtml({}).isEmpty());
+        qputenv("TENCENT_MAP_JS_KEY", "test-only");
+        const QString html = bridge.mapHtml({QVariantMap{{"id", "station-2"},
+            {"lat", 38.88}, {"lng", 121.54}, {"label", "海创中心示范站"}}});
+        QVERIFY(!html.isEmpty());
+        QVERIFY(html.contains("38.914"));
+        QVERIFY(html.contains("121.614"));
+        QVERIFY(html.contains("\"hasOrigin\":false"));
+        QVERIFY(html.contains("charging-station://select/"));
+        QVERIFY(html.contains("station-2"));
+        QVERIFY(!bridge.hasLocation());
+        QCOMPARE(bridge.distanceMeters(38.88, 121.54), -1);
+        bridge.requestRoute(38.88, 121.54);
+        QVERIFY(!bridge.error().isEmpty());
+        QVERIFY(bridge.routeHtml().isEmpty());
     }
 
     void drivingWalkingAndCancellationUseRealRoute()
