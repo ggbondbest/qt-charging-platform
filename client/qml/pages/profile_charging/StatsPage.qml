@@ -149,35 +149,12 @@ Item {
         }
 
         // ---- 月份卡列表（级联入场，与订单页同款节拍）----
+        // delegate 直挂 ListModel：role 访问在 clear/重建期读回 undefined，
+        // 没有 Loader+onLoaded 赋值时序窗口（初版 null TypeError 的根因）。
         Repeater {
             model: monthsModel
-            Loader {
-                width: listScroll.width
-                height: item ? item.height : 0
-                sourceComponent: monthCardComp
-                onLoaded: {
-                    item.row = monthsModel.get(index)
-                    if (P.Style.motionEnabled) rowDelay.start()
-                    else opacity = 1.0
-                }
-                opacity: 0
-                Timer {
-                    id: rowDelay
-                    interval: Math.min(index, 8) * 40   // 40ms stagger, 8 行封顶
-                    onTriggered: rowIn.start()
-                }
-                NumberAnimation on opacity {
-                    id: rowIn
-                    from: 0; to: 1; duration: P.Style.durEnter
-                }
-            }
-        }
-
-        Component {
-            id: monthCardComp
             Rectangle {
                 objectName: "uiStatsMonthCard"
-                property var row: ({})
                 width: listScroll.width
                 height: 76
                 radius: P.Style.radiusLg
@@ -206,20 +183,20 @@ Item {
                         spacing: 3
                         Text {
                             width: parent.width; elide: Text.ElideRight
-                            text: page.monthLabel(row.monthKey)
+                            text: page.monthLabel(model.monthKey)
                             font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
                             color: P.Style.ink
                         }
                         Text {
                             width: parent.width; elide: Text.ElideRight
-                            text: (row.orderCount || 0) + " 单 · ¥"
-                                  + ((row.amountCents || 0) / 100).toFixed(2)
+                            text: (model.orderCount || 0) + " 单 · ¥"
+                                  + ((model.amountCents || 0) / 100).toFixed(2)
                             font.pixelSize: P.Style.fontSm; color: P.Style.muted
                         }
                         Text {
                             width: parent.width; elide: Text.ElideRight
                             objectName: "uiStatsMonthSummary"
-                            text: "减碳 " + ((row.co2Grams || 0) / 1000).toFixed(1) + " kg"
+                            text: "减碳 " + ((model.co2Grams || 0) / 1000).toFixed(1) + " kg"
                             font.pixelSize: P.Style.fontSm; color: P.Style.faint
                         }
                     }
@@ -230,15 +207,32 @@ Item {
                         width: 80; spacing: 3
                         Text {
                             width: parent.width; horizontalAlignment: Text.AlignRight
-                            text: ((row.energyWh || 0) / 1000).toFixed(2)
+                            text: ((model.energyWh || 0) / 1000).toFixed(2)
                             font.pixelSize: 17; font.weight: Font.ExtraBold; color: P.Style.ink
                         }
                         Text {
                             width: parent.width; horizontalAlignment: Text.AlignRight
-                            text: "kWh · " + ((row.durationSeconds || 0) / 3600).toFixed(1) + "h"
+                            text: "kWh · " + ((model.durationSeconds || 0) / 3600).toFixed(1) + "h"
                             font.pixelSize: P.Style.fontSm; color: P.Style.faint
                         }
                     }
+                }
+                Component.onCompleted: {
+                    if (!P.Style.motionEnabled) {
+                        opacity = 1.0
+                        return
+                    }
+                    rowDelay.start()   // widgets motion parity: 40ms stagger, 8 行封顶
+                }
+                opacity: 0
+                Timer {
+                    id: rowDelay
+                    interval: Math.min(index, 8) * 40
+                    onTriggered: rowIn.start()
+                }
+                NumberAnimation on opacity {
+                    id: rowIn
+                    from: 0; to: 1; duration: P.Style.durEnter
                 }
             }
         }
