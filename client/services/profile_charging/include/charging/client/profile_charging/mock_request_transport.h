@@ -46,10 +46,22 @@ public:
                                  const QString& stationName, const QString& chargerCode);
 
 private:
+    struct MockNotification
+    {
+        QString type;             // DB-style uppercase; GET output lowercases it
+        QString title;
+        QString body;
+        QDateTime createdAtUtc;
+    };
+
     void handleRequest(const QString& type, const QJsonObject& data,
                        const ResponseCallback& callback);
     void seedDemoData();
     void seedDemoOrders();
+    void seedDemoCoupons();
+    void appendMockNotification(const QString& type, const QString& title,
+                                const QString& body, const QDateTime& createdAtUtc);
+    void grantRechargeCoupon(qint64 amountCents, const QDateTime& nowUtc);
     charging::model::Order* findOrder(qint64 orderId);
     QJsonObject buildStatusPayload(const charging::model::Order& order, qint64 powerWatts,
                                    qint64 energyWh, qint64 durationSeconds) const;
@@ -58,6 +70,10 @@ private:
     charging::model::User user_;
     QVector<charging::model::RechargeRecord> records_; // newest first
     QVector<charging::model::Order> orders_; // newest first
+    // Demo wallet: rows already in the GET_COUPONS response shape (id as the
+    // decimal string the server emits), newest first.
+    QVector<QJsonObject> coupons_;
+    QVector<MockNotification> notifications_; // newest first
     QHash<qint64, QPair<QString, QString>> chargerDisplays_; // chargerId -> (station, code)
     // reservationId -> (chargerId, display) mirrored from the reservation
     // service's mock channel (see registerMockReservation).
@@ -65,6 +81,7 @@ private:
     qint64 nextRecordId_ = 1;
     qint64 nextTransactionSeq_ = 1;
     qint64 nextOrderId_ = 1001;
+    qint64 nextCouponId_ = 100;
     QString nextFailureCode_;
     int nextFailureRemaining_ = 0;
 };
