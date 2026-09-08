@@ -23,6 +23,7 @@ class UserManagementPage final : public QWidget
 public:
     explicit UserManagementPage(QWidget* parent = nullptr);
     void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
 
 private slots:
     void applyFilters();
@@ -57,6 +58,7 @@ private:
     bool recordMatchesFilters(const UserRecord& record) const;
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
     QString statusCode(const QString& display) const;
@@ -67,7 +69,9 @@ private:
     int currentPage_ = 0;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
     QString listRequestId_;
+    QString summaryRequestId_;
     QString writeRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;

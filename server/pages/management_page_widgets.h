@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QColor>
+#include <QDate>
+#include <QDateTime>
 #include <QFrame>
 #include <QString>
 
@@ -78,5 +80,11 @@ QTableWidgetItem* createManagementTableItem(const QString& text);
 // QComboBox popup views are top-level Qt popups, so they must be styled on the
 // view itself rather than relying on the management page's descendant QSS.
 void configureManagementComboBox(QComboBox* comboBox);
+
+// All storage and gateway timestamps remain UTC, but operators work in China
+// Standard Time.  Keep that conversion in one place so tables, details and
+// date-range filters cannot silently use different calendar days.
+QString formatBeijingDateTime(const QString& utcIsoTimestamp);
+QDateTime beijingDayStartUtc(const QDate& beijingDate);
 
 } // namespace charging::server

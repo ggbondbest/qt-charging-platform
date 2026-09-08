@@ -25,9 +25,11 @@ public:
     explicit ChargerManagementPage(QWidget* parent = nullptr);
 
     void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
 
     void showExceptionRecords();
     void showExceptionRecord(const QString& chargerCode);
+    void showStationRecords(const QString& stationId);
 
 private slots:
     void applyFilters();
@@ -52,7 +54,12 @@ private:
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const ChargerRecord& record) const;
     void requestList();
+    void requestStationOptions();
+    void requestStationById(const QString& stationId);
     void handleListResponse(const QJsonObject& response);
+    void handleStationOptionsResponse(const QJsonObject& response);
+    void handleStationLookupResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
     QString statusCode(const QString& display) const;
@@ -63,10 +70,17 @@ private:
     int currentPage_ = 0;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
     QString listRequestId_;
+    QString summaryRequestId_;
     QString writeRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
+    // This is only used while station options are loading.  The combo box is
+    // the sole source of the actual list filter, so it cannot be overridden.
+    QString pendingStationFilterId_;
+    QString stationOptionsRequestId_;
+    QString stationLookupRequestId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
@@ -90,6 +104,7 @@ private:
     QPushButton* refreshStatusButton_ = nullptr;
     QPushButton* clearAlertButton_ = nullptr;
     QPushButton* editButton_ = nullptr;
+    QPushButton* addButton_ = nullptr;
 };
 
 } // namespace charging::server
