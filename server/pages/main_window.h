@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <QTimer>
 
 class QLabel;
 class QFrame;
@@ -16,6 +17,9 @@ class ChargerManagementPage;
 class OrderManagementPage;
 class ServerRuntime;
 class DashboardPage;
+class StationManagementPage;
+class UserManagementPage;
+class ActivityRecordsPage;
 
 class MainWindow final : public QMainWindow
 {
@@ -35,8 +39,8 @@ private:
     QWidget* createManagementPage();
     void showManagementShell();
     void showLoginPage();
-    void updateClientCount(int count);
     void updateSidebarWidth();
+    void refreshActivePage();
 
     ServerRuntime* server_ = nullptr;
     AdminRequestGateway* adminGateway_ = nullptr;
@@ -46,7 +50,12 @@ private:
     AdminLoginPage* loginPage_ = nullptr;
     DashboardPage* dashboardPage_ = nullptr;
     ChargerManagementPage* chargerManagementPage_ = nullptr;
+    StationManagementPage* stationManagementPage_ = nullptr;
+    UserManagementPage* userManagementPage_ = nullptr;
     OrderManagementPage* orderManagementPage_ = nullptr;
+    ActivityRecordsPage* rechargeRecordsPage_ = nullptr;
+    ActivityRecordsPage* operationLogPage_ = nullptr;
+    QTimer autoRefreshTimer_;
     QFrame* sidebar_ = nullptr;
     QLabel* pageTitleLabel_ = nullptr;
     QLabel* pageSubtitleLabel_ = nullptr;

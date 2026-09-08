@@ -2,33 +2,30 @@
 
 #include "admin_request_gateway.h"
 #include "management_page_widgets.h"
+#include "management_time_format.h"
 
 #include <QAbstractItemView>
 #include <QColor>
 #include <QComboBox>
+#include <QDateTime>
 #include <QFrame>
-#include <QFont>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLinearGradient>
 #include <QLineEdit>
 #include <QList>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPen>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTime>
+#include <QTimeZone>
 #include <QVBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QUuid>
-#include <QtMath>
-
 #include <limits>
 
 namespace charging::server {
@@ -104,73 +101,6 @@ QFrame* createCompactCard(QWidget* parent)
     return card;
 }
 
-class UserGrowthTrendWidget final : public QWidget
-{
-public:
-    explicit UserGrowthTrendWidget(QWidget* parent = nullptr) : QWidget(parent)
-    {
-        setMinimumHeight(134);
-        setAccessibleName(QObject::tr("近七日用户增长趋势图"));
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        const QRectF chart = rect().adjusted(22, 12, -8, -26);
-        painter.setPen(QPen(QColor("#e9eef5"), 1));
-        for (int row = 0; row < 3; ++row) {
-            const qreal y = chart.top() + chart.height() * row / 2.0;
-            painter.drawLine(QPointF(chart.left(), y), QPointF(chart.right(), y));
-        }
-        const QList<qreal> values = {0.18, 0.23, 0.34, 0.39, 0.66, 0.71, 0.78};
-        QPainterPath line;
-        QPainterPath area;
-        for (int index = 0; index < values.size(); ++index) {
-            const qreal x = chart.left() + chart.width() * index / (values.size() - 1.0);
-            const qreal y = chart.bottom() - chart.height() * values.at(index);
-            if (index == 0) {
-                line.moveTo(x, y);
-                area.moveTo(x, chart.bottom());
-                area.lineTo(x, y);
-            } else {
-                line.lineTo(x, y);
-                area.lineTo(x, y);
-            }
-        }
-        area.lineTo(chart.right(), chart.bottom());
-        area.closeSubpath();
-        QLinearGradient fill(chart.topLeft(), chart.bottomLeft());
-        fill.setColorAt(0, QColor(40, 120, 240, 60));
-        fill.setColorAt(1, QColor(40, 120, 240, 2));
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(fill);
-        painter.drawPath(area);
-        painter.setPen(QPen(QColor("#2878f0"), 2));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawPath(line);
-        painter.setBrush(QColor("#2878f0"));
-        painter.setPen(Qt::NoPen);
-        for (int index = 0; index < values.size(); ++index) {
-            const qreal x = chart.left() + chart.width() * index / (values.size() - 1.0);
-            const qreal y = chart.bottom() - chart.height() * values.at(index);
-            painter.drawEllipse(QPointF(x, y), 3, 3);
-        }
-        painter.setPen(QColor("#8795a9"));
-        QFont font = painter.font();
-        font.setPixelSize(10);
-        painter.setFont(font);
-        const QStringList dates = {QStringLiteral("05-26"), QStringLiteral("05-27"), QStringLiteral("05-28"),
-                                   QStringLiteral("05-29"), QStringLiteral("05-30"), QStringLiteral("05-31"),
-                                   QStringLiteral("06-01")};
-        for (int index = 0; index < dates.size(); ++index) {
-            const qreal x = chart.left() + chart.width() * index / (dates.size() - 1.0);
-            painter.drawText(QRectF(x - 16, chart.bottom() + 6, 32, 12), Qt::AlignCenter, dates.at(index));
-        }
-    }
-};
-
 } // namespace
 
 UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
@@ -189,7 +119,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     metricsLayout->addWidget(createManagementMetricCard(
         tr("今日新增用户"), tr("428"), tr(" 人"), tr("较昨日  +36 (+9.18%)  ↑"), QColor("#43c7bc"), 3, this));
     metricsLayout->addWidget(createManagementMetricCard(
-        tr("活跃用户（7日）"), tr("12,356"), tr(" 人"), tr("较昨日  +412 (+3.45%)  ↑"), QColor("#ff9a26"), 0, this));
+        tr("账户余额总额"), tr("¥ 1,235,600"), QString(), tr("全部用户钱包余额汇总"), QColor("#ff9a26"), 0, this));
     metricsLayout->addWidget(createManagementMetricCard(
         tr("冻结用户"), tr("243"), tr(" 人"), tr("较昨日  +7 (+2.97%)  ↑"), QColor("#ff5b61"), 0, this));
     layout->addLayout(metricsLayout);
@@ -249,10 +179,11 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
-    tableWidget_->setColumnCount(10);
+    tableWidget_->setObjectName(QStringLiteral("managementUsersTable"));
+    tableWidget_->setColumnCount(8);
     tableWidget_->setHorizontalHeaderLabels(
-        {tr("用户ID"), tr("用户昵称"), tr("手机号"), tr("账户余额（元）"), tr("注册时间"),
-         tr("最近充电时间"), tr("累计订单"), tr("状态"), tr("风控操作"), tr("操作")});
+        {tr("用户ID"), tr("用户昵称"), tr("手机号"), tr("账户余额（元）"), tr("注册时间（北京时间）"),
+         tr("累计订单"), tr("状态"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -265,12 +196,10 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     tableWidget_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(7, kManagementStatusColumnWidth);
-    tableWidget_->setColumnWidth(8, 68);
-    tableWidget_->setColumnWidth(9, 64);
+    tableWidget_->setColumnWidth(6, kManagementStatusColumnWidth);
+    tableWidget_->setColumnWidth(7, 64);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
     tableLayout->addWidget(statePanel_);
@@ -310,6 +239,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     profileRow->addLayout(identityLayout, 1);
     detailLayout->addLayout(profileRow);
     detailAccountLabel_ = createTextLabel(QString(), QStringLiteral("color:#55647c; font-size:13px;"), detailCard);
+    detailAccountLabel_->setObjectName(QStringLiteral("managementUserDetails"));
     detailAccountLabel_->setWordWrap(true);
     detailLayout->addWidget(detailAccountLabel_);
     auto* riskHeading = new QHBoxLayout();
@@ -319,10 +249,6 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
                                                                " padding:4px 7px; font-size:12px; font-weight:600;"), detailCard);
     riskHeading->addWidget(riskTagLabel_);
     detailLayout->addLayout(riskHeading);
-    detailLayout->addWidget(createTextLabel(tr("用户增长趋势（近 7 日）"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
-    auto* userGrowthTrend = new UserGrowthTrendWidget(detailCard);
-    userGrowthTrend->setObjectName(QStringLiteral("mockUserGrowthTrend"));
-    detailLayout->addWidget(userGrowthTrend);
     detailLayout->addStretch();
     freezeButton_ = new QPushButton(detailCard);
     freezeButton_->setObjectName(QStringLiteral("primaryButton"));
@@ -450,9 +376,9 @@ void UserManagementPage::rebuildTable()
         const UserRecord& record = records_.at(recordIndex);
         const QList<QString> values = {record.id, record.nickname, record.phone,
                                        formatCents(record.balanceCents), record.registeredAt,
-                                       record.lastChargeAt, QString::number(record.totalOrders), QString(), QString(), QString()};
+                                       QString::number(record.totalOrders), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
-            if (column == 7 || column == 8 || column == 9) {
+            if (column == 6 || column == 7) {
                 continue;
             }
             auto* item = createManagementTableItem(values.at(column));
@@ -460,27 +386,12 @@ void UserManagementPage::rebuildTable()
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
         }
-        tableWidget_->setCellWidget(row, 7, createCompactStatusTag(record.status, tableWidget_));
-        auto* riskButton = new QPushButton(record.isRiskFocused ? tr("已关注") : tr("关注"), tableWidget_);
-        riskButton->setObjectName(QStringLiteral("tableActionButton"));
-        riskButton->setEnabled(!realMode_);
-        if (realMode_) riskButton->setToolTip(tr("当前管理员契约不支持风控关注"));
-        riskButton->setAccessibleName(tr("切换 %1 的风控关注").arg(record.nickname));
-        riskButton->setStyleSheet(record.isRiskFocused
-                                      ? QStringLiteral("QPushButton { background:#fff5e7; color:#ed9b22; border:0;"
-                                                       " border-radius:6px; min-height:26px; max-height:26px;"
-                                                       " min-width:0; padding:0 8px; font-size:12px; }")
-                                      : QString());
-        connect(riskButton, &QPushButton::clicked, this, [this, recordIndex]() {
-            showUserDetails(recordIndex);
-            toggleSelectedRiskFocus();
-        });
-        tableWidget_->setCellWidget(row, 8, createManagementTableCell(riskButton, tableWidget_));
+        tableWidget_->setCellWidget(row, 6, createCompactStatusTag(record.status, tableWidget_));
         auto* detailButton = new QPushButton(tr("详情"), tableWidget_);
         detailButton->setObjectName(QStringLiteral("tableActionButton"));
         detailButton->setAccessibleName(tr("查看 %1 的详情").arg(record.nickname));
         connect(detailButton, &QPushButton::clicked, this, [this, recordIndex]() { showUserDetails(recordIndex); });
-        tableWidget_->setCellWidget(row, 9, createManagementTableCell(detailButton, tableWidget_));
+        tableWidget_->setCellWidget(row, 7, createManagementTableCell(detailButton, tableWidget_));
     }
     tableTitleLabel_->setText(tr("用户列表（共 %1 人）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
     paginationLabel_->setText(tr("第 %1 / %2 页").arg(currentPage_ + 1).arg(pageCount));
@@ -539,8 +450,10 @@ void UserManagementPage::showUserDetails(int recordIndex, bool requestDetails)
     detailIdLabel_->setText(tr("用户ID：%1").arg(record.id));
     detailPhoneLabel_->setText(tr("手机号：%1").arg(record.phone));
     if (realMode_) {
-        detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n用户状态　%3\n记录更新时间　%4\n实名认证、登录轨迹和常用电站：契约未提供")
-                                         .arg(formatCents(record.balanceCents)).arg(record.totalOrders).arg(record.status, record.expectedUpdatedAt));
+        detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n用户状态　%3\n注册时间（北京时间）\n%4\n记录更新时间（北京时间）\n%5")
+                                         .arg(formatCents(record.balanceCents)).arg(record.totalOrders)
+                                         .arg(record.status, record.registeredAt,
+                                              managementBeijingTime(record.expectedUpdatedAt)));
         riskTagLabel_->setText(tr("契约未提供"));
         riskTagLabel_->setStyleSheet(QStringLiteral("background:#f1f4f8; color:#708096; border-radius:5px; padding:4px 7px; font-size:12px; font-weight:600;"));
         updateDetailActions();
@@ -583,10 +496,13 @@ void UserManagementPage::updateDetailActions()
 
 void UserManagementPage::toggleSelectedUserStatus()
 {
-    if (selectedRecordIndex_ < 0) {
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) {
         return;
     }
-    UserRecord& record = records_[selectedRecordIndex_];
+    // QMessageBox has a nested event loop: retain a value snapshot, never a
+    // QVector element reference, across the confirmation interaction.
+    const int recordIndex = selectedRecordIndex_;
+    const UserRecord record = records_.at(recordIndex);
     const bool isFrozen = record.status == tr("冻结");
     const QString action = isFrozen ? tr("解冻") : tr("冻结");
     const auto choice = QMessageBox::question(
@@ -599,6 +515,10 @@ void UserManagementPage::toggleSelectedUserStatus()
         return;
     }
     if (realMode_) {
+        if (!gateway_ || !gateway_->isAuthenticated()) {
+            setFeedback(tr("管理员会话已失效，请重新登录后再提交。"), true);
+            return;
+        }
         writeRequestId_ = gateway_->request(QStringLiteral("user.status"),
             {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
              {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
@@ -606,8 +526,8 @@ void UserManagementPage::toggleSelectedUserStatus()
             QStringLiteral("user-write"));
         setFeedback(tr("正在提交用户状态更新…")); return;
     }
-    record.status = isFrozen ? tr("正常") : tr("冻结");
-    const int recordIndex = selectedRecordIndex_;
+    auto& currentRecord = records_[recordIndex];
+    currentRecord.status = isFrozen ? tr("正常") : tr("冻结");
     applyFilters();
     showUserDetails(recordIndex);
     setFeedback(tr("已%1 %2（仅本地 Mock）").arg(action, record.nickname));
@@ -670,26 +590,30 @@ void UserManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    registrationComboBox_->setEnabled(false); registrationComboBox_->setToolTip(tr("当前契约不支持注册时间筛选"));
-    minimumBalanceLineEdit_->setEnabled(false); minimumBalanceLineEdit_->setToolTip(tr("当前契约不支持余额筛选"));
-    maximumBalanceLineEdit_->setEnabled(false); maximumBalanceLineEdit_->setToolTip(tr("当前契约不支持余额筛选"));
-    if (auto* trend = findChild<QWidget*>(QStringLiteral("mockUserGrowthTrend"))) {
-        trend->setVisible(false);
-        trend->setToolTip(tr("当前契约不提供用户增长趋势"));
-    }
-    for (auto* label : findChildren<QLabel*>()) {
-        if (label->text() == tr("用户增长趋势（近 7 日）")) {
-            label->setText(tr("用户增长趋势（契约未提供）"));
-        }
-    }
+    registrationComboBox_->setCurrentIndex(0);
+    registrationComboBox_->setEnabled(false);
+    registrationComboBox_->setToolTip(tr("当前管理员契约不支持按注册时间筛选"));
+    minimumBalanceLineEdit_->clear();
+    minimumBalanceLineEdit_->setEnabled(false);
+    minimumBalanceLineEdit_->setToolTip(tr("当前管理员契约不支持按余额区间筛选"));
+    maximumBalanceLineEdit_->clear();
+    maximumBalanceLineEdit_->setEnabled(false);
+    maximumBalanceLineEdit_->setToolTip(tr("当前管理员契约不支持按余额区间筛选"));
     setManagementMetricCardsUnavailable(this, tr("当前契约未提供用户页汇总指标"));
+    riskButton_->setVisible(false);
+    riskTagLabel_->setVisible(false);
+    for (auto* label : findChildren<QLabel*>()) {
+        if (label->text() == tr("风控状态")) label->setVisible(false);
+    }
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
+        else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == writeRequestId_) handleWriteResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
-        if (authenticated) requestList();
+        if (!authenticated) { hasRealSnapshot_ = false; }
+        else requestList();
     });
     requestList();
 }
@@ -704,13 +628,45 @@ QString UserManagementPage::statusCode(const QString& display) const
 void UserManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
-    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
-    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    // Keep confirmed content visible while a newer snapshot is requested.
+    if (!hasRealSnapshot_) {
+        records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+        totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    }
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
     const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
     if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
+    qint64 minimumBalanceCents = 0;
+    qint64 maximumBalanceCents = std::numeric_limits<qint64>::max();
+    const QString minimumText = minimumBalanceLineEdit_->text().trimmed();
+    const QString maximumText = maximumBalanceLineEdit_->text().trimmed();
+    if ((!minimumText.isEmpty() && !parseBalanceCents(minimumText, &minimumBalanceCents)) ||
+        (!maximumText.isEmpty() && !parseBalanceCents(maximumText, &maximumBalanceCents)) ||
+        minimumBalanceCents > maximumBalanceCents) {
+        setFeedback(tr("余额区间无效：请输入非负金额，且最小值不能大于最大值"), true);
+        return;
+    }
+    if (!realMode_ && !minimumText.isEmpty()) query.insert(QStringLiteral("minBalanceCents"), minimumBalanceCents);
+    if (!realMode_ && !maximumText.isEmpty()) query.insert(QStringLiteral("maxBalanceCents"), maximumBalanceCents);
+    if (!realMode_ && registrationComboBox_->currentIndex() > 0) {
+        const QTimeZone zone("Asia/Shanghai");
+        const QDate today = QDateTime::currentDateTimeUtc().toTimeZone(zone).date();
+        const auto boundary = [&zone](const QDate& date) {
+            return QDateTime(date, QTime(0, 0), zone).toUTC().toString(Qt::ISODateWithMs);
+        };
+        if (registrationComboBox_->currentIndex() == 1) {
+            query.insert(QStringLiteral("createdAtFrom"), boundary(today.addDays(-6)));
+            query.insert(QStringLiteral("createdAtTo"), boundary(today.addDays(1)));
+        } else if (registrationComboBox_->currentIndex() == 2) {
+            query.insert(QStringLiteral("createdAtFrom"), boundary(today.addDays(-29)));
+            query.insert(QStringLiteral("createdAtTo"), boundary(today.addDays(1)));
+        } else {
+            query.insert(QStringLiteral("createdAtTo"), boundary(today.addDays(-29)));
+        }
+    }
     listRequestId_ = gateway_->request(QStringLiteral("users.list"), query, this, QStringLiteral("user-list"));
-    setFeedback(tr("正在加载服务数据…"));
+    query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
+    summaryRequestId_ = gateway_->request(QStringLiteral("users.summary"), query, this, QStringLiteral("user-summary"));
 }
 
 void UserManagementPage::handleDetailResponse(const QJsonObject& response)
@@ -727,33 +683,54 @@ void UserManagementPage::handleDetailResponse(const QJsonObject& response)
     record.id = item.value(QStringLiteral("id")).toString(); record.nickname = item.value(QStringLiteral("nickname")).toString(); record.phone = item.value(QStringLiteral("phone")).toString();
     record.balanceCents = item.value(QStringLiteral("balanceCents")).toInteger(); record.status = item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常");
     record.totalOrders = item.value(QStringLiteral("orderCount")).toInt(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    record.registeredAt = managementRegistrationTime(item);
     showUserDetails(selectedRecordIndex_, false);
-    detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n未完成订单　%3 笔\n充值次数　%4 次\n用户状态　%5\n记录更新时间　%6")
+    detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n未完成订单　%3 笔\n充值次数　%4 次\n用户状态　%5\n注册时间（北京时间）\n%6\n记录更新时间（北京时间）\n%7")
                                      .arg(formatCents(record.balanceCents)).arg(record.totalOrders)
                                      .arg(item.value(QStringLiteral("unfinishedOrderCount")).toInt())
                                      .arg(item.value(QStringLiteral("rechargeCount")).toInt())
-                                     .arg(record.status, record.expectedUpdatedAt));
+                                     .arg(record.status, record.registeredAt,
+                                          managementBeijingTime(record.expectedUpdatedAt)));
 }
 
 void UserManagementPage::handleListResponse(const QJsonObject& response)
 {
-    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
     if (!response.value(QStringLiteral("success")).toBool()) {
-        totalRecords_ = 0; rebuildTable(); setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return;
+        setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return;
     }
+    const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
+        ? records_.at(selectedRecordIndex_).serverId : QString();
+    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
     const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    hasRealSnapshot_ = true;
     for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
         const auto item = value.toObject();
         records_.append({item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("nickname")).toString(), item.value(QStringLiteral("phone")).toString(),
             item.value(QStringLiteral("balanceCents")).toInteger(), item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常"),
-            tr("契约未提供"), tr("契约未提供"), item.value(QStringLiteral("orderCount")).toInt(), false, false,
+            managementRegistrationTime(item), tr("契约未提供"), item.value(QStringLiteral("orderCount")).toInt(), false, false,
             item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
         filteredRecordIndexes_.append(records_.size() - 1);
     }
+    for (int index = 0; index < records_.size(); ++index) {
+        if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
+    }
     rebuildTable();
+    if (selectedRecordIndex_ >= 0) showUserDetails(selectedRecordIndex_, false);
     setManagementMetricCardValue(this, 0, tr("%1 人").arg(totalRecords_),
                                  tr("服务端分页总数（当前筛选）"));
     setFeedback(totalRecords_ ? tr("已加载 %1 位用户（服务端分页）").arg(totalRecords_) : tr("当前没有用户数据"));
+}
+
+void UserManagementPage::handleSummaryResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) return;
+    const auto data = response.value(QStringLiteral("data")).toObject();
+    const qint64 balanceCents = data.value(QStringLiteral("totalBalanceCents")).toInteger();
+    const QString balance = tr("¥ %1.%2").arg(balanceCents / 100).arg(balanceCents % 100, 2, 10, QLatin1Char('0'));
+    setManagementMetricCardValue(this, 0, tr("%1 人").arg(data.value(QStringLiteral("totalUsers")).toInteger()), tr("当前筛选范围"));
+    setManagementMetricCardValue(this, 1, tr("%1 人").arg(data.value(QStringLiteral("todayNewUsers")).toInteger()), tr("北京时间今日"));
+    setManagementMetricCardValue(this, 2, balance, tr("当前筛选范围"));
+    setManagementMetricCardValue(this, 3, tr("%1 人").arg(data.value(QStringLiteral("frozenUsers")).toInteger()), tr("当前筛选范围"));
 }
 
 void UserManagementPage::handleWriteResponse(const QJsonObject& response)

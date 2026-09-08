@@ -50,7 +50,7 @@ struct RouteStep
 
 // 路线规划结果：总距离（米）、总时长（分钟）、分段步骤、坐标折线。
 // polyline 已由解析器完成增量解码（绝对经纬度，起点=from）；接口未给
-// 或解码失败时为空，消费方回落模拟折线。
+// 或解码失败时为空；正式页面应报告错误，不能生成模拟折线。
 struct RouteResult
 {
     int distanceMeters = -1;
@@ -75,8 +75,8 @@ struct RouteResult
 //   导航页模拟路线），本类只报告成败，不含预约业务语义。密钥与 URL 零打印。
 // - 接口对：距离矩阵 ws/distance/v1/matrix（用户→站点行驶距离/时长，
 //   供预约推荐时段）；驾车路线规划 ws/direction/v1/driving（导航页路线，
-//   真实响应结构 result.routes[0]）；逆地理编码 ws/geocoder/v1（坐标转
-//   地址文本，可选）。
+//   真实响应结构 result.routes[0]）；步行路线 ws/direction/v1/walking；
+//   地理编码 ws/geocoder/v1（address 正向地址转坐标，location 逆向）。
 // - 异步信号 + requestId 代际：调用方记录返回的 id，收到回调时丢弃过期
 //   响应（快速切换站点/页面时旧请求可能后到）。
 // - 测试接缝：setEndpointBaseForTesting() 指向进程内假 HTTP 服务，
@@ -112,6 +112,9 @@ public:
     // 发起请求（返回 requestId，自增，用于过滤过期回调）。
     quint64 requestDistanceMatrix(const QVector<LatLng>& destinations);
     quint64 requestDrivingRoute(LatLng from, LatLng to);
+    quint64 requestWalkingRoute(LatLng from, LatLng to);
+    // 正向地理编码：用户输入完整地址，腾讯服务返回坐标。
+    quint64 requestForwardGeocode(const QString& address);
     // 点位逆地理（任务书可选接口）：坐标 → 地址文本（如"广东省深圳市
     // 南山区科兴路"）；失败由消费方回落站点名等模拟口径。
     quint64 requestReverseGeocode(LatLng location);
@@ -164,6 +167,11 @@ signals:
     void geocodeSucceeded(quint64 requestId, const QString& address);
     void geocodeFailed(quint64 requestId, charging::client::services::map::MapError error,
                        const QString& message);
+    void forwardGeocodeSucceeded(quint64 requestId,
+                                 charging::client::services::map::LatLng location,
+                                 const QString& address);
+    void forwardGeocodeFailed(quint64 requestId, charging::client::services::map::MapError error,
+                              const QString& message);
 
     // —— QML 转发面 ——：上面原生信号载荷是自定义 struct（QML 读不了），
     // 事件在 C++ 信号旁路同点再发 QVariant 形（页面唯一消费面，映射稿 §桥缺口 定形）。
@@ -178,8 +186,10 @@ signals:
     void qmlStaticMapError(quint64 requestId, const QString& message);
 
 private:
+    // 2026-09-08 merge：并集——上游新增 WalkingRoute/ForwardGeocoder 与本方
+    // QML 面 IpLocation/GeocodeAddress/StaticMap 同存（两侧 switch 各有分支）。
     enum class Kind {
-        Matrix, Route, Geocoder,
+        Matrix, Route, WalkingRoute, Geocoder, ForwardGeocoder,
         IpLocation, GeocodeAddress, StaticMap,   // QML 面新增三族
     };
 
@@ -205,5 +215,6 @@ private:
 } // namespace charging::client::services::map
 
 Q_DECLARE_METATYPE(charging::client::services::map::DistanceElement)
+Q_DECLARE_METATYPE(charging::client::services::map::LatLng)
 Q_DECLARE_METATYPE(charging::client::services::map::RouteStep)
 Q_DECLARE_METATYPE(charging::client::services::map::RouteResult)

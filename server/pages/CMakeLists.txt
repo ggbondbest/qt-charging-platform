@@ -1,3 +1,5 @@
+find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED COMPONENTS Charts)
+
 add_library(charging_server_pages STATIC
     admin_mock_data.cpp
     admin_mock_data.h
@@ -11,10 +13,13 @@ add_library(charging_server_pages STATIC
     dashboard_page.h
     dashboard_visual_widgets.cpp
     dashboard_visual_widgets.h
+    delivery_dashboard_widgets.cpp
+    delivery_dashboard_widgets.h
     main_window.cpp
     main_window.h
     management_page_widgets.cpp
     management_page_widgets.h
+    management_time_format.h
     order_management_page.cpp
     order_management_page.h
     station_management_page.cpp
@@ -32,4 +37,5 @@ target_link_libraries(charging_server_pages
         ChargingPlatform::ServerCore
         ChargingPlatform::ProjectOptions
         Qt6::Widgets
+        Qt6::Charts
 )

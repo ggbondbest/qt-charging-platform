@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtWebEngine
 import "../../platform" as P
 
 // QML twin of widgets NavigationPage (objectName "navigationPage").
@@ -26,9 +27,6 @@ Item {
     property var arg: ({})
     width: parent ? parent.width : 420
     height: parent ? parent.height : 600
-
-    Rectangle { anchors.fill: parent; color: P.Style.bg }
-
     property var record: page.arg || ({})
     // 用户默认位置与 StationMapPanel 中心同口径（无 key / 定位失败时的兜底起点）
     readonly property real demoLat: 22.541
@@ -97,6 +95,24 @@ Item {
         return "导航路线为模拟数据 · 腾讯地图路线接口就绪后自动切换真实路线"
     }
 
+    // —— 上游 2026-09-08 merge：WebEngine 真路线通道 —— 驾车/步行 chips（卡列区）引用
+    //    page.mode / page.requestRoute / mapBridge.routeHtml；起点由 applyOriginPoint
+    //    写入共享 MapGeoService.userLocation，无需另设。routeHtml 为空时静态图/画布
+    //    回落（演示通道⑥保留）。JS 密钥 env TENCENT_MAP_JS_KEY，缺位则本层静默退位。
+    property string mode: "driving"
+    property string webError: ""
+    readonly property bool webRouteReady:
+        typeof mapBridge !== "undefined" && mapBridge.routeHtml.length > 0
+
+    function requestRoute() {
+        webError = ""
+        const lat = record.stationLatitude !== undefined ? record.stationLatitude : record.latitude
+        const lng = record.stationLongitude !== undefined ? record.stationLongitude : record.longitude
+        if (typeof mapBridge === "undefined") return
+        mapBridge.requestRoute(typeof lat === "number" ? lat : NaN,
+                               typeof lng === "number" ? lng : NaN, mode)
+    }
+
     // —— 请求链 ——
     function autoLocate() {
         if (!mapOnline) { originState = "mock"; requestRealRoute(); return }
@@ -117,6 +133,9 @@ Item {
         caption = "正在规划真实路线…"
         page.pendingRouteReq = mapGeoService.requestDrivingRoute(
             originLat, originLng, destLat, destLng)
+        // 上游 WebEngine 通道并轨（2026-09-08 merge）：HTML 路线层与静态图通道并行，
+        // 起点走共享 MapGeoService.userLocation；routeHtml 先回者先接管渲染。
+        requestRoute()
     }
     function requestStaticImage() {
         if (!mapOnline || !usingRealRoute || realPolyline.length < 2) return
@@ -301,25 +320,64 @@ Item {
             page.pickList = page.demoPickRows()   // 失败重试 UI 之外再兜一层演示清单
         }
     }
-    Component.onCompleted: autoLocate()
+    Component.onCompleted: { autoLocate(); requestRoute() }
 
     // 折线数据源（Canvas 回落层）：真实 polyline 到达则替换，否则两点示意线。
     readonly property var routeLine: usingRealRoute && realPolyline.length >= 2
         ? realPolyline
         : (hasLoc ? [[originLat, originLng], [destLat, destLng]] : [])
 
+    // 上游 WebEngine 通道联动（2026-09-08 merge）：routeHtml 就绪即注入；arg 变更
+    // （换目标站）重发路线；页面销毁撤销在途请求。
+    Connections {
+        target: mapBridge
+        function onChanged() {
+            if (mapBridge.routeHtml.length > 0)
+                web.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
+        }
+    }
+    Component.onDestruction: mapBridge.cancelRoute()
+    onArgChanged: requestRoute()
+
+    Rectangle { anchors.fill: parent; color: P.Style.bg }
     Column {
         anchors.fill: parent
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
-
-        Text { objectName: "navigationPageTitle"; text: "导航前往充电桩"
-            font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
+        Text {
+            objectName: "navigationPageTitle"
+            text: "前往 " + (page.record.stationName || page.record.name || "充电站")
+            width: parent.width; wrapMode: Text.WordWrap
+            font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
+        }
+        // 起点状态行由本页 originRow（📍 定位/手动/mock 三态）承担，
+        // 上游单行"起点："提示并入其语义、不再并列（2026-09-08 merge 注记）。
+        Row {
+            spacing: P.Style.spaceSm
+            P.ActionButton {
+                objectName: "drivingRouteButton"
+                variant: "chip"; selected: page.mode === "driving"; text: "驾车"
+                onClicked: { page.mode = "driving"; page.requestRoute() }
+            }
+            P.ActionButton {
+                objectName: "walkingRouteButton"
+                variant: "chip"; selected: page.mode === "walking"; text: "步行"
+                onClicked: { page.mode = "walking"; page.requestRoute() }
+            }
+            P.ActionButton { variant: "ghost"; text: "重新规划"; enabled: !mapBridge.busy; onClicked: page.requestRoute() }
+        }
         Text {
             objectName: "navigationCaptionLabel"
             width: parent.width; wrapMode: Text.WordWrap
-            text: page.caption
-            font.pixelSize: P.Style.fontSm; color: P.Style.faint
+            // 上游 mapBridge 真实路线口径优先（2026-09-08 merge）；无路线/无密钥时
+            // 回落 page.caption（本页模拟先行口径，指令⑥两通道文案自洽）。
+            text: mapBridge.error.length ? mapBridge.error : page.webError.length ? page.webError
+                  : mapBridge.routeDistanceMeters >= 0
+                    ? "腾讯地图 · " + (mapBridge.routeDistanceMeters / 1000).toFixed(1)
+                      + " km · 约 " + mapBridge.durationMinutes + " 分钟"
+                    : page.caption
+            color: mapBridge.error.length || page.webError.length ? P.Style.danger : P.Style.brandDeep
+            font.pixelSize: P.Style.fontSm
         }
 
         // —— 起点行：状态提示 + 手动输入 + 重新定位（地图 APP 同款"我的位置"入口）——
@@ -457,7 +515,7 @@ Item {
             StationMapItem {
                 objectName: "navigationMapCanvas"
                 anchors.fill: parent
-                visible: page.staticMapFile.length === 0
+                visible: page.staticMapFile.length === 0 && !page.webRouteReady
                 route: page.routeLine
                 markers: hasLoc
                     ? [{ lat: destLat, lng: destLng,
@@ -469,10 +527,24 @@ Item {
             Image {
                 objectName: "navigationStaticMapImage"
                 anchors.fill: parent
-                visible: page.staticMapFile.length > 0
+                visible: page.staticMapFile.length > 0 && !page.webRouteReady
                 source: page.staticMapUrl
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
+            }
+            // 上游 WebEngine 真路线层（2026-09-08 merge 并入本面板）：routeHtml 就绪
+            // 即接管；为空时画布/静态图回落层继续工作（演示通道⑥）。objectName 让位
+            // 给面板本体（navigationMapPanel 保持锚点在 Rectangle 上，测试口径不变）。
+            WebEngineView {
+                id: web
+                objectName: "navigationRouteWebView"
+                anchors.fill: parent
+                visible: page.webRouteReady
+                settings.localContentCanAccessRemoteUrls: true
+                onLoadingChanged: function(info) {
+                    if (info.status === WebEngineView.LoadFailedStatus)
+                        page.webError = "地图页面加载失败，请检查网络和 JavaScript 地图密钥授权"
+                }
             }
         }
 

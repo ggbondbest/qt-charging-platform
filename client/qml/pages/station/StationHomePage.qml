@@ -13,6 +13,9 @@ import "../../platform" as P
 //    （可用性色彩），状态/收藏星锚点不变。
 // 三源投影（关键词/电价/8 组条件）保持 widgets applyStationFilter 语义；
 // 全部 objectName 锚点保留（真点击回归 test_qml_station_interactions 依赖）。
+// 2026-09-08 merge：上游手动地址定位面板（originRegionComboBox/originAddressField/
+// locateAddressButton）被本页"关键词=地点检索"（searchCenter 通道）取代不保留；
+// mapBridge 定位起点距离语义并入 project() 距离三源；stationNavigateButton 已并入卡列。
 Item {
     id: page
     objectName: "stationHomePage"
@@ -27,7 +30,7 @@ Item {
     property string keyword: typeof arg === "string" ? arg : ""
     property var priceTiers: [-1, 100, 120, 150]
     property int priceMax: -1
-    property int sortMode: 2            // 2=综合（服务端顺序，widgets 默认）0=空闲优先 1=距离最近
+    property int sortMode: 1            // 默认按当前起点的直线距离由近到远
     property var criteria: ({ maxDistanceKm: 0, statuses: [], operators: [],
                               accessTypes: [], parkingFees: [], features: [],
                               chargerTypes: [], voltageBands: [],
@@ -170,6 +173,11 @@ Item {
             loadDemo(geocoding)        // 桥缺位：演示数据（geocoding 时跳过站名过滤）
         }
     }
+    // failQuery（上游 2026-09-08 TCP 通道并入）：真通道服务失败置错误态，失败重试 UI 消费。
+    function failQuery(message) {
+        loading = false; loaded = false; failed = true; failMessage = message
+        raw = []; stationModel.clear()
+    }
     property string failMessage: ""
     property bool demo: false
 
@@ -217,7 +225,17 @@ Item {
     function project() {
         const c = page.criteria
         const rows = []
-        for (const s of (page.raw || [])) {
+        for (const source of (page.raw || [])) {
+            const s = Object.assign({}, source)
+            // 距离三源（2026-09-08 merge 并轨）：①周边检索中心——applySearchCenter 已
+            // haversine 重算 raw，投影保持不覆写；②上游 mapBridge 手动地址/定位起点，
+            // 仅真坐标参与、缺坐标不落 0,0（上游注释语义保留）；③两者皆无 → 维持
+            // 服务端/演示通道自带值（指令⑥：未定位不抹 -1，星/距离/排序依赖它）。
+            s.distanceMeters = page.searchCenter
+                ? s.distanceMeters
+                : (typeof mapBridge !== "undefined" && mapBridge.hasLocation
+                   && typeof s.latitude === "number" && typeof s.longitude === "number")
+                    ? mapBridge.distanceMeters(s.latitude, s.longitude) : s.distanceMeters
             if (page.priceMax > 0 && s.priceCentsPerKwh > page.priceMax) continue
             // 自定义电价区间（批量指令④，高级筛选弹窗手输）：-1/undefined=不限；
             // 与胶囊条预设档 AND 叠加（预设 combo 行为不变）。0 是合法边界，勿用 || 短路。
@@ -253,7 +271,7 @@ Item {
         stationModel.clear()
         for (const s of rows) {
             stationModel.append({
-                stationId: s.id, name: s.name, address: s.address,
+                stationId: String(s.id), name: s.name, address: s.address,
                 priceCentsPerKwh: s.priceCentsPerKwh, availableChargers: s.availableChargers,
                 totalChargers: s.totalChargers, distanceMeters: s.distanceMeters,
                 status: String(s.status).toLowerCase(),
@@ -305,10 +323,14 @@ Item {
             pull.setRefreshing(false)
         }
         function onQueryFailed(message) {
-            page.loading = false; page.loaded = false; page.failed = true
+            page.failQuery(message)
             pull.setRefreshing(false)
             if (App) App.showToast("站点查询失败：" + message, "danger")
         }
+    }
+    Connections {
+        target: typeof mapBridge !== "undefined" ? mapBridge : null
+        function onLocationChanged() { page.project() }
     }
     Connections {
         target: favoritesService
@@ -665,7 +687,8 @@ Item {
                             if (App) App.navigate("station_detail", {
                                 id: stationId, name: name, address: address,
                                 priceCentsPerKwh: priceCentsPerKwh,
-                                distanceMeters: distanceMeters, status: status })
+                                distanceMeters: distanceMeters, status: status,
+                                latitude: lat, longitude: lng })
                         }
                         Row {
                             width: parent.width
@@ -734,6 +757,7 @@ Item {
                                 width: 104
                                 height: parent.height
                                 Column {
+                                    id: cardActions
                                     anchors.centerIn: parent
                                     spacing: P.Style.spaceXs
                                     // 价格大字（右挂对齐成列，fontLg2+小单位）
@@ -754,6 +778,14 @@ Item {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         tone: status === "active" ? "success" : "neutral"
                                         text: status === "active" ? "营业中" : "暂停运营"
+                                    }
+                                    P.ActionButton {
+                                        objectName: "stationNavigateButton"
+                                        text: "导航"
+                                        variant: "ghost"
+                                        onClicked: App.navigate("navigation", {
+                                            stationName: name, stationLatitude: lat,
+                                            stationLongitude: lng, hasStationLocation: true })
                                     }
                                     MouseArea {
                                         objectName: "favoriteStarButton"

@@ -61,6 +61,13 @@ QString stamp(const QJsonObject& credentials)
            credentials.value(QStringLiteral("password_salt")).toString() + QLatin1Char(':') +
            credentials.value(QStringLiteral("password_hash")).toString();
 }
+QString literalLikePattern(QString value)
+{
+    value.replace(QLatin1Char('!'), QStringLiteral("!!"));
+    value.replace(QLatin1Char('%'), QStringLiteral("!%"));
+    value.replace(QLatin1Char('_'), QStringLiteral("!_"));
+    return QLatin1Char('%') + value + QLatin1Char('%');
+}
 } // namespace
 
 AdminRepository::AdminRepository(const QSqlDatabase& database) : database_(database) {}
@@ -128,9 +135,11 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             "s.id,s.code,s.name,s.address,s.latitude,s.longitude,s.price_cents_per_kwh AS "
             "priceCentsPerKwh,s.status,s.updated_at AS updatedAt,(SELECT COUNT(*) FROM chargers "
             "WHERE station_id=s.id) AS totalChargers,(SELECT COUNT(*) FROM chargers WHERE "
-            "station_id=s.id AND status='AVAILABLE') AS availableChargers");
+            "station_id=s.id AND status='AVAILABLE') AS availableChargers,(SELECT COUNT(*) "
+            "FROM chargers WHERE station_id=s.id AND status!='OFFLINE') AS onlineChargerCount");
         from = QStringLiteral("stations s");
-        search = QStringLiteral("(s.name LIKE ? OR s.code LIKE ? OR s.address LIKE ?)");
+        search = QStringLiteral("(s.name LIKE ? ESCAPE '!' OR s.code LIKE ? ESCAPE '!' OR "
+                                "s.address LIKE ? ESCAPE '!')");
         statusColumn = QStringLiteral("s.status");
     } else if (entity == QStringLiteral("chargers")) {
         select = QStringLiteral("s.id,s.station_id AS stationId,s.code,s.type,s.power_watts AS "
@@ -138,17 +147,20 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
                                 "stationName,s.total_charge_count AS "
                                 "totalChargeCount,s.total_charge_seconds AS totalChargeSeconds");
         from = QStringLiteral("chargers s JOIN stations t ON t.id=s.station_id");
-        search = QStringLiteral("(s.code LIKE ? OR t.name LIKE ? OR s.code LIKE ?)");
+        search = QStringLiteral("(s.code LIKE ? ESCAPE '!' OR t.name LIKE ? ESCAPE '!' OR "
+                                "s.code LIKE ? ESCAPE '!')");
         statusColumn = QStringLiteral("s.status");
     } else if (entity == QStringLiteral("users")) {
         select = QStringLiteral(
             "s.id,s.phone,s.nickname,s.avatar_key AS avatarKey,s.balance_cents AS "
-            "balanceCents,s.status,s.updated_at AS updatedAt,(SELECT COUNT(*) FROM orders WHERE "
+            "balanceCents,s.status,s.created_at AS createdAt,s.created_at AS createdAtUtc,"
+            "s.updated_at AS updatedAt,(SELECT COUNT(*) FROM orders WHERE "
             "user_id=s.id) AS orderCount,(SELECT COUNT(*) FROM orders WHERE user_id=s.id AND "
             "status IN ('RESERVED','CHARGING','WAITING_PAYMENT')) AS unfinishedOrderCount,(SELECT "
             "COUNT(*) FROM recharge_records WHERE user_id=s.id) AS rechargeCount");
         from = QStringLiteral("users s");
-        search = QStringLiteral("(s.phone LIKE ? OR s.nickname LIKE ? OR s.phone LIKE ?)");
+        search = QStringLiteral("(s.phone LIKE ? ESCAPE '!' OR s.nickname LIKE ? ESCAPE '!' OR "
+                                "s.phone LIKE ? ESCAPE '!')");
         statusColumn = QStringLiteral("s.status");
     } else if (entity == QStringLiteral("orders")) {
         select = QStringLiteral(
@@ -160,7 +172,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             "AS chargerCode,t.id AS stationId,t.name AS stationName");
         from = QStringLiteral("orders s JOIN users u ON u.id=s.user_id JOIN chargers c ON "
                               "c.id=s.charger_id JOIN stations t ON t.id=c.station_id");
-        search = QStringLiteral("(s.order_no LIKE ? OR u.phone LIKE ? OR t.name LIKE ?)");
+        search = QStringLiteral("(s.order_no LIKE ? ESCAPE '!' OR u.phone LIKE ? ESCAPE '!' OR "
+                                "t.name LIKE ? ESCAPE '!')");
         statusColumn = QStringLiteral("s.status");
     } else if (entity == QStringLiteral("recharges")) {
         select = QStringLiteral(
@@ -168,7 +181,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             "amountCents,s.balance_after_cents AS balanceAfterCents,s.status,s.created_at AS "
             "createdAt,u.phone,u.nickname");
         from = QStringLiteral("recharge_records s JOIN users u ON u.id=s.user_id");
-        search = QStringLiteral("(s.transaction_no LIKE ? OR u.phone LIKE ? OR u.nickname LIKE ?)");
+        search = QStringLiteral("(s.transaction_no LIKE ? ESCAPE '!' OR u.phone LIKE ? ESCAPE '!' "
+                                "OR u.nickname LIKE ? ESCAPE '!')");
         statusColumn = QStringLiteral("s.status");
     } else if (entity == QStringLiteral("operation_logs")) {
         // Public audit metadata only: arbitrary details_json may contain secrets
@@ -176,7 +190,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         select = QStringLiteral("s.id,s.admin_id AS adminId,s.action,s.target_type AS "
                                 "targetType,s.target_id AS targetId,s.created_at AS createdAt");
         from = QStringLiteral("operation_logs s");
-        search = QStringLiteral("(s.action LIKE ? OR s.target_type LIKE ? OR s.target_id LIKE ?)");
+        search = QStringLiteral("(s.action LIKE ? ESCAPE '!' OR s.target_type LIKE ? ESCAPE '!' "
+                                "OR s.target_id LIKE ? ESCAPE '!')");
     } else
         throw AdminFailure("INVALID_ARGUMENT");
     QString where = QStringLiteral(" WHERE 1=1");
@@ -188,7 +203,7 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     const QString keyword = p.value(QStringLiteral("keyword")).toString().trimmed();
     if (!keyword.isEmpty()) {
         where += QStringLiteral(" AND ") + search;
-        const QString pattern = QLatin1Char('%') + keyword + QLatin1Char('%');
+        const QString pattern = literalLikePattern(keyword);
         bindings << pattern << pattern << pattern;
     }
     if (p.contains(QStringLiteral("status"))) {
@@ -358,6 +373,22 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     QJsonArray items;
     while (q.next()) {
         auto value = row(q);
+        if (entity == QStringLiteral("stations")) {
+            // Connectivity and availability are different concepts: a faulted
+            // charger is still online. Share the global summary's non-OFFLINE
+            // definition and compute both list/detail percentages here.
+            bool totalOk = false, onlineOk = false;
+            const qint64 totalChargers =
+                value.value(QStringLiteral("totalChargers")).toVariant().toLongLong(&totalOk);
+            const qint64 onlineChargers =
+                value.value(QStringLiteral("onlineChargerCount")).toVariant().toLongLong(&onlineOk);
+            if (!totalOk || !onlineOk || totalChargers < 0 || onlineChargers < 0 ||
+                onlineChargers > totalChargers || totalChargers > 9007199254740991LL)
+                throw AdminFailure("DATABASE_ERROR");
+            value.insert(QStringLiteral("onlineRatePercent"),
+                         totalChargers == 0 ? 0.0
+                                            : double(onlineChargers) / double(totalChargers) * 100.0);
+        }
         if (entity == QStringLiteral("chargers")) {
             const QString state = value.value(QStringLiteral("status")).toString();
             // State classification, NOT a hardware fault diagnosis or event time.

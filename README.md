@@ -2,15 +2,14 @@
 
 基于 Ubuntu 22.04、Qt Framework 6.2.4、C++17 和 SQLite 的电动汽车充电桩应用管理平台。
 
-> 当前状态：阶段 3 核心后端。手机号登录以及“预约 → 开始充电 → 实时计费
-> → 停止 → 待支付 → 支付 → 完成”已经实际经过 Client、TCP、Server、Service、
-> Repository 和 SQLite，并纳入自动集成测试。用户端业务页面、找站和管理后台等由
-> 对应成员继续并行开发；公共契约冻结仍需五人确认和 Review。
+> 交付入口：QML 用户端 `charging-client` + PC 运营管理端 `charging-server`。
+> 默认使用真实 TCP 和服务端唯一 SQLite 数据源。Widgets 用户端不再默认构建。
+> 验收步骤、未合入 PR 边界和外部地图配置见 [交付与验收说明](docs/development/delivery_acceptance.md)。
 
 ## 第一阶段范围
 
 ```text
-Qt 充电用户端
+QML 充电用户端
         ↓ TCP + JSON
 Qt PC Server / 运营管理端
         ↓ Service / Repository
@@ -57,20 +56,27 @@ Ubuntu 22.04 官方仓库提供 Qt 6.2.4：
 ```bash
 sudo apt update
 sudo apt install -y \
-  build-essential cmake ninja-build sqlite3 \
-  qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite
+  build-essential cmake ninja-build sqlite3 python3 fonts-noto-cjk \
+  qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite \
+  qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-webengine-dev-tools \
+  libqt6webenginecore6-bin libqt6charts6-dev \
+  qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
+  qml6-module-qtquick-controls qml6-module-qtquick-templates \
+  qml6-module-qtquick-dialogs qml6-module-qtqml qml6-module-qtqml-models \
+  qml6-module-qtqml-workerscript qml6-module-qtwebengine
 
 cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON \
-  -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON
+  -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON \
+  -DCHARGING_BUILD_QML=ON -DCHARGING_BUILD_WIDGETS_CLIENT=OFF
 cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software ctest --test-dir build --output-on-failure
 bash scripts/verify_database.sh
 ```
 
-开发到图表和地图功能时，再按对应 target 安装并接入 Qt Charts / Qt WebEngine，不要在未使用前
-就将它们变成全员的强制依赖。不得提交个人 `CMAKE_PREFIX_PATH`、Qt Creator
+QML、Charts、WebEngine 已属于交付模块，缺少开发包或 QML 运行模块不能作为完整验收通过。
+不得提交个人 `CMAKE_PREFIX_PATH`、Qt Creator
 `.user` 文件或任何本机绝对路径。
 
 ## 启动应用
@@ -78,19 +84,20 @@ bash scripts/verify_database.sh
 Ubuntu 普通 CMake 构建下：
 
 ```bash
-./build/server/charging-server --address 127.0.0.1 --port 9527
-./build/client/charging-client
+./build/server/charging-server --address 127.0.0.1 --port 9527 \
+  --database ./runtime/demo.sqlite3 --demo-seed
+./build/client/charging-client --host 127.0.0.1 --port 9527
 ```
 
 先启动 Server，再启动 Client。Client 输入 11 位手机号后会通过真实 TCP 请求 Server；
-已有用户直接返回，新手机号自动注册，冻结用户会被拒绝。充电页面尚未接入，
-核心闭环可先通过 `charging_tcp_integration` 测试验证。Server 可使用
+已有用户直接返回，新手机号自动注册，冻结用户会被拒绝。找站、预约、充电、停止、
+充值与支付均走同一真实会话；管理端使用 `admin / 123456` 登录演示库后查看这些变化。Server 可使用
 `--database <path>` 指定 SQLite 文件；只有显式传入 `--demo-seed` 才加载演示数据。
 
 ## 目录和依赖方向
 
 ```text
-client/       用户端 app/network/services/pages/widgets 独立 CMake 边界
+client/       QML 用户端 qml/network/services；pages/widgets 保留旧界面回归代码
 server/       PC 端 app/network/services/repositories/database/pages 独立 CMake 边界
 common/       Client/Server 共享的模型和协议
 database/     schema.sql、seed.sql 与 Qt resource
@@ -157,6 +164,6 @@ NetworkManager -> TcpServer -> ClientSession -> RequestDispatcher
                -> ChargingRepository / OrderRepository -> SQLite
 ```
 
-下一步可在各自目录并行实现站点/电桩查询、个人中心与充电/订单页面、管理端页面。
-公共契约冻结和跨模块真实联调仍以五人确认及严格 CI 为准；`common/`、
+交付验收使用 QML 页面及真实服务，不能用 `CHARGING_CHANNEL=mock` 的演示结果代替。
+跨模块变更仍须通过 Review 和严格 CI；`common/`、
 `database/schema.sql` 和跨模块接口属于高冲突区域，修改前必须确认契约并通过 PR Review。

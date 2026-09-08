@@ -24,7 +24,7 @@ Item {
     // 桥 map 时间字段形状未定（TODO(contract)：epoch 毫秒或 ISO 串双收）。
     function parseTs(v) {
         if (typeof v === "number") return v
-        if (typeof v === "string" && v.length > 0) { const t = Date.parse(v); return isNaN(t) ? NaN : t }
+        if (typeof v === "string" && /(Z|[+-]\d\d:\d\d)$/.test(v)) { const t = Date.parse(v); return isNaN(t) ? NaN : t }
         return NaN
     }
     function clock(secs) {
@@ -34,14 +34,13 @@ Item {
     function hhmm(v) {
         const t = parseTs(v)
         if (isNaN(t)) return "--"
-        const d = new Date(t)
-        return (d.getHours() < 10 ? "0" : "") + d.getHours() + ":"
-             + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes()
+        return new Date(t + 8 * 3600000).toISOString().slice(11, 19)
     }
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
 
     // 每秒 tick（QML 无墙钟绑定，用 Timer 推 tick 强制求值）
     property int tick: 0
+    property double lastExpiryRefresh: 0
     Timer {
         objectName: "countdownTimer"
         running: page.hasActive && !page.parentFailed
@@ -53,12 +52,12 @@ Item {
             const nowMs = Date.now()
             const remaining = Math.floor((page.parseTs(r.expiresAtUtc) - nowMs) / 1000)
             if (remaining <= 0) {
-                // 归零：预约中→已过期 流转（服务端通道由后端负责，本地同步收敛展示）。
-                try { reservationService.expireReservation(r.reservationId !== undefined ? r.reservationId : r.id) }
-                catch (e) { /* 桥未就绪：tick 继续，母页重拉时收敛 */ }
-            } else {
-                // 迟到扫描（任务 #17 二迭代）：每秒驱动全库 开始+15min 未到站 自动取消。
-                try { reservationService.cancelLateReservations() } catch (e) {}
+                // The database alone decides expiration. Refresh, never invent
+                // a successful expiry on the client or send one request/second.
+                if (nowMs - page.lastExpiryRefresh > 5000) {
+                    page.lastExpiryRefresh = nowMs
+                    reservationService.fetchList()
+                }
             }
         }
     }
@@ -90,6 +89,14 @@ Item {
     }
     property string cancelNote: ""
     property bool cancelBusy: false
+    property bool starting: false
+    Connections {
+        target: chargingService
+        function onStartCompleted(status) { page.starting = false }
+        function onOperationFailed(type, code, message) {
+            if (type === "START_CHARGING") { page.starting = false; page.cancelNote = message }
+        }
+    }
     Connections {
         target: reservationService
         function onCancelStarted(reservationId) { page.cancelBusy = true }
@@ -146,7 +153,7 @@ Item {
                             : "约 " + page.rec.distanceMeters + " m"
                         font.pixelSize: P.Style.fontLg; color: P.Style.brandDeep
                     }
-                    Text { objectName: "orderModuleCaption"; text: "虚拟数据 · 导航功能后续对接"
+                    Text { objectName: "orderModuleCaption"; text: "直线距离；导航页按腾讯地图实际路线规划"
                         width: parent.width; wrapMode: Text.WordWrap
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint }
                 }
@@ -167,9 +174,9 @@ Item {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         text: (page.rec.stationName || "--") + " · " + (page.rec.chargerCode || "--") + "\n"
-                              + (page.rec.chargerSpec || "充电桩") + " · " + (page.rec.durationMinutes || 0) + " 分钟 · 预估 ¥" + money(page.rec.estimatedFeeCents) + "\n"
-                              + "车辆 " + (page.rec.vehiclePlate || "未关联") + " · 时段 "
-                              + hhmm(page.rec.startAtUtc) + "—" + hhmm(page.rec.expiresAtUtc)
+                              + (page.rec.chargerSpec || "充电桩") + "\n"
+                              + "保留截止 " + hhmm(page.rec.expiresAtUtc) + "（北京时间）\n"
+                              + "预约不扣费，账单以实际充电量为准"
                         font.pixelSize: P.Style.fontSm; color: P.Style.muted
                     }
                     Text {
@@ -181,10 +188,20 @@ Item {
                     // spring 占位已移除：卡片改自然高后无底部可撑，且其高度绑
                     // Card.height 在 Column 自适应链上曾诱发 polish 环（2026-09-07）。
                     P.ActionButton {
+                        objectName: "reservationStartChargingButton"
+                        text: page.starting ? "正在启动…" : "开始充电"
+                        width: parent.width
+                        enabled: !page.starting && !page.cancelBusy && page.remainingSecs > 0
+                        onClicked: {
+                            page.starting = true
+                            chargingService.startCharging(String(page.rec.reservationId || page.rec.id))
+                        }
+                    }
+                    P.ActionButton {
                         objectName: "reservationOrderCancelButton"
                         variant: "danger"; text: "取消预约"
                         width: parent.width
-                        enabled: !page.cancelBusy
+                        enabled: !page.cancelBusy && !page.starting
                         onClicked: { page.cancelBusy = true; page.cancelNote = ""; page.cancel() }
                     }
                     Text {
@@ -206,7 +223,7 @@ Item {
                     Text { text: "🔋 汽车电量"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                     Text { objectName: "orderBatteryLabel"; text: "SOC --%"
                         font.pixelSize: P.Style.fontLg; color: P.Style.info }
-                    Text { objectName: "orderModuleCaption"; text: "虚拟占位 · 电量对接功能暂不实现"
+                    Text { objectName: "orderModuleCaption"; text: "未连接真实车辆，不提供电池 SOC"
                         width: parent.width; wrapMode: Text.WordWrap
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint }
                 }

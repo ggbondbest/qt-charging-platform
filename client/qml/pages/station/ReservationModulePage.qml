@@ -33,29 +33,13 @@ Item {
         loading = true; failed = false
         // TODO(contract): reservationService.fetchList() 桥 invokable。
         try { reservationService.fetchList() }
-        catch (e) { loadDemo() }   // 桥缺位：页内演示记录（标注"演示数据"），展示逻辑可走通
+        catch (e) {
+            loading = false; loaded = false; failed = true
+            failMessage = "预约服务不可用，请重新登录后重试"
+            raw = []
+        }
     }
     property bool demo: false
-    function loadDemo() {
-        const now = Date.now(), min = 60000
-        page.raw = [
-            { reservationId: 9001, stationName: "滨海快充站", chargerCode: "A-07",
-              chargerSpec: "直流快充 120kW", durationMinutes: 40, estimatedFeeCents: 853,
-              vehiclePlate: "粤B·DA1234", distanceMeters: 2400,
-              startAtUtc: now - 5 * min, expiresAtUtc: now + 25 * min, status: "active" },
-            { reservationId: 9002, stationName: "科技园慢充站", chargerCode: "B-02",
-              chargerSpec: "交流慢充 7kW", durationMinutes: 120, estimatedFeeCents: 472,
-              vehiclePlate: "粤B·DA1234", distanceMeters: 1200,
-              startAtUtc: now - 3 * 60 * min, expiresAtUtc: now - min, status: "fulfilled" },
-            { reservationId: 9003, stationName: "深圳湾超充站", chargerCode: "A-11",
-              chargerSpec: "直流快充 160kW", durationMinutes: 30, estimatedFeeCents: 0,
-              vehiclePlate: "粤B·DA1234", distanceMeters: 3600,
-              startAtUtc: now - 26 * 60 * min, expiresAtUtc: now - 25 * 60 * min, status: "cancelled" }
-        ]
-        demo = true
-        loading = false; loaded = true; failed = false
-    }
-
     Connections {
         target: reservationService
         function onListStarted() { page.loading = true; page.failed = false }

@@ -20,6 +20,7 @@ Item {
         completed: "success", cancelled: "neutral" })
 
     function money(cents) { return (cents / 100).toFixed(2) }
+    property bool paying: false
     function dur(sec) {
         var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60)
         return (h > 0 ? h + " 小时 " : "") + m + " 分钟"
@@ -40,12 +41,16 @@ Item {
     Connections {
         target: chargingService
         function onPaymentCompleted(amountCents, balanceAfterCents) {
+            if (!page.paying) return
+            page.paying = false
             if (!App) return
             App.showToast("支付成功 ¥" + (amountCents / 100).toFixed(2)
                           + "，余额 ¥" + (balanceAfterCents / 100).toFixed(2), "success")
             App.navigate("order")
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "PAY_ORDER" || !page.paying) return
+            page.paying = false
             if (App) App.showToast("支付失败：" + message, "danger")
         }
     }
@@ -85,7 +90,7 @@ Item {
                         { k: "单价", v: "¥ " + money(page.arg.unitPriceCentsPerKwh || 0) + " /kWh" },
                         { k: "电量", v: ((page.arg.energyWh || 0) / 1000).toFixed(2) + " kWh" },
                         { k: "时长", v: page.dur(page.arg.durationSeconds || 0) },
-                        { k: "下单时间", v: page.arg.createdAt || "—" },
+                        { k: "下单时间（北京时间）", v: App ? App.displayTime(page.arg.createdAt || "—") : "—" },
                     ] : []
                     Row {
                         width: parent.width
@@ -120,7 +125,20 @@ Item {
             width: parent.width
             variant: "primary"
             text: "立即支付"
-            onClicked: if (chargingService) chargingService.payOrder(page.arg.id)
+            enabled: !page.paying
+            onClicked: if (chargingService) { page.paying = true; chargingService.payOrder(String(page.arg.id)) }
+        }
+        P.ActionButton {
+            objectName: "orderDetailChargingButton"
+            visible: page.arg.status === "charging"
+            width: parent.width
+            variant: "primary"; text: "查看实时充电"
+            onClicked: if (App) App.navigate("charging_run", page.arg)
+        }
+        P.ActionButton {
+            visible: page.arg.status === "waiting_payment"
+            width: parent.width; variant: "secondary"; text: "去充值"
+            onClicked: if (App) App.navigate("recharge")
         }
         P.ActionButton {
             variant: "ghost"; text: "返回"

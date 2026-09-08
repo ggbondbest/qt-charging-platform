@@ -235,7 +235,7 @@ Charger:     RESERVED -> AVAILABLE
 - 测试使用 `QTemporaryDir` 下的真实文件，不使用跨连接不可共享的 `:memory:`；
 - 每个新 connection 执行 `foreign_keys=ON` 和 `busy_timeout=5000`；
 - 新数据库执行 `schema.sql`；仅 demo/测试模式执行 `seed.sql`；
-- 通过 `PRAGMA user_version` 管理迁移，当前版本是 1；
+- 通过 `PRAGMA user_version` 管理迁移，当前版本是 2；
 - `QSqlQuery::exec()` 不应直接传入含多个语句的整个文件。脚本执行器需逐条执行受控 SQL，并在任一失败时回滚；
 - 所有动态值使用 prepared query + bind，不拼接 SQL；
 - Repository 对外返回领域错误，不向 Client 暴露原始 SQLite 错误或文件路径。

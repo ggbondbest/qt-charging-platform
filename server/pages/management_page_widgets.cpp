@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QTableWidgetItem>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 namespace charging::server {
@@ -262,6 +263,27 @@ void configureManagementComboBox(QComboBox* comboBox)
         "QAbstractItemView::item:hover { background: #f7f9fc; color: #1d2c46; }"
         "QAbstractItemView::item:selected { background: #eaf3ff; color: #1d2c46;"
         " font-weight: 600; }"));
+}
+
+QString formatBeijingDateTime(const QString& utcIsoTimestamp)
+{
+    if (utcIsoTimestamp.isEmpty()) {
+        return QStringLiteral("—");
+    }
+    QDateTime timestamp = QDateTime::fromString(utcIsoTimestamp, Qt::ISODateWithMs);
+    if (!timestamp.isValid()) {
+        timestamp = QDateTime::fromString(utcIsoTimestamp, Qt::ISODate);
+    }
+    if (!timestamp.isValid()) {
+        return utcIsoTimestamp;
+    }
+    return timestamp.toTimeZone(QTimeZone("Asia/Shanghai"))
+        .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+}
+
+QDateTime beijingDayStartUtc(const QDate& beijingDate)
+{
+    return QDateTime(beijingDate, QTime(0, 0), QTimeZone("Asia/Shanghai")).toUTC();
 }
 
 } // namespace charging::server

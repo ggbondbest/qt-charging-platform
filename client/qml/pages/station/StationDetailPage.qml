@@ -51,26 +51,18 @@ Item {
         // TODO(contract): struct 参数 fetchDetail(Station,int) QML 不可达，
         //                桥补 fetchDetailById(int stationId, int distanceMeters)。
         try { stationQueryService.fetchDetailById(station.id, station.distanceMeters || -1) }
-        catch (e) { loadDemo() }   // 桥缺位：页内演示桩位（标注"演示数据"），预约链路可完整走通
+        catch (e) {
+            detailLoading = false; detailLoaded = false; detailFailed = true
+            failMessage = "站点详情服务不可用，请重新登录后重试"
+            chargers = []
+        }
     }
-    // 五种桩态各一（同 widgets 彩签口径）；真桥落地后 onDetailSucceeded 替换。
-    function loadDemo() {
-        demo = true
-        chargers = [
-            { id: 9101, code: "A-07", type: "fast", powerWatts: 120000, status: "available" },
-            { id: 9102, code: "A-08", type: "fast", powerWatts: 120000, status: "reserved" },
-            { id: 9103, code: "A-09", type: "fast", powerWatts: 160000, status: "charging" },
-            { id: 9104, code: "B-01", type: "slow", powerWatts: 7000,   status: "available" },
-            { id: 9105, code: "B-02", type: "slow", powerWatts: 7000,   status: "fault" },
-            { id: 9106, code: "B-03", type: "fast", powerWatts: 60000,  status: "offline" }
-        ]
-        detailLoading = false; detailLoaded = true; detailFailed = false
-    }
-
     Connections {
         target: stationQueryService
         function onDetailStarted() { page.detailLoading = true; page.detailFailed = false }
         function onDetailSucceeded(detail) {
+            const incoming = detail && detail.station ? detail.station : detail
+            if (!incoming || String(incoming.id) !== String(page.station.id)) return
             page.detailLoading = false; page.detailLoaded = true; page.detailFailed = false
             page.demo = false                       // 真数据到位，演示桩位退位
             // 桥 map 形状：{station…, distanceMeters, chargers[], hasChargerData}；
@@ -118,11 +110,13 @@ Item {
             refreshChargingBusy()             // 顺手刷新，防陈旧态挡门
             return
         }
-        if (App) App.navigate("reservation_confirm", {
-            stationId: page.station.id, stationName: page.station.name,
+        if (App) App.checkBeforeReservation({
+            stationId: String(page.station.id), stationName: page.station.name,
             priceCentsPerKwh: page.station.priceCentsPerKwh,
             distanceMeters: page.station.distanceMeters,
-            chargerId: charger.id, chargerCode: charger.code,
+            stationLatitude: page.station.latitude, stationLongitude: page.station.longitude,
+            hasStationLocation: typeof page.station.latitude === "number" && typeof page.station.longitude === "number",
+            chargerId: String(charger.id), chargerCode: charger.code,
             chargerType: charger.type, chargerPowerWatts: charger.powerWatts })
     }
 

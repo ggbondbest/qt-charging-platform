@@ -1,10 +1,10 @@
-// charging-qml-preview — QML migration smoke/preview host.
-// Mirrors the widgets preview CLI contract:
+// Production QML client. TCP is the default; preview screenshots are opt-in.
+// Connection: --host HOST --port PORT (or CHARGING_SERVER_HOST/PORT).
 //   --view=NAME            sets root "view" property via context (routing)
 //   --screenshot=PATH      grab after first render, then exit (CI-safe)
 //   --size=WxH             default 420x860
 #include <QDir>
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -14,13 +14,16 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QTimer>
+#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "app_bridge.h"
 
 int main(int argc, char* argv[])
 {
-    QGuiApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("charging-qml-preview"));
+    QtWebEngineQuick::initialize();
+    QApplication app(argc, argv);
+    QCoreApplication::setApplicationName(QStringLiteral("charging-client"));
+    QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatform"));
 
     // Basic is the only Controls style guaranteed shipped by the base module.
     QQuickStyle::setStyle(QStringLiteral("Basic"));
@@ -56,34 +59,55 @@ int main(int argc, char* argv[])
     }
 
     QQmlEngine engine;
-    charging::qml::QmlApp qmlApp;
+    // Keep screenshot/deep-link flags while accepting standard endpoint flags.
+    QString host = qEnvironmentVariable("CHARGING_SERVER_HOST", "127.0.0.1");
+    int port = qEnvironmentVariableIntValue("CHARGING_SERVER_PORT");
+    if (port <= 0) port = 9527;
+    for (int i = 1; i < argc; ++i) {
+        const QString argument = QString::fromLocal8Bit(argv[i]);
+        if (argument == "--host" && i + 1 < argc) host = QString::fromLocal8Bit(argv[++i]);
+        else if (argument == "--port" && i + 1 < argc) port = QString::fromLocal8Bit(argv[++i]).toInt();
+        else if (argument.startsWith("--host=")) host = argument.mid(7);
+        else if (argument.startsWith("--port=")) port = argument.mid(7).toInt();
+    }
+    if (host.trimmed().isEmpty() || port < 1 || port > 65535) {
+        qCritical() << "Expected --host HOST --port 1..65535";
+        return 2;
+    }
+    charging::qml::QmlApp qmlApp(host, quint16(port),
+        qEnvironmentVariable("CHARGING_CHANNEL") == QStringLiteral("mock"));
     auto* ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("chargingView"), view);
     ctx->setContextProperty(QStringLiteral("chargingArg"), deepArg);
     ctx->setContextProperty(QStringLiteral("App"), &qmlApp);
-    // Contract §1 channel switch (tcp wiring is TODO(contract) — mock only now).
+    // Mock is an explicit preview option, never the production default.
     ctx->setContextProperty(QStringLiteral("CHARGING_CHANNEL"),
-                            qEnvironmentVariable("CHARGING_CHANNEL", "mock"));
+                            qmlApp.mockMode() ? QStringLiteral("mock") : QStringLiteral("tcp"));
     // Screenshot/demo convenience: deep links past the login gate ride the
     // demo account in. "login"/"station" keep the gate for the real flow
     // unless --logged-in is passed (lets shots exercise post-login routes).
-    if (view != QLatin1String("login") && view != QLatin1String("station")
-        || app.arguments().contains(QStringLiteral("--logged-in")))
+    if (qmlApp.mockMode() && ((!view.isEmpty() && view != QLatin1String("login")
+        && view != QLatin1String("station"))
+        || app.arguments().contains(QStringLiteral("--logged-in"))))
         qmlApp.login(QStringLiteral("13800138000"));
     // CONTRACT.md §1: bare service names, objects pass through verbatim.
-    ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());
-    ctx->setContextProperty(QStringLiteral("orderService"), qmlApp.orderService());
-    ctx->setContextProperty(QStringLiteral("chargingService"), qmlApp.chargingService());
-    ctx->setContextProperty(QStringLiteral("reservationService"), qmlApp.reservationService());
-    ctx->setContextProperty(QStringLiteral("settingsService"), qmlApp.settingsService());
-    ctx->setContextProperty(QStringLiteral("mapGeoService"), qmlApp.mapGeoService());
-    ctx->setContextProperty(QStringLiteral("favoritesService"), qmlApp.favoritesService());
-    ctx->setContextProperty(QStringLiteral("notificationService"), qmlApp.notificationService());
-    ctx->setContextProperty(QStringLiteral("stationQueryService"), qmlApp.stationQueryService());
+    const auto bindServices = [&qmlApp, ctx]() {
+        ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());
+        ctx->setContextProperty(QStringLiteral("orderService"), qmlApp.orderService());
+        ctx->setContextProperty(QStringLiteral("chargingService"), qmlApp.chargingService());
+        ctx->setContextProperty(QStringLiteral("reservationService"), qmlApp.reservationService());
+        ctx->setContextProperty(QStringLiteral("settingsService"), qmlApp.settingsService());
+        ctx->setContextProperty(QStringLiteral("mapGeoService"), qmlApp.mapGeoService());
+        ctx->setContextProperty(QStringLiteral("favoritesService"), qmlApp.favoritesService());
+        ctx->setContextProperty(QStringLiteral("notificationService"), qmlApp.notificationService());
+        ctx->setContextProperty(QStringLiteral("stationQueryService"), qmlApp.stationQueryService());
+    };
+    bindServices();
+    QObject::connect(&qmlApp, &charging::qml::QmlApp::servicesChanged, ctx, bindServices);
+    ctx->setContextProperty(QStringLiteral("mapBridge"), qmlApp.mapBridge());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
     QQmlComponent component(&engine);
-    component.loadUrl(QUrl::fromLocalFile(
-        QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
+    component.loadUrl(QUrl(QStringLiteral("qrc:/charging/Shell.qml")));
     if (component.isError()) {
         qWarning().noquote() << "QML load failed:" << component.errorString();
         return 1;
@@ -117,5 +141,7 @@ int main(int argc, char* argv[])
         });
     }
     window->show();
-    return app.exec();
+    const int result = app.exec();
+    delete window; // Pages disconnect while the service graph is still alive.
+    return result;
 }

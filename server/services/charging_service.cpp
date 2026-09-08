@@ -181,6 +181,14 @@ ChargingOperationResult ChargingService::fromRepository(const ChargingRepository
                                        : 0;
     } else {
         result.error = mapRepositoryError(value.error, value.diagnostic);
+        if (value.error == RepositoryError::ExistingUnfinishedOrder && value.order.id > 0) {
+            // Retain the existing error code for older clients. These safe,
+            // session-owned identifiers let QML recover the blocking workflow.
+            result.error.details.insert(QStringLiteral("reason"), QStringLiteral("UNFINISHED_ORDER"));
+            result.error.details.insert(QStringLiteral("orderId"), QString::number(value.order.id));
+            result.error.details.insert(QStringLiteral("reservationId"), QString::number(value.order.reservationId));
+            result.error.details.insert(QStringLiteral("status"), charging::model::toString(value.order.status));
+        }
     }
     return result;
 }

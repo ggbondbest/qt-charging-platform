@@ -59,7 +59,10 @@ Item {
         const ids = favIds()
         const c = page.criteria
         const rows = []
-        for (const s of (page.raw || [])) {
+        for (const source of (page.raw || [])) {
+            const s = Object.assign({}, source)
+            s.distanceMeters = typeof s.latitude === "number" && typeof s.longitude === "number"
+                ? mapBridge.distanceMeters(s.latitude, s.longitude) : -1
             if (ids.indexOf(s.id) < 0) continue
             if (c.maxDistanceKm > 0 && !(s.distanceMeters >= 0 && s.distanceMeters <= c.maxDistanceKm * 1000)) continue
             if (c.statuses.length > 0) {
@@ -81,7 +84,8 @@ Item {
         favModel.clear()
         for (const s of rows) {
             favModel.append({
-                stationId: s.id, name: s.name, address: s.address,
+                stationId: String(s.id), name: s.name, address: s.address,
+                latitude: s.latitude, longitude: s.longitude,
                 priceCentsPerKwh: s.priceCentsPerKwh || 0,
                 availableChargers: s.availableChargers || 0, totalChargers: s.totalChargers || 0,
                 distanceMeters: s.distanceMeters === undefined ? -1 : s.distanceMeters,
@@ -101,6 +105,10 @@ Item {
         function onQueryFailed(message) {
             page.loading = false; page.loaded = false; page.failed = true; page.failMessage = message
         }
+    }
+    Connections {
+        target: mapBridge
+        function onLocationChanged() { page.project() }
     }
     Connections {
         target: favoritesService
@@ -140,7 +148,8 @@ Item {
                     if (App) App.navigate("station_detail", {
                         id: stationId, name: name, address: address,
                         priceCentsPerKwh: priceCentsPerKwh,
-                        distanceMeters: distanceMeters, status: status })
+                        distanceMeters: distanceMeters, status: status,
+                        latitude: latitude, longitude: longitude })
                 }
                 Row {
                     width: parent.width        // Column 内容器：anchors.fill 被忽略且告警
@@ -156,7 +165,7 @@ Item {
                             text: "¥" + page.money(priceCentsPerKwh) + "/kWh · "
                                   + (availableChargers > 0 ? "空闲 " + availableChargers + "/" + totalChargers
                                                            : "桩位已满")
-                                  + " · 距离 "
+                                  + " · 直线距离 "
                                   + (distanceMeters < 0 ? "--"
                                         : distanceMeters >= 1000 ? (distanceMeters / 1000).toFixed(1) + "km"
                                         : distanceMeters + "m")

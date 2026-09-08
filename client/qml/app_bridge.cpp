@@ -1,107 +1,157 @@
 #include "app_bridge.h"
-
 #include "service_bridges.h"
-
+#include "map_bridge.h"
 #include "charging/client/profile_charging/charging_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
+#include "charging/client/profile_charging/network_request_transport.h"
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
-#include "charging/common/model/models.h"
+#include "charging/common/model/model_json.h"
+#include "network/client_connection.h"
+#include "network/page_validation.h"
 #include "services/favorites/favorites_service.h"
 #include "services/favorites/notification_service.h"
 #include "services/map/map_geo_service.h"
 #include "services/reservation/reservation_service.h"
 #include "services/settings/settings_service.h"
+#include "services/station/auth_service.h"
 #include "services/station/station_query_service.h"
+#include <QBuffer>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QImageReader>
+#include <QJsonArray>
+#include <QRegularExpression>
+#include <QTimer>
+#include <QUrl>
+#include <memory>
 
 namespace charging::qml {
-
 namespace {
-// Mirror of MockRequestTransport::seedDemoData() — the demo account.
 charging::model::User demoUser()
 {
     charging::model::User user;
-    user.id = 1;
-    user.phone = QStringLiteral("13800138000");
-    user.nickname = QStringLiteral("用户8000");
-    user.balanceCents = 10000;
+    user.id = 1; user.phone = QStringLiteral("13800138000");
+    user.nickname = QStringLiteral("用户8000"); user.balanceCents = 10000;
     user.status = charging::model::UserStatus::Active;
     return user;
 }
-
-QVariantMap toMap(const charging::model::User& user)
-{
-    return QVariantMap{
-        {QStringLiteral("id"), user.id},
-        {QStringLiteral("phone"), user.phone},
-        {QStringLiteral("nickname"), user.nickname},
-        {QStringLiteral("avatarKey"), user.avatarKey},
-        {QStringLiteral("balanceCents"), user.balanceCents},
-    };
 }
-} // namespace
 
 QmlApp::QmlApp(QObject* parent)
-    : QObject(parent)
+    : QmlApp(qEnvironmentVariable("CHARGING_SERVER_HOST", "127.0.0.1"),
+             quint16(qEnvironmentVariableIntValue("CHARGING_SERVER_PORT") > 0
+                     ? qEnvironmentVariableIntValue("CHARGING_SERVER_PORT") : 9527),
+             qEnvironmentVariable("CHARGING_CHANNEL") == QStringLiteral("mock"), parent)
+{}
+
+QmlApp::QmlApp(const QString& host, quint16 port, bool mockMode, QObject* parent)
+    : QObject(parent), mockMode_(mockMode)
 {
-    const charging::model::User user = demoUser();
-    user_ = toMap(user);
+    mapBridge_ = new MapBridge(this);
+    connection_ = new charging::client::network::ClientConnection(host, port, this);
+    auth_ = new charging::client::services::station::AuthService(connection_, this);
+    connect(auth_, &charging::client::services::station::AuthService::loginStarted,
+            this, &QmlApp::loginStarted);
+    connect(auth_, &charging::client::services::station::AuthService::loginFailed,
+            this, &QmlApp::loginFailed);
+    connect(auth_, &charging::client::services::station::AuthService::loginSucceeded, this,
+            [this](const charging::model::User& user, bool created) {
+        if (loggingOut_) return;
+        createSession(user);
+        loggedIn_ = true;
+        emit userChanged();
+        emit loginSucceeded(user_, created);
+        emit loginStateChanged();
+        recoverUnfinishedOrder();
+    });
+    connect(connection_, &charging::client::network::ClientConnection::connectionStateChanged,
+            this, [this](bool connected) {
+        if (!connected && loggedIn_ && !mockMode_ && !loggingOut_) {
+            logout();
+            emit toastRequested(tr("连接已断开，请重新登录；订单和余额以服务器为准"), "warning");
+        }
+    });
+    createSession(mockMode_ ? demoUser() : charging::model::User{});
+}
 
-    // Exactly the HomeShell mock wiring (home_shell.cpp ctor): transport-backed
-    // trio + standalone services, with the cross-service setters in order.
-    auto* transport = new charging::client::MockRequestTransport();
-    transport->setParent(this);
-    transport->setUser(user);
-    walletService_ = new charging::client::WalletService(transport, this);
-    orderService_ = new charging::client::OrderService(transport, this);
-    chargingService_ = new charging::client::ChargingService(transport, this);
+QmlApp::~QmlApp()
+{
+    loggingOut_ = true;
+    ++generation_;
+    disconnect(connection_, nullptr, this, nullptr);
+    connection_->disconnectFromServer();
+    delete session_;
+    session_ = nullptr;
+}
 
-    reservationService_ = new charging::client::services::reservation::ReservationService(this);
-    settingsService_ = new charging::client::services::settings::SettingsService(this);
-    mapGeoService_ = new charging::client::services::map::MapGeoService(this);
+void QmlApp::createSession(const charging::model::User& user)
+{
+    ++generation_;
+    if (session_) {
+        chargingService_->stopTracking();
+        session_->deleteLater();
+    }
+    session_ = new QObject(this);
+    const quint64 generation = generation_;
+    user_ = marshalling::userToMap(user);
+    if (mockMode_) {
+        auto* mock = new charging::client::MockRequestTransport;
+        mock->setParent(session_); mock->setUser(user); transport_ = mock;
+    } else {
+        transport_ = new charging::client::NetworkRequestTransport(connection_, user.id, session_);
+    }
+    walletService_ = new charging::client::WalletService(transport_, session_);
+    orderService_ = new charging::client::OrderService(transport_, session_);
+    chargingService_ = new charging::client::ChargingService(transport_, session_);
+    reservationService_ = new charging::client::services::reservation::ReservationService(session_);
+    settingsService_ = new charging::client::services::settings::SettingsService(session_);
+    mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
     reservationService_->setUserId(user.id);
     // 2026-09-08 业务变更：预约不再强制车辆（QML 侧删闸同步）。撤 settings 注入
     // = finishMockSubmit 的 0车拒绝/每车唯一两道自然失效，名额闸回退"至多 1 条
     // 有效预约"（unfinishedSlotLimit 未注入回退 1），恰合"有充电中即不可再约"。
     // widgets HomeShell 自带注入路径，其车辆语义测试零受影响。
-    // （原 reservationService_->setSettingsService(settingsService_);）
-    favoritesService_ = new charging::client::services::favorites::FavoritesService(this);
+    // （原 reservationService_->setSettingsService(settingsService_);——上游 develop
+    //   该行随 favorites/notification 父对象改 session_ 一并合入，注入行按业务指令撤除。）
+    favoritesService_ = new charging::client::services::favorites::FavoritesService(session_);
     notificationService_ =
-        new charging::client::services::favorites::NotificationService(this);
+        new charging::client::services::favorites::NotificationService(session_);
     notificationService_->setSettingsService(settingsService_);
-    favoritesService_->setCurrentUser(QString::number(user.id));
-    stationQueryService_ =
-        new charging::client::services::station::StationQueryService(this);
-
-    // Same-name forwarding bridges become the QML-visible services (CONTRACT §1).
-    walletBridge_ = new WalletBridge(walletService_, this);
-    orderBridge_ = new OrderBridge(orderService_, this);
-    chargingBridge_ = new ChargingBridge(chargingService_, this);
-    // 2026-09-07 补桥批：station/reservation/settings/favorites/notification
-    // 全部同名转发桥化（成员2 页面此前按契约名盲写的调用点即刻生效）。
-    stationQueryBridge_ = new StationQueryBridge(stationQueryService_, this);
-    reservationBridge_ = new ReservationBridge(reservationService_, this);
-    settingsBridge_ = new SettingsBridge(settingsService_, this);
-    favoritesBridge_ = new FavoritesBridge(favoritesService_, this);
-    notificationBridge_ = new NotificationBridge(notificationService_, this);
-    // Keep currentUser in sync so top-bar balances never lag after profile
-    // edit / recharge / payment — the three events that mutate balanceCents.
+    favoritesService_->setCurrentUser(user.id > 0 ? QString::number(user.id) : QString());
+    stationQueryService_ = new charging::client::services::station::StationQueryService(session_);
+    if (!mockMode_) {
+        stationQueryService_->setConnection(connection_);
+        stationQueryService_->setLiveMode(true);
+        reservationService_->setConnection(connection_);
+        reservationService_->setLiveMode(true);
+    }
+    walletBridge_ = new WalletBridge(walletService_, session_);
+    orderBridge_ = new OrderBridge(orderService_, session_);
+    chargingBridge_ = new ChargingBridge(chargingService_, session_);
+    stationQueryBridge_ = new StationQueryBridge(stationQueryService_, session_);
+    reservationBridge_ = new ReservationBridge(reservationService_, session_);
+    settingsBridge_ = new SettingsBridge(settingsService_, session_);
+    favoritesBridge_ = new FavoritesBridge(favoritesService_, session_);
+    notificationBridge_ = new NotificationBridge(notificationService_, session_);
     connect(walletBridge_, &WalletBridge::profileLoaded, this,
-            [this](const QVariantMap& user) {
-                for (auto it = user.constBegin(); it != user.constEnd(); ++it)
-                    user_.insert(it.key(), it.value());
-                emit userChanged();
-            });
-    connect(walletBridge_, &WalletBridge::rechargeCompleted, this,
-            [this](qint64, qint64 balanceAfterCents) {
-                user_.insert(QStringLiteral("balanceCents"), balanceAfterCents);
-                emit userChanged();
-            });
-    connect(chargingBridge_, &ChargingBridge::paymentCompleted, this,
-            [this](qint64, qint64 balanceAfterCents) {
-                user_.insert(QStringLiteral("balanceCents"), balanceAfterCents);
-                emit userChanged();
-            });
+            [this, generation](const QVariantMap& profile) {
+        if (generation != generation_ || profile.value("id") != user_.value("id")) return;
+        user_ = profile; emit userChanged();
+    });
+    const auto balanceChanged = [this, generation](qint64, qint64 balance) {
+        if (generation != generation_) return;
+        user_.insert("balanceCents", balance); emit userChanged();
+    };
+    connect(walletBridge_, &WalletBridge::rechargeCompleted, this, balanceChanged);
+    connect(chargingBridge_, &ChargingBridge::paymentCompleted, this, balanceChanged);
+    // A successful start always opens the authoritative charging status page.
+    connect(chargingBridge_, &ChargingBridge::startCompleted, this,
+            [this, generation](const QVariantMap& status) {
+        if (generation == generation_ && loggedIn_)
+            emit navigateRequested(QStringLiteral("charging_run"), status);
+    });
+    emit servicesChanged();
 }
 
 QObject* QmlApp::walletService() const { return walletBridge_; }
@@ -110,29 +160,152 @@ QObject* QmlApp::chargingService() const { return chargingBridge_; }
 QObject* QmlApp::reservationService() const { return reservationBridge_; }
 QObject* QmlApp::settingsService() const { return settingsBridge_; }
 QObject* QmlApp::mapGeoService() const { return mapGeoService_; }
+QObject* QmlApp::mapBridge() const { return mapBridge_; }
 QObject* QmlApp::favoritesService() const { return favoritesBridge_; }
 QObject* QmlApp::notificationService() const { return notificationBridge_; }
 QObject* QmlApp::stationQueryService() const { return stationQueryBridge_; }
-QObject* QmlApp::authService() const { return nullptr; }  // TODO(contract): tcp only
+QObject* QmlApp::authService() const { return const_cast<QmlApp*>(this); }
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 
 bool QmlApp::login(const QString& phone)
 {
-    // Mock channel: any of the seeded phone variants signs into the demo
-    // account. TODO(contract): real credential validation lives server-side.
-    if (phone.trimmed().isEmpty())
-        return false;
+    static const QRegularExpression pattern(QStringLiteral("^1[0-9]{10}$"));
+    if (!pattern.match(phone.trimmed()).hasMatch()) {
+        emit loginFailed(tr("手机号必须为11位数字且以1开头")); return false;
+    }
+    if (loggedIn_ || auth_->isLoginPending()) return false;
+    if (!mockMode_) { auth_->login(phone.trimmed()); return true; }
+    createSession(demoUser());
     loggedIn_ = true;
-    emit userChanged();
-    emit loginStateChanged();
+    emit userChanged(); emit loginSucceeded(user_, false); emit loginStateChanged();
     return true;
 }
 
 void QmlApp::logout()
 {
+    if (loggingOut_) return;
+    loggingOut_ = true;
+    ++generation_;
     loggedIn_ = false;
-    emit userChanged();
-    emit loginStateChanged();
+    setCheckingOrders(false);
+    user_.clear();
+    // First destroy the visible authenticated page tree, then replace contexts.
+    emit userChanged(); emit loginStateChanged();
+    connection_->disconnectFromServer();
+    createSession(mockMode_ ? demoUser() : charging::model::User{});
+    loggingOut_ = false;
 }
 
-} // namespace charging::qml
+void QmlApp::navigate(const QString& route, const QVariant& arg)
+{
+    if (!loggedIn_ && route != QStringLiteral("login")) {
+        emit navigateRequested(QStringLiteral("login"), {}); return;
+    }
+    if (route == QStringLiteral("reservation_confirm")) {
+        checkBeforeReservation(arg.toMap()); return;
+    }
+    emit navigateRequested(route, arg);
+}
+
+void QmlApp::setCheckingOrders(bool checking)
+{
+    if (checkingOrders_ == checking) return;
+    checkingOrders_ = checking; emit checkingOrdersChanged();
+}
+void QmlApp::checkBeforeReservation(const QVariantMap& draft)
+{ checkUnfinished(draft, true); }
+void QmlApp::recoverUnfinishedOrder()
+{ if (!mockMode_) checkUnfinished({}, false); }
+
+void QmlApp::checkUnfinished(const QVariantMap& draft, bool reserveAfter)
+{
+    if (!loggedIn_) { emit navigateRequested("login", {}); return; }
+    if (checkingOrders_) return;
+    setCheckingOrders(true);
+    const quint64 generation = generation_;
+    struct Check {
+        int remaining = 3; bool failed = false;
+        QVariantMap charging; QVariantMap waiting; QVariantMap reserved;
+    };
+    const auto state = std::make_shared<Check>();
+    for (const QString& status : {QStringLiteral("CHARGING"), QStringLiteral("WAITING_PAYMENT"),
+                                 QStringLiteral("RESERVED")}) {
+        transport_->sendFor(session_, charging::protocol::request_type::kGetOrders,
+            {{"status", status}, {"page", 1}, {"pageSize", 1}},
+            [this, generation, state, status, draft, reserveAfter](bool ok,
+                const QJsonObject& data, const charging::protocol::ProtocolError&) {
+            if (generation != generation_) return;
+            bool more = false;
+            if (!ok || !charging::client::network::readPage(data, "orders", 1, 1, &more)) {
+                state->failed = true;
+            } else if (!data.value("orders").toArray().isEmpty()) {
+                const QJsonObject item = data.value("orders").toArray().first().toObject();
+                charging::model::Order order;
+                QString error;
+                if (!charging::model::fromJson(item, &order, &error)) state->failed = true;
+                else {
+                    const QVariantMap mapped = marshalling::orderToMap(order,
+                        item.value("stationName").toString(), item.value("chargerCode").toString());
+                    if (status == "CHARGING") state->charging = mapped;
+                    else if (status == "WAITING_PAYMENT") state->waiting = mapped;
+                    else state->reserved = mapped;
+                }
+            }
+            if (--state->remaining != 0) return;
+            setCheckingOrders(false);
+            if (state->failed) {
+                emit toastRequested(tr("未完成订单检查失败，请检查网络后重试"), "danger");
+                return; // Fail closed: never permit a reservation after a failed check.
+            }
+            if (!state->charging.isEmpty()) {
+                emit toastRequested(tr("您有正在充电的订单，请先结束充电并结算"), "warning");
+                emit navigateRequested("charging_run", state->charging);
+            } else if (!state->waiting.isEmpty()) {
+                emit toastRequested(tr("您有待支付订单，请先结算"), "warning");
+                emit navigateRequested("settlement", state->waiting);
+            } else if (!state->reserved.isEmpty()) {
+                emit toastRequested(tr("您已有有效预约，请开始充电或取消后再预约"), "warning");
+                emit navigateRequested("charging", state->reserved);
+            } else if (reserveAfter) emit navigateRequested("reservation_confirm", draft);
+        });
+    }
+}
+
+QString QmlApp::chooseAvatar()
+{
+    const QString path = QFileDialog::getOpenFileName(nullptr, tr("选择本地头像"), {},
+                                                     tr("图片 (*.png *.jpg *.jpeg *.bmp)"));
+    return path.isEmpty() ? QString() : prepareAvatar(path);
+}
+
+QString QmlApp::displayTime(const QString& isoUtc) const
+{
+    const QDateTime time = QDateTime::fromString(isoUtc, Qt::ISODateWithMs);
+    return time.isValid() ? time.toOffsetFromUtc(8 * 3600).toString("yyyy-MM-dd HH:mm:ss") : isoUtc;
+}
+
+QString QmlApp::prepareAvatar(const QString& localFile)
+{
+    const QUrl url(localFile);
+    const QString path = url.isLocalFile() ? url.toLocalFile() : localFile;
+    const QFileInfo info(path);
+    auto reject = [this]() {
+        emit toastRequested(tr("请选择有效本地图片（不超过10MB、4096×4096）"), "danger");
+        return QString();
+    };
+    if (!info.isFile() || info.size() <= 0 || info.size() > 10 * 1024 * 1024) return reject();
+    QImageReader reader(path);
+    const QSize size = reader.size();
+    if (!reader.canRead() || !size.isValid() || size.width() > 4096 || size.height() > 4096)
+        return reject();
+    reader.setAutoTransform(true);
+    QImage image = reader.read();
+    if (image.isNull()) return reject();
+    image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (!buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG") || png.size() > 128 * 1024)
+        return reject();
+    return QStringLiteral("data:image/png;base64,") + QString::fromLatin1(png.toBase64());
+}
+}

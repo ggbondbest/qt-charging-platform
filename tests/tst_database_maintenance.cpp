@@ -25,6 +25,10 @@ private slots:
     void restoreRejectsResidualWalWithoutChangingDestination();
     void backupRejectsResidualWalWithoutChangingDestination();
     void rejectsIndexesWithWrongColumnsOrPredicate();
+    void upgradesLegacyAdminIndexesWithoutLosingData();
+    void restoresLegacyBackupThenMigratesOnFirstOpen();
+    void rejectsLegacyBackupWithInvalidUniqueIndex();
+    void rejectsFutureSchemaVersionWithoutChangingIt();
 };
 
 void DatabaseMaintenanceTest::backupValidateAndRestore()
@@ -282,6 +286,175 @@ void DatabaseMaintenanceTest::rejectsIndexesWithWrongColumnsOrPredicate()
         "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(user_id) "
         "WHERE status IN ('reserved', 'CHARGING', 'WAITING_PAYMENT')")));
     QVERIFY(!DatabaseMaintenance::validate(wrongCasePath).ok);
+}
+
+void DatabaseMaintenanceTest::upgradesLegacyAdminIndexesWithoutLosingData()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("legacy.sqlite"));
+    QString errorMessage;
+
+    DatabaseConnection legacy;
+    QVERIFY2(legacy.open(databasePath, true, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery mutation(legacy.database());
+    QVERIFY(mutation.exec(QStringLiteral(
+        "INSERT INTO users(phone, nickname) VALUES('13900006666', 'preserved-user')")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_orders_status_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_orders_status_created_at "
+        "ON orders(status, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_operation_logs_admin_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_operation_logs_admin_created_at "
+        "ON operation_logs(admin_id, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_chargers_status_updated_at "
+        "ON chargers(status, updated_at DESC, id DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 1")));
+    legacy.close();
+
+    DatabaseConnection upgraded;
+    QVERIFY2(upgraded.open(databasePath, false, &errorMessage), qPrintable(errorMessage));
+
+    QSqlQuery verification(upgraded.database());
+    QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
+    QVERIFY(verification.next());
+    QCOMPARE(verification.value(0).toInt(), 2);
+
+    QVERIFY(verification.exec(QStringLiteral(
+        "SELECT COUNT(*) FROM users WHERE phone = '13900006666'")));
+    QVERIFY(verification.next());
+    QCOMPARE(verification.value(0).toInt(), 1);
+
+    const auto indexSql = [&verification](const QString& indexName) {
+        verification.prepare(QStringLiteral(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?"));
+        verification.addBindValue(indexName);
+        if (!verification.exec() || !verification.next()) {
+            return QString();
+        }
+        return verification.value(0).toString();
+    };
+    QVERIFY(indexSql(QStringLiteral("idx_orders_status_created_at"))
+                .contains(QStringLiteral("id DESC"), Qt::CaseInsensitive));
+    QVERIFY(indexSql(QStringLiteral("idx_operation_logs_admin_created_at"))
+                .contains(QStringLiteral("id DESC"), Qt::CaseInsensitive));
+    QVERIFY(indexSql(QStringLiteral("idx_chargers_status_updated_at")).isEmpty());
+
+    upgraded.close();
+    const auto validation = DatabaseMaintenance::validate(databasePath);
+    QVERIFY2(validation.ok, qPrintable(validation.errorMessage));
+}
+
+void DatabaseMaintenanceTest::restoresLegacyBackupThenMigratesOnFirstOpen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString legacyPath = directory.filePath(QStringLiteral("legacy-v1.sqlite"));
+    const QString restoredPath = directory.filePath(QStringLiteral("restored.sqlite"));
+    QString errorMessage;
+
+    DatabaseConnection legacy;
+    QVERIFY2(legacy.open(legacyPath, true, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery mutation(legacy.database());
+    QVERIFY(mutation.exec(QStringLiteral(
+        "INSERT INTO users(phone, nickname) VALUES('13900005555', 'legacy-restore-user')")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_orders_status_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_orders_status_created_at "
+        "ON orders(status, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_operation_logs_admin_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_operation_logs_admin_created_at "
+        "ON operation_logs(admin_id, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_chargers_status_updated_at "
+        "ON chargers(status, updated_at DESC, id DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 1")));
+    legacy.close();
+
+    const auto restoreResult = DatabaseMaintenance::restore(legacyPath, restoredPath);
+    QVERIFY2(restoreResult.ok, qPrintable(restoreResult.errorMessage));
+
+    DatabaseConnection restored;
+    QVERIFY2(restored.open(restoredPath, false, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery verification(restored.database());
+    QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
+    QVERIFY(verification.next());
+    QCOMPARE(verification.value(0).toInt(), 2);
+    QVERIFY(verification.exec(QStringLiteral(
+        "SELECT COUNT(*) FROM users WHERE phone = '13900005555'")));
+    QVERIFY(verification.next());
+    QCOMPARE(verification.value(0).toInt(), 1);
+    restored.close();
+
+    const auto validation = DatabaseMaintenance::validate(restoredPath);
+    QVERIFY2(validation.ok, qPrintable(validation.errorMessage));
+}
+
+void DatabaseMaintenanceTest::rejectsLegacyBackupWithInvalidUniqueIndex()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString legacyPath = directory.filePath(QStringLiteral("invalid-legacy.sqlite"));
+    const QString restoredPath = directory.filePath(QStringLiteral("restored.sqlite"));
+    QString errorMessage;
+
+    DatabaseConnection legacy;
+    QVERIFY2(legacy.open(legacyPath, true, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery mutation(legacy.database());
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX ux_orders_unfinished_user")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE UNIQUE INDEX ux_orders_unfinished_user ON orders(user_id) "
+        "WHERE status IN ('RESERVED', 'CHARGING')")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_orders_status_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_orders_status_created_at ON orders(status, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("DROP INDEX idx_operation_logs_admin_created_at")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_operation_logs_admin_created_at "
+        "ON operation_logs(admin_id, created_at DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral(
+        "CREATE INDEX idx_chargers_status_updated_at "
+        "ON chargers(status, updated_at DESC, id DESC)")));
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 1")));
+    legacy.close();
+
+    const auto restoreResult = DatabaseMaintenance::restore(legacyPath, restoredPath);
+    QVERIFY(!restoreResult.ok);
+    QVERIFY(!QFileInfo::exists(restoredPath));
+}
+
+void DatabaseMaintenanceTest::rejectsFutureSchemaVersionWithoutChangingIt()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("future.sqlite"));
+    QString errorMessage;
+
+    DatabaseConnection current;
+    QVERIFY2(current.open(databasePath, true, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery mutation(current.database());
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 3")));
+    current.close();
+
+    DatabaseConnection oldApplication;
+    QVERIFY(!oldApplication.open(databasePath, false, &errorMessage));
+
+    const QString connectionName = QStringLiteral("future-version-check");
+    {
+        QSqlDatabase verification = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                                               connectionName);
+        verification.setDatabaseName(databasePath);
+        QVERIFY(verification.open());
+        QSqlQuery versionQuery(verification);
+        QVERIFY(versionQuery.exec(QStringLiteral("PRAGMA user_version")));
+        QVERIFY(versionQuery.next());
+        QCOMPARE(versionQuery.value(0).toInt(), 3);
+        verification.close();
+    }
+    QSqlDatabase::removeDatabase(connectionName);
 }
 
 QTEST_GUILESS_MAIN(DatabaseMaintenanceTest)

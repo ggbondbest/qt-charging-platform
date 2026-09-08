@@ -17,16 +17,21 @@ Item {
         const v = parseInt(amountField.text)
         return isNaN(v) || v <= 0 ? 0 : v * 100
     }
+    property bool sending: false
 
     Connections {
         target: walletService
         function onRechargeCompleted(amountCents, balanceAfterCents) {
+            if (!page.sending) return
+            page.sending = false
             if (!App) return
             App.showToast("充值成功 ¥" + (amountCents / 100).toFixed(2)
                           + "，余额 ¥" + (balanceAfterCents / 100).toFixed(2), "success")
             App.back()
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "RECHARGE" || !page.sending) return
+            page.sending = false
             if (App) App.showToast("充值失败：" + message, "danger")
         }
     }
@@ -80,15 +85,16 @@ Item {
             variant: "primary"
             text: page.amountCents > 0
                   ? "确认充值 ¥" + (page.amountCents / 100).toFixed(2) : "请输入金额"
-            enabled: page.amountCents > 0
-            onClicked: walletService.recharge(page.amountCents)
+            enabled: page.amountCents > 0 && page.amountCents <= 10000000 && !page.sending
+            onClicked: { page.sending = true; walletService.recharge(page.amountCents) }
         }
 
         Text {
             width: parent.width
-            text: "充值为演示通道，走 mock 契约 v1 RECHARGE；真实支付协议待定 TODO(contract)"
+            text: "模拟充值将真实记入平台余额与充值记录，不会从银行卡扣款。网络超时可重试原金额，不会重复入账。"
             font.pixelSize: P.Style.fontSm
             color: P.Style.faint
+            wrapMode: Text.Wrap
         }
     }
 }

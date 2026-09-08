@@ -22,7 +22,9 @@ Popup {
 
     property var distanceKm: [5, 10, 30, 50]
     property int maxDistanceKm: 0
-    property var groups: [
+    property var groups: (typeof App !== "undefined" && !App.mockMode) ? [
+        { key: "statuses", title: "营业状态", options: ["营业中", "暂停运营"] }
+    ] : [
         { key: "statuses",     title: "营业状态",   options: ["营业中", "暂停运营"] },
         { key: "operators",    title: "运营商",     options: ["自营", "合作站", "互联互通", "个人桩"] },
         { key: "accessTypes",  title: "电站类型",   options: ["对外", "不对外开放"] },
@@ -86,10 +88,10 @@ Popup {
         applied({
             maxDistanceKm: dialog.maxDistanceKm,
             priceMinCents: pMin, priceMaxCents: pMax,   // -1=不限
-            statuses: checked.statuses, operators: checked.operators,
-            accessTypes: checked.accessTypes, parkingFees: checked.parkingFees,
-            features: checked.features, chargerTypes: checked.chargerTypes,
-            voltageBands: checked.voltageBands
+            statuses: checked.statuses || [], operators: checked.operators || [],
+            accessTypes: checked.accessTypes || [], parkingFees: checked.parkingFees || [],
+            features: checked.features || [], chargerTypes: checked.chargerTypes || [],
+            voltageBands: checked.voltageBands || []
         })
         close()
     }
@@ -120,7 +122,7 @@ Popup {
                 Column {
                     objectName: "filterGroupDistance"
                     spacing: P.Style.spaceXs
-                    Text { objectName: "stationFilterGroupTitle"; text: "距离"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "stationFilterGroupTitle"; text: "直线距离（需先定位）"; font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink }
                     Flow {
                         width: parent.width
                         spacing: P.Style.spaceSm

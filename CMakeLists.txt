@@ -26,14 +26,15 @@ if(BUILD_TESTING)
     list(APPEND _charging_qt_components Test)
 endif()
 
-# The QML migration stack is optional: probe quietly so CI images without the
-# declarative dev packages keep configuring exactly as before.
+# The delivered client is QML. Missing runtime/development modules must fail
+# configuration instead of silently producing only the retired Widgets client.
+option(CHARGING_BUILD_QML "Build the production QML client" ON)
+option(CHARGING_BUILD_WIDGETS_CLIENT "Build the legacy Widgets client for regression only" OFF)
 set(CHARGING_HAS_QML OFF)
-find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} QUIET
-    COMPONENTS Quick QuickControls2)
-if(Qt6Quick_FOUND AND Qt6QuickControls2_FOUND)
-    option(CHARGING_BUILD_QML "Build the QML preview shell (migration in progress)" ON)
-    set(CHARGING_HAS_QML ${CHARGING_BUILD_QML})
+if(CHARGING_BUILD_QML)
+    find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
+        COMPONENTS Quick QuickControls2 WebEngineQuick)
+    set(CHARGING_HAS_QML ON)
 endif()
 
 # A minimum version keeps newer local Qt installations usable. The CI build turns

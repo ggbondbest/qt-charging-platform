@@ -9,6 +9,8 @@ inline constexpr int kDefaultPageSize = 20;
 inline constexpr int kMaximumPageSize = 100;
 inline constexpr int kMaximumPage = 2147483647;
 inline constexpr qint64 kMaximumRechargeCents = 10000000;
+inline constexpr int kMaximumAvatarBytes = 128 * 1024;
+inline constexpr int kMaximumAvatarDimension = 512;
 
 // Validates only the eight user API request-data contracts documented in
 // docs/api/user_api_contract.md. This does NOT authenticate, query SQL, or

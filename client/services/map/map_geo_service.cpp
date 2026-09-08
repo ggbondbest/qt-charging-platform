@@ -11,6 +11,8 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <cmath>
+#include <limits>
 
 namespace charging::client::services::map {
 
@@ -35,6 +37,13 @@ QString formatLatLng(const LatLng& point)
     return QStringLiteral("%1,%2")
         .arg(point.latitude, 0, 'f', 6)
         .arg(point.longitude, 0, 'f', 6);
+}
+
+bool validPoint(const LatLng& point)
+{
+    return std::isfinite(point.latitude) && std::isfinite(point.longitude)
+        && point.latitude >= -90 && point.latitude <= 90
+        && point.longitude >= -180 && point.longitude <= 180;
 }
 
 MapError errorFromBusinessStatus(int status)
@@ -184,6 +193,27 @@ quint64 MapGeoService::requestDistanceMatrix(const QVector<LatLng>& destinations
 quint64 MapGeoService::requestDrivingRoute(LatLng from, LatLng to)
 {
     return startRequest(Kind::Route, {to}, from);
+}
+
+quint64 MapGeoService::requestWalkingRoute(LatLng from, LatLng to)
+{
+    return startRequest(Kind::WalkingRoute, {to}, from);
+}
+
+quint64 MapGeoService::requestForwardGeocode(const QString& address)
+{
+    const quint64 id = nextRequestId_++;
+    const QString trimmed = address.trimmed();
+    if (!hasKey_ || trimmed.isEmpty() || trimmed.size() > 256) {
+        QTimer::singleShot(0, this, [this, id] {
+            emitFailure(id, Kind::ForwardGeocoder,
+                        !hasKey_ ? MapError::NoApiKey : MapError::BadResponse);
+        });
+        return id;
+    }
+    sendRequest(id, Kind::ForwardGeocoder, QStringLiteral("/geocoder/v1/"),
+                {{QStringLiteral("address"), trimmed}, {QStringLiteral("key"), apiKey_}});
+    return id;
 }
 
 quint64 MapGeoService::requestReverseGeocode(LatLng location)
@@ -341,6 +371,7 @@ void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
         emit distanceMatrixFailed(requestId, error, message);
         break;
     case Kind::Route:
+    case Kind::WalkingRoute:
         emit routeFailed(requestId, error, message);
         emit qmlRouteError(requestId, message);   // QML 转发面同点回报
         break;
@@ -356,6 +387,9 @@ void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
         break;
     case Kind::StaticMap:
         emit qmlStaticMapError(requestId, message);
+        break;
+    case Kind::ForwardGeocoder:
+        emit forwardGeocodeFailed(requestId, error, message);
         break;
     }
 }
@@ -373,7 +407,9 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
         return requestId;
     }
 
-    if (destinations.isEmpty()) {
+    bool coordinatesValid = validPoint(origin);
+    for (const auto& point : destinations) coordinatesValid = coordinatesValid && validPoint(point);
+    if (destinations.isEmpty() || !coordinatesValid) {
         QTimer::singleShot(0, this, [this, requestId, kind] {
             emitFailure(requestId, kind, MapError::BadResponse);
         });
@@ -401,7 +437,10 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
     } else {
         params.insert(QStringLiteral("from"), formatLatLng(origin));
         params.insert(QStringLiteral("to"), destinationParts.first());
-        sendRequest(requestId, kind, QStringLiteral("/direction/v1/driving/"), params);
+        params.remove(QStringLiteral("mode"));
+        sendRequest(requestId, kind, kind == Kind::WalkingRoute
+                        ? QStringLiteral("/direction/v1/walking/")
+                        : QStringLiteral("/direction/v1/driving/"), params);
     }
     return requestId;
 }
@@ -409,6 +448,11 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
 void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& path,
                                 const QMap<QString, QString>& params)
 {
+    // 2026-09-08 merge：查询串保留手工百分号编码而非上游 QUrlQuery——keep set
+    // 含 : ; | 等，静态图 paths/markers 测试锚（0x00B578,255:22.541000,...）要求
+    // 逐字节；QUrlQuery 会把 ':' 编成 %3A 破锚。sig 路径则采纳上游口径
+    // = baseUrl 自身路径段 + path（官方规则即完整 URI path，测试锚
+    // /ws/distance/v1/matrix/?...）。
     QString query;
     for (auto it = params.cbegin(); it != params.cend(); ++it) {
         if (!query.isEmpty()) {
@@ -422,7 +466,8 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                   QUrl::toPercentEncoding(it.value(), QByteArrayLiteral(",-.:;|~*")));
     }
     if (!secretKey_.isEmpty()) {
-        query += QStringLiteral("&sig=") + makeSignature(path, params, secretKey_);
+        query += QStringLiteral("&sig=")
+               + makeSignature(QUrl(endpointBase_).path() + path, params, secretKey_);
     }
 
     // 注意：URL 含密钥，绝不写入任何日志/错误文案；message 只用固定文案。
@@ -533,6 +578,21 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                     object.value(QStringLiteral("duration")).toInt(-1)});
             }
             emit distanceMatrixSucceeded(requestId, elements);
+        } else if (kind == Kind::ForwardGeocoder) {
+            const auto location = result.value(QStringLiteral("location")).toObject();
+            if (!location.value(QStringLiteral("lat")).isDouble()
+                || !location.value(QStringLiteral("lng")).isDouble()) {
+                emitFailure(requestId, kind, MapError::BadResponse);
+                return;
+            }
+            const LatLng point{location.value(QStringLiteral("lat")).toDouble(),
+                               location.value(QStringLiteral("lng")).toDouble()};
+            if (!validPoint(point)) {
+                emitFailure(requestId, kind, MapError::BadResponse);
+                return;
+            }
+            emit forwardGeocodeSucceeded(requestId, point,
+                result.value(QStringLiteral("title")).toString());
         } else if (kind == Kind::Geocoder) {
             const QString address = result.value(QStringLiteral("address")).toString();
             if (address.isEmpty()) {
@@ -585,7 +645,10 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             }
             RouteResult route;
             route.distanceMeters = routeObject.value(QStringLiteral("distance")).toInt(-1);
-            route.durationMinutes = routeObject.value(QStringLiteral("duration")).toInt(-1);
+            const double duration = routeObject.value(QStringLiteral("duration")).toDouble(-1);
+            route.durationMinutes = std::isfinite(duration) && duration >= 0
+                    && duration <= std::numeric_limits<int>::max()
+                ? static_cast<int>(std::ceil(duration)) : -1;
             const QJsonArray steps = routeObject.value(QStringLiteral("steps")).toArray();
             route.steps.reserve(steps.size());
             for (const auto& item : steps) {

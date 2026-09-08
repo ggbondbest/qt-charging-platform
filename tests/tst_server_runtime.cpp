@@ -4,6 +4,7 @@
 #include "charging/common/protocol/protocol.h"
 
 #include <QElapsedTimer>
+#include <QJsonDocument>
 #include <QSignalSpy>
 #include <QSqlQuery>
 #include <QTcpServer>
@@ -66,7 +67,58 @@ private slots:
     void databaseWaitDoesNotBlockMainEventLoop();
     void startupFailuresReleaseConnections();
     void stopDuringStartupAndDestructorFallback();
+    void reservationsExpireWithoutClientTraffic();
 };
+
+void ServerRuntimeTest::reservationsExpireWithoutClientTraffic()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath("expiry.sqlite3");
+    ServerRuntime runtime;
+    QSignalSpy ready(&runtime, &ServerRuntime::listening);
+    QVERIFY(runtime.start(path, true, QHostAddress::LocalHost, 0));
+    QTRY_COMPARE(ready.size(), 1);
+    QTcpSocket socket;
+    socket.connectToHost(QHostAddress::LocalHost, runtime.serverPort());
+    QVERIFY(socket.waitForConnected(1000));
+    QVERIFY(exchange(socket, "USER_LOGIN", {{"phone", "13800138000"}}).success);
+    const auto reserved = exchange(socket, "RESERVE_CHARGER", {{"chargerId", "1"}});
+    QVERIFY(reserved.success);
+    socket.abort(); // No subsequent user API query is allowed to drive expiry.
+
+    charging::server::DatabaseConnection observer;
+    QVERIFY(observer.open(path, false));
+    QSqlQuery query(observer.database());
+    query.prepare("UPDATE reservations SET reserved_at=:start, expires_at=:end WHERE id=:id");
+    const auto now = QDateTime::currentDateTimeUtc();
+    query.bindValue(":start", now.addSecs(-900).toString(Qt::ISODateWithMs));
+    query.bindValue(":end", now.addMSecs(500).toString(Qt::ISODateWithMs));
+    query.bindValue(":id", reserved.data["reservation"].toObject()["id"].toString());
+    QVERIFY(query.exec());
+    query.finish();
+    auto state = [&observer](const QString& sql) {
+        QSqlQuery read(observer.database());
+        return read.exec(sql) && read.next() ? read.value(0).toString() : QString();
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(state("SELECT status FROM reservations WHERE user_id=1"), QString("EXPIRED"), 4000);
+    QCOMPARE(state("SELECT status FROM orders WHERE user_id=1"), QString("CANCELLED"));
+    QCOMPARE(state("SELECT status FROM chargers WHERE id=1"), QString("AVAILABLE"));
+
+    QSignalSpy replies(&runtime, &ServerRuntime::adminResponse);
+    runtime.submitAdminRequest("expiry:login", "auth.login",
+        {{"username", "admin"}, {"password", "123456"}}, {}, QDateTime::currentMSecsSinceEpoch() + 5000);
+    QTRY_COMPARE(replies.size(), 1);
+    const auto login = replies.takeFirst()[1].toJsonObject();
+    QVERIFY(login["success"].toBool());
+    const QString token = login["data"].toObject()["sessionToken"].toString();
+    runtime.submitAdminRequest("expiry:charger", "chargers.get", {{"id", "1"}}, token,
+        QDateTime::currentMSecsSinceEpoch() + 5000);
+    QTRY_COMPARE(replies.size(), 1);
+    const auto result = replies.takeFirst()[1].toJsonObject();
+    QVERIFY2(result["success"].toBool(), qPrintable(QString::fromUtf8(QJsonDocument(result).toJson())));
+    QCOMPARE(result["data"].toObject()["item"].toObject()["status"].toString(), QString("AVAILABLE"));
+    runtime.stop();
+}
 
 void ServerRuntimeTest::workerProcessesOrderedRequestsAndWorkflow()
 {

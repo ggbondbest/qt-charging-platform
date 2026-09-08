@@ -9,6 +9,8 @@ import "StationState.js" as StationState
 // QDateTimeEdit 无 QML 对应控件 → 起止各一条 15 分钟步进 Slider（0~1439 分钟位）。
 // 约束/费用/人优先（userEdited 不被推荐覆盖）与 widgets 逐字对齐；
 // 提交与车辆下拉按契约名盲写（TODO(contract) 见映射稿 §桥缺口）。
+// 2026-09-08 merge：上游 TCP 通道前导（beijingTime/failure/成功弹窗）并入，
+// 时段/可选车辆演示通道 UI 按批量指令⑥保留。
 Item {
     id: page
     objectName: "reservationConfirmPage"
@@ -26,6 +28,7 @@ Item {
     property bool userEdited: false     // 任一 Slider 动过 → 推荐只更文案不覆盖值
     property bool busy: false
     property var lastRecord: null
+    property string failure: ""
 
     // 模拟推荐（服务桥缺位期页内同公式兜底：5+⌈米/500⌉ 分钟车程，
     // 起点对齐 15min 刻度，时长取规格上限 45）
@@ -35,6 +38,12 @@ Item {
     function hhmm(min) {
         const h = Math.floor(min / 60) % 24, m = min % 60
         return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m
+    }
+    function beijingTime(iso) {
+        if (typeof iso !== "string" || !/(Z|[+-]\d\d:\d\d)$/.test(iso)) return "--"
+        const ms = Date.parse(iso)
+        if (isNaN(ms)) return "--"
+        return new Date(ms + 8 * 3600000).toISOString().replace("T", " ").slice(0, 19) + "（北京时间）"
     }
     function slotMinutes() { return page.endMinutes - page.startMinutes }
     function feeCents() {
@@ -80,68 +89,60 @@ Item {
     readonly property bool canSubmit: !busy && slotMinutes() > 0 && slotMinutes() <= kMaxSlotMinutes
 
     function confirm() {
-        if (!canSubmit) return
-        busy = true
+        if (!canSubmit || busy || !station.chargerId) return
+        busy = true; page.failure = ""
         // TODO(contract): reservationService.submit(map) —— 载荷 {chargerId, stationId,
         //                startMinutesOfDay, endMinutesOfDay, vehicleId, vehiclePlate,
         //                distanceMeters}（今晚成员3 定形）。
         try {
             // vehicleIndex<0 = 不绑定车辆 → vehicleId 0 / 空牌（preview 通道已撤
-            // settings 注入，finishMockSubmit 对 0 值无车辆门）。
+            // settings 注入，finishMockSubmit 对 0 值无车辆门）。坐标/电价字段取
+            // 上游 TCP 契约口径（2026-09-08 merge 并轨），真实通道直接消费。
             const v = vehicleIndex >= 0 ? vehicles[vehicleIndex] : null
             reservationService.submit({
-                chargerId: station.chargerId, stationId: station.stationId,
+                chargerId: String(station.chargerId), stationId: String(station.stationId),
                 // 桩元数据透传给桥（mock 用 code/type/power 生成桩号与规格文案）
                 chargerCode: station.chargerCode || "", chargerType: station.chargerType || "fast",
                 chargerPowerWatts: station.chargerPowerWatts || 0,
                 stationName: station.stationName || station.name || "",
+                priceCentsPerKwh: station.priceCentsPerKwh || 0,
+                stationLatitude: station.stationLatitude, stationLongitude: station.stationLongitude,
+                hasStationLocation: station.hasStationLocation === true,
                 startMinutes: page.startMinutes, endMinutes: page.endMinutes,
                 vehicleId: v ? v.id : 0, vehiclePlate: v ? v.plate : "",
-                distanceMeters: station.distanceMeters || -1 })
+                distanceMeters: station.distanceMeters === undefined ? -1 : station.distanceMeters })
         } catch (e) {
             busy = false
             if (App) App.showToast("预约服务未就绪，请稍后重试", "danger")
         }
     }
-
+    Component.onCompleted: { loadVehicles(); applyRecommend() }
     Connections {
         target: reservationService
         function onSubmitStarted(chargerId) { page.busy = true }
         function onSubmitSucceeded(record) {
             page.busy = false
-            page.lastRecord = record
-            successDialog.openDialog(record)   // “是否现在前往充电？”（= HomeShell 弹层直译）
+            page.lastRecord = Object.assign({}, page.station, record)
+            successDialog.open()
         }
-        function onSubmitFailed(reason) {
-            page.busy = false
-            if (App) App.showToast(reason, "danger")
+        function onSubmitFailed(reason) { page.busy = false; page.failure = reason }
+        function onSubmitRejected(code, details, message) {
+            page.busy = false; page.failure = message
+            if (details && details.reason === "UNFINISHED_ORDER")
+                App.recoverUnfinishedOrder()
         }
     }
-
-    Component.onCompleted: { loadVehicles(); applyRecommend() }
-
-    // 整页可上下拖拽（用户二轮指定）：内容超视口即滚动，提交/关闭钮始终可达。
     Flickable {
-        anchors.fill: parent
-        contentWidth: width
-        contentHeight: confirmCol.height + 2 * P.Style.spaceLg
+        anchors.fill: parent; contentWidth: width
+        contentHeight: content.implicitHeight + 2 * P.Style.spaceLg
         clip: true
-
         Column {
-            id: confirmCol
-            x: P.Style.spaceLg
-            y: P.Style.spaceLg
+            id: content
+            x: P.Style.spaceLg; y: P.Style.spaceLg
             width: parent.width - 2 * P.Style.spaceLg
-            spacing: P.Style.spaceMd
-
-        Text { objectName: "reservationConfirmTitle"; text: "预约确认"
-            font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
-
-        // 上下文信息卡
-        P.Card {
-            objectName: "confirmContextCard"
-            width: parent.width
-            Column {
+            spacing: P.Style.spaceLg
+            Text { text: "确认预约"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink }
+            P.Card {
                 width: parent.width
                 spacing: P.Style.spaceXs
                 Repeater {
@@ -242,76 +243,35 @@ Item {
                     color: page.validationMessage.charAt(0) === "⚠" ? P.Style.danger : P.Style.muted
                 }
             }
-        }
-
-        Row {
-            objectName: "confirmFooter"
-            width: parent.width
-            spacing: P.Style.spaceMd
-            P.ActionButton {
-                objectName: "reservationCloseButton"
-                variant: "ghost"; text: "关闭"
-                width: (parent.width - parent.spacing) / 2
-                onClicked: { if (App) App.back() }
+            Text {
+                width: parent.width; wrapMode: Text.WordWrap
+                text: "预约不扣费。实际费用按照服务端电价快照、充电量和停止时的账单计算。"
+                color: P.Style.muted; font.pixelSize: P.Style.fontSm
             }
-            P.ActionButton {
-                objectName: "reservationConfirmButton"
-                variant: "primary"
-                text: page.busy ? "提交中…" : "确认预约"
-                width: (parent.width - parent.spacing) / 2
-                enabled: page.canSubmit
-                onClicked: page.confirm()
-            }
-        }
+            Text { width: parent.width; wrapMode: Text.WordWrap; visible: page.failure.length > 0; text: page.failure; color: P.Style.danger }
+            P.ActionButton { objectName: "confirmReservationButton"; width: parent.width; text: page.busy ? "正在预约…" : "确认立即预约"; enabled: !page.busy && !!page.station.chargerId; onClicked: page.confirm() }
+            P.ActionButton { width: parent.width; variant: "secondary"; text: "返回"; enabled: !page.busy; onClicked: App.back() }
         }
     }
-
-    // “是否现在前往充电？”——成功弹层（HomeShell 对话框直译进页内）
     Popup {
         id: successDialog
         objectName: "reservationSuccessDialog"
-        modal: true
-        closePolicy: Popup.NoAutoClose
+        modal: true; closePolicy: Popup.NoAutoClose
         anchors.centerIn: parent
-        width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
+        width: Math.min(350, page.width - 32)
         padding: P.Style.spaceLg
-        function openDialog(record) { page.lastRecord = record; open() }
-        background: Rectangle {
-            radius: P.Style.radiusLg; color: P.Style.surface
-            border.color: P.Style.line; border.width: 1
-        }
+        background: Rectangle { color: P.Style.surface; radius: P.Style.radiusLg; border.color: P.Style.line }
         Column {
-            width: parent.width
-            spacing: P.Style.spaceMd
+            width: parent.width; spacing: P.Style.spaceMd
+            Text { text: "预约成功"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
             Text {
                 width: parent.width; wrapMode: Text.WordWrap
-                text: "🎉 预约成功！是否现在前往充电站？"
-                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink
+                text: "请在 " + (page.lastRecord ? page.beijingTime(page.lastRecord.expiresAtUtc) : "--") + " 前开始充电。"
+                color: P.Style.muted
             }
-            Row {
-                width: parent.width
-                spacing: P.Style.spaceSm
-                P.ActionButton {
-                    objectName: "goChargeButton"
-                    variant: "primary"; text: "现在前往"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: {
-                        successDialog.close()
-                        if (App) App.navigate("navigation", page.lastRecord)
-                    }
-                }
-                P.ActionButton {
-                    objectName: "goOrderButton"
-                    variant: "secondary"; text: "查看预约订单"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: {
-                        successDialog.close()
-                        if (App) App.navigate("reservation_module")
-                    }
-                }
-            }
+            P.ActionButton { width: parent.width; text: "查看预约 / 开始充电"; onClicked: { successDialog.close(); App.navigate("charging") } }
+            P.ActionButton { width: parent.width; variant: "secondary"; text: "导航前往电站"; onClicked: { successDialog.close(); App.navigate("navigation", page.lastRecord) } }
         }
     }
-
     P.LoadingOverlay { running: page.busy }
 }

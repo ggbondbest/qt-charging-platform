@@ -19,15 +19,20 @@ Item {
         return (h > 0 ? h + " 小时 " : "") + m + " 分钟"
     }
     property var order: page.arg && page.arg.id !== undefined ? page.arg : ({})
+    property bool paying: false
 
     Connections {
         target: chargingService
         function onPaymentCompleted(amountCents, balanceAfterCents) {
+            if (!page.paying) return
+            page.paying = false
             if (!App) return
             App.showToast("支付成功，余额 ¥" + (balanceAfterCents / 100).toFixed(2), "success")
             App.navigate("order")
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "PAY_ORDER" || !page.paying) return
+            page.paying = false
             if (App) App.showToast("支付失败：" + message, "danger")
         }
     }
@@ -40,7 +45,10 @@ Item {
             page.arg = orders[0]
         }
     }
-    Component.onCompleted: if (!page.order.id) orderService.fetchOrders("waiting_payment", 1)
+    Component.onCompleted: {
+        walletService.fetchProfile()
+        if (!page.order.id) orderService.fetchOrders("waiting_payment", 1)
+    }
 
     Column {
         anchors.fill: parent
@@ -101,7 +109,14 @@ Item {
             variant: "primary"
             actionText: "确认支付 ¥" + money(page.order.amountCents)
             caption: "从账户余额扣除"
-            onClicked: if (page.order.id) chargingService.payOrder(page.order.id)
+            enabled: !!page.order.id && !page.paying
+            onClicked: if (page.order.id) { page.paying = true; chargingService.payOrder(String(page.order.id)) }
+        }
+        P.ActionButton {
+            objectName: "settlementRechargeButton"
+            variant: "secondary"; text: "余额不足？去充值"
+            enabled: !page.paying
+            onClicked: if (App) App.navigate("recharge")
         }
         P.ActionButton {
             variant: "ghost"; text: "稍后支付"
