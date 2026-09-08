@@ -89,6 +89,11 @@ protected:
                     emit adminResult(id, AdminService::failure(QStringLiteral("DATABASE_ERROR")));
                     return;
                 }
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close")
+                    && QDateTime::currentMSecsSinceEpoch() >= deadline) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
+                    return;
+                }
                 const QString channel = id.contains(QLatin1Char(':')) ? id.section(QLatin1Char(':'), 0, 0) : QString();
                 emit adminResult(id, adminService.handle(action, data, token, channel));
             }, Qt::QueuedConnection);
