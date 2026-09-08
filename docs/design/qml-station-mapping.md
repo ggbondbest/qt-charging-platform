@@ -186,6 +186,29 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **账**：全量串行 ctest **41/41 全绿**（QML 三套需 `QML2_IMPORT_PATH` 指向 rootless overlay，
   本 VM 环境专属；标准 apt 全量机系统路径自带）；改动 **12 个 QML 文件 qmllint 零 Error**。
 
+## 活体核账批（2026-09-08 深夜，三轮：app 内真机复验静态图 → 两枚参数雷定案修复，567885c + 31156a2）
+
+- **定罪手法**：curl 逐项二分（限速间隙 5-6s 防 120 污染判定——首轮爆发请求的"成功"实为限流拒），
+  出图字节数对照无参基线（1457134）：**逐字节相同=被静默忽略**，>基线=真绘制。
+- **雷一 414 URI Too Long**：京→深驾车折线数千点全量注入 → URL 几十 KB 被网关直接拒（此前
+  err=2 Network 的真身；假 HTTP 测试短折线天然测不出）。修复=`requestStaticMap` 等距步长抽点
+  ≤120、首尾必含；≤120 点步长 1（旧锚逐字节不变）。回归钉 `staticMapDownsamplesLongPolyline`
+  （500 点→≤120、URL<4KB；测试内 `routePairs << QVariantList{…}` 会命中 QList 拼接重载把点拆成
+  裸 double，必须 `append(QVariant(QVariantList{…}))`）。
+- **雷二 348 请求参数非法 / 静默忽略（v2 真实契约）**：画线必须 **`path=` 单数 + `color:0xRRGGBB|lat,lng|…`
+  kv 管道式**——旧复数逗号式 `paths=6,0x…,255:` 不报错但**完全不画**（图与基线逐字节相同）；
+  markers= `color:…|label:X|lat,lng` kv 式，多标记 `markers1=/markers2=` 编号；opacity 四段式、
+  中文 label、逗号式各自独立 348。label 仅收单 ASCII 字母数字 → 中文语义映射 起→A、终→B。
+  `|` 上线恒 `%7C`（`toPercentEncoding` keep 不覆盖竖线，服务端百分号解码等价，真图已证）——
+  rotate 单测锚同步 %7C 真形。QChar 无 `isAscii()`（Qt6 本机），判 ASCII 用 `unicode() < 0x80`。
+- **QML 侧三修（567885c）**：① NavigationPage:252 `Url.fileUrl()` 休眠雷——静态图链路此前从未真成功、
+  三元短路掩盖，`Image.source` 吃裸路径不出图，改显式 `"file://"+staticMapFile`；② 上下文属性
+  （mapBridge/App）teardown 期失效为 **null 而非 undefined**，typeof-only 守卫拦不住，三文件守卫
+  统一补真值带 `|| !obj`；③ zoom 梯延到 5（spanKm>800），千里级演示路线不再只框一省。
+- **终局活体验证**：app 自走 MapGeoService 链路落盘 **549KB 真图**（腾讯瓦片+品牌绿线纵贯目视确认），
+  运行日志 ReferenceError/TypeError **零**；探针全摘。"地图到底能不能用"——**能，端到端实证**。
+- **账**：map 单测 29/29；全量 ctest **41/41**；NavigationPage 重 qmllint 零 Error。
+
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
