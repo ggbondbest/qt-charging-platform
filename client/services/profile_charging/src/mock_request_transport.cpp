@@ -645,13 +645,21 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
             return;
         }
         const QString statusFilter = normalized.value(QStringLiteral("status")).toString();
-        QVector<const QJsonObject*> matched;
-        for (const QJsonObject& coupon : coupons_) {
-            // 存储即响应形（status 小写）；时间到期的状态流转 mock 不做，
-            // 演示数据把 available/used/expired 三态都铺好。
-            if (statusFilter.isEmpty() || coupon.value(QStringLiteral("status")).toString()
-                                             == statusFilter) {
-                matched.append(&coupon);
+        // 审查 P2#4：与服务端同款派生状态口径——USED 最优先，其次按到期时间，
+        // 存储 status 只当种子值；过滤、total、响应字段都只认有效态。
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        QJsonArray matched;
+        for (QJsonObject coupon : coupons_) {
+            const QString stored = coupon.value(QStringLiteral("status")).toString();
+            const qint64 expiresMs =
+                qRound64(coupon.value(QStringLiteral("expiresAtUtc")).toDouble());
+            const QString effective = stored == QLatin1String("used")
+                ? stored
+                : (expiresMs <= nowMs ? QStringLiteral("expired")
+                                      : QStringLiteral("available"));
+            coupon.insert(QStringLiteral("status"), effective);
+            if (statusFilter.isEmpty() || effective == statusFilter) {
+                matched.append(coupon);
             }
         }
         const int page = normalized.value(QStringLiteral("page")).toInt();
@@ -659,7 +667,7 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         const int start = (page - 1) * pageSize;
         QJsonArray array;
         for (int index = start; index < matched.size() && index < start + pageSize; ++index) {
-            array.append(*matched.at(index));
+            array.append(matched.at(index));
         }
         callback(true, QJsonObject{{QStringLiteral("coupons"), array},
                                    {QStringLiteral("page"), page},

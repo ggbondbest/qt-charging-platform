@@ -22,6 +22,7 @@
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QSettings>
+#include <QSet>
 #include <QSqlQuery>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -107,6 +108,7 @@ class UserApiIntegrationTest final : public QObject {
 private slots:
     void eightRoutesAndWorkflow();
     void statsCouponsAndNotifications();
+    void couponExpiryDerivedFromServerClock();
     void checkInAndPoints();
     void chargerRatings();
     void authorizationAndValidation();
@@ -352,6 +354,62 @@ void UserApiIntegrationTest::statsCouponsAndNotifications()
     QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
     QCOMPARE(call(b, kGetCoupons).data.value("total").toInt(), 0);
     QCOMPARE(call(b, kGetNotifications).data.value("total").toInt(), 0);
+}
+
+// 审查 P2#4：EXPIRED 是派生态——存储 AVAILABLE 但已过期的行，过滤/total/响应
+// status 都必须按有效态呈现；USED 优先不被到期改写。注入时钟走边界两侧。
+void UserApiIntegrationTest::couponExpiryDerivedFromServerClock()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+    const qint64 uid = f.number("SELECT id FROM users WHERE phone='13800138000'");
+    QVERIFY(uid > 0);
+    const auto stamp = [](const QDateTime& v) {
+        return v.toUTC().toString(Qt::ISODateWithMs);
+    };
+    const auto insertCoupon = [&](const QString& storedStatus, const QDateTime& expires) {
+        return f.sql(QStringLiteral(
+            "INSERT INTO coupons (user_id,kind,title,value_cents,threshold_cents,"
+            "status,source,expires_at,created_at,updated_at) VALUES "
+            "(%1,'CASH','%2',500,0,'%3','测试','%4','%5','%5')")
+            .arg(uid)
+            .arg(storedStatus == QLatin1String("USED")
+                     ? QStringLiteral("用过的券") : QStringLiteral("到期的券"))
+            .arg(storedStatus, stamp(expires), stamp(f.now)));
+    };
+    const QDateTime now = f.now;
+    QVERIFY(insertCoupon(QStringLiteral("AVAILABLE"), now.addDays(-1)));   // 过期派生
+    QVERIFY(insertCoupon(QStringLiteral("AVAILABLE"), now.addDays(1)));    // 仍有效
+    QVERIFY(insertCoupon(QStringLiteral("USED"), now.addDays(-3)));        // USED 优先
+    QVERIFY(f.sql(QStringLiteral(
+        "INSERT INTO coupons (user_id,kind,title,value_cents,threshold_cents,"
+        "status,source,expires_at,created_at,updated_at) VALUES "
+        "(%1,'CASH','边界券',500,0,'AVAILABLE','测试','%2','%3','%3')")
+        .arg(uid).arg(stamp(now)).arg(stamp(now))));                     // 恰到期（<= 界内）
+
+    auto response = call(a, kGetCoupons, {{"status", "expired"}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);   // 存储 AVAILABLE 的 2 行派生到期
+    for (const auto& item : response.data.value("coupons").toArray())
+        QCOMPARE(item.toObject().value("status").toString(), QStringLiteral("expired"));
+    QCOMPARE(call(a, kGetCoupons, {{"status", "available"}}).data.value("total").toInt(), 1);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 1);
+    response = call(a, kGetCoupons);                     // 全量：响应形也携带派生态
+    QCOMPARE(response.data.value("total").toInt(), 4);
+    QSet<QString> statuses;
+    for (const auto& item : response.data.value("coupons").toArray())
+        statuses.insert(item.toObject().value("status").toString());
+    const QSet<QString> expected{"expired", "available", "used"};
+    QCOMPARE(statuses, expected);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM coupons WHERE status='AVAILABLE'"), 3);
+                                     // 纯读侧派生：存储列不改写
+
+    // 时钟前进一天：原本有效 + 边界券并入到期，available 清空。
+    f.now = now.addDays(2);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "available"}}).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "expired"}}).data.value("total").toInt(), 3);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 1);
 }
 
 void UserApiIntegrationTest::checkInAndPoints()

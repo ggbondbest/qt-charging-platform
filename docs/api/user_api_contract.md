@@ -201,6 +201,9 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 
 - 请求：`status?` ∈ `"available" | "used" | "expired"`（线上小写；缺省为全部）、
   `page?`、`pageSize?`。
+- 响应的 `status` 与 `status` 过滤、`total` 计数均按**有效状态**口径：
+  `USED` 最优先，其次 `expiresAt` ≤ 服务端当前时间即 `expired`，其余 `available`；
+  存储列不因到期改写（纯读侧派生）。mock 通道同口径。
 - 返回：`{coupons: [{id, kind: "cash"|"discount", title, valueCents,
   discountTenths|null, thresholdCents, condition, expiresAt, expiresAtUtc, status,
   source, createdAt, updatedAt}], page, pageSize, total}`，`createdAt DESC, id DESC`。

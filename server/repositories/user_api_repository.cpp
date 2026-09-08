@@ -300,14 +300,29 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
         from = "recharge_records r"; columns = "r.*"; where = "r.user_id=:uid";
         sort = "r.created_at DESC,r.id DESC"; binds.insert("uid", in.userId);
         break;
-    case UserApiAction::Coupons:
-        from = "coupons c"; columns = "c.*"; where = "c.user_id=:uid";
-        sort = "c.created_at DESC,c.id DESC"; binds.insert("uid", in.userId);
+    case UserApiAction::Coupons: {
+        // 审查 P2#4：EXPIRED 是派生态——存储列只在领/用时改写，到期没有写
+        // 作业。过滤、total、响应 status 统一按有效态口径：USED 最优先，
+        // 其次到期 EXPIRED，其余 AVAILABLE；页面与客户端不再二次派生。
+        // 时间列为 UTC ISO-8601 定长文本（:now 同款格式），字典序即时间序。
+        const QString effectiveStatus =
+            "(CASE WHEN c.status = 'USED' THEN 'USED' "
+            "WHEN c.expires_at <= :now THEN 'EXPIRED' ELSE 'AVAILABLE' END)";
+        from = "coupons c";
+        // 显式列清单：存储 status 不出网，派生值以同名 status 输出（契约字段不变）。
+        columns = "c.id,c.user_id,c.kind,c.title,c.value_cents,c.discount_tenths,"
+                  "c.threshold_cents,c.source,c.expires_at,c.created_at,c.updated_at,"
+                  + effectiveStatus + " AS status";
+        where = "c.user_id=:uid";
+        sort = "c.created_at DESC,c.id DESC";
+        binds.insert("uid", in.userId);
+        binds.insert("now", now);
         if (!in.status.isEmpty()) {
-            where += " AND c.status=:status";
+            where += " AND " + effectiveStatus + " = :status";
             binds.insert("status", in.status.toUpper());   // wire lowercase → stored uppercase
         }
         break;
+    }
     case UserApiAction::Notifications:
         from = "notifications n"; columns = "n.*"; where = "n.user_id=:uid";
         sort = "n.created_at DESC,n.id DESC"; binds.insert("uid", in.userId);
