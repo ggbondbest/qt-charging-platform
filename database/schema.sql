@@ -346,6 +346,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_active_charger
     ON orders(charger_id)
     WHERE status IN ('RESERVED', 'CHARGING');
 
-PRAGMA user_version = 2;
+-- 版本 3：在版本 2（管理查询索引刷新）之上新增用户域五表
+-- notifications/coupons/points_ledger/user_checkins/charger_ratings；
+-- 旧 v1/v2 备份经 restore 迁移（应用本脚本补齐缺表缺索引）后升到 3。
+PRAGMA user_version = 3;
 
 COMMIT;

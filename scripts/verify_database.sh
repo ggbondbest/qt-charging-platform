@@ -63,8 +63,8 @@ fi
 table_count="$(printf '%s\n' "${actual_tables}" | wc -l)"
 
 schema_version="$(sqlite3 -batch -bail "${temporary_database}" 'PRAGMA user_version;')"
-if [[ "${schema_version}" -ne 2 ]]; then
-    printf 'Database verification failed: expected schema version 2, found %s.\n' \
+if [[ "${schema_version}" -ne 3 ]]; then
+    printf 'Database verification failed: expected schema version 3, found %s.\n' \
         "${schema_version}" >&2
     exit 1
 fi

@@ -27,6 +27,7 @@ private slots:
     void rejectsIndexesWithWrongColumnsOrPredicate();
     void upgradesLegacyAdminIndexesWithoutLosingData();
     void restoresLegacyBackupThenMigratesOnFirstOpen();
+    void restoresRealPreExpansionV2Backup();
     void rejectsLegacyBackupWithInvalidUniqueIndex();
     void rejectsFutureSchemaVersionWithoutChangingIt();
 };
@@ -320,7 +321,7 @@ void DatabaseMaintenanceTest::upgradesLegacyAdminIndexesWithoutLosingData()
     QSqlQuery verification(upgraded.database());
     QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
     QVERIFY(verification.next());
-    QCOMPARE(verification.value(0).toInt(), 2);
+    QCOMPARE(verification.value(0).toInt(), 3);
 
     QVERIFY(verification.exec(QStringLiteral(
         "SELECT COUNT(*) FROM users WHERE phone = '13900006666'")));
@@ -382,7 +383,7 @@ void DatabaseMaintenanceTest::restoresLegacyBackupThenMigratesOnFirstOpen()
     QSqlQuery verification(restored.database());
     QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
     QVERIFY(verification.next());
-    QCOMPARE(verification.value(0).toInt(), 2);
+    QCOMPARE(verification.value(0).toInt(), 3);
     QVERIFY(verification.exec(QStringLiteral(
         "SELECT COUNT(*) FROM users WHERE phone = '13900005555'")));
     QVERIFY(verification.next());
@@ -391,6 +392,88 @@ void DatabaseMaintenanceTest::restoresLegacyBackupThenMigratesOnFirstOpen()
 
     const auto validation = DatabaseMaintenance::validate(restoredPath);
     QVERIFY2(validation.ok, qPrintable(validation.errorMessage));
+}
+
+void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
+{
+    // A genuine pre-expansion v2 backup: the eight original tables with the
+    // v2 index shapes and user_version = 2, as created before the five
+    // user-domain tables shipped. Restore must migrate a temporary copy to
+    // version 3 while the original backup file stays untouched.
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString legacyPath = directory.filePath(QStringLiteral("preexpansion-v2.sqlite"));
+    const QString restoredPath = directory.filePath(QStringLiteral("restored.sqlite"));
+    QString errorMessage;
+
+    DatabaseConnection seeded;
+    QVERIFY2(seeded.open(legacyPath, true, &errorMessage), qPrintable(errorMessage));
+    QSqlQuery mutation(seeded.database());
+    QVERIFY(mutation.exec(QStringLiteral(
+        "INSERT INTO users(phone, nickname) VALUES('13900007777', 'pre-expansion-user')")));
+    // Children first so foreign keys cannot refuse the drop.
+    for (const QString& table : {QStringLiteral("charger_ratings"), QStringLiteral("user_checkins"),
+                                 QStringLiteral("points_ledger"), QStringLiteral("coupons"),
+                                 QStringLiteral("notifications")}) {
+        QVERIFY(mutation.exec(QStringLiteral("DROP TABLE %1").arg(table)));
+    }
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 2")));
+    seeded.close();
+
+    const auto strictValidation = DatabaseMaintenance::validate(legacyPath);
+    QVERIFY(!strictValidation.ok);  // eight tables are not the current schema
+
+    const auto restoreResult = DatabaseMaintenance::restore(legacyPath, restoredPath);
+    QVERIFY2(restoreResult.ok, qPrintable(restoreResult.errorMessage));
+
+    const QString checkConnection = QStringLiteral("preexpansion-check-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    {
+        QSqlDatabase restored = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                                          checkConnection);
+        restored.setDatabaseName(restoredPath);
+        QVERIFY(restored.open());
+        QSqlQuery verification(restored);
+        QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
+        QVERIFY(verification.next());
+        QCOMPARE(verification.value(0).toInt(), 3);
+        QVERIFY(verification.exec(QStringLiteral(
+            "SELECT COUNT(*) FROM users WHERE phone = '13900007777'")));
+        QVERIFY(verification.next());
+        QCOMPARE(verification.value(0).toInt(), 1);  // business data survived
+        QVERIFY(verification.exec(QStringLiteral(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+            "AND name IN ('notifications','coupons','points_ledger',"
+            "'user_checkins','charger_ratings')")));
+        QVERIFY(verification.next());
+        QCOMPARE(verification.value(0).toInt(), 5);  // all user-domain tables added
+        restored.close();
+    }
+    QSqlDatabase::removeDatabase(checkConnection);
+    const auto restoredValidation = DatabaseMaintenance::validate(restoredPath);
+    QVERIFY2(restoredValidation.ok, qPrintable(restoredValidation.errorMessage));
+
+    // The original backup must still read as the untouched v2 database.
+    const QString originalConnection = QStringLiteral("preexpansion-original-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    {
+        QSqlDatabase original = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                                          originalConnection);
+        original.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        original.setDatabaseName(legacyPath);
+        QVERIFY(original.open());
+        QSqlQuery verification(original);
+        QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
+        QVERIFY(verification.next());
+        QCOMPARE(verification.value(0).toInt(), 2);
+        QVERIFY(verification.exec(QStringLiteral(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%'")));
+        QVERIFY(verification.next());
+        QCOMPARE(verification.value(0).toInt(), 8);
+        original.close();
+    }
+    QSqlDatabase::removeDatabase(originalConnection);
 }
 
 void DatabaseMaintenanceTest::rejectsLegacyBackupWithInvalidUniqueIndex()
@@ -436,7 +519,7 @@ void DatabaseMaintenanceTest::rejectsFutureSchemaVersionWithoutChangingIt()
     DatabaseConnection current;
     QVERIFY2(current.open(databasePath, true, &errorMessage), qPrintable(errorMessage));
     QSqlQuery mutation(current.database());
-    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 3")));
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 4")));
     current.close();
 
     DatabaseConnection oldApplication;
@@ -451,7 +534,7 @@ void DatabaseMaintenanceTest::rejectsFutureSchemaVersionWithoutChangingIt()
         QSqlQuery versionQuery(verification);
         QVERIFY(versionQuery.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(versionQuery.next());
-        QCOMPARE(versionQuery.value(0).toInt(), 3);
+        QCOMPARE(versionQuery.value(0).toInt(), 4);
         verification.close();
     }
     QSqlDatabase::removeDatabase(connectionName);

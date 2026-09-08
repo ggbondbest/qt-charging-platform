@@ -1,9 +1,12 @@
 #include "database_maintenance.h"
 
+#include "database_connection.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStringList>
@@ -261,8 +264,12 @@ bool validateTableDefinition(const QSqlDatabase& database, const QString& table,
 }
 
 bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
-                            bool currentIndexes = true)
+                            bool currentIndexes = true,
+                            const QStringList* onlyTables = nullptr)
 {
+    const auto wanted = [onlyTables](const QString& table) {
+        return onlyTables == nullptr || onlyTables->contains(table);
+    };
     const QList<QPair<QString, QStringList>> tables = {
         {QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("phone"),
             QStringLiteral("nickname"), QStringLiteral("avatar_key"),
@@ -320,6 +327,9 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("comment"), QStringLiteral("created_at")}}
     };
     for (const auto& table : tables) {
+        if (!wanted(table.first)) {
+            continue;
+        }
         if (!validateTableColumns(database, table.first, table.second, errorMessage)) {
             return false;
         }
@@ -353,6 +363,9 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("length(comment) <= 140")}}
     };
     for (const auto& table : tableConstraints) {
+        if (!wanted(table.first)) {
+            continue;
+        }
         if (!validateTableDefinition(database, table.first, table.second, errorMessage)) {
             return false;
         }
@@ -376,6 +389,9 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         {QStringLiteral("charger_ratings"), QStringLiteral("order_id"), QStringLiteral("orders")}
     };
     for (const QStringList& foreignKey : foreignKeys) {
+        if (!wanted(foreignKey.at(0))) {
+            continue;
+        }
         if (!validateForeignKey(database, foreignKey.at(0), foreignKey.at(1), foreignKey.at(2),
                                 errorMessage)) {
             return false;
@@ -465,9 +481,14 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
                          QStringLiteral("id")},
                         false, {}});
     }
-    for (const IndexDefinition& index : indexes) {
-        if (!validateIndex(database, index, errorMessage)) {
-            return false;
+    // A table-filtered run (legacy migration gate) checks shape only; index
+    // generations differ across versions there, and the post-migration strict
+    // validation covers them afterwards.
+    if (onlyTables == nullptr) {
+        for (const IndexDefinition& index : indexes) {
+            if (!validateIndex(database, index, errorMessage)) {
+                return false;
+            }
         }
     }
     return true;
@@ -503,7 +524,13 @@ DatabaseMaintenanceResult copyAtomically(const QString& sourcePath, const QStrin
     return success();
 }
 
-DatabaseMaintenanceResult validateLegacyRestoreSource(const QString& databasePath)
+// Shape gate for the migration path: the source must be a healthy platform
+// database already carrying the eight core tables (any supported legacy
+// user_version 1..2). Without this check, an unrelated or empty SQLite file
+// would be "migrated" into a fresh empty schema and restored as if valid.
+// Index shape is intentionally not gated (the two index generations differ;
+// the post-migration strict validation covers it).
+DatabaseMaintenanceResult validateMigratableRestoreSource(const QString& databasePath)
 {
     const QString path = QFileInfo(databasePath).absoluteFilePath();
     const QFileInfo fileInfo(path);
@@ -513,6 +540,11 @@ DatabaseMaintenanceResult validateLegacyRestoreSource(const QString& databasePat
     if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
         return failure(QStringLiteral("Qt SQLite driver QSQLITE is not available"));
     }
+
+    const QStringList coreTables = {
+        QStringLiteral("users"), QStringLiteral("admins"), QStringLiteral("stations"),
+        QStringLiteral("chargers"), QStringLiteral("reservations"), QStringLiteral("orders"),
+        QStringLiteral("recharge_records"), QStringLiteral("operation_logs")};
 
     const QString connectionName = QStringLiteral("legacy-restore-validation-%1").arg(
         QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -542,12 +574,18 @@ DatabaseMaintenanceResult validateLegacyRestoreSource(const QString& databasePat
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 1)) {
-                result = failure(QStringLiteral("Unsupported database schema version"));
+                 !versionQuery.next())) {
+                result = failure(QStringLiteral("Unable to read database schema version: %1")
+                                     .arg(versionQuery.lastError().text()));
+            } else if (result.ok) {
+                const int version = versionQuery.value(0).toInt();
+                if (version < 1 || version > 2) {
+                    result = failure(QStringLiteral("Unsupported database schema version"));
+                }
             }
             if (result.ok) {
                 QString schemaError;
-                if (!validatePlatformSchema(database, &schemaError, false)) {
+                if (!validatePlatformSchema(database, &schemaError, true, &coreTables)) {
                     result = failure(schemaError);
                 }
             }
@@ -647,7 +685,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::validate(const QString& databaseP
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 2)) {
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 3)) {
                 result = failure(QStringLiteral("Unsupported database schema version"));
             }
             if (result.ok) {
@@ -669,27 +707,74 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (destinationPath.trimmed().isEmpty()) {
         return failure(QStringLiteral("Restore destination must not be empty"));
     }
-    const DatabaseMaintenanceResult currentValidation = validate(backupPath);
+
+    // Strict path: the backup already carries the current schema. Otherwise it
+    // may be an older supported version (user_version 1 or 2, before the
+    // user-domain tables existed). Migrate a temporary copy by applying
+    // schema.sql — the original backup file is never modified — and only then
+    // validate and restore the migrated copy.
+    QString sourcePath = QFileInfo(backupPath).absoluteFilePath();
+    const DatabaseMaintenanceResult currentValidation = validate(sourcePath);
+    QString migratedPath;
     if (!currentValidation.ok) {
-        const DatabaseMaintenanceResult legacyValidation = validateLegacyRestoreSource(backupPath);
-        if (!legacyValidation.ok) {
-            return legacyValidation;
+        const DatabaseMaintenanceResult legacyShape =
+            validateMigratableRestoreSource(sourcePath);
+        if (!legacyShape.ok) {
+            return legacyShape;
         }
+        migratedPath = QStringLiteral("%1.migrate-%2")
+                           .arg(sourcePath, QUuid::createUuid().toString(QUuid::WithoutBraces));
+        if (!QFile::copy(sourcePath, migratedPath)) {
+            return failure(QStringLiteral("Unable to copy backup for migration: %1")
+                               .arg(migratedPath));
+        }
+        QString migrationError;
+        {
+            DatabaseConnection migration;
+            if (migration.open(migratedPath, false, &migrationError)) {
+                migration.close();  // last connection checkpoints and drops WAL sidecars
+            }
+        }
+        if (!migrationError.isEmpty()) {
+            QFile::remove(migratedPath);
+            return failure(QStringLiteral("Unable to migrate legacy backup: %1")
+                               .arg(migrationError));
+        }
+        const DatabaseMaintenanceResult migratedValidation = validate(migratedPath);
+        if (!migratedValidation.ok) {
+            QFile::remove(migratedPath);
+            return failure(QStringLiteral("Legacy backup did not become a valid database "
+                                          "after migration: %1")
+                               .arg(migratedValidation.errorMessage));
+        }
+        sourcePath = migratedPath;
     }
 
     const QString destination = QFileInfo(destinationPath).absoluteFilePath();
+    auto cleanupMigratedCopy = [&migratedPath]() {
+        if (!migratedPath.isEmpty()) {
+            QFile::remove(migratedPath);
+            QFile::remove(migratedPath + QStringLiteral("-wal"));
+            QFile::remove(migratedPath + QStringLiteral("-shm"));
+        }
+    };
     if (isOpenDatabasePath(destination)) {
+        cleanupMigratedCopy();
         return failure(QStringLiteral("Close the destination database before restoring it"));
     }
     QString errorMessage;
     if (!rejectExistingSidecars(destination, &errorMessage)) {
+        cleanupMigratedCopy();
         return failure(errorMessage);
     }
     if (!ensureParentDirectory(destination, &errorMessage)) {
+        cleanupMigratedCopy();
         return failure(errorMessage);
     }
 
-    return copyAtomically(QFileInfo(backupPath).absoluteFilePath(), destination);
+    const DatabaseMaintenanceResult copied = copyAtomically(sourcePath, destination);
+    cleanupMigratedCopy();
+    return copied;
 }
 
 } // namespace charging::server
