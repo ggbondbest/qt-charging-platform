@@ -58,6 +58,7 @@ struct TransportReply
 bool sendAndWait(MockRequestTransport& transport, const QString& type, const QJsonObject& data,
                  TransportReply* reply, int timeoutMs = kWaitMs)
 {
+    reply->done = false;   // allow reusing one reply across sequential calls
     transport.send(type, data, [reply](bool ok, const QJsonObject& payload,
                                        const charging::protocol::ProtocolError& error) {
         reply->done = true;

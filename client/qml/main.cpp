@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
     // Screenshot/demo convenience: deep links past the login gate ride the
     // demo account in. "login"/"station" keep the gate for the real flow
     // unless --logged-in is passed (lets shots exercise post-login routes).
-    if (view != QLatin1String("login") && view != QLatin1String("station")
+    if ((view != QLatin1String("login") && view != QLatin1String("station"))
         || app.arguments().contains(QStringLiteral("--logged-in")))
         qmlApp.login(QStringLiteral("13800138000"));
     // CONTRACT.md §1: bare service names, objects pass through verbatim.
@@ -80,6 +80,8 @@ int main(int argc, char* argv[])
     ctx->setContextProperty(QStringLiteral("favoritesService"), qmlApp.favoritesService());
     ctx->setContextProperty(QStringLiteral("notificationService"), qmlApp.notificationService());
     ctx->setContextProperty(QStringLiteral("stationQueryService"), qmlApp.stationQueryService());
+    ctx->setContextProperty(QStringLiteral("statsService"), qmlApp.statsService());
+    ctx->setContextProperty(QStringLiteral("couponService"), qmlApp.couponService());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
     QQmlComponent component(&engine);
     component.loadUrl(QUrl::fromLocalFile(

@@ -24,6 +24,8 @@ namespace charging::client {
 class WalletService;
 class OrderService;
 class ChargingService;
+class StatsService;
+class CouponService;
 struct OrderSummary;
 namespace services::station { class StationQueryService; }
 namespace services::reservation { class ReservationService; }
@@ -250,6 +252,48 @@ signals:
 
 private:
     charging::client::services::favorites::NotificationService* svc_;
+};
+
+// ————— 2026-09-08 月报/优惠券桥（成员3 新页 + 成员2 CouponPage 盲调退演示态）。
+
+class StatsBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit StatsBridge(charging::client::StatsService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE void fetchStats(int months = 6);
+    Q_INVOKABLE bool isFetchingStats() const;
+
+signals:
+    // [{monthKey, orderCount, energyWh, amountCents, durationSeconds, co2Grams}] 新→旧
+    void statsLoaded(const QVariantList& months);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::StatsService* svc_;
+};
+
+class CouponBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit CouponBridge(charging::client::CouponService* svc, QObject* parent = nullptr);
+
+    // CouponPage 契约：[{id,title,kind,valueCents,discountTenths,thresholdCents,
+    //                   condition,expiresAtUtc(ms),status,source}] 新→旧。
+    // 页面进入时 fetchCoupons() 拉取、couponsChanged 后 coupons() 取缓存。
+    // redeem 一期不提供（TODO(contract): PAY_ORDER 抵扣规则）。
+    Q_INVOKABLE QVariantList coupons() const;
+    Q_INVOKABLE void fetchCoupons();
+    Q_INVOKABLE int couponCount() const;
+
+signals:
+    void couponsChanged();
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::CouponService* svc_;
 };
 
 } // namespace charging::qml

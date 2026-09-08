@@ -1,7 +1,9 @@
 #include "service_bridges.h"
 
 #include "charging/client/profile_charging/charging_service.h"
+#include "charging/client/profile_charging/coupon_service.h"
 #include "charging/client/profile_charging/order_service.h"
+#include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/protocol.h"
@@ -14,6 +16,7 @@
 #include <QDateTime>
 #include <QDate>
 #include <QTime>
+#include <QTimer>
 
 namespace charging::qml {
 namespace {
@@ -638,5 +641,40 @@ QVariantList NotificationBridge::notifications() const
     }
     return out;
 }
+
+// ———————————————————————————— StatsBridge / CouponBridge ————————————————————————————
+
+StatsBridge::StatsBridge(charging::client::StatsService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::StatsService::statsLoaded,
+            this, &StatsBridge::statsLoaded);
+    connect(svc_, &charging::client::StatsService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+}
+
+void StatsBridge::fetchStats(int months) { svc_->fetchStats(months); }
+bool StatsBridge::isFetchingStats() const { return svc_->isFetchingStats(); }
+
+CouponBridge::CouponBridge(charging::client::CouponService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::CouponService::couponsChanged,
+            this, &CouponBridge::couponsChanged);
+    connect(svc_, &charging::client::CouponService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm here: an eager GET_COUPONS would consume the mock's
+    // scripted setNextFailure sequences and race QSignalSpy starts. The page
+    // pulls on entry (Component.onCompleted fetchCoupons) instead.
+}
+
+QVariantList CouponBridge::coupons() const { return svc_->coupons(); }
+void CouponBridge::fetchCoupons() { svc_->fetchCoupons(); }
+int CouponBridge::couponCount() const { return static_cast<int>(svc_->coupons().size()); }
+
 
 } // namespace charging::qml

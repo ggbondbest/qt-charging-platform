@@ -3,8 +3,10 @@
 #include "service_bridges.h"
 
 #include "charging/client/profile_charging/charging_service.h"
+#include "charging/client/profile_charging/coupon_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
 #include "charging/client/profile_charging/order_service.h"
+#include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "services/favorites/favorites_service.h"
@@ -55,6 +57,8 @@ QmlApp::QmlApp(QObject* parent)
     walletService_ = new charging::client::WalletService(transport, this);
     orderService_ = new charging::client::OrderService(transport, this);
     chargingService_ = new charging::client::ChargingService(transport, this);
+    statsService_ = new charging::client::StatsService(transport, this);
+    couponService_ = new charging::client::CouponService(transport, this);
 
     reservationService_ = new charging::client::services::reservation::ReservationService(this);
     settingsService_ = new charging::client::services::settings::SettingsService(this);
@@ -80,6 +84,15 @@ QmlApp::QmlApp(QObject* parent)
     settingsBridge_ = new SettingsBridge(settingsService_, this);
     favoritesBridge_ = new FavoritesBridge(favoritesService_, this);
     notificationBridge_ = new NotificationBridge(notificationService_, this);
+    // 2026-09-08 月报/优惠券：同一 transport 的读侧服务，couponService 名字
+    // 即成员2 CouponPage 盲调的契约名 —— 注册后页面自动退演示态。
+    statsBridge_ = new StatsBridge(statsService_, this);
+    couponBridge_ = new CouponBridge(couponService_, this);
+    // CouponPage (member 2) only reads the synchronous coupons() cache and
+    // reloads on couponsChanged — nobody on the page side triggers a fetch,
+    // so the wallet is pulled once at wiring time instead of touching the
+    // page (mock rows are static; the cache never goes stale in demo mode).
+    couponService_->fetchCoupons();
     // Keep currentUser in sync so top-bar balances never lag after profile
     // edit / recharge / payment — the three events that mutate balanceCents.
     connect(walletBridge_, &WalletBridge::profileLoaded, this,
@@ -109,6 +122,8 @@ QObject* QmlApp::mapGeoService() const { return mapGeoService_; }
 QObject* QmlApp::favoritesService() const { return favoritesBridge_; }
 QObject* QmlApp::notificationService() const { return notificationBridge_; }
 QObject* QmlApp::stationQueryService() const { return stationQueryBridge_; }
+QObject* QmlApp::statsService() const { return statsBridge_; }
+QObject* QmlApp::couponService() const { return couponBridge_; }
 QObject* QmlApp::authService() const { return nullptr; }  // TODO(contract): tcp only
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 

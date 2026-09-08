@@ -16,6 +16,8 @@ namespace charging::client {
 class WalletService;
 class OrderService;
 class ChargingService;
+class StatsService;
+class CouponService;
 } // namespace charging::client
 
 namespace charging::client::services {
@@ -31,6 +33,8 @@ namespace charging::qml {
 class WalletBridge;
 class OrderBridge;
 class ChargingBridge;
+class StatsBridge;
+class CouponBridge;
 class StationQueryBridge;
 class ReservationBridge;
 class SettingsBridge;
@@ -49,6 +53,8 @@ class QmlApp final : public QObject
     Q_PROPERTY(QObject* favoritesService READ favoritesService CONSTANT)
     Q_PROPERTY(QObject* notificationService READ notificationService CONSTANT)
     Q_PROPERTY(QObject* stationQueryService READ stationQueryService CONSTANT)
+    Q_PROPERTY(QObject* statsService READ statsService CONSTANT)
+    Q_PROPERTY(QObject* couponService READ couponService CONSTANT)
     // AuthService needs a live ClientConnection; mock channel has none.
     // TODO(contract): wire tcp channel (then also NetworkRequestTransport).
     Q_PROPERTY(QObject* authService READ authService CONSTANT)
@@ -67,6 +73,8 @@ public:
     QObject* favoritesService() const;
     QObject* notificationService() const;
     QObject* stationQueryService() const;
+    QObject* statsService() const;
+    QObject* couponService() const;
     QObject* authService() const;  // nullptr on mock — see TODO(contract)
     QVariantMap currentUser() const;
     bool loggedIn() const { return loggedIn_; }
@@ -113,6 +121,10 @@ private:
     charging::client::services::favorites::FavoritesService* favoritesService_ = nullptr;
     charging::client::services::favorites::NotificationService* notificationService_ = nullptr;
     charging::client::services::station::StationQueryService* stationQueryService_ = nullptr;
+    charging::client::StatsService* statsService_ = nullptr;
+    charging::client::CouponService* couponService_ = nullptr;
+    StatsBridge* statsBridge_ = nullptr;
+    CouponBridge* couponBridge_ = nullptr;
     QVariantMap user_;
     bool loggedIn_ = false;
 };
