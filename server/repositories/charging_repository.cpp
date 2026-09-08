@@ -284,6 +284,8 @@ struct ExpiredReservation
 {
     qint64 reservationId = 0;
     qint64 chargerId = 0;
+    qint64 userId = 0;
+    QString chargerCode;
 };
 
 bool expireDueReservations(const QSqlDatabase& database, const QDateTime& nowUtc,
@@ -292,9 +294,14 @@ bool expireDueReservations(const QSqlDatabase& database, const QDateTime& nowUtc
     QList<ExpiredReservation> expired;
     {
         QSqlQuery select(database);
+        // The charger code is fetched via a scalar subquery instead of a JOIN:
+        // a missing charger must never silently drop the row from the sweep
+        // (the status updates below would then fail their strict row count).
         select.prepare(
-            QStringLiteral("SELECT id, charger_id FROM reservations "
-                           "WHERE status = 'ACTIVE' AND expires_at <= :now ORDER BY id"));
+            QStringLiteral("SELECT r.id, r.charger_id, r.user_id, "
+                           "(SELECT c.code FROM chargers c WHERE c.id = r.charger_id) "
+                           "FROM reservations r "
+                           "WHERE r.status = 'ACTIVE' AND r.expires_at <= :now ORDER BY r.id"));
         select.bindValue(QStringLiteral(":now"), toStorageUtc(nowUtc));
         if (!select.exec()) {
             *diagnostic = select.lastError().text();
@@ -303,10 +310,14 @@ bool expireDueReservations(const QSqlDatabase& database, const QDateTime& nowUtc
         while (select.next()) {
             bool reservationOk = false;
             bool chargerOk = false;
+            bool userOk = false;
             ExpiredReservation value;
             value.reservationId = select.value(0).toLongLong(&reservationOk);
             value.chargerId = select.value(1).toLongLong(&chargerOk);
-            if (!reservationOk || !chargerOk || value.reservationId <= 0 || value.chargerId <= 0) {
+            value.userId = select.value(2).toLongLong(&userOk);
+            value.chargerCode = select.value(3).toString();
+            if (!reservationOk || !chargerOk || !userOk || value.reservationId <= 0 ||
+                value.chargerId <= 0 || value.userId <= 0 || value.chargerCode.isEmpty()) {
                 *diagnostic = QStringLiteral("An expired reservation row is invalid");
                 return false;
             }
@@ -343,6 +354,19 @@ bool expireDueReservations(const QSqlDatabase& database, const QDateTime& nowUtc
         chargerUpdate.bindValue(QStringLiteral(":now"), now);
         chargerUpdate.bindValue(QStringLiteral(":chargerId"), value.chargerId);
         if (!executeUpdate(&chargerUpdate, diagnostic)) {
+            return false;
+        }
+
+        // 批次D（2026-09-08）：超时清扫落一条通知。reservation 翻转 UPDATE 以
+        // status='ACTIVE' 守卫且要求恰好 1 行——重放不会双写，通知天然幂等。
+        // 词表复用 reservation_expiry_reminder（客户端 typeFromServerWord 现成
+        // 映射，通知枚举零触碰）。TODO(contract): draft wording pending review.
+        if (!repository_detail::insertNotificationInTransaction(
+                database, value.userId, QStringLiteral("RESERVATION_EXPIRY_REMINDER"),
+                QStringLiteral("预约已超时取消"),
+                QStringLiteral("您的充电桩 %1 预约已超时，未按时开始充电，预约已自动取消")
+                    .arg(value.chargerCode),
+                nowUtc, diagnostic)) {
             return false;
         }
     }

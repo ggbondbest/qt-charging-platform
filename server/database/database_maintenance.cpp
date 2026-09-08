@@ -334,7 +334,7 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
             QStringLiteral("transaction_no TEXT NOT NULL UNIQUE"),
             QStringLiteral("status IN ('SUCCESS', 'FAILED')")}},
         {QStringLiteral("notifications"), {
-            QStringLiteral("type IN ('CHARGING_STOPPED', 'ORDER_PAID')")}},
+            QStringLiteral("type IN ('CHARGING_STOPPED', 'ORDER_PAID', 'RESERVATION_EXPIRY_REMINDER')")}},
         {QStringLiteral("coupons"), {
             QStringLiteral("kind IN ('CASH', 'DISCOUNT')"),
             QStringLiteral("status IN ('AVAILABLE', 'USED', 'EXPIRED')")}},

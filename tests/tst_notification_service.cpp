@@ -232,6 +232,31 @@ private slots:
         QCOMPARE(service_.notifications().size(), 3);
     }
 
+    void serverExpiryWordMapsToReminder()
+    {
+        // 批次D（2026-09-08）：服务端预约超时清扫落 reservation_expiry_reminder
+        // 词（schema CHECK 已放行）——此处对拍该词经 refresh 不被防御性丢弃、
+        // 映射到 ReservationExpiryReminder（词表本就登记，枚举零触碰）。
+        StubTransport transport;
+        transport.payload = QJsonObject{
+            {QStringLiteral("notifications"), QJsonArray{
+                QJsonObject{{QStringLiteral("id"), QStringLiteral("9")},
+                            {QStringLiteral("type"),
+                             QStringLiteral("reservation_expiry_reminder")},
+                            {QStringLiteral("title"), QStringLiteral("预约已超时取消")},
+                            {QStringLiteral("body"), QStringLiteral("您的充电桩预约已超时")},
+                            {QStringLiteral("createdAtUtc"),
+                             QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}},
+            }},
+        };
+        service_.setTransport(&transport);
+        service_.refresh();
+        const QVector<NotificationItem> items = service_.notifications();
+        QCOMPARE(items.size(), 4);           // 本地 seed 3 条 + 服务端 1 条
+        QCOMPARE(items.first().type, NotificationType::ReservationExpiryReminder);
+        QCOMPARE(items.first().id, qint64(9));
+    }
+
     void refreshFailureAndTransportlessAreSilent()
     {
         // 未注入 transport：refresh 完全 no-op（迭代 3 行为保持）。

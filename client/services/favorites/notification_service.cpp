@@ -21,7 +21,7 @@ constexpr int kMaxNotifications = 50;
 constexpr int kSeedOffsetsMinutes[3] = {14, 95, 1520};
 
 // 服务端 type 词（协议小写串）→ 本地枚举；未知词返回 false（防御性丢弃，
-// 服务端 schema CHECK 目前只放行 charging_stopped/order_paid）。
+// 服务端 schema CHECK 目前放行 charging_stopped/order_paid/reservation_expiry_reminder）。
 bool typeFromServerWord(const QString& word, NotificationType* out)
 {
     if (word == QLatin1String("reservation_expiry_reminder")) {

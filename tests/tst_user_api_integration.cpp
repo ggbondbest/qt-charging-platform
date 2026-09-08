@@ -399,6 +399,23 @@ void UserApiIntegrationTest::pagingExpiryAndLiveLists()
     QVERIFY(response.success); QCOMPARE(response.data.value("total").toInt(), 1);
     QCOMPARE(f.number("SELECT COUNT(*) FROM orders WHERE status='CANCELLED' AND user_id=1"), 1);
     QCOMPARE(f.number("SELECT COUNT(*) FROM chargers WHERE id=1 AND status='AVAILABLE'"), 1);
+    // 批次D（2026-09-08）：超时清扫与翻转同事务落一条通知，词表复用
+    // reservation_expiry_reminder（客户端 typeFromServerWord 现成映射）。
+    QCOMPARE(f.number("SELECT COUNT(*) FROM notifications "
+                      "WHERE type='RESERVATION_EXPIRY_REMINDER' AND user_id=1"), 1);
+    response = call(c, kGetNotifications);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    const QJsonObject expiryNote =
+        response.data.value("notifications").toArray().first().toObject();
+    QCOMPARE(expiryNote.value("type").toString(),
+             QStringLiteral("reservation_expiry_reminder"));
+    QVERIFY(expiryNote.value("title").toString().contains(QStringLiteral("预约")));
+    QVERIFY(!expiryNote.value("body").toString().isEmpty());
+    QVERIFY(expiryNote.value("createdAtUtc").isString());
+    // 重放清扫（任意读动作再触发）不双写：翻转 UPDATE 以 status='ACTIVE' 守卫。
+    QVERIFY(call(c, kGetReservations).success);
+    QCOMPARE(call(c, kGetNotifications).data.value("total").toInt(), 1);
     charging::client::services::reservation::ReservationService reservationService;
     reservationService.setConnection(&c); reservationService.setLiveMode(true); reservationService.setUserId(1);
     QSignalSpy reservations(&reservationService, &charging::client::services::reservation::ReservationService::listSucceeded);
