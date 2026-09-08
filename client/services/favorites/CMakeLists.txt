@@ -14,6 +14,9 @@ target_link_libraries(charging_client_favorites_services
     PUBLIC
     ChargingPlatform::Common
     ChargingPlatform::ClientSettingsServices
+    # 2026-09-08 通知服务端通道（横闯，成员 3）：IRequestTransport 头在
+    # profile_charging 域；该向依赖单向（profile 不链 favorites），无环。
+    ChargingPlatform::ClientProfileChargingServices
     Qt6::Core
     PRIVATE
     ChargingPlatform::ProjectOptions

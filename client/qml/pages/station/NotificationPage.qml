@@ -67,10 +67,14 @@ Item {
                 Row {
                     width: parent.width            // Card 内容进 Column 容器：anchors 被忽略且告警
                     spacing: P.Style.spaceSm
-                    Text { anchors.verticalCenter: parent.verticalCenter
+                    Text { id: glyphLbl
+                        anchors.verticalCenter: parent.verticalCenter
                         text: page.glyphFor(modelData.type); font.pixelSize: P.Style.fontXl }
                     Column {
-                        width: parent.width - 60
+                        // 原 parent.width - 60 的魔数预留放不下放大档时间列 →
+                        // 按两侧内容实宽扣减（字号档适配 2026-09-08，成员3 代修）
+                        width: Math.max(40, parent.width - glyphLbl.implicitWidth
+                                        - timeLbl.implicitWidth - parent.spacing * 2)
                         spacing: 2
                         Text { width: parent.width; elide: Text.ElideRight
                             text: modelData.title || ""
@@ -79,7 +83,7 @@ Item {
                             text: modelData.body || ""
                             font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     }
-                    Text { objectName: "notificationTimeLabel"
+                    Text { id: timeLbl; objectName: "notificationTimeLabel"
                         anchors.verticalCenter: parent.verticalCenter
                         text: page.timeText(modelData.createdAtUtc)
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint }

@@ -45,7 +45,10 @@ void UserApiContractTest::documentedExamples()
     const QSet<QString> expected{
         request_type::kGetStations, request_type::kGetChargers, request_type::kGetReservations,
         request_type::kGetUserInfo, request_type::kUpdateUserInfo, request_type::kRecharge,
-        request_type::kGetRechargeRecords, request_type::kGetOrders};
+        request_type::kGetRechargeRecords, request_type::kGetOrders, request_type::kGetUserStats,
+        request_type::kGetCoupons, request_type::kGetNotifications,
+        request_type::kCheckIn, request_type::kGetPoints,
+        request_type::kSubmitChargerRating, request_type::kGetMyRatings};
     QSet<QString> seen;
     for (const QJsonValue& value : doc.array()) {
         const QJsonObject example = value.toObject();
@@ -116,6 +119,90 @@ void UserApiContractTest::documentedExamples()
             QVERIFY(output.value("idempotent").isBool());
             QVERIFY(!output.value("idempotent").toBool());
             QVERIFY(!output.contains("balanceAfterCents"));
+        } else if (type == QLatin1String(request_type::kGetUserStats)) {
+            const QJsonArray rows = output.value("months").toArray();
+            QCOMPARE(rows.size(), 1);
+            const QJsonObject row = rows.first().toObject();
+            QCOMPARE(row.value("monthKey").toString().size(), 7);
+            for (const char* key : {"orderCount", "energyWh", "amountCents",
+                                    "durationSeconds", "co2Grams"}) {
+                QVERIFY(row.value(QLatin1String(key)).isDouble());
+            }
+            // 碳排公式与服务端单点对拍：co2 = round(energyWh × 0.5568)。
+            QCOMPARE(row.value("co2Grams").toDouble(),
+                     qRound64(row.value("energyWh").toDouble() * 0.5568));
+        } else if (type == QLatin1String(request_type::kGetCoupons)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("coupons").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("kind").toString() == QLatin1String("cash")
+                    || item.value("kind").toString() == QLatin1String("discount"));
+            QVERIFY(item.value("status").toString() == QLatin1String("available")
+                    || item.value("status").toString() == QLatin1String("used")
+                    || item.value("status").toString() == QLatin1String("expired"));
+            QVERIFY(item.value("expiresAtUtc").isDouble());   // 页面契约：epoch ms 数字
+            QVERIFY(!item.value("condition").toString().isEmpty());
+        } else if (type == QLatin1String(request_type::kGetNotifications)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("notifications").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("type").toString() == QLatin1String("charging_stopped")
+                    || item.value("type").toString() == QLatin1String("order_paid"));
+            QVERIFY(!item.value("title").toString().isEmpty());
+            QVERIFY(!item.value("body").toString().isEmpty());
+            QVERIFY(item.value("createdAtUtc").isString());   // 页面契约 key（非 createdAt）
+            QVERIFY(!item.contains("userId"));                // 内部身份列不回显
+            QVERIFY(!item.contains("readAt"));
+        } else if (type == QLatin1String(request_type::kCheckIn)) {
+            // CHECK_IN 无参：input 必须显式 {}（normalize 对空 result，注入即挂）。
+            QVERIFY(input.isEmpty());
+            QCOMPARE(output.value("day").toString().size(), 10);   // "YYYY-MM-DD"
+            QVERIFY(output.value("points").isDouble());
+            QVERIFY(output.value("gained").isDouble());
+            QVERIFY(output.value("alreadyCheckedIn").isBool());
+        } else if (type == QLatin1String(request_type::kGetPoints)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QVERIFY(output.value("points").isDouble());   // SUM 总分与流水同响应
+            const QJsonArray items = output.value("entries").toArray();
+            QCOMPARE(items.size(), 1);
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("amount").isDouble());
+            QVERIFY(!item.value("reason").toString().isEmpty());
+            QVERIFY(item.value("createdAtUtc").isString());
+            QVERIFY(!item.contains("userId"));
+        } else if (type == QLatin1String(request_type::kSubmitChargerRating)) {
+            // 写型响应：rating 行 = 服务端回读行（重放=首评原值），alreadyRated 旗标。
+            const QJsonObject row = output.value("rating").toObject();
+            QVERIFY(row.value("id").isString());
+            QCOMPARE(row.value("orderId"), input.value("orderId"));
+            QVERIFY(row.value("chargerId").isString());
+            QVERIFY(!row.value("chargerCode").toString().isEmpty());
+            QVERIFY(!row.value("stationName").toString().isEmpty());
+            QCOMPARE(row.value("rating"), input.value("rating"));
+            QVERIFY(row.value("createdAtUtc").isString());
+            QVERIFY(!row.contains("userId"));
+            QVERIFY(output.value("alreadyRated").isBool());
+            QVERIFY(!output.value("alreadyRated").toBool());   // 示例=首次提交
+        } else if (type == QLatin1String(request_type::kGetMyRatings)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("ratings").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("id").isString());
+            QVERIFY(item.value("orderId").isString());
+            QVERIFY(item.value("rating").isDouble());
+            QVERIFY(item.value("createdAtUtc").isString());
+            QVERIFY(!item.contains("userId"));
         } else {
             verifyModel<charging::model::User>(output.value("user").toObject());
         }
@@ -126,7 +213,9 @@ void UserApiContractTest::documentedExamples()
 void UserApiContractTest::defaultsAndIdentity()
 {
     for (const char* type : {request_type::kGetStations, request_type::kGetReservations,
-                             request_type::kGetOrders, request_type::kGetRechargeRecords}) {
+                             request_type::kGetOrders, request_type::kGetRechargeRecords,
+                             request_type::kGetCoupons, request_type::kGetNotifications,
+                             request_type::kGetPoints, request_type::kGetMyRatings}) {
         QJsonObject output;
         QVERIFY(normalizeRequestData(type, {{"userId", "999"}, {"futureField", true}}, &output));
         QCOMPARE(output.value("page").toInt(), kDefaultPage);
@@ -135,8 +224,16 @@ void UserApiContractTest::defaultsAndIdentity()
         QVERIFY(!output.contains("futureField"));
     }
     QJsonObject output;
+    QVERIFY(normalizeRequestData(request_type::kCheckIn, {{"userId", "999"}, {"futureField", true}},
+                                 &output));
+    QVERIFY(output.isEmpty());   // CHECK_IN 无参：身份来自 Session，未知键丢弃（同 GET_USER_INFO）。
     QVERIFY(normalizeRequestData(request_type::kGetUserInfo, {{"userId", "999"}}, &output));
     QVERIFY(output.isEmpty()); // Not an authentication test: Session is the caller's responsibility.
+    QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"userId", "999"}, {"page", 2}},
+                                 &output));
+    // stats is unpaged; page is discarded; period 缺省注入 "month"（=冻结行为）。
+    QCOMPARE(output, (QJsonObject{{QStringLiteral("months"), 6},
+                                  {QStringLiteral("period"), QStringLiteral("month")}}));
 }
 
 void UserApiContractTest::invalidRequests_data()
@@ -167,6 +264,47 @@ void UserApiContractTest::invalidRequests_data()
         << QJsonObject{{"status", QJsonValue::Null}};
     QTest::newRow("keyword-long") << QString(request_type::kGetStations)
         << QJsonObject{{"keyword", QString(65, QLatin1Char('x'))}};
+    for (const QJsonValue& months : {QJsonValue(0), QJsonValue(-1), QJsonValue(1.5),
+                                      QJsonValue("6"), QJsonValue(13)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{months}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("stats-months-" + tag).constData())
+            << QString(request_type::kGetUserStats) << QJsonObject{{"months", months}};
+    }
+    for (const QJsonValue& period : {QJsonValue("WEEK"), QJsonValue("daily"),
+                                     QJsonValue(1), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{period}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("stats-period-" + tag).constData())
+            << QString(request_type::kGetUserStats) << QJsonObject{{"period", period}};
+    }
+    for (const QJsonValue& status : {QJsonValue("AVAILABLE"), QJsonValue("pending"),
+                                     QJsonValue(1), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{status}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("coupon-status-" + tag).constData())
+            << QString(request_type::kGetCoupons) << QJsonObject{{"status", status}};
+    }
+    QTest::newRow("notifications-page-size-limit") << QString(request_type::kGetNotifications)
+        << QJsonObject{{"pageSize", 101}};
+    QTest::newRow("points-page-size-limit") << QString(request_type::kGetPoints)
+        << QJsonObject{{"pageSize", 101}};
+    QTest::newRow("points-page-zero") << QString(request_type::kGetPoints)
+        << QJsonObject{{"page", 0}};
+    // 批次E：SUBMIT_CHARGER_RATING 写型校验（orderId 正十进制串 + rating 1..5 +
+    // comment ≤140 trimmed）。
+    QTest::newRow("rating-missing-order") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"rating", 5}, {"comment", ""}};
+    QTest::newRow("rating-order-zero") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"orderId", "0"}, {"rating", 5}, {"comment", ""}};
+    for (const QJsonValue& rating : {QJsonValue(0), QJsonValue(6), QJsonValue("5"),
+                                     QJsonValue(1.5), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{rating}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("rating-value-" + tag).constData())
+            << QString(request_type::kSubmitChargerRating)
+            << QJsonObject{{"orderId", "7"}, {"rating", rating}, {"comment", ""}};
+    }
+    QTest::newRow("rating-comment-long") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"orderId", "7"}, {"rating", 5}, {"comment", QString(141, QLatin1Char('x'))}};
+    QTest::newRow("myratings-page-size-limit") << QString(request_type::kGetMyRatings)
+        << QJsonObject{{"pageSize", 101}};
     QTest::newRow("empty-update") << QString(request_type::kUpdateUserInfo) << QJsonObject{};
     QTest::newRow("protected-update") << QString(request_type::kUpdateUserInfo)
         << QJsonObject{{"balanceCents", 100}};
@@ -233,6 +371,31 @@ void UserApiContractTest::boundariesAndNormalization()
     for (const char* status : {"ACTIVE", "FULFILLED", "CANCELLED", "EXPIRED", ""}) {
         QVERIFY(normalizeRequestData(request_type::kGetReservations, {{"status", status}}, &output));
     }
+    for (const int months : {1, 6, kMaximumStatsMonths}) {
+        QVERIFY(normalizeRequestData(request_type::kGetUserStats, {{"months", months}}, &output));
+        QCOMPARE(output.value("months").toInt(), months);
+    }
+    for (const char* period : {"week", "month", "year"}) {
+        QVERIFY(normalizeRequestData(request_type::kGetUserStats,
+                                     {{"period", period}}, &output));
+        QCOMPARE(output.value("period").toString(), QLatin1String(period));
+        QCOMPARE(output.value("months").toInt(), 6);   // 缺省窗口随同注入
+    }
+    for (const char* status : {"available", "used", "expired", ""}) {
+        QVERIFY(normalizeRequestData(request_type::kGetCoupons, {{"status", status}}, &output));
+        QCOMPARE(output.value("status").toString(), QLatin1String(status));
+    }
+    for (const int stars : {1, 3, 5}) {   // 批次E：星级全域
+        QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,
+            {{"orderId", "7"}, {"rating", stars}, {"comment", ""}}, &output));
+        QCOMPARE(output.value("rating").toInt(), stars);
+    }
+    QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,   // comment 缺省注入空串
+        {{"orderId", "7"}, {"rating", 4}}, &output));
+    QCOMPARE(output.value("comment").toString(), QString());
+    QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,   // 提交前 trim
+        {{"orderId", "7"}, {"rating", 4}, {"comment", "  很快  "}}, &output));
+    QCOMPARE(output.value("comment").toString(), QStringLiteral("很快"));
 }
 
 void UserApiContractTest::unsupportedAction()

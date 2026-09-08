@@ -177,26 +177,78 @@ private slots:
             SettingsService::Notification::ReservationSuccessNotice));
         QVERIFY(service_.notificationEnabled(
             SettingsService::Notification::ReservationCancelNotice));
+        // 2026-09-08 服务端通道两值（横闯追加，缺省同样全开）。
+        QVERIFY(service_.notificationEnabled(
+            SettingsService::Notification::ChargingStopped));
+        QVERIFY(service_.notificationEnabled(
+            SettingsService::Notification::OrderPaid));
 
         QSignalSpy spy(&service_, &SettingsService::notificationsChanged);
         service_.setNotificationEnabled(SettingsService::Notification::ReservationSuccessNotice,
                                         false);
         service_.setNotificationEnabled(SettingsService::Notification::ReservationCancelNotice,
                                         false);
-        QCOMPARE(spy.count(), 2);
+        service_.setNotificationEnabled(SettingsService::Notification::ChargingStopped,
+                                        false);
+        QCOMPARE(spy.count(), 3);
 
-        // 重进页面（新实例）回读：仅到期提醒保持开启。
+        // 重进页面（新实例）回读：仅到期提醒与支付成功保持开启。
         SettingsService reopened;
         QVERIFY(reopened.notificationEnabled(
             SettingsService::Notification::ReservationExpiryReminder));
+        QVERIFY(reopened.notificationEnabled(
+            SettingsService::Notification::OrderPaid));
         QVERIFY(!reopened.notificationEnabled(
             SettingsService::Notification::ReservationSuccessNotice));
         QVERIFY(!reopened.notificationEnabled(
             SettingsService::Notification::ReservationCancelNotice));
+        QVERIFY(!reopened.notificationEnabled(
+            SettingsService::Notification::ChargingStopped));
 
         reopened.resetForTesting();
         QVERIFY(reopened.notificationEnabled(
             SettingsService::Notification::ReservationSuccessNotice)); // 复位默认全开
+        QVERIFY(reopened.notificationEnabled(
+            SettingsService::Notification::ChargingStopped)); // 新键同受复位覆盖
+    }
+
+    // —— 外观（批次A，成员3 追加）——
+
+    void appearanceDefaultsThemeLightFontStandard()
+    {
+        QCOMPARE(service_.theme(), QStringLiteral("light"));
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+    }
+
+    void appearanceValidValuesPersistAcrossInstances()
+    {
+        QSignalSpy spy(&service_, &SettingsService::appearanceChanged);
+        QVERIFY(service_.setTheme(QStringLiteral("dark")));
+        QVERIFY(service_.setFontScale(QStringLiteral("extraLarge")));
+        QCOMPARE(spy.count(), 2);
+        SettingsService reopened;   // 跨实例 = 存储真的落盘
+        QCOMPARE(reopened.theme(), QStringLiteral("dark"));
+        QCOMPARE(reopened.fontScale(), QStringLiteral("extraLarge"));
+
+        reopened.resetForTesting();
+        QCOMPARE(reopened.theme(), QStringLiteral("light"));
+        QCOMPARE(reopened.fontScale(), QStringLiteral("standard"));
+    }
+
+    void appearanceInvalidValuesRejected()
+    {
+        QVERIFY(!service_.setTheme(QStringLiteral("neon")));
+        QVERIFY(!service_.setFontScale(QStringLiteral("huge")));
+        QCOMPARE(service_.theme(), QStringLiteral("light"));   // 状态未被触碰
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+        // 存储被外部写脏时，getter 按默认档读回（白名单闭环在 getter 再收一次）。
+        QSettings dirty;
+        dirty.setValue(QStringLiteral("settings/appearance/theme"),
+                       QStringLiteral("chartreuse"));
+        dirty.setValue(QStringLiteral("settings/appearance/fontScale"), 42);
+        QCOMPARE(service_.theme(), QStringLiteral("light"));
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+        service_.resetForTesting();
     }
 };
 

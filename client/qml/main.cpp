@@ -91,6 +91,8 @@ int main(int argc, char* argv[])
         || app.arguments().contains(QStringLiteral("--logged-in"))))
         qmlApp.login(QStringLiteral("13800138000"));
     // CONTRACT.md §1: bare service names, objects pass through verbatim.
+    // Re-bound on servicesChanged: each login rebuilds the bridge graph, and
+    // stale context pointers must never outlive their session.
     const auto bindServices = [&qmlApp, ctx]() {
         ctx->setContextProperty(QStringLiteral("walletService"), qmlApp.walletService());
         ctx->setContextProperty(QStringLiteral("orderService"), qmlApp.orderService());
@@ -101,11 +103,26 @@ int main(int argc, char* argv[])
         ctx->setContextProperty(QStringLiteral("favoritesService"), qmlApp.favoritesService());
         ctx->setContextProperty(QStringLiteral("notificationService"), qmlApp.notificationService());
         ctx->setContextProperty(QStringLiteral("stationQueryService"), qmlApp.stationQueryService());
+        ctx->setContextProperty(QStringLiteral("statsService"), qmlApp.statsService());
+        ctx->setContextProperty(QStringLiteral("couponService"), qmlApp.couponService());
+        ctx->setContextProperty(QStringLiteral("pointsService"), qmlApp.pointsService());
+        ctx->setContextProperty(QStringLiteral("ratingsService"), qmlApp.ratingsService());
     };
     bindServices();
     QObject::connect(&qmlApp, &charging::qml::QmlApp::servicesChanged, ctx, bindServices);
     ctx->setContextProperty(QStringLiteral("mapBridge"), qmlApp.mapBridge());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
+    // --theme=light|dark / --font=standard|large|extraLarge（批次A）：覆盖式
+    // 设置外观持久化（Service 白名单自拒非法值），Shell 启动同步即生效——
+    // 给暗色截图验收与演示用；不传则维持本机已存值。
+    const QString themeArg = valueOf("--theme=");
+    if (!themeArg.isEmpty())
+        QMetaObject::invokeMethod(qmlApp.settingsService(), "setTheme",
+                                  Q_ARG(QString, themeArg));
+    const QString fontArg = valueOf("--font=");
+    if (!fontArg.isEmpty())
+        QMetaObject::invokeMethod(qmlApp.settingsService(), "setFontScale",
+                                  Q_ARG(QString, fontArg));
     QQmlComponent component(&engine);
     component.loadUrl(QUrl(QStringLiteral("qrc:/charging/Shell.qml")));
     if (component.isError()) {

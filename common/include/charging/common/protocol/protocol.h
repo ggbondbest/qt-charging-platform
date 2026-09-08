@@ -28,6 +28,17 @@ inline constexpr char kUpdateUserInfo[] = "UPDATE_USER_INFO";
 inline constexpr char kRecharge[] = "RECHARGE";
 inline constexpr char kGetRechargeRecords[] = "GET_RECHARGE_RECORDS";
 inline constexpr char kGetOrders[] = "GET_ORDERS";
+inline constexpr char kGetUserStats[] = "GET_USER_STATS";
+inline constexpr char kGetCoupons[] = "GET_COUPONS";
+inline constexpr char kGetNotifications[] = "GET_NOTIFICATIONS";
+// 2026-09-08 批次C 签到/积分（冻结只新增）：CHECK_IN 写型无参（日粒度幂等，
+// Session 定身份），GET_POINTS 分页读积分流水。
+inline constexpr char kCheckIn[] = "CHECK_IN";
+inline constexpr char kGetPoints[] = "GET_POINTS";
+// 批次E（2026-09-08）：电桩评价。SUBMIT_CHARGER_RATING 写评价（一单一评幂等），
+// GET_MY_RATINGS 分页读本人评价流水。
+inline constexpr char kSubmitChargerRating[] = "SUBMIT_CHARGER_RATING";
+inline constexpr char kGetMyRatings[] = "GET_MY_RATINGS";
 inline constexpr char kAdminLogin[] = "ADMIN_LOGIN";
 inline constexpr char kGetDashboard[] = "GET_DASHBOARD";
 inline constexpr char kGetUsers[] = "GET_USERS";

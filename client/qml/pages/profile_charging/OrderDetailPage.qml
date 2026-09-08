@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic   // 批次E 评价卡用 TextField
 import "../../platform" as P
 
 // QML twin of widgets OrderDetailPage (route: "order_detail", arg = order map).
@@ -24,6 +25,96 @@ Item {
     function dur(sec) {
         var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60)
         return (h > 0 ? h + " 小时 " : "") + m + " 分钟"
+    }
+    function fmtRatingTime(iso) {
+        const d = new Date(iso)
+        if (isNaN(d.getTime())) return ""
+        const p = function (n) { return (n < 10 ? "0" : "") + n }
+        return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " "
+            + p(d.getHours()) + ":" + p(d.getMinutes())
+    }
+
+    // ———— 批次E：完成态电桩评价（一单一评，服务端 order_id UNIQUE 幂等；
+    // 改评 TODO(contract) 二期）。GET_MY_RATINGS 只取首页 20 条——老单评价落在
+    // 首页外时本页仍显示可编辑形态，提交由服务端幂等返回 alreadyRated +
+    // 首评原值，页面据此进入"已评价"态，不产生第二行。
+    property var myRating: null            // 非 null = 已评价（服务端行形）
+    property bool ratingReqActive: false
+    property bool ratingSubmitting: false
+    // 在途 SUBMIT 归属戳（审查 P2#6）：记录发起提交的订单 id。响应到达时
+    // 与当前页面订单比对——提交 A → 切到 B → A 的延迟响应不得写入 B 页。
+    property string ratingSubmitOrder: ""
+    property int pickedStars: 0
+    function loadRating() {
+        const a = page.arg
+        if (!a || a.status !== "completed" || a.id === undefined || a.id === "") return
+        if (page.myRating !== null || page.ratingReqActive) return
+        if (ratingsService.isBusy()) return   // 与他页共用单飞：静默放行
+        page.ratingReqActive = true
+        ratingsService.fetchMyRatings(1, 20)
+    }
+    function submitRatingNow() {
+        if (page.ratingSubmitting || page.pickedStars < 1) return
+        if (ratingsService.isBusy()) {
+            if (App) App.showToast("评价服务正在处理其他请求，请稍候", "info")
+            return
+        }
+        page.ratingSubmitting = true
+        page.ratingSubmitOrder = String(page.arg.id)
+        ratingsService.submitRating(String(page.arg.id), page.pickedStars,
+                                    ratingCommentField.text)
+    }
+    Connections {
+        target: ratingsService
+        function onRatingsLoaded(ratings, total) {
+            page.ratingReqActive = false
+            const id = page.arg && page.arg.id !== undefined ? String(page.arg.id) : ""
+            if (!id) return
+            for (var i = 0; i < ratings.length; ++i) {
+                if (String(ratings[i].orderId) === id) {
+                    page.myRating = ratings[i]
+                    return
+                }
+            }
+        }
+        function onRatingSubmitted(row, alreadyRated) {
+            const id = page.arg && page.arg.id !== undefined ? String(page.arg.id) : ""
+            // 单飞保证同刻只有一笔在途提交：响应到达即解除在途标志，
+            // 但仅当归属匹配（本页发起 + 响应行同单）才展示结果。
+            const mine = page.ratingSubmitOrder !== ""
+                         && page.ratingSubmitOrder === id
+                         && row && String(row.orderId) === id
+            if (page.ratingSubmitOrder !== "") {
+                page.ratingSubmitting = false
+                page.ratingSubmitOrder = ""
+            }
+            if (!mine) return   // 旧订单的迟到响应：忽略，不污染当前页面
+            page.myRating = row
+            if (App) App.showToast(alreadyRated
+                ? "该订单已评价过，为你展示首次评价" : "评价成功，感谢反馈",
+                alreadyRated ? "info" : "success")
+        }
+        function onOperationFailed(type, code, message) {
+            if (type === "GET_MY_RATINGS") { page.ratingReqActive = false; return }
+            if (type !== "SUBMIT_CHARGER_RATING") return
+            const id = page.arg && page.arg.id !== undefined ? String(page.arg.id) : ""
+            const mine = page.ratingSubmitOrder !== "" && page.ratingSubmitOrder === id
+            if (page.ratingSubmitOrder !== "") {
+                page.ratingSubmitting = false
+                page.ratingSubmitOrder = ""
+            }
+            if (!mine) return   // 旧订单提交的失败：不向当前订单页弹错误
+            if (App) App.showToast("评价提交失败：" + message, "danger")
+        }
+    }
+    // 深链截图模式 arg 异步补齐（onOrdersLoaded）时再尝试拉评价。
+    // 页面实例跨订单复用（Shell 只换 arg）：清展示态防上一单残留；
+    // 在途提交标志不动，由响应按归属戳自行收口。
+    onArgChanged: {
+        page.myRating = null
+        page.pickedStars = 0
+        page.ratingReqActive = false
+        loadRating()
     }
     // arg may arrive empty when deep-linked by route id alone (screenshot mode):
     // fall back to fetching the first order so the page always renders.
@@ -54,7 +145,7 @@ Item {
             if (App) App.showToast("支付失败：" + message, "danger")
         }
     }
-    Component.onCompleted: ensureData()
+    Component.onCompleted: { ensureData(); loadRating() }
 
     Column {
         anchors.fill: parent
@@ -99,6 +190,99 @@ Item {
                         Text { text: modelData.v; width: parent.width * 0.7
                                horizontalAlignment: Text.AlignRight
                                font.pixelSize: P.Style.fontMd; color: P.Style.ink }
+                    }
+                }
+            }
+        }
+
+        // ———— 批次E：电桩评价卡（仅完成态）————
+        P.Card {
+            objectName: "uiOrderRatingCard"
+            visible: page.arg.status === "completed"
+            width: parent.width
+            Column {
+                width: parent.width
+                spacing: P.Style.spaceMd
+
+                Text {
+                    objectName: "uiRatingTitle"
+                    text: page.myRating !== null ? "你已评价过这单" : "给这根桩打个分"
+                    font.pixelSize: P.Style.fontLg; font.weight: Font.Bold; color: P.Style.ink
+                }
+
+                // 已评价：只读星行 + 首评原文 + 时间（改评 TODO(contract) 二期）
+                Column {
+                    visible: page.myRating !== null
+                    width: parent.width
+                    spacing: 4
+                    Row {
+                        objectName: "uiRatingReadStars"
+                        spacing: 2
+                        Repeater {
+                            model: page.myRating !== null ? page.myRating.rating : 0
+                            Text { text: "★"; font.pixelSize: 18; color: P.Style.warning }
+                        }
+                    }
+                    Text {
+                        objectName: "uiRatingReadComment"
+                        width: parent.width
+                        visible: text.length > 0
+                        text: page.myRating !== null ? String(page.myRating.comment || "") : ""
+                        wrapMode: Text.Wrap
+                        font.pixelSize: P.Style.fontMd; color: P.Style.muted
+                    }
+                    Text {
+                        objectName: "uiRatingReadTime"
+                        visible: text.length > 0
+                        text: page.myRating !== null ? page.fmtRatingTime(page.myRating.createdAtUtc) : ""
+                        font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                    }
+                }
+
+                // 未评价：可点五星 + 留言 + 提交
+                Column {
+                    visible: page.myRating === null
+                    width: parent.width
+                    spacing: P.Style.spaceSm
+                    Row {
+                        objectName: "uiRatingStarPicker"
+                        spacing: 6
+                        Repeater {
+                            model: 5
+                            Item {
+                                width: 32; height: 34
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: index < page.pickedStars ? "★" : "☆"
+                                    font.pixelSize: 26
+                                    color: index < page.pickedStars ? P.Style.warning : P.Style.faint
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: page.pickedStars = index + 1
+                                }
+                            }
+                        }
+                    }
+                    TextField {
+                        id: ratingCommentField
+                        objectName: "uiRatingCommentEdit"
+                        width: parent.width
+                        placeholderText: "说说这次体验（选填，140 字内）"
+                        // 6.2 TextField 无 maxLength：软截断；服务端 normalize
+                        // 的 ≤140 trim 校验才是最终裁决。
+                        onTextChanged: if (text.length > 140) text = text.slice(0, 140)
+                    }
+                    P.ActionButton {
+                        objectName: "uiRatingSubmitButton"
+                        width: parent.width
+                        variant: "primary"
+                        enabled: page.pickedStars >= 1 && !page.ratingSubmitting
+                        text: page.ratingSubmitting ? "提交中…"
+                              : page.pickedStars >= 1 ? "提交评价 · " + page.pickedStars + " 星"
+                              : "请先选择星级"
+                        onClicked: page.submitRatingNow()
                     }
                 }
             }

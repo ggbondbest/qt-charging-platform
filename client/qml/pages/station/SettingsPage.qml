@@ -25,6 +25,9 @@ Item {
     property bool hasPassword: false
     property bool protectionOn: false
     property var vehicles: []
+    // 外观（批次A）：初值即 Service 默认档；reload() 从服务回读真值。
+    property string theme: "light"
+    property string fontScale: "standard"
 
     function call(target, fn, args) {   // 桥缺位期统一吞异常
         try { return target[fn].apply(target, args) } catch (e) { return undefined }
@@ -44,11 +47,25 @@ Item {
             page.hasPassword = StationState.hasSecondPassword()
             page.protectionOn = StationState.protectionEnabled()
         }
+        // 外观回读（批次A）：桥位必有 theme()/fontScale()（Service 白名单保底）。
+        const t = call(settingsService, "theme", [])
+        if (typeof t === "string" && t.length > 0) page.theme = t
+        const f = call(settingsService, "fontScale", [])
+        if (typeof f === "string" && f.length > 0) page.fontScale = f
+    }
+    // 点击→服务（持久化+appearanceChanged→Shell 同步 Style）；按钮选中态
+    // 只认服务返回 true，非法值 UI 与服务两侧同口径拒绝。
+    function applyTheme(v) {
+        if (call(settingsService, "setTheme", [v]) === true) page.theme = v
+    }
+    function applyFontScale(v) {
+        if (call(settingsService, "setFontScale", [v]) === true) page.fontScale = v
     }
     Component.onCompleted: reload()
     Connections {
         target: settingsService
         function onNotificationsChanged() { notifyCol.syncSwitches() }
+        function onAppearanceChanged() { reload() }   // 外观卡选中态回读
     }
 
     Flickable {
@@ -219,6 +236,55 @@ Item {
                         }
                     }
                     function syncSwitches() { /* 服务侧变更回推（桥补全后接通知刷新） */ }
+                }
+            }
+
+            // ---- 🎨 外观与字号（2026-09-08 批次A，成员3 追加——本文件已报备）----
+            P.Card {
+                objectName: "settingsAppearanceCard"
+                width: col.width - col.padding * 2
+                Column {
+                    width: parent.width
+                    spacing: P.Style.spaceSm
+                    Text { objectName: "settingsSectionTitle"; text: "🎨 外观与字号"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { width: parent.width; text: "主题"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+                    Row {
+                        spacing: P.Style.spaceSm
+                        P.ActionButton {
+                            objectName: "themeLightButton"
+                            variant: page.theme === "light" ? "primary" : "secondary"
+                            text: "☀️ 浅色"
+                            onClicked: page.applyTheme("light")
+                        }
+                        P.ActionButton {
+                            objectName: "themeDarkButton"
+                            variant: page.theme === "dark" ? "primary" : "secondary"
+                            text: "🌙 深色"
+                            onClicked: page.applyTheme("dark")
+                        }
+                    }
+                    Text { width: parent.width; text: "字号"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+                    Row {
+                        spacing: P.Style.spaceSm
+                        Repeater {
+                            model: [
+                                { obj: "fontStandardButton",    label: "标准",  key: "standard" },
+                                { obj: "fontLargeButton",       label: "大",    key: "large" },
+                                { obj: "fontExtraLargeButton",  label: "特大",  key: "extraLarge" }
+                            ]
+                            delegate: P.ActionButton {
+                                objectName: modelData.obj
+                                variant: page.fontScale === modelData.key ? "primary" : "secondary"
+                                text: modelData.label
+                                onClicked: page.applyFontScale(modelData.key)
+                            }
+                        }
+                    }
+                    Text {
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "改动即时全应用生效并记住在本机（深浅色下品牌绿渐变不变）。"
+                        font.pixelSize: P.Style.fontSm; color: P.Style.faint
+                    }
                 }
             }
         }

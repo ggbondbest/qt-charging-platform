@@ -51,6 +51,17 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     const bool profile = type == QLatin1String(kGetUserInfo);
     const bool update = type == QLatin1String(kUpdateUserInfo);
     const bool recharge = type == QLatin1String(kRecharge);
+    const bool stats = type == QLatin1String(kGetUserStats);
+    const bool coupons = type == QLatin1String(kGetCoupons);
+    const bool notices = type == QLatin1String(kGetNotifications);
+    // 批次C：CHECK_IN 写型无参（profile 同款，result 为空对象，未知键照例丢弃）；
+    // GET_POINTS 加入分页族。
+    const bool checkIn = type == QLatin1String(kCheckIn);
+    const bool points = type == QLatin1String(kGetPoints);
+    // 批次E：SUBMIT_CHARGER_RATING 写型带参（orderId+rating+可选 comment），
+    // GET_MY_RATINGS 加入分页族。
+    const bool submitRating = type == QLatin1String(kSubmitChargerRating);
+    const bool myRatings = type == QLatin1String(kGetMyRatings);
     const auto fail = [error](const char* code, const QString& field) {
         if (error != nullptr) {
             *error = {};
@@ -61,12 +72,14 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         return false;
     };
     if (!(stations || chargers || reservations || orders || records || profile || update
-          || recharge)) {
+          || recharge || stats || coupons || notices || checkIn || points
+          || submitRating || myRatings)) {
         return fail(error_code::kUnknownRequestType, QStringLiteral("type"));
     }
 
     QJsonObject result;
-    if (stations || chargers || reservations || orders || records) {
+    if (stations || chargers || reservations || orders || records || coupons || notices
+        || points || myRatings) {
         for (const QString& key : {QStringLiteral("page"), QStringLiteral("pageSize")}) {
             const bool isPage = key == QLatin1String("page");
             const QJsonValue value = data.contains(key)
@@ -98,6 +111,40 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         if (!value.isString()
             || (reservations && !validStatus<charging::model::ReservationStatus>(value.toString()))
             || (orders && !validStatus<charging::model::OrderStatus>(value.toString()))) {
+            return fail(error_code::kInvalidArgument, key);
+        }
+        result.insert(key, value);
+    }
+    if (stats) {
+        const QString key = QStringLiteral("months");
+        const QJsonValue value = data.contains(key)
+            ? data.value(key) : QJsonValue(6);
+        if (!integerInRange(value, 1, kMaximumStatsMonths)) {
+            return fail(error_code::kInvalidArgument, key);
+        }
+        result.insert(key, value);
+        // 2026-09-08 批次B 追加：period ∈ "week"|"month"|"year"，缺省注入
+        // "month"（即冻结时行为——monthKey 恒 "YYYY-MM"）。week 档 monthKey 为
+        // ISO 周 "YYYY-Www"，year 档为 "YYYY"；字段名沿用 monthKey 不动。
+        const QString periodKey = QStringLiteral("period");
+        const QJsonValue periodValue = data.contains(periodKey)
+            ? data.value(periodKey) : QJsonValue(QStringLiteral("month"));
+        const QString period = periodValue.toString();
+        if (!periodValue.isString()
+            || (period != QLatin1String("week") && period != QLatin1String("month")
+                && period != QLatin1String("year"))) {
+            return fail(error_code::kInvalidArgument, periodKey);
+        }
+        result.insert(periodKey, periodValue);
+    }
+    if (coupons) {
+        // Wire statuses are the CouponPage contract's lowercase trio; empty = all.
+        const QString key = QStringLiteral("status");
+        const QJsonValue value = data.contains(key) ? data.value(key) : QJsonValue(QString());
+        const QString status = value.toString();
+        if (!value.isString()
+            || (!status.isEmpty() && status != QLatin1String("available")
+                && status != QLatin1String("used") && status != QLatin1String("expired"))) {
             return fail(error_code::kInvalidArgument, key);
         }
         result.insert(key, value);
@@ -148,6 +195,27 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         }
         result.insert(amount, data.value(amount));
         result.insert(transaction, value);
+    }
+    if (submitRating) {
+        // 一单一评：身份来自 Session，orderId 为必填正 id 串（订单须本人 COMPLETED，
+        // 业务规则在服务端仓储把关，这里只做形态校验）。
+        const QString orderKey = QStringLiteral("orderId");
+        if (!positiveId(data.value(orderKey))) {
+            return fail(error_code::kInvalidArgument, orderKey);
+        }
+        result.insert(orderKey, data.value(orderKey));
+        const QString ratingKey = QStringLiteral("rating");
+        if (!integerInRange(data.value(ratingKey), kMinimumRating, kMaximumRating)) {
+            return fail(error_code::kInvalidArgument, ratingKey);
+        }
+        result.insert(ratingKey, data.value(ratingKey));
+        const QString commentKey = QStringLiteral("comment");
+        const QJsonValue value = data.contains(commentKey)
+            ? data.value(commentKey) : QJsonValue(QString());
+        if (!value.isString() || value.toString().trimmed().size() > kMaximumRatingCommentChars) {
+            return fail(error_code::kInvalidArgument, commentKey);
+        }
+        result.insert(commentKey, value.toString().trimmed());
     }
     if (normalized != nullptr) {
         *normalized = result;

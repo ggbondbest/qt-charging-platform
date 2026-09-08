@@ -2,9 +2,13 @@
 #include "service_bridges.h"
 #include "map_bridge.h"
 #include "charging/client/profile_charging/charging_service.h"
+#include "charging/client/profile_charging/coupon_service.h"
 #include "charging/client/profile_charging/mock_request_transport.h"
 #include "charging/client/profile_charging/network_request_transport.h"
 #include "charging/client/profile_charging/order_service.h"
+#include "charging/client/profile_charging/stats_service.h"
+#include "charging/client/profile_charging/point_service.h"
+#include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/model_json.h"
 #include "network/client_connection.h"
@@ -104,6 +108,10 @@ void QmlApp::createSession(const charging::model::User& user)
     walletService_ = new charging::client::WalletService(transport_, session_);
     orderService_ = new charging::client::OrderService(transport_, session_);
     chargingService_ = new charging::client::ChargingService(transport_, session_);
+    statsService_ = new charging::client::StatsService(transport_, session_);
+    couponService_ = new charging::client::CouponService(transport_, session_);
+    pointService_ = new charging::client::PointService(transport_, session_);
+    ratingService_ = new charging::client::RatingService(transport_, session_);
     reservationService_ = new charging::client::services::reservation::ReservationService(session_);
     settingsService_ = new charging::client::services::settings::SettingsService(session_);
     mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
@@ -118,6 +126,9 @@ void QmlApp::createSession(const charging::model::User& user)
     notificationService_ =
         new charging::client::services::favorites::NotificationService(session_);
     notificationService_->setSettingsService(settingsService_);
+    // 通知服务端通道（2026-09-08 横闯，PR 置顶报备项）：与券同源 transport；
+    // 充电结束/支付成功通知由服务端（mock 镜像）落库供此拉取。
+    notificationService_->setTransport(transport_);
     favoritesService_->setCurrentUser(user.id > 0 ? QString::number(user.id) : QString());
     stationQueryService_ = new charging::client::services::station::StationQueryService(session_);
     if (!mockMode_) {
@@ -134,6 +145,18 @@ void QmlApp::createSession(const charging::model::User& user)
     settingsBridge_ = new SettingsBridge(settingsService_, session_);
     favoritesBridge_ = new FavoritesBridge(favoritesService_, session_);
     notificationBridge_ = new NotificationBridge(notificationService_, session_);
+    // 2026-09-08 月报/优惠券/签到积分/电桩评价：同 transport 的读侧服务，
+    // 同名转发桥即契约名 —— CouponPage 等盲调点注册后自动退演示态。
+    statsBridge_ = new StatsBridge(statsService_, session_);
+    couponBridge_ = new CouponBridge(couponService_, session_);
+    pointBridge_ = new PointBridge(pointService_, session_);
+    ratingBridge_ = new RatingBridge(ratingService_, session_);
+    if (user.id > 0) {
+        // Logged-in session boot: notifications pull once per session; the
+        // coupon cache is only read synchronously by CouponPage, so warm it here.
+        notificationService_->refresh();
+        couponService_->fetchCoupons();
+    }
     connect(walletBridge_, &WalletBridge::profileLoaded, this,
             [this, generation](const QVariantMap& profile) {
         if (generation != generation_ || profile.value("id") != user_.value("id")) return;
@@ -164,6 +187,10 @@ QObject* QmlApp::mapBridge() const { return mapBridge_; }
 QObject* QmlApp::favoritesService() const { return favoritesBridge_; }
 QObject* QmlApp::notificationService() const { return notificationBridge_; }
 QObject* QmlApp::stationQueryService() const { return stationQueryBridge_; }
+QObject* QmlApp::statsService() const { return statsBridge_; }
+QObject* QmlApp::couponService() const { return couponBridge_; }
+QObject* QmlApp::pointsService() const { return pointBridge_; }
+QObject* QmlApp::ratingsService() const { return ratingBridge_; }
 QObject* QmlApp::authService() const { return const_cast<QmlApp*>(this); }
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 
@@ -200,6 +227,15 @@ void QmlApp::navigate(const QString& route, const QVariant& arg)
 {
     if (!loggedIn_ && route != QStringLiteral("login")) {
         emit navigateRequested(QStringLiteral("login"), {}); return;
+    }
+    // 审查 P2#3：券/通知页只读桥缓存，而 boot 拉取每会话仅一次——充值发券、
+    // 停止/支付落通知后同会话进页会看到旧缓存。Shell 导航唯一漏斗即本函数
+    //（底栏 onTabChanged、铃铛、Profile 行均经 App.navigate），进页强制补拉。
+    // 两侧服务均单飞（在途重复请求静默丢弃），boot 拉取未落定时不产生第二条。
+    if (route == QStringLiteral("coupon") && couponService_) {
+        couponService_->fetchCoupons();
+    } else if (route == QStringLiteral("notifications") && notificationService_) {
+        notificationService_->refresh();
     }
     if (route == QStringLiteral("reservation_confirm")) {
         checkBeforeReservation(arg.toMap()); return;

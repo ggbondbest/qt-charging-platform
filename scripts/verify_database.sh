@@ -48,17 +48,23 @@ if [[ -n "${foreign_key_errors}" ]]; then
     exit 1
 fi
 
-table_count="$(sqlite3 -batch -bail "${temporary_database}" \
-    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';")"
-if [[ "${table_count}" -ne 8 ]]; then
-    printf 'Database verification failed: expected 8 application tables, found %s.\n' \
-        "${table_count}" >&2
+# Compare the explicit set of application tables instead of a bare count: a
+# count can hide a missing table behind an extra one after schema changes.
+expected_tables="$(LC_ALL=C printf '%s\n' \
+    admins chargers coupons notifications operation_logs orders points_ledger \
+    recharge_records reservations stations user_checkins users charger_ratings | sort)"
+actual_tables="$(sqlite3 -batch -bail "${temporary_database}" \
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
+if [[ "${actual_tables}" != "${expected_tables}" ]]; then
+    printf 'Database verification failed: unexpected application tables.\nExpected:\n%s\nFound:\n%s\n' \
+        "${expected_tables}" "${actual_tables}" >&2
     exit 1
 fi
+table_count="$(printf '%s\n' "${actual_tables}" | wc -l)"
 
 schema_version="$(sqlite3 -batch -bail "${temporary_database}" 'PRAGMA user_version;')"
-if [[ "${schema_version}" -ne 2 ]]; then
-    printf 'Database verification failed: expected schema version 2, found %s.\n' \
+if [[ "${schema_version}" -ne 3 ]]; then
+    printf 'Database verification failed: expected schema version 3, found %s.\n' \
         "${schema_version}" >&2
     exit 1
 fi
