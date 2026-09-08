@@ -45,7 +45,7 @@ public:
                         pending_.append(QPointer<QTcpSocket>(socket));
                         return;
                     }
-                    writeResponse(socket, status_, body_);
+                    writeResponse(socket, status_, body_, retryAfter_);
                 });
                 QObject::connect(socket, &QTcpSocket::disconnected, socket,
                                  &QObject::deleteLater);
@@ -72,6 +72,7 @@ public:
         body_ = body;
     }
     void setJsonResponse(const QByteArray& json) { setResponse(200, json); }
+    void setRetryAfter(const QByteArray& value) { retryAfter_ = value; }
     // 扣住所有请求不回包：配合 setRequestTimeoutForTesting 驱动超时用例，
     // 或稍后 releasePending 精确控制“模拟数据先渲染、真实响应后到”的时序。
     void setHoldRequests(bool hold) { holdRequests_ = hold; }
@@ -94,12 +95,15 @@ public:
     }
 
 private:
-    static void writeResponse(QTcpSocket* socket, int status, const QByteArray& body)
+    static void writeResponse(QTcpSocket* socket, int status, const QByteArray& body,
+                              const QByteArray& retryAfter = {})
     {
         const char* reason = status == 200 ? "OK" : (status == 403 ? "Forbidden" : "Error");
         QByteArray head = QByteArray("HTTP/1.1 ") + QByteArray::number(status) + ' '
             + reason + "\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: "
-            + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n";
+            + QByteArray::number(body.size()) + "\r\nConnection: close\r\n";
+        if (!retryAfter.isEmpty()) head += "Retry-After: " + retryAfter + "\r\n";
+        head += "\r\n";
         socket->write(head + body);
         socket->disconnectFromHost();
     }
@@ -107,6 +111,7 @@ private:
     QTcpServer server_;
     int status_ = 200;
     QByteArray body_;
+    QByteArray retryAfter_;
     bool holdRequests_ = false;
     int connectionCount_ = 0;
     QString lastRequestTarget_;

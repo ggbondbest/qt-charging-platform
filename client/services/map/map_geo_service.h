@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QCache>
+#include <QElapsedTimer>
 #include <QMap>
 #include <QMetaType>
 #include <QObject>
@@ -25,9 +27,11 @@ enum class MapError {
     NoApiKey,     // env 权威无值且配置文件缺 key（不发起任何请求）
     Network,      // DNS/连接/SSL 等传输层失败
     Timeout,      // 请求超时无响应
-    RateLimited,  // 配额/并发限流（status 120/121、HTTP 429/403）
+    RateLimited,  // 短时限流（status 120、HTTP 429）
     InvalidKey,   // 密钥无效或未授权接口（status 111/310/311/312）
     BadResponse,  // 非 JSON / 缺少 result / 其它业务错误
+    QuotaExhausted, // 每日额度耗尽（status 121），不得自动重试
+    AccessDenied,  // HTTP 403 无明确业务原因，不等同于限流
 };
 
 // 中文短文案，供页面提示直接使用。
@@ -197,8 +201,19 @@ private:
 
     quint64 startRequest(Kind kind, const QVector<LatLng>& destinations, LatLng origin);
     void sendRequest(quint64 requestId, Kind kind, const QString& path,
-                     const QMap<QString, QString>& params);
-    void emitFailure(quint64 requestId, Kind kind, MapError error);
+                     const QMap<QString, QString>& params, int attempt = 0);
+    void emitFailure(quint64 requestId, Kind kind, MapError error,
+                     int httpStatus = 0, int businessStatus = -1);
+    struct AddressResult {
+        LatLng point;
+        QString title;
+        QString address;
+        qint64 expiresAt = 0;
+    };
+    struct AddressSubscriber { quint64 id; Kind kind; };
+    quint64 startAddressRequest(Kind kind, const QString& address);
+    void finishAddressRequest(quint64 requestId, const AddressResult& result);
+    void emitAddressResult(quint64 requestId, Kind kind, const AddressResult& result);
     // 按官方签名规则：MD5(path + "?" + 参数按 key 排序拼接 + SK)，小写十六进制。
     QString makeSignature(const QString& path, const QMap<QString, QString>& params,
                           const QString& secretKey) const;
@@ -212,6 +227,12 @@ private:
     quint64 nextRequestId_ = 1;
     LatLng userLocation_{22.541, 113.943}; // 演示城市位置（南山区）
     QString lastStaticMapFile_;            // 上一张静态图临时文件（新图落盘时清理）
+    // 两个地址解析入口共用：同地址合并在途请求；仅缓存真实成功结果，
+    // 最多 32 条、5 分钟、进程内，不写入文件或缓存错误响应。
+    QElapsedTimer addressClock_;
+    QCache<QString, AddressResult> addressCache_{32};
+    QMap<QString, QVector<AddressSubscriber>> addressSubscribers_;
+    QMap<quint64, QString> addressOwners_;
 };
 
 } // namespace charging::client::services::map

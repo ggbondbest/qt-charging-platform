@@ -35,7 +35,7 @@ MapBridge::MapBridge(MapGeoService* service, QObject* parent) : QObject(parent),
             [this](quint64 id, MapError, const QString& message) {
         if (id != geocodeRequest_) return;
         geocodeRequest_ = 0;
-        error_ = message + QStringLiteral("；请检查完整地址和 TENCENT_MAP_API_KEY 配置");
+        error_ = message;
         emit changed();
     });
     connect(service_, &MapGeoService::routeSucceeded, this,
@@ -62,7 +62,7 @@ MapBridge::MapBridge(MapGeoService* service, QObject* parent) : QObject(parent),
             [this](quint64 id, MapError, const QString& message) {
         if (id != routeRequest_) return;
         routeRequest_ = 0;
-        error_ = message + QStringLiteral("；请检查地图网络、密钥及驾车/步行接口授权");
+        error_ = message;
         emit changed();
     });
 }
