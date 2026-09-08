@@ -24,6 +24,7 @@
 
 using charging::qml::ChargingBridge;
 using charging::qml::CouponBridge;
+using charging::qml::NotificationBridge;
 using charging::qml::OrderBridge;
 using charging::qml::PointBridge;
 using charging::qml::QmlApp;
@@ -1261,6 +1262,63 @@ private slots:
         QCOMPARE(app.currentUser().value(QStringLiteral("balanceCents")).toLongLong(),
                  paidAfter);                 // 顶栏绑定源立即一致
         QVERIFY(userSpy.count() >= 1);        // userChanged 已广播（TopNavBar 重绑）
+    }
+
+    // 审查 P2#3 回归（券侧）：同会话充值 ≥¥50 → mock 按服务端规则发券，
+    // 但桥缓存停在 boot 拉取形态；navigate("coupon") 进页强制补拉后到账。
+    void couponWalletRefetchesOnEntryAfterRecharge()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* coupons = qobject_cast<CouponBridge*>(app.couponService());
+        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
+        QVERIFY(coupons && wallet);
+
+        // boot 拉取落定 = 种子 5 张（此前用例已钉过形态，这里只取基线）。
+        QTRY_COMPARE_WITH_TIMEOUT(coupons->coupons().size(), 5, 4000);
+
+        QSignalSpy rechargeSpy(wallet, &WalletBridge::rechargeCompleted);
+        wallet->recharge(6000);                       // ¥60 ≥ ¥50 门槛
+        QTRY_VERIFY_WITH_TIMEOUT(rechargeSpy.count() >= 1, 4000);
+        QCOMPARE(coupons->coupons().size(), 5);       // 病灶：缓存未感知新券
+
+        app.navigate(QStringLiteral("coupon"));       // 进页 → 强制补拉
+        QTRY_COMPARE_WITH_TIMEOUT(coupons->coupons().size(), 6, 4000);
+        QCOMPARE(coupons->coupons().first().toMap()
+                     .value(QStringLiteral("title")).toString(),
+                 QStringLiteral("充值回馈 ¥5 充电券"));   // 新在前（prepend 口径）
+    }
+
+    // 审查 P2#3 回归（通知侧）：同会话支付成功 → mock payOrder 落 order_paid
+    // 通知；navigate("notifications") 进页强制补拉后新行到账。
+    void notificationsRefetchOnEntryAfterPayment()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* notifications = qobject_cast<NotificationBridge*>(app.notificationService());
+        auto* orders = qobject_cast<OrderBridge*>(app.orderService());
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QVERIFY(notifications && orders && charging);
+
+        QSignalSpy ordersSpy(orders, &OrderBridge::ordersLoaded);
+        orders->fetchOrders(QStringLiteral("waiting_payment"), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(ordersSpy.count() >= 1, 4000);
+        const QVariantList page1 = ordersSpy.at(0).at(0).toList();
+        QVERIFY(!page1.isEmpty());
+        const qint64 orderId = page1.first().toMap().value(QStringLiteral("id")).toLongLong();
+
+        QSignalSpy paySpy(charging, &ChargingBridge::paymentCompleted);
+        charging->payOrder(orderId);
+        QTRY_VERIFY_WITH_TIMEOUT(paySpy.count() >= 1, 4000);
+        const int before = notifications->notifications().size();  // 仍为 boot 形态
+
+        QSignalSpy notifSpy(notifications, &NotificationBridge::notificationsChanged);
+        app.navigate(QStringLiteral("notifications"));             // 进页 → 强制补拉
+        QTRY_VERIFY_WITH_TIMEOUT(notifSpy.count() >= 1, 4000);
+        QCOMPARE(notifications->notifications().size(), before + 1);
+        QCOMPARE(notifications->notifications().first().toMap()
+                     .value(QStringLiteral("type")).toString(),
+                 QStringLiteral("order_paid"));
     }
 
     // 批次F 扫码页 × 桥替身全状态机：入场拉站、速选码→detail 取首台空闲桩、

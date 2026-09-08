@@ -222,6 +222,15 @@ void QmlApp::navigate(const QString& route, const QVariant& arg)
     if (!loggedIn_ && route != QStringLiteral("login")) {
         emit navigateRequested(QStringLiteral("login"), {}); return;
     }
+    // 审查 P2#3：券/通知页只读桥缓存，而 boot 拉取每会话仅一次——充值发券、
+    // 停止/支付落通知后同会话进页会看到旧缓存。Shell 导航唯一漏斗即本函数
+    //（底栏 onTabChanged、铃铛、Profile 行均经 App.navigate），进页强制补拉。
+    // 两侧服务均单飞（在途重复请求静默丢弃），boot 拉取未落定时不产生第二条。
+    if (route == QStringLiteral("coupon") && couponService_) {
+        couponService_->fetchCoupons();
+    } else if (route == QStringLiteral("notifications") && notificationService_) {
+        notificationService_->refresh();
+    }
     if (route == QStringLiteral("reservation_confirm")) {
         checkBeforeReservation(arg.toMap()); return;
     }
