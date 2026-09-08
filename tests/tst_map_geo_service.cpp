@@ -96,6 +96,7 @@ private slots:
     void forwardGeocodeRejectsMissingCoordinates();
     void walkingUsesDedicatedEndpoint();
     void invalidCoordinatesDoNotReachNetwork();
+    void routeRoundsFractionalMinutesUp();
 };
 
 void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
@@ -266,6 +267,21 @@ void MapGeoServiceTest::invalidCoordinatesDoNotReachNetwork()
     service.requestWalkingRoute({91, 0}, {22.55, 113.95});
     QTRY_COMPARE(failed.size(), 1);
     QCOMPARE(server.connectionCount(), 0);
+}
+
+void MapGeoServiceTest::routeRoundsFractionalMinutesUp()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(R"({"status":0,"result":{"routes":[{"distance":800,
+        "duration":1.5,"polyline":[22.541,113.943,1000,1000]}]}})");
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestDrivingRoute({22.541, 113.943}, {22.542, 113.944});
+    QTRY_COMPARE(succeeded.size(), 1);
+    QCOMPARE(succeeded.first().at(1).value<RouteResult>().durationMinutes, 2);
 }
 
 void MapGeoServiceTest::businessStatusMapsToTypedErrors()

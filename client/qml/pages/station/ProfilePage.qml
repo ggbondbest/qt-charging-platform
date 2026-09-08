@@ -77,7 +77,8 @@ Item {
                         border.width: 2; border.color: "#66FFFFFF"
                         Text {
                             anchors.centerIn: parent
-                            text: page.user && page.user.nickname ? page.user.nickname[0] : "用"
+                            text: page.user && page.user.avatarKey
+                                  ? (page.user.nickname ? page.user.nickname[0] : "用") : "👤"
                             font.pixelSize: 22; font.bold: true; color: P.Style.surface
                             visible: profileAvatar.status !== Image.Ready
                         }

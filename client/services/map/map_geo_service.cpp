@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QUrlQuery>
 #include <cmath>
+#include <limits>
 
 namespace charging::client::services::map {
 
@@ -363,7 +364,10 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             }
             RouteResult route;
             route.distanceMeters = routeObject.value(QStringLiteral("distance")).toInt(-1);
-            route.durationMinutes = routeObject.value(QStringLiteral("duration")).toInt(-1);
+            const double duration = routeObject.value(QStringLiteral("duration")).toDouble(-1);
+            route.durationMinutes = std::isfinite(duration) && duration >= 0
+                    && duration <= std::numeric_limits<int>::max()
+                ? static_cast<int>(std::ceil(duration)) : -1;
             const QJsonArray steps = routeObject.value(QStringLiteral("steps")).toArray();
             route.steps.reserve(steps.size());
             for (const auto& item : steps) {
