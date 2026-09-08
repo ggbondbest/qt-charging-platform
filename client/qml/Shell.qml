@@ -114,8 +114,9 @@ Window {
         }
         StackView {
             id: stack
+            objectName: "pageStack"
             width: parent.width
-            height: parent.height - navBar.height - tabBar.height
+            height: parent.height - navBar.height - (tabBar.visible ? tabBar.height : 0)
             // Login gate mirrors HomeShell: unauthenticated → LoginPage first.
             // chargingArg (preview CLI --arg=JSON) 作深链路由参数透传。
             Component.onCompleted: pushRoute(App && App.loggedIn ? shell.route : "login",
@@ -150,11 +151,14 @@ Window {
         P.BottomTabBar {
             id: tabBar
             width: parent.width
+            // Login has no bottom navigation, including its reserved layout space.
+            visible: !!(App && App.loggedIn && stack.currentItem
+                        && stack.currentItem.route !== "login")
             tabs: [{ id: "station", text: "🔍 找站" }, { id: "order", text: "📋 订单" },
                    { id: "charging", text: "⚡ 充电" }, { id: "profile", text: "👤 我的" }]
             currentTab: "station"
             // pushRoute now clears/replaces for tab targets — no manual pop loop.
-            enabled: !!(App && App.loggedIn)
+            enabled: visible
             onTabChanged: (id) => { if (App && App.loggedIn) App.navigate(id) }
         }
     }
