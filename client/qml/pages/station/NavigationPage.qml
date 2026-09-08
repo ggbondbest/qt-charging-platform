@@ -102,20 +102,20 @@ Item {
     property string mode: "driving"
     property string webError: ""
     readonly property bool webRouteReady:
-        typeof mapBridge !== "undefined" && mapBridge.routeHtml.length > 0
+        typeof mapBridge !== "undefined" && mapBridge && mapBridge.routeHtml.length > 0
     // mapBridge 缺位（裸 QML 测试无此 context 属性）时的 typeof 守卫降权面：
     // 全部退回本页演示通道语义（指令⑥），避免整点式 ReferenceError。
-    readonly property string mapErr: typeof mapBridge !== "undefined" ? mapBridge.error : ""
-    readonly property bool mapBusy: typeof mapBridge !== "undefined" && mapBridge.busy
+    readonly property string mapErr: typeof mapBridge !== "undefined" && mapBridge ? mapBridge.error : ""
+    readonly property bool mapBusy: typeof mapBridge !== "undefined" && mapBridge && mapBridge.busy
     readonly property real mapRouteMeters:
-        typeof mapBridge !== "undefined" ? mapBridge.routeDistanceMeters : -1
-    readonly property int mapDurationMin: typeof mapBridge !== "undefined" ? mapBridge.durationMinutes : 0
+        typeof mapBridge !== "undefined" && mapBridge ? mapBridge.routeDistanceMeters : -1
+    readonly property int mapDurationMin: typeof mapBridge !== "undefined" && mapBridge ? mapBridge.durationMinutes : 0
 
     function requestRoute() {
         webError = ""
         const lat = record.stationLatitude !== undefined ? record.stationLatitude : record.latitude
         const lng = record.stationLongitude !== undefined ? record.stationLongitude : record.longitude
-        if (typeof mapBridge === "undefined") return
+        if (typeof mapBridge === "undefined" || !mapBridge) return   // teardown 期失效为 null
         mapBridge.requestRoute(typeof lat === "number" ? lat : NaN,
                                typeof lng === "number" ? lng : NaN, mode)
     }
@@ -149,7 +149,8 @@ Item {
         const midLat = (originLat + destLat) / 2
         const midLng = (originLng + destLng) / 2
         const spanKm = Math.max(0.2, (record.distanceMeters || 2000) / 1000)
-        const z = spanKm > 20 ? 10 : spanKm > 8 ? 11 : spanKm > 4 ? 12 : spanKm > 2 ? 13
+        const z = spanKm > 800 ? 5 : spanKm > 400 ? 6 : spanKm > 150 ? 7 : spanKm > 60 ? 9
+                : spanKm > 20 ? 10 : spanKm > 8 ? 11 : spanKm > 4 ? 12 : spanKm > 2 ? 13
                 : spanKm > 1 ? 14 : spanKm > 0.5 ? 15 : 16
         const w = Math.round(mapCard.width), h = Math.round(mapCard.height)
         page.pendingStaticReq = mapGeoService.requestStaticMap(
@@ -247,9 +248,10 @@ Item {
         requestRealRoute()                   // 在线：requestDrivingRoute→静态图链自动跟进
     }
 
-    // 静态图落盘文件（qmlStaticMapReady 给路径；file:// URL 挂 Image）
+    // 静态图落盘文件（qmlStaticMapReady 给绝对路径；url 属性类型自动按
+    // 相对 URL 解析，裸路径必须显式拼 file://——活体首验揪出 Url 不存在）。
     property string staticMapFile: ""
-    readonly property url staticMapUrl: staticMapFile.length ? Url.fileUrl(staticMapFile) : ""
+    readonly property url staticMapUrl: staticMapFile.length ? "file://" + staticMapFile : ""
 
     Connections {
         target: mapGeoService
@@ -343,7 +345,7 @@ Item {
                 webLoader.item.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
         }
     }
-    Component.onDestruction: { if (typeof mapBridge !== "undefined") mapBridge.cancelRoute() }
+    Component.onDestruction: { if (typeof mapBridge !== "undefined" && mapBridge) mapBridge.cancelRoute() }
     onArgChanged: requestRoute()
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
@@ -552,7 +554,7 @@ Item {
                 active: page.webRouteReady
                 sourceComponent: webRouteComponent
                 onLoaded: {
-                    if (typeof mapBridge !== "undefined" && mapBridge.routeHtml.length > 0)
+                    if (typeof mapBridge !== "undefined" && mapBridge && mapBridge.routeHtml.length > 0)
                         item.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
                 }
             }

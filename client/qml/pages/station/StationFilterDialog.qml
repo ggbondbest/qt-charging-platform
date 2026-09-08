@@ -22,7 +22,9 @@ Popup {
 
     property var distanceKm: [5, 10, 30, 50]
     property int maxDistanceKm: 0
-    property var groups: (typeof App !== "undefined" && !App.mockMode) ? [
+    // 2026-09-08 merge 补：teardown 期 context property 失效为 null 触发绑定重评估，
+    // typeof 只挡 undefined——须叠加 truthy 带（App/mockMode 组同源两侧共用此判定）。
+    property var groups: (typeof App !== "undefined" && App && !App.mockMode) ? [
         { key: "statuses", title: "营业状态", options: ["营业中", "暂停运营"] }
     ] : [
         { key: "statuses",     title: "营业状态",   options: ["营业中", "暂停运营"] },

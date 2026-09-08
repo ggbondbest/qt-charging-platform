@@ -233,7 +233,7 @@ Item {
             // 服务端/演示通道自带值（指令⑥：未定位不抹 -1，星/距离/排序依赖它）。
             s.distanceMeters = page.searchCenter
                 ? s.distanceMeters
-                : (typeof mapBridge !== "undefined" && mapBridge.hasLocation
+                : (typeof mapBridge !== "undefined" && mapBridge && mapBridge.hasLocation
                    && typeof s.latitude === "number" && typeof s.longitude === "number")
                     ? mapBridge.distanceMeters(s.latitude, s.longitude) : s.distanceMeters
             if (page.priceMax > 0 && s.priceCentsPerKwh > page.priceMax) continue
