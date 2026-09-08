@@ -450,14 +450,18 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
     {
         QSqlQuery unfinished(database_);
         unfinished.prepare(
-            QStringLiteral("SELECT 1 FROM orders WHERE user_id = :userId "
-                           "AND status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT') LIMIT 1"));
+            QStringLiteral("SELECT %1 FROM orders WHERE user_id = :userId "
+                           "AND status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT') "
+                           "ORDER BY id DESC LIMIT 1").arg(kOrderColumns));
         unfinished.bindValue(QStringLiteral(":userId"), userId);
         if (!unfinished.exec()) {
             return failure(RepositoryError::Database, unfinished.lastError().text());
         }
         if (unfinished.next()) {
-            return failure(RepositoryError::ExistingUnfinishedOrder);
+            if (!repository_detail::readOrder(unfinished, &result.order))
+                return failure(RepositoryError::Database);
+            result.error = RepositoryError::ExistingUnfinishedOrder;
+            return result;
         }
     }
 
