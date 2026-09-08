@@ -82,6 +82,15 @@ public:
     bool notificationEnabled(Notification key) const;
     void setNotificationEnabled(Notification key, bool enabled);
 
+    // —— 外观（2026-09-08 批次A，成员3 追加）——
+    // theme ∈ "light" | "dark"（默认 light）；fontScale ∈ "standard" |
+    // "large" | "extraLarge"（默认 standard）。白名单外 set* 返回 false 且
+    // 不改状态；get* 恒返回词表内值（被写脏的存储按默认档读回）。
+    QString theme() const;
+    bool setTheme(const QString& theme);
+    QString fontScale() const;
+    bool setFontScale(const QString& scale);
+
     // 清除本服务全部本地持久化（测试隔离用）。
     void resetForTesting();
 
@@ -89,6 +98,7 @@ signals:
     void vehiclesChanged();
     void protectionStateChanged();
     void notificationsChanged();
+    void appearanceChanged();   // 主题/字号任一变更（批次A）
 
 private:
     static QString notificationKey(Notification key);

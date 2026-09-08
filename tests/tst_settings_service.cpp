@@ -211,6 +211,45 @@ private slots:
         QVERIFY(reopened.notificationEnabled(
             SettingsService::Notification::ChargingStopped)); // 新键同受复位覆盖
     }
+
+    // —— 外观（批次A，成员3 追加）——
+
+    void appearanceDefaultsThemeLightFontStandard()
+    {
+        QCOMPARE(service_.theme(), QStringLiteral("light"));
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+    }
+
+    void appearanceValidValuesPersistAcrossInstances()
+    {
+        QSignalSpy spy(&service_, &SettingsService::appearanceChanged);
+        QVERIFY(service_.setTheme(QStringLiteral("dark")));
+        QVERIFY(service_.setFontScale(QStringLiteral("extraLarge")));
+        QCOMPARE(spy.count(), 2);
+        SettingsService reopened;   // 跨实例 = 存储真的落盘
+        QCOMPARE(reopened.theme(), QStringLiteral("dark"));
+        QCOMPARE(reopened.fontScale(), QStringLiteral("extraLarge"));
+
+        reopened.resetForTesting();
+        QCOMPARE(reopened.theme(), QStringLiteral("light"));
+        QCOMPARE(reopened.fontScale(), QStringLiteral("standard"));
+    }
+
+    void appearanceInvalidValuesRejected()
+    {
+        QVERIFY(!service_.setTheme(QStringLiteral("neon")));
+        QVERIFY(!service_.setFontScale(QStringLiteral("huge")));
+        QCOMPARE(service_.theme(), QStringLiteral("light"));   // 状态未被触碰
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+        // 存储被外部写脏时，getter 按默认档读回（白名单闭环在 getter 再收一次）。
+        QSettings dirty;
+        dirty.setValue(QStringLiteral("settings/appearance/theme"),
+                       QStringLiteral("chartreuse"));
+        dirty.setValue(QStringLiteral("settings/appearance/fontScale"), 42);
+        QCOMPARE(service_.theme(), QStringLiteral("light"));
+        QCOMPARE(service_.fontScale(), QStringLiteral("standard"));
+        service_.resetForTesting();
+    }
 };
 
 QTEST_GUILESS_MAIN(SettingsServiceTest)
