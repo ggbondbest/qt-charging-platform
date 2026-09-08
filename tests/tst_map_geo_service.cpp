@@ -344,7 +344,7 @@ void MapGeoServiceTest::routeRoundsFractionalMinutesUp()
 void MapGeoServiceTest::businessStatusMapsToTypedErrors()
 {
     struct { int status; MapError expected; } cases[] = {
-        {121, MapError::RateLimited}, // 每日配额超限
+        {121, MapError::QuotaExhausted}, // 每日配额超限，不得自动重试
         {120, MapError::RateLimited}, // 并发限制
         {310, MapError::InvalidKey},  // 密钥无效
         {312, MapError::InvalidKey},  // 无接口权限
@@ -384,7 +384,7 @@ void MapGeoServiceTest::transportFailuresMapToTypedErrors()
         QVERIFY(failed.wait(5000));
         QCOMPARE(failed.at(0).at(1).value<MapError>(), MapError::BadResponse);
     }
-    // HTTP 403 → RateLimited（签名校验拒绝/配额）
+    // HTTP 403 无业务原因不能猜成配额或限流。
     {
         FakeTencentServer server;
         QVERIFY(server.start());
@@ -394,7 +394,7 @@ void MapGeoServiceTest::transportFailuresMapToTypedErrors()
         QSignalSpy failed(&service, &MapGeoService::distanceMatrixFailed);
         service.requestDistanceMatrix({{22.55, 113.95}});
         QVERIFY(failed.wait(5000));
-        QCOMPARE(failed.at(0).at(1).value<MapError>(), MapError::RateLimited);
+        QCOMPARE(failed.at(0).at(1).value<MapError>(), MapError::AccessDenied);
     }
     // 静默不回包 → Timeout（压缩超时）
     {
@@ -800,7 +800,8 @@ void MapGeoServiceTest::staticMapJsonBodyClassifiesError()
     service.requestStaticMap(22.541, 113.943, 12, 600, 400, {}, {});
     QVERIFY(failed.wait(5000));
     // 固定分类文案（不透传 message，防 key 提示进 UI）。
-    QCOMPARE(failed.at(0).at(1).toString(), QStringLiteral("密钥无效或未授权该接口"));
+    QCOMPARE(failed.at(0).at(1).toString(),
+             QStringLiteral("密钥无效或未授权该接口 [HTTP 200] [status 310]"));
 }
 
 void MapGeoServiceTest::navigationUriUrlShapeAndEncoding()

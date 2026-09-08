@@ -51,8 +51,12 @@ MapError errorFromBusinessStatus(int status)
 {
     switch (status) {
     case kHttpRateLimitStatus1:
-    case kHttpRateLimitStatus2:
         return MapError::RateLimited;
+    case kHttpRateLimitStatus2:
+        return MapError::QuotaExhausted;
+    case 110: // 请求来源未授权
+    case 112: // IP 未授权
+    case 113: // 接口未授权
     case kInvalidKeyStatus1:
     case kInvalidKeyStatus2:
     case kInvalidKeyStatus3:
@@ -94,7 +98,11 @@ QString mapErrorMessage(MapError error)
     case MapError::Timeout:
         return QStringLiteral("接口请求超时");
     case MapError::RateLimited:
-        return QStringLiteral("接口调用受限（配额或并发超限）");
+        return QStringLiteral("地图请求过于频繁，请稍后重试");
+    case MapError::QuotaExhausted:
+        return QStringLiteral("地图接口每日额度已用尽，请查看腾讯控制台地理编码/对应接口额度；稍等或重启不能恢复额度");
+    case MapError::AccessDenied:
+        return QStringLiteral("地图请求被拒绝，请检查接口授权、签名及网络代理（不代表额度用尽）");
     case MapError::InvalidKey:
         return QStringLiteral("密钥无效或未授权该接口");
     case MapError::BadResponse:
@@ -106,6 +114,7 @@ QString mapErrorMessage(MapError error)
 MapGeoService::MapGeoService(QObject* parent)
     : QObject(parent), network_(new QNetworkAccessManager(this))
 {
+    addressClock_.start();
     apiKey_ = resolveApiKey();
     endpointBase_ = resolveBaseUrl();
     // SK 仅当控制台开启签名校验时才需要；为空则请求不带 sig。
@@ -178,6 +187,7 @@ LatLng MapGeoService::userLocation() const
 
 void MapGeoService::setEndpointBaseForTesting(const QString& base)
 {
+    addressCache_.clear();
     endpointBase_ = base;
 }
 
@@ -203,18 +213,62 @@ quint64 MapGeoService::requestWalkingRoute(LatLng from, LatLng to)
 
 quint64 MapGeoService::requestForwardGeocode(const QString& address)
 {
+    return startAddressRequest(Kind::ForwardGeocoder, address);
+}
+
+quint64 MapGeoService::startAddressRequest(Kind kind, const QString& address)
+{
     const quint64 id = nextRequestId_++;
     const QString trimmed = address.trimmed();
     if (!hasKey_ || trimmed.isEmpty() || trimmed.size() > 256) {
-        QTimer::singleShot(0, this, [this, id] {
-            emitFailure(id, Kind::ForwardGeocoder,
+        QTimer::singleShot(0, this, [this, id, kind] {
+            emitFailure(id, kind,
                         !hasKey_ ? MapError::NoApiKey : MapError::BadResponse);
         });
         return id;
     }
-    sendRequest(id, Kind::ForwardGeocoder, QStringLiteral("/geocoder/v1/"),
+    if (const auto* cached = addressCache_.object(trimmed)) {
+        if (cached->expiresAt > addressClock_.elapsed()) {
+            // 即使命中缓存也必须异步：调用方先保存 requestId，再接收结果。
+            const AddressResult result = *cached;
+            QTimer::singleShot(0, this, [this, id, kind, result] {
+                emitAddressResult(id, kind, result);
+            });
+            return id;
+        }
+        addressCache_.remove(trimmed);
+    }
+    auto& subscribers = addressSubscribers_[trimmed];
+    subscribers.append({id, kind});
+    if (subscribers.size() > 1) return id;
+    addressOwners_.insert(id, trimmed);
+    sendRequest(id, kind, QStringLiteral("/geocoder/v1/"),
                 {{QStringLiteral("address"), trimmed}, {QStringLiteral("key"), apiKey_}});
     return id;
+}
+
+void MapGeoService::emitAddressResult(quint64 requestId, Kind kind, const AddressResult& result)
+{
+    if (kind == Kind::ForwardGeocoder) {
+        emit forwardGeocodeSucceeded(requestId, result.point, result.title);
+    } else {
+        emit qmlGeocodeReady(requestId, QVariantMap{
+            {QStringLiteral("latitude"), result.point.latitude},
+            {QStringLiteral("longitude"), result.point.longitude},
+            {QStringLiteral("address"), result.address}});
+    }
+}
+
+void MapGeoService::finishAddressRequest(quint64 requestId, const AddressResult& result)
+{
+    const QString address = addressOwners_.take(requestId);
+    const auto subscribers = addressSubscribers_.take(address);
+    AddressResult cached = result;
+    cached.expiresAt = addressClock_.elapsed() + 5 * 60 * 1000;
+    addressCache_.insert(address, new AddressResult(cached));
+    // 先释放在途状态，再通知页面；失败/成功后都允许下一次正常提交。
+    for (const auto& subscriber : subscribers)
+        emitAddressResult(subscriber.id, subscriber.kind, cached);
 }
 
 quint64 MapGeoService::requestReverseGeocode(LatLng location)
@@ -260,25 +314,7 @@ quint64 MapGeoService::requestIpLocation()
 
 quint64 MapGeoService::requestAddressGeocode(const QString& address)
 {
-    const quint64 requestId = nextRequestId_++;
-    if (!hasKey_) {
-        QTimer::singleShot(0, this, [this, requestId] {
-            emitFailure(requestId, Kind::GeocodeAddress, MapError::NoApiKey);
-        });
-        return requestId;
-    }
-    const QString trimmed = address.trimmed();
-    if (trimmed.isEmpty()) {
-        QTimer::singleShot(0, this, [this, requestId] {
-            emitFailure(requestId, Kind::GeocodeAddress, MapError::BadResponse);
-        });
-        return requestId;
-    }
-    QMap<QString, QString> params;
-    params.insert(QStringLiteral("key"), apiKey_);
-    params.insert(QStringLiteral("address"), trimmed);   // 中文经 sendRequest 统一百分号编码
-    sendRequest(requestId, Kind::GeocodeAddress, QStringLiteral("/geocoder/v1/"), params);
-    return requestId;
+    return startAddressRequest(Kind::GeocodeAddress, address);
 }
 
 quint64 MapGeoService::requestStaticMap(double centerLat, double centerLng, int zoom,
@@ -387,9 +423,20 @@ QString MapGeoService::navigationUriUrl(double fromLat, double fromLng, const QS
     return url;
 }
 
-void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
+void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error,
+                               int httpStatus, int businessStatus)
 {
-    const QString message = mapErrorMessage(error);
+    if (addressOwners_.contains(requestId)) {
+        const QString address = addressOwners_.take(requestId);
+        const auto subscribers = addressSubscribers_.take(address);
+        for (const auto& subscriber : subscribers)
+            emitFailure(subscriber.id, subscriber.kind, error, httpStatus, businessStatus);
+        return;
+    }
+    QString message = mapErrorMessage(error);
+    // 只透出数字诊断，绝不转发 URL、响应 message 或签名。
+    if (httpStatus > 0) message += QStringLiteral(" [HTTP %1]").arg(httpStatus);
+    if (businessStatus >= 0) message += QStringLiteral(" [status %1]").arg(businessStatus);
     switch (kind) {
     case Kind::Matrix:
         emit distanceMatrixFailed(requestId, error, message);
@@ -470,7 +517,7 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
 }
 
 void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& path,
-                                const QMap<QString, QString>& params)
+                                const QMap<QString, QString>& params, int attempt)
 {
     // 2026-09-08 merge：查询串保留手工百分号编码而非上游 QUrlQuery——keep set
     // 含 : ; | 等，静态图 path/markers 测试锚（color:0x00B578|22.541000,...）要求
@@ -502,41 +549,51 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
 
     // 超时看门狗：到点主动中断并打标，与调用方外部 abort 区分。
     QTimer::singleShot(timeoutMsec_, reply, [reply] {
+        if (reply->isFinished()) return;
         reply->setProperty("chargingTimedOut", true);
         reply->abort();
     });
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, requestId, kind] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, requestId, kind, path, params, attempt] {
         reply->deleteLater();
-        QByteArray body;
+        const QByteArray body = reply->isOpen() ? reply->readAll() : QByteArray{};
+        const QJsonDocument document = QJsonDocument::fromJson(body);
+        const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
+        const int status = root.value(QStringLiteral("status")).toInt(-1);
         MapError transportError = MapError::None;
         const int httpStatus =
             reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (reply->error() != QNetworkReply::NoError) {
-            if (reply->property("chargingTimedOut").toBool()) {
-                transportError = MapError::Timeout;
-            } else if (httpStatus == 403 || httpStatus == 429) {
-                // Qt6 把 4xx 也报成 reply->error()：先按状态码归类限流。
-                transportError = MapError::RateLimited;
-            } else if (reply->error() == QNetworkReply::SslHandshakeFailedError
-                       || reply->error() == QNetworkReply::ProtocolInvalidOperationError) {
-                // 运行环境缺少 OpenSSL 等：按网络不通兜底。
-                transportError = MapError::Network;
-            } else if (reply->error() == QNetworkReply::OperationCanceledError) {
-                transportError = MapError::Network;
-            } else {
-                transportError = MapError::Network;
-            }
-        } else {
-            if (httpStatus == 403 || httpStatus == 429) {
-                transportError = MapError::RateLimited;
-            } else if (httpStatus < 200 || httpStatus >= 300) {
-                transportError = MapError::BadResponse;
-            }
-            body = reply->readAll();
-        }
+        if (reply->property("chargingTimedOut").toBool())
+            transportError = MapError::Timeout;
+        else if (httpStatus > 0 && status > 0)
+            transportError = errorFromBusinessStatus(status); // 4xx 也必须解析业务错误体
+        else if (httpStatus == 429)
+            transportError = MapError::RateLimited;
+        else if (httpStatus == 403)
+            transportError = MapError::AccessDenied;
+        else if (httpStatus == 401)
+            transportError = MapError::InvalidKey;
+        else if (reply->error() != QNetworkReply::NoError)
+            transportError = MapError::Network;
+        else if (httpStatus < 200 || httpStatus >= 300)
+            transportError = MapError::BadResponse;
         if (transportError != MapError::None) {
-            emitFailure(requestId, kind, transportError);
+            // 仅地址解析的短时限流退避一次；日配额、鉴权错误不重试。
+            // 服务端要求等待更久/给出日期时直接交给用户，不提前重试。
+            if (transportError == MapError::RateLimited && attempt == 0
+                && (kind == Kind::ForwardGeocoder || kind == Kind::GeocodeAddress)) {
+                const QByteArray retryAfter = reply->rawHeader("Retry-After").trimmed();
+                bool numeric = false;
+                const int seconds = retryAfter.toInt(&numeric);
+                if (retryAfter.isEmpty() || (numeric && seconds >= 0 && seconds <= 5)) {
+                    const int delay = retryAfter.isEmpty() ? 1100 : qMax(1100, seconds * 1000);
+                    QTimer::singleShot(delay, this, [this, requestId, kind, path, params] {
+                        sendRequest(requestId, kind, path, params, 1);
+                    });
+                    return;
+                }
+            }
+            emitFailure(requestId, kind, transportError, httpStatus, status);
             return;
         }
 
@@ -567,20 +624,14 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             return;
         }
 
-        QJsonParseError parseError{};
-        const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
-        const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            emitFailure(requestId, kind, MapError::BadResponse);
+        if (!document.isObject()) {
+            emitFailure(requestId, kind, MapError::BadResponse, httpStatus);
             return;
         }
 
-        const int status = root.value(QStringLiteral("status")).toInt(-1);
         if (status != 0) {
-            // 业务错误：仅透出固定分类文案（message 字段可能是 key 相关提示，
-            // 不透传原文，避免敏感内容进 UI/日志）。真实案例：status 121
-            // "此key每日调用量已达到上限" → RateLimited 兜底。
-            emitFailure(requestId, kind, errorFromBusinessStatus(status));
+            // 只透出数字状态码，不将可能含密钥的原始 message 交给页面。
+            emitFailure(requestId, kind, errorFromBusinessStatus(status), httpStatus, status);
             return;
         }
 
@@ -602,7 +653,7 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                     object.value(QStringLiteral("duration")).toInt(-1)});
             }
             emit distanceMatrixSucceeded(requestId, elements);
-        } else if (kind == Kind::ForwardGeocoder) {
+        } else if (kind == Kind::ForwardGeocoder || kind == Kind::GeocodeAddress) {
             const auto location = result.value(QStringLiteral("location")).toObject();
             if (!location.value(QStringLiteral("lat")).isDouble()
                 || !location.value(QStringLiteral("lng")).isDouble()) {
@@ -615,8 +666,9 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                 emitFailure(requestId, kind, MapError::BadResponse);
                 return;
             }
-            emit forwardGeocodeSucceeded(requestId, point,
-                result.value(QStringLiteral("title")).toString());
+            finishAddressRequest(requestId, AddressResult{point,
+                result.value(QStringLiteral("title")).toString(),
+                result.value(QStringLiteral("address")).toString(), 0});
         } else if (kind == Kind::Geocoder) {
             const QString address = result.value(QStringLiteral("address")).toString();
             if (address.isEmpty()) {
@@ -641,18 +693,6 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                 {QStringLiteral("longitude"), longitude},
                 {QStringLiteral("province"), adInfo.value(QStringLiteral("province")).toString()},
                 {QStringLiteral("city"), adInfo.value(QStringLiteral("city")).toString()}});
-        } else if (kind == Kind::GeocodeAddress) {
-            const QJsonObject location = result.value(QStringLiteral("location")).toObject();
-            const double latitude = location.value(QStringLiteral("lat")).toDouble();
-            const double longitude = location.value(QStringLiteral("lng")).toDouble();
-            if (qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude)) {
-                emitFailure(requestId, kind, MapError::BadResponse);
-                return;
-            }
-            emit qmlGeocodeReady(requestId, QVariantMap{
-                {QStringLiteral("latitude"), latitude},
-                {QStringLiteral("longitude"), longitude},
-                {QStringLiteral("address"), result.value(QStringLiteral("address")).toString()}});
         } else {
             // 真实响应结构为 result.routes[0]（含 distance/duration/steps[]，
             // duration 单位=分钟）；旧文档口径 result.mode 保留兼容回退。

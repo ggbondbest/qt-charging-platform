@@ -484,10 +484,19 @@ target_include_directories(test_qml_map_bridge PRIVATE ${CMAKE_SOURCE_DIR}/clien
 target_link_libraries(test_qml_map_bridge PRIVATE
     ChargingPlatform::ClientMapServices Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME qml_map_bridge COMMAND test_qml_map_bridge)
-# 空 env 权威无 key（三级解析第一级命中即不读 git 配置文件密钥）——
-# 与其他 QML/map 套件同口径，杜绝测试进程发真实外网 HTTP。
+# 空 env 权威无 key：杜绝测试进程读取 git 配置文件密钥。
 set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30
     ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_map_geocoding_recovery tst_map_geocoding_recovery.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_map_geocoding_recovery PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_link_libraries(test_map_geocoding_recovery PRIVATE
+    ChargingPlatform::ClientMapServices ChargingPlatform::ProjectOptions
+    Qt6::Core Qt6::Gui Qt6::Network Qt6::Test)
+add_test(NAME map_geocoding_recovery COMMAND test_map_geocoding_recovery)
+set_tests_properties(map_geocoding_recovery PROPERTIES TIMEOUT 30
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=")
 
 # QML page interaction regression (PR #33 second-round review follow-ups).
 # Same gate as client/qml — configure stays byte-identical without the Qt

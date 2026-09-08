@@ -369,6 +369,51 @@ private slots:
     // navigationPickPopup 打开并出候选行；期间 QQuickItem::polish() loop 计数
     // 必须为 0（修复前该弹窗 Column 无显式高，子项 height:parent.height-y
     // 自回边，每帧刷 loop 告警直至 UI 冻结——offscreen 同样复现）。
+    void manualOriginInvalidatesOlderLocationCallbacks()
+    {
+        bootShell(QStringLiteral("navigation"));
+        auto* page = findItem(window_->contentItem(), QStringLiteral("navigationPage"));
+        QVERIFY(page != nullptr);
+        page->setProperty("pendingIpReq", 77);
+        page->setProperty("pendingGeoReq", 88);
+        page->setProperty("pendingOriginText", QStringLiteral("旧地址"));
+        QVERIFY(QMetaObject::invokeMethod(page, "parseManualOrigin",
+                                          Q_ARG(QVariant, QStringLiteral("39.9,116.4"))));
+        QCOMPARE(page->property("pendingIpReq").toInt(), -1);
+        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
+        const QVariantMap stale{{"latitude", 22.5}, {"longitude", 113.9}, {"city", "旧城市"}};
+        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlIpLocationReady",
+                                          Q_ARG(quint64, 77), Q_ARG(QVariantMap, stale)));
+        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeReady",
+                                          Q_ARG(quint64, 88), Q_ARG(QVariantMap, stale)));
+        QCOMPARE(page->property("originLat").toDouble(), 39.9);
+        QCOMPARE(page->property("originLng").toDouble(), 116.4);
+        QCOMPARE(page->property("originLabel").toString(), QStringLiteral("39.9,116.4"));
+    }
+
+    void originResponseUsesSubmittedTextAndFailureReleasesPendingState()
+    {
+        bootShell(QStringLiteral("navigation"));
+        auto* page = findItem(window_->contentItem(), QStringLiteral("navigationPage"));
+        auto* input = findItem(window_->contentItem(), QStringLiteral("originField"));
+        QVERIFY(page != nullptr && input != nullptr);
+        page->setProperty("pendingGeoReq", 88);
+        page->setProperty("pendingOriginText", QStringLiteral("已提交地址"));
+        input->setProperty("text", QStringLiteral("尚未提交的新地址"));
+        const QVariantMap point{{"latitude", 39.9}, {"longitude", 116.4}};
+        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeReady",
+                                          Q_ARG(quint64, 88), Q_ARG(QVariantMap, point)));
+        QCOMPARE(page->property("originLabel").toString(), QStringLiteral("已提交地址"));
+        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
+        page->setProperty("pendingGeoReq", 89);
+        page->setProperty("pendingOriginText", QStringLiteral("失败的地址"));
+        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeError",
+                                          Q_ARG(quint64, 89), Q_ARG(QString, QStringLiteral("HTTP 403"))));
+        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
+        QVERIFY(page->property("pendingOriginText").toString().isEmpty());
+        QVERIFY(page->property("caption").toString().contains(QStringLiteral("HTTP 403")));
+    }
+
     void navigationPickPopupOpensWithoutPolishLoop()
     {
         bootShell(QStringLiteral("station"));

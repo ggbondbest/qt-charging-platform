@@ -35,6 +35,7 @@ Item {
     property int pendingRouteReq: -1    // qmlRouteReady 代际过滤
     property int pendingIpReq: -1
     property int pendingGeoReq: -1
+    property string pendingOriginText: ""
     property int pendingStaticReq: -1
     property var realPolyline: []       // [[lat,lng],…]（qml* 转发面口径）
     property var realSteps: []          // [{instruction,distanceMeters},…]
@@ -122,6 +123,9 @@ Item {
 
     // —— 请求链 ——
     function autoLocate() {
+        if (page.pendingIpReq > 0) return
+        page.pendingGeoReq = -1
+        page.pendingOriginText = ""
         if (!mapOnline) { originState = "mock"; requestRealRoute(); return }
         originState = "locating"
         try { page.pendingIpReq = mapGeoService.requestIpLocation() }
@@ -161,13 +165,18 @@ Item {
     function parseManualOrigin(text) {
         const t = (text || "").trim()
         if (!t.length) { if (App) App.showToast("请输入起点地址或坐标", "warning"); return }
+        // 回车和按钮走同一入口；同一在途地址不重复提交。手动选择优先于旧 IP 回调。
+        if (page.pendingGeoReq > 0 && t === page.pendingOriginText) return
         // "纬度,经度"（支持中英文逗号/空格）→ 直用坐标。
         const m = t.match(/^(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)$/)
         if (m) {
             const lat = parseFloat(m[1]), lng = parseFloat(m[2])
             if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-                applyOriginPoint({ latitude: lat, longitude: lng }, "manual")
+                page.pendingIpReq = -1
+                page.pendingGeoReq = -1
+                page.pendingOriginText = ""
                 originLabel = t
+                applyOriginPoint({ latitude: lat, longitude: lng }, "manual")
                 staticMapFile = ""
                 return
             }
@@ -175,7 +184,9 @@ Item {
             return
         }
         if (!mapOnline) { if (App) App.showToast("未配置地图密钥，无法解析地址", "warning"); return }
+        page.pendingIpReq = -1
         caption = "正在解析地址…"
+        page.pendingOriginText = t
         page.pendingGeoReq = mapGeoService.requestAddressGeocode(t)
     }
 
@@ -272,7 +283,8 @@ Item {
             if (requestId !== page.pendingGeoReq) return
             page.pendingGeoReq = -1
             if (point && point.latitude !== undefined) {
-                page.originLabel = point.address || originInput.text
+                page.originLabel = point.address || page.pendingOriginText
+                page.pendingOriginText = ""
                 page.applyOriginPoint(point, "manual")
                 staticMapFile = ""
             }
@@ -280,6 +292,8 @@ Item {
         function onQmlGeocodeError(requestId, message) {
             if (requestId !== page.pendingGeoReq) return
             page.pendingGeoReq = -1
+            page.pendingOriginText = ""
+            page.caption = "地址解析失败：" + message
             if (App) App.showToast("地址解析失败：" + message, "warning")
         }
         function onQmlRouteReady(requestId, route) {
