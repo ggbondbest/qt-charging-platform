@@ -11,7 +11,7 @@ Rectangle {
     property bool backVisible: false
     property bool searchVisible: true
     property alias searchText: searchField.text
-    readonly property bool hasUser: user !== null
+    readonly property bool hasUser: user !== null && user.id !== undefined && String(user.id) !== "0"
     // filter/notifications entries ride with the search group (C++ semantics).
     readonly property bool filterVisible: searchVisible
     readonly property bool notificationsVisible: searchVisible
@@ -109,7 +109,16 @@ Rectangle {
             visible: nav.hasUser
             width: 32; height: 32; radius: 16
             color: Style.brandSoft
+            Image {
+                anchors.fill: parent
+                visible: nav.hasUser && nav.user.avatarKey
+                         && String(nav.user.avatarKey).indexOf("data:image/png;base64,") === 0
+                source: visible ? nav.user.avatarKey : ""
+                fillMode: Image.PreserveAspectCrop
+            }
             Text { anchors.centerIn: parent
+                visible: !nav.hasUser || !nav.user.avatarKey
+                         || String(nav.user.avatarKey).indexOf("data:image/png;base64,") !== 0
                 text: nav.hasUser && nav.user && nav.user.nickname ? nav.user.nickname[0] : "?"
                 font.pixelSize: Style.fontSm; color: Style.brandDeep }
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor

@@ -125,6 +125,7 @@ class QmlClientPagesTest final : public QObject
 private slots:
     void init()
     {
+        qputenv("CHARGING_CHANNEL", "mock"); // Preview tests opt in; production defaults to TCP.
         if (window_ == nullptr) {
             window_ = new QQuickWindow;
             window_->resize(420, 860);

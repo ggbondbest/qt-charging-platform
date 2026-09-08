@@ -422,6 +422,14 @@ if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)
     )
 endif()
 
+add_executable(test_qml_map_bridge tst_qml_map_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_map_bridge PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_link_libraries(test_qml_map_bridge PRIVATE
+    ChargingPlatform::ClientMapServices Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME qml_map_bridge COMMAND test_qml_map_bridge)
+set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30)
+
 # QML page interaction regression (PR #33 second-round review follow-ups).
 # Same gate as client/qml — configure stays byte-identical without the Qt
 # Quick declarative packages, so the existing CI is unaffected either way.
@@ -429,6 +437,7 @@ if(CHARGING_HAS_QML)
 add_executable(test_qml_client_pages tst_qml_client_pages.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
 )
 target_include_directories(test_qml_client_pages PRIVATE
     ${CMAKE_SOURCE_DIR}/client/qml
@@ -458,4 +467,23 @@ set_tests_properties(qml_client_pages PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
+
+add_executable(test_qml_tcp_delivery tst_qml_tcp_delivery.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_tcp_delivery PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_compile_definitions(test_qml_tcp_delivery PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_tcp_delivery PRIVATE
+    ChargingPlatform::ProjectOptions ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
+    Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
+add_test(NAME qml_tcp_delivery COMMAND test_qml_tcp_delivery)
+set_tests_properties(qml_tcp_delivery PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
 endif()

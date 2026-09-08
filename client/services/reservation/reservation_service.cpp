@@ -500,6 +500,7 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             pendingSubmitRequestId_.clear();
             // 服务端错误（如 CHARGER_NOT_AVAILABLE）文案面向用户可读。
             emit submitFailed(message);
+            emit submitRejected(response.error);
         } else {
             pendingCancelRequestId_.clear();
             emit cancelFailed(message);

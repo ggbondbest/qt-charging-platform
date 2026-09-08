@@ -58,6 +58,7 @@ public:
     Q_INVOKABLE void updateAvatar(const QString& avatarKey);
     Q_INVOKABLE void recharge(qint64 amountCents);
     Q_INVOKABLE void fetchRechargeRecords(int page);
+    Q_INVOKABLE bool isFetchingRecords() const;
 
 signals:
     void profileLoaded(const QVariantMap& user);
@@ -97,12 +98,12 @@ class ChargingBridge final : public QObject
 public:
     explicit ChargingBridge(charging::client::ChargingService* svc, QObject* parent = nullptr);
 
-    Q_INVOKABLE void startTracking(qint64 orderId);
+    Q_INVOKABLE void startTracking(const QVariant& orderId);
     Q_INVOKABLE void stopTracking();
     Q_INVOKABLE void fetchStatusNow();
     Q_INVOKABLE void stopCharging();
-    Q_INVOKABLE void startCharging(qint64 reservationId);
-    Q_INVOKABLE void payOrder(qint64 orderId);
+    Q_INVOKABLE void startCharging(const QVariant& reservationId);
+    Q_INVOKABLE void payOrder(const QVariant& orderId);
 
 signals:
     void statusLoaded(const QVariantMap& status);
@@ -131,7 +132,7 @@ public:
 
     Q_INVOKABLE void search(const QString& keyword = QString());
     // 桥侧新法：按 id 从上次查询结果重建 Station struct 再转发 fetchDetail。
-    Q_INVOKABLE void fetchDetailById(qint64 stationId, int distanceMeters = -1);
+    Q_INVOKABLE void fetchDetailById(const QVariant& stationId, int distanceMeters = -1);
     Q_INVOKABLE bool isQueryPending() const;
 
 signals:
@@ -161,8 +162,8 @@ public:
     //       为**当日分钟位**（本地，与推荐时段同基准），桥据今日重建 QDateTime
     //       再转 UTC；end<start 视作跨零点顺延一天（与 widgets QDateTimeEdit 口径一致）。
     Q_INVOKABLE void submit(const QVariantMap& draft);
-    Q_INVOKABLE void cancel(qint64 reservationId);
-    Q_INVOKABLE void expireReservation(qint64 reservationId);
+    Q_INVOKABLE void cancel(const QVariant& reservationId);
+    Q_INVOKABLE void expireReservation(const QVariant& reservationId);
     Q_INVOKABLE int cancelLateReservations();
     Q_INVOKABLE int activeReservationCount() const;
     Q_INVOKABLE int unfinishedSlotLimit() const;
@@ -171,13 +172,14 @@ signals:
     void listStarted();
     void listSucceeded(const QVariantList& records);
     void listFailed(const QString& message);
-    void submitStarted(qint64 chargerId);
+    void submitStarted(const QString& chargerId);
     void submitSucceeded(const QVariantMap& record);
     void submitFailed(const QString& reason);
-    void cancelStarted(qint64 reservationId);
-    void cancelSucceeded(qint64 reservationId);
+    void submitRejected(const QString& code, const QVariantMap& details, const QString& message);
+    void cancelStarted(const QString& reservationId);
+    void cancelSucceeded(const QString& reservationId);
     void cancelFailed(const QString& message);
-    void reservationExpired(qint64 reservationId);
+    void reservationExpired(const QString& reservationId);
 
 private:
     charging::client::services::reservation::ReservationService* svc_;
@@ -192,10 +194,10 @@ public:
 
     Q_INVOKABLE QVariantList vehicles() const;
     Q_INVOKABLE int vehicleCount() const;
-    Q_INVOKABLE qint64 addVehicle(const QVariantMap& vehicle);
+    Q_INVOKABLE QString addVehicle(const QVariantMap& vehicle);
     Q_INVOKABLE bool updateVehicle(const QVariantMap& vehicle);
-    Q_INVOKABLE bool removeVehicle(qint64 id);
-    Q_INVOKABLE void setDefaultVehicle(qint64 id);
+    Q_INVOKABLE bool removeVehicle(const QVariant& id);
+    Q_INVOKABLE void setDefaultVehicle(const QVariant& id);
     // second* 别名 → 裸服务 protection*（语义同一：二级保护密码）。
     Q_INVOKABLE bool hasSecondPassword() const;
     Q_INVOKABLE bool setSecondPassword(const QString& plain);
@@ -222,8 +224,8 @@ public:
     explicit FavoritesBridge(charging::client::services::favorites::FavoritesService* svc,
                              QObject* parent = nullptr);
 
-    Q_INVOKABLE bool contains(qint64 stationId) const;
-    Q_INVOKABLE bool toggle(qint64 stationId);
+    Q_INVOKABLE bool contains(const QVariant& stationId) const;
+    Q_INVOKABLE bool toggle(const QVariant& stationId);
     Q_INVOKABLE QVariantList favoriteIds() const;
 
 signals:

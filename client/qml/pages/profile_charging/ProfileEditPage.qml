@@ -40,6 +40,7 @@ Item {
     Connections {
         target: walletService
         function onProfileLoaded(user) {
+            if (!page.sending) return // Background profile refresh is not a save acknowledgement.
             // Bridge syncs App.currentUser — 每步成功后差异自动缩小。
             if (page.pendingStep === "avatar") {
                 page.pendingStep = ""
@@ -51,6 +52,7 @@ Item {
             if (App) App.back()
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "UPDATE_USER_INFO" || !page.sending) return
             page.sending = false
             page.pendingStep = ""
             // 留在编辑页：已落定字段桥已写回 currentUser，再按保存只会补发剩余改动。
@@ -66,6 +68,24 @@ Item {
         Text { text: "编辑资料"; font.pixelSize: P.Style.fontXl; color: P.Style.ink }
 
         Text { text: "头像"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+        Row {
+            spacing: P.Style.spaceMd
+            Image {
+                width: 56; height: 56
+                visible: page.avatarKey.indexOf("data:image/png;base64,") === 0
+                source: visible ? page.avatarKey : ""
+                fillMode: Image.PreserveAspectCrop
+            }
+            P.ActionButton {
+                objectName: "uploadAvatarButton"
+                text: "选择本地图片"; variant: "secondary"
+                enabled: !page.sending
+                onClicked: {
+                    var image = App ? App.chooseAvatar() : ""
+                    if (image.length > 0) page.avatarKey = image
+                }
+            }
+        }
         Grid {
             objectName: "uiAvatarChoice"
             columns: 5
@@ -170,7 +190,7 @@ Item {
 
         Text {
             width: parent.width
-            text: "头像键与 widgets avatar_library 同源对拍；持久化走 UPDATE_USER_INFO"
+            text: "本地图片将压缩为 PNG，保存后在其他设备登录也可显示。"
             font.pixelSize: P.Style.fontSm; color: P.Style.faint
         }
     }

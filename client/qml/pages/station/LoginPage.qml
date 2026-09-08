@@ -26,6 +26,7 @@ Item {
 
     // 该手机号是否需要二级密码（服务通道在线时以服务全局开关为准，否则库判定）
     function secondRequired(phone) {
+        if (!App || !App.mockMode) return false // Local demo protection is not server authentication.
         try {
             if (settingsService && settingsService.hasProtectionPassword
                 && settingsService.hasProtectionPassword() === true
@@ -87,30 +88,21 @@ Item {
         resultText = "正在连接服务端并查询用户…"
         resultTone = ""
         StationState.noteLoginPhone(phoneField.text)   // 设置页绑定密码用最近登录号
-        // Contract name verbatim; AuthService is a raw service tonight (bridge pending) —
-        // call may fail until member-3's bridge lands. TODO(contract): login(phone) invokable
-        // + loginSucceeded(userMap, created) / loginFailed(message).
         try {
-            if (authService) { authService.login(phoneField.text); return }  // 成功经信号回显
-            // mock 通道 QmlApp::authService()==nullptr（app_bridge.cpp:99），空调用不抛异常
-            // 会永久卡 busy——回退 App.login()（C++ mock 直登，壳收 loginStateChanged 翻页）。
-            if (App && App.login(phoneField.text)) {
-                App.showToast("已登录（mock 通道直登）", "success")   // 已注册口径不作假，不标"自动注册"
-                echoUser(App.currentUser, false)
-                secondField.text = ""
-            } else {
+            if (!authService || !authService.login(phoneField.text)) {
                 busy = false; resultTone = "error"
-                resultText = "登录失败：手机号无效或登录服务未就绪"
+                resultText = "请检查手机号，或等待当前登录请求完成"
             }
-        } catch (e) {                            // 桥缺位：显式回退而不是卡转圈
+        } catch (e) {
             busy = false
             resultTone = "error"
-            resultText = "登录桥未就绪（等待服务桥今晚补全），请稍后重试"
+            resultText = "登录服务不可用，请重新启动客户端"
         }
     }
 
     Connections {
         target: authService
+        function onLoginStarted() { page.busy = true }
         function onLoginSucceeded(user, created) {
             busy = false
             var u = user || {}

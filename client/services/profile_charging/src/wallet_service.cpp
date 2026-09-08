@@ -170,8 +170,7 @@ void WalletService::updateAvatar(const QString& avatarKey)
 
     updatingAvatar_ = true;
     QJsonObject payload;
-    // Frozen avatarKey patch: built-in keys only; empty restores the default.
-    // Image upload is not part of docs/api/user_api_contract.md.
+    // Built-in keys or a bounded PNG data URI; the server validates image bytes.
     payload.insert(QStringLiteral("avatarKey"), avatarKey);
     transport_->sendFor(this,
         type, payload,

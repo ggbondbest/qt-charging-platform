@@ -14,9 +14,28 @@ Item {
     Rectangle { anchors.fill: parent; color: P.Style.bg }   // grabToImage needs self-bg
 
     function money(cents) { return (cents / 100).toFixed(2) }
+    property int loadedPage: 0
+    property int requestedPage: 0
+    property bool hasMore: false
+    property bool pending: false
+    property bool queuedRefresh: false
+    function loadRecords(first) {
+        if (walletService.isFetchingRecords()) {
+            if (first) page.queuedRefresh = true
+            return
+        }
+        page.queuedRefresh = false
+        page.requestedPage = first ? 1 : page.loadedPage + 1
+        page.pending = true
+        walletService.fetchRechargeRecords(page.requestedPage)
+    }
     function refresh() {
         walletService.fetchProfile()
-        walletService.fetchRechargeRecords(1)
+        loadRecords(true)
+    }
+    Timer {
+        interval: 100; repeat: true; running: page.queuedRefresh
+        onTriggered: if (!walletService.isFetchingRecords()) page.loadRecords(true)
     }
 
     ListModel { id: recordsModel }
@@ -28,12 +47,19 @@ Item {
             recordsScroll.setRefreshing(false)
         }
         function onRechargeRecordsLoaded(records, hasMore) {
-            recordsModel.clear()
+            if (!page.pending) return
+            page.pending = false
+            if (page.queuedRefresh) { page.loadRecords(true); return }
+            if (page.requestedPage === 1) recordsModel.clear()
             for (var i = 0; i < records.length; ++i)
                 recordsModel.append(records[i])
+            page.loadedPage = page.requestedPage
+            page.hasMore = hasMore
             recordsScroll.setRefreshing(false)
         }
         function onOperationFailed(type, code, message) {
+            if (type !== "GET_RECHARGE_RECORDS" && type !== "GET_USER_INFO") return
+            if (type === "GET_RECHARGE_RECORDS") page.pending = false
             recordsScroll.setRefreshing(false)
             if (App) App.showToast("加载失败：" + message, "danger")
         }
@@ -96,8 +122,7 @@ Item {
             width: parent.width
             height: parent.height - y
             onRefreshRequested: {
-                walletService.fetchProfile()
-                walletService.fetchRechargeRecords(1)
+                page.refresh()
             }
 
             Repeater {
@@ -118,7 +143,7 @@ Item {
                                     font.pixelSize: P.Style.fontMd; color: P.Style.ink
                                 }
                                 Text {
-                                    text: model.createdAt
+                                    text: App ? App.displayTime(model.createdAt) : model.createdAt
                                     font.pixelSize: P.Style.fontSm; color: P.Style.faint
                                 }
                             }
@@ -147,6 +172,13 @@ Item {
                         color: index === recordsModel.count - 1 ? "transparent" : P.Style.line
                     }
                 }
+            }
+            P.ActionButton {
+                objectName: "rechargeRecordsLoadMore"
+                text: page.pending ? "加载中…" : "加载更多充值记录"
+                visible: page.hasMore
+                enabled: !page.pending
+                onClicked: page.loadRecords(false)
             }
         }
     }
