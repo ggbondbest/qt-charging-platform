@@ -7,7 +7,15 @@
 //      点击被卡面 onClicked 劫持去详情页）；
 //   ② 顶栏铃铛 → App.navigate("notifications") → Shell 翻页全链（消息页进不去），
 //      以及"我的"页消息通知入口行（修复前该入口根本不存在）；
-//   ③ 找站页重设计 map⇄list 分段 + peek 浮卡：selectedMarker=-1 越界守卫。
+//   ③ 找站页重设计 map⇄list 分段 + peek 浮卡：selectedMarker=-1 越界守卫；
+//   ④ 2026-09-08 批量指令①：车辆强制校验撤除——0 车（无充电中）点"预约"直达
+//      确认页；chargingBusy=true 时 chargingBusyPrompt 拦截且不导航。
+//      chargingBusy 两态由属性直注（mock 服务数据是否含充电中单不作保），
+//      钉的是 UI 拦截分支本身，服务侧名额语义归 reservation_service 测试。
+//   ⑤ 2026-09-08 用户实测：导航页【更换】弹窗打开即冻结——裸宽 Column ×
+//      子项 parent.height - y 自回边 → QQuickItem::polish() loop 每帧刷。
+//      修复=Column anchors.fill 显式定高；本例真点【更换】+message handler
+//      计数钉"零 loop 行 + 弹层有行"。
 //
 // 宿主与 charging-qml-preview 同构：QmlApp + 全量契约 context property +
 // Shell.qml file:// 加载（offscreen 可跑，QTEST_MAIN 自带 QGuiApplication）。
@@ -20,6 +28,7 @@
 #include <QQuickWindow>
 #include <QTimer>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -41,6 +50,27 @@ QQuickItem* findItem(QQuickItem* root, const QString& objectName)
             return hit;
     }
     return nullptr;
+}
+
+// 递归收集 objectName 匹配的全部 item（桩列表里每卡一个预约按钮）。
+void collectItems(QQuickItem* root, const QString& objectName, QList<QQuickItem*>& out)
+{
+    if (root == nullptr)
+        return;
+    for (QQuickItem* child : root->childItems()) {
+        if (child->objectName() == objectName)
+            out.append(child);
+        collectItems(child, objectName, out);
+    }
+}
+
+// polish() loop 行数计数——QtMessageHandler 是函数指针，lambda 不可带捕获，
+// 放文件级（仅 navigationPickPopupOpensWithoutPolishLoop 安装期间有流量）。
+std::atomic<int> g_polishLoops{0};
+void countPolishLoopHandler(QtMsgType, const QMessageLogContext&, const QString& msg)
+{
+    if (msg.contains(QStringLiteral("polish() loop")))
+        ++g_polishLoops;
 }
 
 // 真实鼠标点击：mapToScene 取中心 → 经窗口事件系统投递（含命中栈穿透）。
@@ -107,6 +137,40 @@ class QmlStationInteractionsTest final : public QObject
         engine_ = nullptr;
         delete app_;
         app_ = nullptr;
+    }
+
+    // 公共链：station 卡文字区真点击 → 详情页（列表 mock + 翻页 + 桩 mock 各留余量）。
+    QQuickItem* enterDetailPage()
+    {
+        auto* card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
+        if (card == nullptr) {   // offscreen delegate 惰性：先强制一次场景图渲染
+            auto shot = window_->contentItem()->grabToImage();
+            QEventLoop loop;
+            QObject::connect(shot.get(), &QQuickItemGrabResult::ready,
+                             &loop, &QEventLoop::quit);
+            loop.exec();
+            spin(50);
+            card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
+        }
+        if (card == nullptr)
+            return nullptr;
+        QQuickItem* title = nullptr;
+        std::function<void(QQuickItem*)> walkText = [&](QQuickItem* it) {
+            if (title) return;
+            const QString t = it->property("text").toString();
+            if (t.length() >= 4 && t != QStringLiteral("营业中")) { title = it; return; }
+            for (QQuickItem* c : it->childItems()) walkText(c);
+        };
+        walkText(card);
+        if (title == nullptr)
+            return nullptr;
+        realClick(window_, title);
+        spin(400);
+        auto* detail = findItem(window_->contentItem(), QStringLiteral("stationDetailPage"));
+        if (detail == nullptr)
+            return nullptr;
+        spin(900);   // 桩列表 mock 落定 + delegate 实例化
+        return detail;
     }
 
 private slots:
@@ -241,6 +305,88 @@ private slots:
         spin(300);
         QVERIFY2(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) != nullptr,
                  "peek 详情按钮未进入站点详情");
+    }
+
+    // 批量指令① 正断言：车辆校验整套撤除——chargingBusy=false（无充电中）时，
+    // 详情页点"预约"直达 reservationConfirmPage；拦截弹层不得出现
+    //（旧 vehicleRequiredPrompt/unfinishedReservationPrompt 链已删，弹层不实例化）。
+    void zeroVehicleNoChargingReservesStraightToConfirm()
+    {
+        bootShell(QStringLiteral("station"));
+        auto* detail = enterDetailPage();
+        QVERIFY2(detail != nullptr, "卡片文字区点击未进详情页");
+        QVERIFY(detail->setProperty("chargingBusy", false));
+        QList<QQuickItem*> buttons;
+        collectItems(detail, QStringLiteral("detailReserveButton"), buttons);
+        QQuickItem* target = nullptr;
+        for (auto* b : buttons)
+            if (b->isEnabled()) { target = b; break; }
+        QVERIFY2(target != nullptr, "无 available 桩的启用预约按钮（mock 桩数据变了？）");
+        realClick(window_, target);
+        spin(400);
+        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage"))
+                     != nullptr,
+                 "0 车点预约未直达确认页（旧车辆闸回归？）");
+        auto* go = findItem(window_->contentItem(), QStringLiteral("chargingBusyGoButton"));
+        QVERIFY2(go == nullptr || !go->isVisible(), "无充电中却弹出充电拦截浮层");
+    }
+
+    // 批量指令① 反断言：chargingBusy=true（有车辆正在充电）→ 预约必须被
+    // chargingBusyPrompt 拦截且不导航（新业务唯一保留闸）。
+    void chargingVehicleBlocksReserveWithPrompt()
+    {
+        bootShell(QStringLiteral("station"));
+        auto* detail = enterDetailPage();
+        QVERIFY2(detail != nullptr, "卡片文字区点击未进详情页");
+        QVERIFY(detail->setProperty("chargingBusy", true));
+        QList<QQuickItem*> buttons;
+        collectItems(detail, QStringLiteral("detailReserveButton"), buttons);
+        QQuickItem* target = nullptr;
+        for (auto* b : buttons)
+            if (b->isEnabled()) { target = b; break; }
+        QVERIFY2(target != nullptr, "无 available 桩的启用预约按钮");
+        realClick(window_, target);
+        spin(300);
+        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage"))
+                     == nullptr,
+                 "有车辆充电中竟发起了预约（拦截闸失效）");
+        auto* go = findItem(window_->contentItem(), QStringLiteral("chargingBusyGoButton"));
+        QVERIFY2(go != nullptr && go->isVisible(), "chargingBusyPrompt 拦截弹层未出现");
+    }
+
+    // 批量指令③+实测冻结回归：导航页 destinationRow【更换】真点击 →
+    // navigationPickPopup 打开并出候选行；期间 QQuickItem::polish() loop 计数
+    // 必须为 0（修复前该弹窗 Column 无显式高，子项 height:parent.height-y
+    // 自回边，每帧刷 loop 告警直至 UI 冻结——offscreen 同样复现）。
+    void navigationPickPopupOpensWithoutPolishLoop()
+    {
+        bootShell(QStringLiteral("station"));
+        QVariantMap record;
+        record.insert(QStringLiteral("stationName"), QStringLiteral("测试充电站"));
+        record.insert(QStringLiteral("stationAddress"), QStringLiteral("南山区测试路 1 号"));
+        record.insert(QStringLiteral("stationLatitude"), 22.52);
+        record.insert(QStringLiteral("stationLongitude"), 113.95);
+        record.insert(QStringLiteral("hasStationLocation"), true);
+        record.insert(QStringLiteral("distanceMeters"), 3200);
+        QMetaObject::invokeMethod(app_, "navigate",
+                                  Q_ARG(QString, QStringLiteral("navigation")),
+                                  Q_ARG(QVariant, QVariant(record)));
+        spin(600);
+        auto* change = findItem(window_->contentItem(),
+                                QStringLiteral("destinationChangeButton"));
+        QVERIFY2(change != nullptr, "导航页未出现 destinationChangeButton（③改动丢失？）");
+
+        g_polishLoops = 0;
+        auto* prev = qInstallMessageHandler(countPolishLoopHandler);
+        realClick(window_, change);
+        spin(900);   // 弹层打开 + mock 全量检索回填 + 多帧布局（修复前此处已刷千行 loop）
+        qInstallMessageHandler(prev);
+        QVERIFY2(g_polishLoops.load() == 0,
+                 qPrintable(QStringLiteral("【更换】弹层触发 %1 条 polish() loop（自回边回归）")
+                            .arg(g_polishLoops.load())));
+        auto* list = findItem(window_->contentItem(), QStringLiteral("navigationPickList"));
+        QVERIFY2(list != nullptr, "弹层内容层未实例化（Popup 未打开？）");
+        QVERIFY2(!list->childItems().isEmpty(), "弹层无候选行（检索/兜底链断了？）");
     }
 };
 
