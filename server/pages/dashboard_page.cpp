@@ -2,6 +2,7 @@
 
 #include "admin_request_gateway.h"
 #include "dashboard_visual_widgets.h"
+#include "delivery_dashboard_widgets.h"
 #include "management_page_widgets.h"
 
 #include <QAbstractItemView>
@@ -249,7 +250,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     measureTabs->addWidget(orderTab);
     measureTabs->addStretch();
     trendLayout->addLayout(measureTabs);
-    auto* trendWidget = new RevenueTrendWidget(trendCard);
+    auto* trendWidget = new DeliveryRevenueTrendWidget(trendCard);
     trendWidget_ = trendWidget;
     trendWidget_->setServiceSeries({}, {}, {});
     trendLayout->addWidget(trendWidget, 1);
@@ -330,7 +331,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         deviceCard));
     auto* distribution = new QHBoxLayout();
     distribution->setSpacing(12);
-    deviceStatusWidget_ = new DeviceStatusWidget(deviceCard);
+    deviceStatusWidget_ = new DeliveryDeviceStatusWidget(deviceCard);
     distribution->addWidget(deviceStatusWidget_, 0, Qt::AlignCenter);
     auto* legend = new QVBoxLayout();
     const struct {
@@ -338,9 +339,11 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         const char* data;
         const char* color;
     } statuses[] = {
-        {"正常", "—", "#43c7bc"},
-        {"离线", "—", "#aab4c2"},
+        {"空闲", "—", "#43c7bc"},
+        {"在用", "—", "#347cf6"},
         {"故障", "—", "#f5a130"},
+        {"预约", "—", "#9469d4"},
+        {"离线", "—", "#aab4c2"},
     };
     int statusIndex = 0;
     for (const auto& status : statuses) {
@@ -355,9 +358,12 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         row->addStretch();
         auto* value = makeLabel(QString::fromUtf8(status.data),
                                 QStringLiteral("color:#3c4c67; font-size:13px;"), deviceCard);
-        if (statusIndex == 0) normalLegendValue_ = value;
-        else if (statusIndex == 1) offlineLegendValue_ = value;
-        else faultLegendValue_ = value;
+        value->setObjectName(QStringLiteral("deviceStateCount%1").arg(statusIndex));
+        if (statusIndex == 0) availableLegendValue_ = value;
+        else if (statusIndex == 1) chargingLegendValue_ = value;
+        else if (statusIndex == 2) faultLegendValue_ = value;
+        else if (statusIndex == 3) reservedLegendValue_ = value;
+        else offlineLegendValue_ = value;
         ++statusIndex;
         row->addWidget(value);
         legend->addLayout(row);
@@ -473,6 +479,7 @@ void DashboardPage::refresh(int days, bool clearExisting)
 {
     if (gateway_ == nullptr) return;
     requestedDays_ = days;
+    trendWidget_->setPeriod(days == 30 ? 2 : 1);
     refreshButton_->setEnabled(false);
     // A newly authenticated session must never briefly show the preceding
     // administrator's snapshot while its replacement is pending.
@@ -492,12 +499,14 @@ void DashboardPage::clearDashboardData()
     onlineChargersValue_->setText(tr("—"));
     onlineChargersHint_->setText(tr("在线率待加载"));
     totalChargersLabel_->setText(tr("总电桩数：—"));
-    normalLegendValue_->setText(tr("—"));
+    availableLegendValue_->setText(tr("—"));
+    chargingLegendValue_->setText(tr("—"));
+    reservedLegendValue_->setText(tr("—"));
     offlineLegendValue_->setText(tr("—"));
     faultLegendValue_->setText(tr("—"));
     exceptionCountBadge_->setText(tr("—"));
     trendWidget_->setServiceSeries({}, {}, {});
-    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(0, 0, 0);
+    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(0, 0, 0, 0, 0);
     exceptionTable_->setRowCount(0);
     latestOrdersTable_->setRowCount(0);
     setEmptyRow(exceptionTable_, tr("正在加载服务数据…"));
@@ -530,10 +539,14 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     const int fault = data.value("faultChargers").toInt();
     // The status ring uses mutually exclusive categories, unlike the online
     // headline above where a faulted charger is still online.
-    const int normal = qMax(0, total - offline - fault);
-    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(normal, offline, fault);
+    const int available = data.value("availableChargers").toInt();
+    const int charging = data.value("chargingChargers").toInt();
+    const int reserved = data.value("reservedChargers").toInt();
+    if (deviceStatusWidget_) deviceStatusWidget_->setCounts(available, charging, fault, reserved, offline);
     const auto legend = [total](int count) { return total ? QObject::tr("%1（%2%）").arg(count).arg(100.0 * count / total, 0, 'f', 1) : QObject::tr("0（0.0%）"); };
-    if (normalLegendValue_) normalLegendValue_->setText(legend(normal));
+    if (availableLegendValue_) availableLegendValue_->setText(legend(available));
+    if (chargingLegendValue_) chargingLegendValue_->setText(legend(charging));
+    if (reservedLegendValue_) reservedLegendValue_->setText(legend(reserved));
     if (offlineLegendValue_) offlineLegendValue_->setText(legend(offline));
     if (faultLegendValue_) faultLegendValue_->setText(legend(fault));
     totalChargersLabel_->setText(tr("总电桩数：%1 台").arg(data.value("totalChargers").toInteger()));

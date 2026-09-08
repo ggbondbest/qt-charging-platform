@@ -1,11 +1,13 @@
 #include "admin_request_gateway.h"
 #include "charger_management_page.h"
 #include "dashboard_page.h"
+#include "delivery_dashboard_widgets.h"
 #include "database_connection.h"
 #include "server_runtime.h"
 #include "station_management_page.h"
 
 #include <QApplication>
+#include <QChart>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -13,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QPieSeries>
 #include <QSignalSpy>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -351,6 +354,28 @@ private slots:
         // under the frozen contract, so the headline must be 6 / 85.7%.
         QTRY_COMPARE(value->text(), QStringLiteral("6 台"));
         QTRY_COMPARE(hint->text(), QStringLiteral("在线率 85.7%（北京时间快照）"));
+        // Online includes FAULT, while the delivery chart splits all five
+        // charger states without counting any charger twice.
+        auto* distribution = page.findChild<DeliveryDeviceStatusWidget*>();
+        auto* trend = page.findChild<DeliveryRevenueTrendWidget*>();
+        QVERIFY(distribution && trend);
+        auto* pie = qobject_cast<QPieSeries*>(distribution->chart()->series().first());
+        QVERIFY(pie);
+        QCOMPARE(pie->sum(), 7.0);
+        const QStringList expected{"5（71.4%）", "0（0.0%）", "1（14.3%）", "0（0.0%）", "1（14.3%）"};
+        for (int index = 0; index < expected.size(); ++index) {
+            auto* legend = page.findChild<QLabel*>(QStringLiteral("deviceStateCount%1").arg(index));
+            QVERIFY(legend);
+            QCOMPARE(legend->text(), expected.at(index));
+        }
+        page.refreshCurrent();
+        QCOMPARE(value->text(), QStringLiteral("6 台")); // timer refresh preserves the confirmed snapshot
+        page.refreshCurrent(true);
+        QCOMPARE(value->text(), QStringLiteral("—")); // a new admin session explicitly clears it
+        pie = qobject_cast<QPieSeries*>(distribution->chart()->series().first());
+        QVERIFY(pie);
+        QCOMPARE(pie->sum(), 0.0);
+        QTRY_COMPARE(value->text(), QStringLiteral("6 台"));
         runtime.stop();
     }
 };

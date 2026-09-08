@@ -57,6 +57,9 @@ private:
         QString contactPhone;
         QString serverId{};
         QString expectedUpdatedAt{};
+        int availableChargerCount = -1;
+        int onlineChargerCount = -1;
+        double onlineRatePercent = -1.0;
     };
 
     void createMockRecords();

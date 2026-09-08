@@ -10,8 +10,8 @@ class QPushButton;
 
 namespace charging::server {
 
-class RevenueTrendWidget;
-class DeviceStatusWidget;
+class DeliveryRevenueTrendWidget;
+class DeliveryDeviceStatusWidget;
 
 class DashboardPage final : public QWidget
 {
@@ -44,9 +44,11 @@ private:
     QTableWidget* exceptionTable_ = nullptr;
     QTableWidget* latestOrdersTable_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
-    RevenueTrendWidget* trendWidget_ = nullptr;
-    DeviceStatusWidget* deviceStatusWidget_ = nullptr;
-    QLabel* normalLegendValue_ = nullptr;
+    DeliveryRevenueTrendWidget* trendWidget_ = nullptr;
+    DeliveryDeviceStatusWidget* deviceStatusWidget_ = nullptr;
+    QLabel* availableLegendValue_ = nullptr;
+    QLabel* chargingLegendValue_ = nullptr;
+    QLabel* reservedLegendValue_ = nullptr;
     QLabel* offlineLegendValue_ = nullptr;
     QLabel* faultLegendValue_ = nullptr;
     int requestedDays_ = 7;

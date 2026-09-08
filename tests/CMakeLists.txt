@@ -1,3 +1,13 @@
+add_executable(test_delivery_admin_pages tst_delivery_admin_pages.cpp)
+target_link_libraries(test_delivery_admin_pages PRIVATE
+    ChargingPlatform::ServerPages
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME delivery_admin_pages COMMAND test_delivery_admin_pages)
+set_tests_properties(delivery_admin_pages PROPERTIES TIMEOUT 40)
+
 add_executable(test_delivery_data_contract tst_delivery_data_contract.cpp)
 target_link_libraries(test_delivery_data_contract PRIVATE
     ChargingPlatform::ServerRepositories
