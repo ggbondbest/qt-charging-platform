@@ -56,7 +56,7 @@ Ubuntu 22.04 官方仓库提供 Qt 6.2.4：
 ```bash
 sudo apt update
 sudo apt install -y \
-  build-essential cmake ninja-build sqlite3 python3 \
+  build-essential cmake ninja-build sqlite3 python3 fonts-noto-cjk \
   qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite \
   qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-webengine-dev-tools \
   libqt6webenginecore6-bin libqt6charts6-dev \
