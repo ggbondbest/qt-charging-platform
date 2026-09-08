@@ -58,7 +58,7 @@ sudo apt update
 sudo apt install -y \
   build-essential cmake ninja-build sqlite3 \
   qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite \
-  qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-charts-dev \
+  qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev libqt6charts6-dev \
   qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
   qml6-module-qtquick-controls qml6-module-qtquick-templates \
   qml6-module-qtquick-dialogs qml6-module-qtqml qml6-module-qtqml-models \
