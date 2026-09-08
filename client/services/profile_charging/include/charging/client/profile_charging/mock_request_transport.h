@@ -60,6 +60,7 @@ private:
     void seedDemoOrders();
     void seedDemoCoupons();
     void seedDemoPoints();
+    void seedDemoRatings();
     void appendMockNotification(const QString& type, const QString& title,
                                 const QString& body, const QDateTime& createdAtUtc);
     void grantRechargeCoupon(qint64 amountCents, const QDateTime& nowUtc);
@@ -82,6 +83,11 @@ private:
     qint64 pointsTotal_ = 0;
     QString checkInDay_;
     qint64 nextLedgerId_ = 1;
+    // 批次E（2026-09-08）评价：行即 GET_MY_RATINGS ratings 响应形（id/orderId/
+    // chargerId 十进制字符串、createdAtUtc ISO 串），新→旧。幂等锚 orderId 唯一
+    // （镜像 order_id UNIQUE，一单一评）。
+    QVector<QJsonObject> ratings_; // newest first
+    qint64 nextRatingId_ = 1;
     QHash<qint64, QPair<QString, QString>> chargerDisplays_; // chargerId -> (station, code)
     // reservationId -> (chargerId, display) mirrored from the reservation
     // service's mock channel (see registerMockReservation).

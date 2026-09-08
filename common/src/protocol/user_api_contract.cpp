@@ -58,6 +58,10 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     // GET_POINTS 加入分页族。
     const bool checkIn = type == QLatin1String(kCheckIn);
     const bool points = type == QLatin1String(kGetPoints);
+    // 批次E：SUBMIT_CHARGER_RATING 写型带参（orderId+rating+可选 comment），
+    // GET_MY_RATINGS 加入分页族。
+    const bool submitRating = type == QLatin1String(kSubmitChargerRating);
+    const bool myRatings = type == QLatin1String(kGetMyRatings);
     const auto fail = [error](const char* code, const QString& field) {
         if (error != nullptr) {
             *error = {};
@@ -68,13 +72,14 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         return false;
     };
     if (!(stations || chargers || reservations || orders || records || profile || update
-          || recharge || stats || coupons || notices || checkIn || points)) {
+          || recharge || stats || coupons || notices || checkIn || points
+          || submitRating || myRatings)) {
         return fail(error_code::kUnknownRequestType, QStringLiteral("type"));
     }
 
     QJsonObject result;
     if (stations || chargers || reservations || orders || records || coupons || notices
-        || points) {
+        || points || myRatings) {
         for (const QString& key : {QStringLiteral("page"), QStringLiteral("pageSize")}) {
             const bool isPage = key == QLatin1String("page");
             const QJsonValue value = data.contains(key)
@@ -182,6 +187,27 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         }
         result.insert(amount, data.value(amount));
         result.insert(transaction, value);
+    }
+    if (submitRating) {
+        // 一单一评：身份来自 Session，orderId 为必填正 id 串（订单须本人 COMPLETED，
+        // 业务规则在服务端仓储把关，这里只做形态校验）。
+        const QString orderKey = QStringLiteral("orderId");
+        if (!positiveId(data.value(orderKey))) {
+            return fail(error_code::kInvalidArgument, orderKey);
+        }
+        result.insert(orderKey, data.value(orderKey));
+        const QString ratingKey = QStringLiteral("rating");
+        if (!integerInRange(data.value(ratingKey), kMinimumRating, kMaximumRating)) {
+            return fail(error_code::kInvalidArgument, ratingKey);
+        }
+        result.insert(ratingKey, data.value(ratingKey));
+        const QString commentKey = QStringLiteral("comment");
+        const QJsonValue value = data.contains(commentKey)
+            ? data.value(commentKey) : QJsonValue(QString());
+        if (!value.isString() || value.toString().trimmed().size() > kMaximumRatingCommentChars) {
+            return fail(error_code::kInvalidArgument, commentKey);
+        }
+        result.insert(commentKey, value.toString().trimmed());
     }
     if (normalized != nullptr) {
         *normalized = result;

@@ -11,9 +11,11 @@ namespace charging::server {
 // Rows use SQL column names; only the Service knows the wire representation.
 // 批次C（2026-09-08）：CheckIn 写型日幂等（user_checkins 主键即幂等锁），
 // GetPoints 读积分流水 + SUM 总分。
+// 批次E（2026-09-08）：SubmitRating 写评价（order_id UNIQUE 即幂等锁，一单一评），
+// GetMyRatings 分页读本人评价流水（联查桩号/站名）。
 enum class UserApiAction { Stations, Chargers, Reservations, Profile, UpdateProfile,
                            Recharge, RechargeRecords, Orders, Stats, Coupons, Notifications,
-                           CheckIn, GetPoints };
+                           CheckIn, GetPoints, SubmitRating, GetMyRatings };
 enum class UserApiError { None, Database, Unauthorized, Frozen, NotFound, Invalid,
                           Conflict, RechargeFailed, TooManyRows };
 struct UserApiQuery {
@@ -32,6 +34,10 @@ struct UserApiQuery {
     qint64 amountCents = 0;
     int months = 6;               // Stats window (1..kMaximumStatsMonths)
     QString period;               // Stats 聚合档 "week"|"month"|"year"（2026-09-08 批次B；空=month）
+    // 批次E：SUBMIT_CHARGER_RATING 入参（订单须本人 COMPLETED，业务在服务端把关）。
+    qint64 orderId = 0;
+    int rating = 0;               // 1..5
+    QString comment;              // 可空串（已 trim、≤140，normalize 保证）
     QDateTime nowUtc;
 };
 struct UserApiResult {
@@ -46,6 +52,8 @@ struct UserApiResult {
     qint64 points = 0;
     qint64 pointsGained = 0;
     bool alreadyCheckedIn = false;
+    // 批次E（2026-09-08）评价：SubmitRating 幂等重放标记（rows[0]=落库评价行）。
+    bool alreadyRated = false;
 };
 
 class UserApiRepository final {

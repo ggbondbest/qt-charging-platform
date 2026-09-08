@@ -7,6 +7,7 @@ add_library(charging_client_profile_charging_services STATIC
     include/charging/client/profile_charging/order_service.h
     include/charging/client/profile_charging/point_service.h
     include/charging/client/profile_charging/presentation_format.h
+    include/charging/client/profile_charging/rating_service.h
     include/charging/client/profile_charging/stats_service.h
     include/charging/client/profile_charging/wallet_service.h
     src/charging_service.cpp
@@ -18,6 +19,7 @@ add_library(charging_client_profile_charging_services STATIC
     src/order_service.cpp
     src/point_service.cpp
     src/presentation_format.cpp
+    src/rating_service.cpp
     src/stats_service.cpp
     src/wallet_service.cpp
 )

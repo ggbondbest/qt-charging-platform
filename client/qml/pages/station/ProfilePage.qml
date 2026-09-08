@@ -235,6 +235,7 @@ Item {
                     { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
                     { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
                     { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
+                    { obj: "openRatingsButton",   row: "⭐　我的评价", route: "ratings" },
                     { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
                 delegate: Rectangle {

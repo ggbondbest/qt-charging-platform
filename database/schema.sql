@@ -262,6 +262,31 @@ CREATE TABLE IF NOT EXISTS user_checkins (
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
+-- 批次E（2026-09-08）电桩评价：一单一评，order_id UNIQUE 即幂等锚（镜像服务端
+-- INSERT OR IGNORE + 客户端重放不报错）。评价对象绑定订单所属桩（charger_id 快照，
+-- 防后续订单改绑漂移）。comment 可空串（TEXT NOT NULL DEFAULT ''），最长 140 字。
+-- TODO(contract): 是否允许改评/删评（一期不可）。
+CREATE TABLE IF NOT EXISTS charger_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    charger_id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL UNIQUE,
+    rating INTEGER NOT NULL
+        CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT NOT NULL DEFAULT ''
+        CHECK (length(comment) <= 140),
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (charger_id) REFERENCES chargers(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_charger_ratings_user_created_at
+    ON charger_ratings(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stations_status
     ON stations(status);
 CREATE INDEX IF NOT EXISTS idx_chargers_station_status

@@ -83,6 +83,7 @@ int main(int argc, char* argv[])
     ctx->setContextProperty(QStringLiteral("statsService"), qmlApp.statsService());
     ctx->setContextProperty(QStringLiteral("couponService"), qmlApp.couponService());
     ctx->setContextProperty(QStringLiteral("pointsService"), qmlApp.pointsService());
+    ctx->setContextProperty(QStringLiteral("ratingsService"), qmlApp.ratingsService());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
     // --theme=light|dark / --font=standard|large|extraLarge（批次A）：覆盖式
     // 设置外观持久化（Service 白名单自拒非法值），Shell 启动同步即生效——

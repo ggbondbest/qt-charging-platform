@@ -198,6 +198,56 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
         q.finish();
         return finish();
     }
+    if (in.action == UserApiAction::SubmitRating) {
+        // 批次E（2026-09-08）：一单一评，只对本人 COMPLETED 订单开放（防越权/
+        // 防给未完成订单刷评）。charger_id 取订单快照，不信任客户端传参。
+        if (in.orderId <= 0 || in.rating < charging::protocol::user_api::kMinimumRating ||
+            in.rating > charging::protocol::user_api::kMaximumRating)
+            return failure(UserApiError::Invalid);
+        if (!run(q, "SELECT charger_id FROM orders WHERE id=:oid AND user_id=:uid "
+                    "AND status='COMPLETED'", {{"oid", in.orderId}, {"uid", in.userId}})
+            || !q.next())
+            return failure(UserApiError::NotFound);
+        const qint64 chargerId = q.value(0).toLongLong();
+        q.finish();
+        // 幂等锚 order_id UNIQUE + INSERT OR IGNORE：同单重投不报错也不覆盖首评
+        // （CHECK_IN/RECHARGE 同款重放语义）。改评能力 TODO(contract) 二期。
+        if (!run(q, "INSERT OR IGNORE INTO charger_ratings "
+                    "(user_id, charger_id, order_id, rating, comment, created_at) "
+                    "VALUES (:uid,:cid,:oid,:rating,:comment,:now)",
+                 {{"uid", in.userId}, {"cid", chargerId}, {"oid", in.orderId},
+                  {"rating", in.rating}, {"comment", in.comment}, {"now", now}})) return {};
+        result.alreadyRated = (q.numRowsAffected() == 0);
+        q.finish();
+        // 回读当前落库行（新插入或既有首评），响应形与 GET_MY_RATINGS 同构。
+        if (!run(q, "SELECT r.*, c.code AS charger_code, s.name AS station_name "
+                    "FROM charger_ratings r JOIN chargers c ON c.id=r.charger_id "
+                    "JOIN stations s ON s.id=c.station_id WHERE r.order_id=:oid",
+                 {{"oid", in.orderId}}) || !q.next()) return {};
+        result.rows.append(row(q));
+        q.finish();
+        return finish();
+    }
+    if (in.action == UserApiAction::GetMyRatings) {
+        // 批次E：本人评价流水（新→旧）分页；联查桩号/站名让"我的评价"页自成一体。
+        if (!run(q, "SELECT COUNT(*) FROM charger_ratings WHERE user_id=:uid",
+                 {{"uid", in.userId}}) || !q.next()) return {};
+        const qint64 count = q.value(0).toLongLong();
+        q.finish();
+        if (count < 0 || count > std::numeric_limits<int>::max())
+            return failure(UserApiError::TooManyRows);
+        result.total = static_cast<int>(count);
+        if (!run(q, "SELECT r.*, c.code AS charger_code, s.name AS station_name "
+                    "FROM charger_ratings r JOIN chargers c ON c.id=r.charger_id "
+                    "JOIN stations s ON s.id=c.station_id WHERE r.user_id=:uid "
+                    "ORDER BY r.created_at DESC, r.id DESC LIMIT :limit OFFSET :offset",
+                 {{"uid", in.userId}, {"limit", in.pageSize},
+                  {"offset", (qint64(in.page) - 1) * in.pageSize}})) return {};
+        while (q.next()) result.rows.append(row(q));
+        if (q.lastError().isValid()) return {};
+        q.finish();
+        return finish();
+    }
 
     // Reuse the existing state-machine expiry updates within this transaction.
     if (in.action != UserApiAction::RechargeRecords) {

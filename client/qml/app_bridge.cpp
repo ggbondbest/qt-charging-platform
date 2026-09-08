@@ -8,6 +8,7 @@
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/point_service.h"
+#include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "services/favorites/favorites_service.h"
@@ -61,6 +62,7 @@ QmlApp::QmlApp(QObject* parent)
     statsService_ = new charging::client::StatsService(transport, this);
     couponService_ = new charging::client::CouponService(transport, this);
     pointService_ = new charging::client::PointService(transport, this);
+    ratingService_ = new charging::client::RatingService(transport, this);
 
     reservationService_ = new charging::client::services::reservation::ReservationService(this);
     settingsService_ = new charging::client::services::settings::SettingsService(this);
@@ -96,6 +98,9 @@ QmlApp::QmlApp(QObject* parent)
     couponBridge_ = new CouponBridge(couponService_, this);
     // 2026-09-08 批次C 签到/积分：points 页进入时自拉（PointsPage），不预热。
     pointBridge_ = new PointBridge(pointService_, this);
+    // 2026-09-08 批次E 电桩评价：RatingsPage 进入时自拉、订单详情页完成态才拉，
+    // 都不预热（同 PointBridge 口径）。
+    ratingBridge_ = new RatingBridge(ratingService_, this);
     // CouponPage (member 2) only reads the synchronous coupons() cache and
     // reloads on couponsChanged — nobody on the page side triggers a fetch,
     // so the wallet is pulled once at wiring time instead of touching the
@@ -133,6 +138,7 @@ QObject* QmlApp::stationQueryService() const { return stationQueryBridge_; }
 QObject* QmlApp::statsService() const { return statsBridge_; }
 QObject* QmlApp::couponService() const { return couponBridge_; }
 QObject* QmlApp::pointsService() const { return pointBridge_; }
+QObject* QmlApp::ratingsService() const { return ratingBridge_; }
 QObject* QmlApp::authService() const { return nullptr; }  // TODO(contract): tcp only
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 

@@ -19,6 +19,7 @@ class ChargingService;
 class StatsService;
 class CouponService;
 class PointService;
+class RatingService;
 } // namespace charging::client
 
 namespace charging::client::services {
@@ -37,6 +38,7 @@ class ChargingBridge;
 class StatsBridge;
 class CouponBridge;
 class PointBridge;
+class RatingBridge;
 class StationQueryBridge;
 class ReservationBridge;
 class SettingsBridge;
@@ -58,6 +60,7 @@ class QmlApp final : public QObject
     Q_PROPERTY(QObject* statsService READ statsService CONSTANT)
     Q_PROPERTY(QObject* couponService READ couponService CONSTANT)
     Q_PROPERTY(QObject* pointsService READ pointsService CONSTANT)
+    Q_PROPERTY(QObject* ratingsService READ ratingsService CONSTANT)
     // AuthService needs a live ClientConnection; mock channel has none.
     // TODO(contract): wire tcp channel (then also NetworkRequestTransport).
     Q_PROPERTY(QObject* authService READ authService CONSTANT)
@@ -79,6 +82,7 @@ public:
     QObject* statsService() const;
     QObject* couponService() const;
     QObject* pointsService() const;
+    QObject* ratingsService() const;
     QObject* authService() const;  // nullptr on mock — see TODO(contract)
     QVariantMap currentUser() const;
     bool loggedIn() const { return loggedIn_; }
@@ -128,9 +132,11 @@ private:
     charging::client::StatsService* statsService_ = nullptr;
     charging::client::CouponService* couponService_ = nullptr;
     charging::client::PointService* pointService_ = nullptr;
+    charging::client::RatingService* ratingService_ = nullptr;
     StatsBridge* statsBridge_ = nullptr;
     CouponBridge* couponBridge_ = nullptr;
     PointBridge* pointBridge_ = nullptr;
+    RatingBridge* ratingBridge_ = nullptr;
     QVariantMap user_;
     bool loggedIn_ = false;
 };

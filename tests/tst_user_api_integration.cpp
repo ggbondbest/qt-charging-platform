@@ -94,7 +94,9 @@ const QMap<QString, QJsonObject> requests{
     {kRecharge, {{"amountCents", 500}, {"transactionNo", "auth-1"}}},
     {kGetRechargeRecords, {}}, {kGetOrders, {}},
     {kGetUserStats, {}}, {kGetCoupons, {}}, {kGetNotifications, {}},
-    {kCheckIn, {}}, {kGetPoints, {}}
+    {kCheckIn, {}}, {kGetPoints, {}},
+    {kSubmitChargerRating, {{"orderId", "1"}, {"rating", 5}, {"comment", ""}}},
+    {kGetMyRatings, {}}
 };
 } // namespace
 
@@ -104,6 +106,7 @@ private slots:
     void eightRoutesAndWorkflow();
     void statsCouponsAndNotifications();
     void checkInAndPoints();
+    void chargerRatings();
     void authorizationAndValidation();
     void pagingExpiryAndLiveLists();
     void rechargeRollbackAndReplay();
@@ -344,6 +347,105 @@ void UserApiIntegrationTest::checkInAndPoints()
     QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
     QCOMPARE(call(b, kGetPoints).data.value("total").toInt(), 0);
     QCOMPARE(call(b, kCheckIn).data.value("points").toInt(), 10);
+}
+
+void UserApiIntegrationTest::chargerRatings()
+{
+    // 批次E（2026-09-08）：SUBMIT_CHARGER_RATING 一单一评 + GET_MY_RATINGS 分页。
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+
+    auto response = call(a, kGetMyRatings);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 0);
+    QVERIFY(response.data.value("ratings").toArray().isEmpty());
+
+    // 完整工作流造一笔 COMPLETED 单（评价对象绑定订单桩快照）。stats 用例同款
+    // 内联形态——lambda 装 QVERIFY 会撞宏内 `return;`（返回值推导冲突）。
+    auto wf = call(a, kReserveCharger, {{"chargerId", "1"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString pending = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId",
+                 wf.data.value("reservation").toObject().value("id").toString()}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", pending}}).success);
+    // 未支付（WAITING_PAYMENT）不可评价。
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 5}}).error.code,
+             QStringLiteral("NOT_FOUND"));
+    QVERIFY(call(a, kPayOrder, {{"orderId", pending}}).success);
+
+    response = call(a, kSubmitChargerRating,
+                    {{"orderId", pending}, {"rating", 5}, {"comment", "  很快  "}});
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QJsonObject row = response.data.value("rating").toObject();
+    QCOMPARE(row.value("orderId").toString(), pending);
+    QVERIFY(row.value("id").isString());
+    QVERIFY(row.value("chargerId").isString());
+    QCOMPARE(row.value("rating").toInt(), 5);
+    QCOMPARE(row.value("comment").toString(), QStringLiteral("很快"));   // 服务端 trim 落库
+    QVERIFY(!row.value("chargerCode").toString().isEmpty());
+    QVERIFY(!row.value("stationName").toString().isEmpty());
+    QVERIFY(row.value("createdAtUtc").isString());
+    QVERIFY(!row.contains("userId"));
+    QCOMPARE(response.data.value("alreadyRated").toBool(), false);
+    // 落库对拍 + 桩取订单快照（不信客户端）。
+    QCOMPARE(f.number(QStringLiteral("SELECT COUNT(*) FROM charger_ratings")), 1);
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT charger_id FROM charger_ratings WHERE order_id=%1").arg(pending)),
+             f.number(QStringLiteral("SELECT charger_id FROM orders WHERE id=%1").arg(pending)));
+
+    // 重放：幂等成功、alreadyRated=true、返回首评原值，不产生第二行不改值。
+    response = call(a, kSubmitChargerRating,
+                    {{"orderId", pending}, {"rating", 1}, {"comment", "改了"}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("alreadyRated").toBool(), true);
+    QCOMPARE(response.data.value("rating").toObject().value("rating").toInt(), 5);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM charger_ratings"), 1);
+    QCOMPARE(call(a, kGetMyRatings).data.value("ratings").toArray()
+                 .first().toObject().value("comment").toString(), QStringLiteral("很快"));
+
+    // 非法入参（normalize 域）。
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 6}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", "0"}, {"rating", 5}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 第二单一评 + 分页：新→旧（同 tick 由 id DESC 定序），行形无 userId。
+    wf = call(a, kReserveCharger, {{"chargerId", "2"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString second = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId",
+                 wf.data.value("reservation").toObject().value("id").toString()}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", second}}).success);
+    QVERIFY(call(a, kPayOrder, {{"orderId", second}}).success);
+    QVERIFY(call(a, kSubmitChargerRating,
+                 {{"orderId", second}, {"rating", 3}}).success);
+    response = call(a, kGetMyRatings, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);
+    QCOMPARE(response.data.value("page").toInt(), 1);
+    row = response.data.value("ratings").toArray().first().toObject();
+    QCOMPARE(row.value("orderId").toString(), second);   // 新单在前
+    QVERIFY(!row.value("id").toString().isEmpty());
+    QVERIFY(!row.contains("userId"));
+    response = call(a, kGetMyRatings, {{"page", 2}, {"pageSize", 1}});
+    QCOMPARE(response.data.value("ratings").toArray().first().toObject()
+                 .value("orderId").toString(), pending);
+    QCOMPARE(call(a, kGetMyRatings, {{"pageSize", 101}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 越权：他人订单不可评（NOT_FOUND 与不存在同码，不泄露订单存在性）；列表隔离。
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 5}}).error.code,
+             QStringLiteral("NOT_FOUND"));
+    QCOMPARE(call(b, kGetMyRatings).data.value("total").toInt(), 0);
 }
 
 void UserApiIntegrationTest::authorizationAndValidation()

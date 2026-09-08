@@ -5,6 +5,7 @@
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/point_service.h"
+#include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/protocol.h"
@@ -710,6 +711,29 @@ PointBridge::PointBridge(charging::client::PointService* svc, QObject* parent)
 bool PointBridge::isBusy() const { return svc_->isBusy(); }
 void PointBridge::fetchPoints(int page, int pageSize) { svc_->fetchPoints(page, pageSize); }
 void PointBridge::checkIn() { svc_->checkIn(); }
+
+// ————— 2026-09-08 批次E：电桩评价桥 —————
+RatingBridge::RatingBridge(charging::client::RatingService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::RatingService::ratingsLoaded,
+            this, &RatingBridge::ratingsLoaded);
+    connect(svc_, &charging::client::RatingService::ratingSubmitted,
+            this, &RatingBridge::ratingSubmitted);
+    connect(svc_, &charging::client::RatingService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm: RatingsPage pulls on entry; the order-detail card only
+    // fetches for completed orders.
+}
+
+bool RatingBridge::isBusy() const { return svc_->isBusy(); }
+void RatingBridge::fetchMyRatings(int page, int pageSize) { svc_->fetchMyRatings(page, pageSize); }
+void RatingBridge::submitRating(const QString& orderId, int rating, const QString& comment)
+{
+    svc_->submitRating(orderId, rating, comment);
+}
 
 
 } // namespace charging::qml

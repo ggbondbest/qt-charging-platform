@@ -313,7 +313,10 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("points_ledger"), {QStringLiteral("id"), QStringLiteral("user_id"),
             QStringLiteral("amount"), QStringLiteral("reason"), QStringLiteral("created_at")}},
         {QStringLiteral("user_checkins"), {QStringLiteral("user_id"), QStringLiteral("day"),
-            QStringLiteral("created_at")}}
+            QStringLiteral("created_at")}},
+        {QStringLiteral("charger_ratings"), {QStringLiteral("id"), QStringLiteral("user_id"),
+            QStringLiteral("charger_id"), QStringLiteral("order_id"), QStringLiteral("rating"),
+            QStringLiteral("comment"), QStringLiteral("created_at")}}
     };
     for (const auto& table : tables) {
         if (!validateTableColumns(database, table.first, table.second, errorMessage)) {
@@ -342,7 +345,11 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
             QStringLiteral("amount BETWEEN -9007199254740991 AND 9007199254740991"),
             QStringLiteral("length(trim(reason)) BETWEEN 1 AND 32")}},
         {QStringLiteral("user_checkins"), {
-            QStringLiteral("day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'")}}
+            QStringLiteral("day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'")}},
+        {QStringLiteral("charger_ratings"), {
+            QStringLiteral("order_id INTEGER NOT NULL UNIQUE"),
+            QStringLiteral("rating BETWEEN 1 AND 5"),
+            QStringLiteral("length(comment) <= 140")}}
     };
     for (const auto& table : tableConstraints) {
         if (!validateTableDefinition(database, table.first, table.second, errorMessage)) {
@@ -362,7 +369,10 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("notifications"), QStringLiteral("user_id"), QStringLiteral("users")},
         {QStringLiteral("coupons"), QStringLiteral("user_id"), QStringLiteral("users")},
         {QStringLiteral("points_ledger"), QStringLiteral("user_id"), QStringLiteral("users")},
-        {QStringLiteral("user_checkins"), QStringLiteral("user_id"), QStringLiteral("users")}
+        {QStringLiteral("user_checkins"), QStringLiteral("user_id"), QStringLiteral("users")},
+        {QStringLiteral("charger_ratings"), QStringLiteral("user_id"), QStringLiteral("users")},
+        {QStringLiteral("charger_ratings"), QStringLiteral("charger_id"), QStringLiteral("chargers")},
+        {QStringLiteral("charger_ratings"), QStringLiteral("order_id"), QStringLiteral("orders")}
     };
     for (const QStringList& foreignKey : foreignKeys) {
         if (!validateForeignKey(database, foreignKey.at(0), foreignKey.at(1), foreignKey.at(2),
@@ -401,6 +411,8 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("idx_coupons_user_created_at"), QStringLiteral("coupons"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
         {QStringLiteral("idx_points_ledger_user_created_at"), QStringLiteral("points_ledger"),
+         {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_charger_ratings_user_created_at"), QStringLiteral("charger_ratings"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
         {QStringLiteral("ux_reservations_active_user"), QStringLiteral("reservations"),
          {QStringLiteral("user_id")}, true, QStringLiteral("status = 'ACTIVE'")},

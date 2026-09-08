@@ -62,6 +62,7 @@ MockRequestTransport::MockRequestTransport()
     seedDemoOrders();
     seedDemoCoupons();
     seedDemoPoints();
+    seedDemoRatings();   // 依赖 orders_，必须排在 seedDemoOrders 之后。
 }
 
 void MockRequestTransport::seedDemoData()
@@ -267,6 +268,33 @@ void MockRequestTransport::seedDemoPoints()
     pointsTotal_ += 50;
 }
 
+void MockRequestTransport::seedDemoRatings()
+{
+    // 批次E 演示：给最近一笔已完成订单预置一条五星评价，让"我的评价"页与
+    // OrderDetail 完成态首演即有内容。幂等锚 order_id UNIQUE——同一订单只此一条。
+    for (const charging::model::Order& order : orders_) {
+        if (order.status != charging::model::OrderStatus::Completed) {
+            continue;
+        }
+        const QString orderId = QString::number(order.id);
+        QJsonObject object;
+        object.insert(QStringLiteral("id"), QString::number(nextRatingId_++));
+        object.insert(QStringLiteral("orderId"), orderId);
+        object.insert(QStringLiteral("chargerId"), QString::number(order.chargerId));
+        const auto display = chargerDisplays_.constFind(order.chargerId);
+        if (display != chargerDisplays_.constEnd()) {
+            object.insert(QStringLiteral("stationName"), display->first);
+            object.insert(QStringLiteral("chargerCode"), display->second);
+        }
+        object.insert(QStringLiteral("rating"), 5);
+        object.insert(QStringLiteral("comment"), QStringLiteral("充电很快，环境不错。"));
+        object.insert(QStringLiteral("createdAtUtc"),
+                      order.updatedAtUtc.toUTC().toString(Qt::ISODateWithMs));
+        ratings_.prepend(object);
+        break;   // 只预置一条，其余留给真实提交演示。
+    }
+}
+
 void MockRequestTransport::setNextFailure(const QString& code, int times)
 {
     nextFailureCode_ = code;
@@ -395,6 +423,10 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kCheckIn);
     const QString getPointsType =
         QString::fromLatin1(charging::protocol::request_type::kGetPoints);
+    const QString submitChargerRatingType =
+        QString::fromLatin1(charging::protocol::request_type::kSubmitChargerRating);
+    const QString getMyRatingsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetMyRatings);
 
     if (type == getUserInfoType) {
         QJsonObject payload;
@@ -726,6 +758,84 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                                    {QStringLiteral("page"), page},
                                    {QStringLiteral("pageSize"), pageSize},
                                    {QStringLiteral("total"), pointsLedger_.size()}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == submitChargerRatingType) {
+        // 批次E：镜像服务端一单一评——订单必须存在且已完成，否则 NOT_FOUND；
+        // order_id UNIQUE 幂等（重放不覆盖首评、不报错，TODO(contract) 改评二期）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString orderId = normalized.value(QStringLiteral("orderId")).toString();
+        const charging::model::Order* order = nullptr;
+        for (const charging::model::Order& candidate : orders_) {
+            if (QString::number(candidate.id) == orderId) {
+                order = &candidate;
+                break;
+            }
+        }
+        if (order == nullptr || order->status != charging::model::OrderStatus::Completed) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
+                               QStringLiteral("订单不存在或不可评价")));
+            return;
+        }
+        QJsonObject existing;
+        bool alreadyRated = false;
+        for (const QJsonObject& candidate : ratings_) {
+            if (candidate.value(QStringLiteral("orderId")).toString() == orderId) {
+                existing = candidate;
+                alreadyRated = true;
+                break;
+            }
+        }
+        if (!alreadyRated) {
+            existing.insert(QStringLiteral("id"), QString::number(nextRatingId_++));
+            existing.insert(QStringLiteral("orderId"), orderId);
+            existing.insert(QStringLiteral("chargerId"), QString::number(order->chargerId));
+            const auto display = chargerDisplays_.constFind(order->chargerId);
+            if (display != chargerDisplays_.constEnd()) {
+                existing.insert(QStringLiteral("stationName"), display->first);
+                existing.insert(QStringLiteral("chargerCode"), display->second);
+            }
+            existing.insert(QStringLiteral("rating"), normalized.value(QStringLiteral("rating")));
+            existing.insert(QStringLiteral("comment"),
+                            normalized.value(QStringLiteral("comment")));
+            existing.insert(QStringLiteral("createdAtUtc"),
+                            QDateTime::currentDateTimeUtc().toUTC().toString(Qt::ISODateWithMs));
+            ratings_.prepend(existing);
+        }
+        callback(true, QJsonObject{{QStringLiteral("rating"), existing},
+                                   {QStringLiteral("alreadyRated"), alreadyRated}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getMyRatingsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < ratings_.size() && index < start + pageSize; ++index) {
+            array.append(ratings_.at(index));
+        }
+        callback(true, QJsonObject{{QStringLiteral("ratings"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), ratings_.size()}},
                  charging::protocol::ProtocolError{});
         return;
     }

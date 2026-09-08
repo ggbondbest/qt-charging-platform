@@ -25,6 +25,7 @@ using charging::qml::CouponBridge;
 using charging::qml::OrderBridge;
 using charging::qml::PointBridge;
 using charging::qml::QmlApp;
+using charging::qml::RatingBridge;
 using charging::qml::StatsBridge;
 using charging::qml::WalletBridge;
 
@@ -189,6 +190,50 @@ public:
     int checkInCalls = 0;
     int lastPage = 0;
     int lastPageSize = 0;
+};
+
+// 批次E 评价桥替身：镜像 RatingBridge 的 QML 可见面。两请求都记账参数、回执
+// 由测试显式驱动（FakePointsBridge 同款约定）。
+class FakeRatingsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE bool isBusy() const { return false; }
+    Q_INVOKABLE void fetchMyRatings(int page = 1, int pageSize = 20)
+    {
+        ++fetchCalls;
+        lastPage = page;
+        lastPageSize = pageSize;
+    }
+    Q_INVOKABLE void submitRating(const QString& orderId, int rating, const QString& comment)
+    {
+        ++submitCalls;
+        lastOrderId = orderId;
+        lastRating = rating;
+        lastComment = comment;
+    }
+
+    void emitRatings(const QVariantList& rows, int total) { emit ratingsLoaded(rows, total); }
+    void emitSubmitted(const QVariantMap& row, bool already) { emit ratingSubmitted(row, already); }
+    void emitFailure(const QString& type)
+    {
+        emit operationFailed(type, QStringLiteral("MOCK"), QStringLiteral("模拟评价失败"));
+    }
+
+signals:
+    void ratingsLoaded(const QVariantList& ratings, int total);
+    void ratingSubmitted(const QVariantMap& ratingRow, bool alreadyRated);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int fetchCalls = 0;
+    int submitCalls = 0;
+    int lastPage = 0;
+    int lastPageSize = 0;
+    QString lastOrderId;
+    int lastRating = 0;
+    QString lastComment;
 };
 
 } // namespace
@@ -718,6 +763,160 @@ private slots:
         QCOMPARE(loaded.at(0).at(1).toList().first().toMap()
                      .value(QStringLiteral("reason")).toString(),
                  QStringLiteral("每日签到"));              // 新→旧
+    }
+
+    // 批次E 我的评价页 × 桥替身：进页自拉列表、评价卡入模、失败回执解锁在途。
+    void ratingsPageRendersBridgeRows()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构（积分页用例同款时序约定）
+        auto* page = createPage(engine, QStringLiteral("RatingsPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPage, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitRatings({QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+                                      {QStringLiteral("orderId"), QStringLiteral("3")},
+                                      {QStringLiteral("chargerId"), QStringLiteral("12")},
+                                      {QStringLiteral("chargerCode"), QStringLiteral("B07")},
+                                      {QStringLiteral("stationName"),
+                                       QStringLiteral("云杉科技园区充电站")},
+                                      {QStringLiteral("rating"), 5},
+                                      {QStringLiteral("comment"),
+                                       QStringLiteral("充电很快，环境不错。")},
+                                      {QStringLiteral("createdAtUtc"),
+                                       QStringLiteral("2026-09-08T08:00:00.000Z")}},
+                          QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                                      {QStringLiteral("orderId"), QStringLiteral("2")},
+                                      {QStringLiteral("chargerId"), QStringLiteral("11")},
+                                      {QStringLiteral("chargerCode"), QStringLiteral("A03")},
+                                      {QStringLiteral("stationName"),
+                                       QStringLiteral("云杉科技园区充电站")},
+                                      {QStringLiteral("rating"), 4},
+                                      {QStringLiteral("comment"), QString()},
+                                      {QStringLiteral("createdAtUtc"),
+                                       QStringLiteral("2026-09-07T08:00:00.000Z")}}}, 2);
+        auto* model = page->findChild<QObject*>("uiRatingsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 2);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        auto* title = page->findChild<QQuickItem*>("uiRatingsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("我的评价"));
+
+        // 失败回执解锁在途；无关类型的失败不碰本页状态。
+        fake.emitFailure(QStringLiteral("GET_POINTS"));
+        fake.emitFailure(QStringLiteral("GET_MY_RATINGS"));
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // 批次E 订单详情页完成态评价卡 × 桥替身：arg 补完成单自拉存量、未命中保
+    // 持可编辑形态、星级门槛拦提交、成功回执切"已评价"只读、已评价后不重拉。
+    void orderDetailCompletedRatingCardFlow()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        FakeOrderBridge orders;   // ensureData 兜底拉单会打这里（只记账，不应答）
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &orders);
+        engine.rootContext()->setContextProperty(QStringLiteral("chargingService"),
+                                                 app.chargingService());
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("OrderDetailPage.qml"), &holder);
+        QVERIFY(page);
+
+        const QVariantMap completed{
+            {QStringLiteral("id"), QStringLiteral("77")},
+            {QStringLiteral("orderNo"), QStringLiteral("TEST-77")},
+            {QStringLiteral("status"), QStringLiteral("completed")},
+            {QStringLiteral("amountCents"), 2400},
+            {QStringLiteral("chargerCode"), QStringLiteral("B07")},
+            {QStringLiteral("stationName"), QStringLiteral("云杉科技园区充电站")}};
+        page->setProperty("arg", completed);     // onArgChanged → loadRating
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+
+        QVariantMap other;                       // 非命中行（别的订单）
+        other.insert(QStringLiteral("orderId"), QStringLiteral("9"));
+        fake.emitRatings({other}, 1);
+        QVERIFY(page->property("myRating").isNull());
+        QVERIFY(!page->property("ratingReqActive").toBool());
+
+        QMetaObject::invokeMethod(page, "submitRatingNow");   // 未选星：门槛拦截
+        QCOMPARE(fake.submitCalls, 0);
+        page->setProperty("pickedStars", 4);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 1);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("77"));
+        QCOMPARE(fake.lastRating, 4);
+        QVERIFY(page->property("ratingSubmitting").toBool());
+
+        QVariantMap mine;
+        mine.insert(QStringLiteral("orderId"), QStringLiteral("77"));
+        mine.insert(QStringLiteral("rating"), 4);
+        fake.emitSubmitted(mine, false);
+        QVERIFY(!page->property("ratingSubmitting").toBool());
+        QVERIFY(!page->property("myRating").isNull());
+
+        fake.emitFailure(QStringLiteral("SUBMIT_CHARGER_RATING"));  // 解锁不悔已评态
+        QVERIFY(!page->property("myRating").isNull());
+
+        const int fetchBefore = fake.fetchCalls;   // 已评后幂等不重拉
+        QMetaObject::invokeMethod(page, "loadRating");
+        QCOMPARE(fake.fetchCalls, fetchBefore);
+    }
+
+    // 评价桥 × 真 mock 通道端到端：种子 1 行（id=3 完成单）→ 订单 2 首评 →
+    // 重放幂等 → 列表两行新在前（trim 在链路上生效）。
+    void ratingsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* ratings = qobject_cast<RatingBridge*>(app.ratingsService());
+        QVERIFY(ratings);
+
+        QSignalSpy loaded(ratings, &RatingBridge::ratingsLoaded);
+        ratings->fetchMyRatings();
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toList().size(), 1);
+        QCOMPARE(loaded.at(0).at(0).toList().first().toMap()
+                     .value(QStringLiteral("orderId")).toString(), QStringLiteral("3"));
+        QCOMPARE(loaded.at(0).at(1).toInt(), 1);
+
+        QSignalSpy done(ratings, &RatingBridge::ratingSubmitted);
+        ratings->submitRating(QStringLiteral("2"), 4, QStringLiteral("  还行  "));
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 1, 4000);
+        QCOMPARE(done.at(0).at(1).toBool(), false);
+        QCOMPARE(done.at(0).at(0).toMap().value(QStringLiteral("comment")).toString(),
+                 QStringLiteral("还行"));
+        QCOMPARE(done.at(0).at(0).toMap().value(QStringLiteral("chargerCode")).toString(),
+                 QStringLiteral("A03"));
+
+        // 重放：alreadyRated=true、首评原值（幂等镜像）。
+        ratings->submitRating(QStringLiteral("2"), 1, QString());
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 2, 4000);
+        QCOMPARE(done.at(1).at(1).toBool(), true);
+        QCOMPARE(done.at(1).at(0).toMap().value(QStringLiteral("rating")).toInt(), 4);
+
+        loaded.clear();
+        ratings->fetchMyRatings(1, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toList().size(), 2);
+        QCOMPARE(loaded.at(0).at(0).toList().first().toMap()
+                     .value(QStringLiteral("orderId")).toString(), QStringLiteral("2"));
     }
 
     void paymentSyncsTopBarBalance()

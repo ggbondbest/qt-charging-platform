@@ -293,5 +293,50 @@
       "pageSize": 20,
       "total": 1
     }
+  },
+  {
+    "type": "SUBMIT_CHARGER_RATING",
+    "requestData": {
+      "orderId": "3",
+      "rating": 5,
+      "comment": "充电很快，环境不错。"
+    },
+    "responseData": {
+      "rating": {
+        "id": "1",
+        "orderId": "3",
+        "chargerId": "12",
+        "chargerCode": "C02",
+        "stationName": "万达广场",
+        "rating": 5,
+        "comment": "充电很快，环境不错。",
+        "createdAtUtc": "2026-09-08T10:30:00.000Z"
+      },
+      "alreadyRated": false
+    }
+  },
+  {
+    "type": "GET_MY_RATINGS",
+    "requestData": {
+      "page": 1,
+      "pageSize": 20
+    },
+    "responseData": {
+      "ratings": [
+        {
+          "id": "1",
+          "orderId": "3",
+          "chargerId": "12",
+          "chargerCode": "C02",
+          "stationName": "万达广场",
+          "rating": 5,
+          "comment": "充电很快，环境不错。",
+          "createdAtUtc": "2026-09-08T10:30:00.000Z"
+        }
+      ],
+      "page": 1,
+      "pageSize": 20,
+      "total": 1
+    }
   }
 ]

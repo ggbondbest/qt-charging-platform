@@ -21,7 +21,9 @@ const QMap<QString, UserApiAction> actions{
     {request_type::kGetCoupons, UserApiAction::Coupons},
     {request_type::kGetNotifications, UserApiAction::Notifications},
     {request_type::kCheckIn, UserApiAction::CheckIn},
-    {request_type::kGetPoints, UserApiAction::GetPoints}
+    {request_type::kGetPoints, UserApiAction::GetPoints},
+    {request_type::kSubmitChargerRating, UserApiAction::SubmitRating},
+    {request_type::kGetMyRatings, UserApiAction::GetMyRatings}
 };
 UserApiReply fail(const char* code, const QString& message)
 {
@@ -96,6 +98,11 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     query.months = input.value("months").toInt(6);
     // 批次B：normalize 缺省注入 "month"（=冻结行为），此处透传给 repo 选聚合档。
     query.period = input.value("period").toString(QStringLiteral("month"));
+    // 批次E：SUBMIT_CHARGER_RATING 参数（已过 normalize 形态校验；comment
+    // 缺省注入空串，未知键照例丢弃）。
+    query.orderId = input.value("orderId").toString().toLongLong();
+    query.rating = input.value("rating").toInt();
+    query.comment = input.value("comment").toString();
     query.nowUtc = clock_ ? clock_().toUTC() : QDateTime::currentDateTimeUtc();
     const UserApiResult result = repository_->execute(query);
     switch (result.error) {
@@ -192,6 +199,34 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
         }
         reply.data.insert("points", static_cast<double>(result.points));
         reply.data.insert("entries", entries);
+        reply.data.insert("page", query.page);
+        reply.data.insert("pageSize", query.pageSize);
+        reply.data.insert("total", result.total);
+        reply.success = true;
+        return reply;
+    }
+    // ---- 批次E（2026-09-08）：电桩评价（无 model::canonical 对应）----
+    if (query.action == UserApiAction::SubmitRating) {
+        // rows[0]=当前落库行（重放亦返回首评原值，alreadyRated 区分）。
+        QJsonObject item = wireRow(result.rows.first());
+        item.insert("createdAtUtc", item.take("createdAt"));
+        item.remove("userId");    // never echo internal identity columns
+        reply.data.insert("rating", item);
+        reply.data.insert("alreadyRated", result.alreadyRated);
+        reply.success = true;
+        return reply;
+    }
+    if (query.action == UserApiAction::GetMyRatings) {
+        // 响应形冻结为 {ratings:[{id, orderId, chargerId, chargerCode,
+        // stationName, rating, comment, createdAtUtc}], page, pageSize, total}。
+        QJsonArray ratings;
+        for (const auto& row : result.rows) {
+            QJsonObject item = wireRow(row);
+            item.insert("createdAtUtc", item.take("createdAt"));
+            item.remove("userId");
+            ratings.append(item);
+        }
+        reply.data.insert("ratings", ratings);
         reply.data.insert("page", query.page);
         reply.data.insert("pageSize", query.pageSize);
         reply.data.insert("total", result.total);

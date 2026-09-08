@@ -27,6 +27,7 @@ class ChargingService;
 class StatsService;
 class CouponService;
 class PointService;
+class RatingService;
 struct OrderSummary;
 namespace services::station { class StationQueryService; }
 namespace services::reservation { class ReservationService; }
@@ -329,6 +330,32 @@ signals:
 
 private:
     charging::client::PointService* svc_;
+};
+
+// ————— 2026-09-08 批次E：电桩评价桥（RatingsPage + OrderDetailPage 评价卡
+// 消费；context property 名 ratingsService）。
+
+class RatingBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit RatingBridge(charging::client::RatingService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE bool isBusy() const;
+    Q_INVOKABLE void fetchMyRatings(int page = 1, int pageSize = 20);
+    // orderId 须正十进制串（服务端 normalize 形态校验）；rating 1..5。
+    Q_INVOKABLE void submitRating(const QString& orderId, int rating, const QString& comment);
+
+signals:
+    // ratings 行 = GET_MY_RATINGS 响应形 [{id,orderId,chargerId,chargerCode,
+    // stationName,rating,comment,createdAtUtc}] 新→旧
+    void ratingsLoaded(const QVariantList& ratings, int total);
+    // 提交成功与幂等重放都发；ratingRow = 服务端回读行（重放=首评原值）
+    void ratingSubmitted(const QVariantMap& ratingRow, bool alreadyRated);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::RatingService* svc_;
 };
 
 } // namespace charging::qml

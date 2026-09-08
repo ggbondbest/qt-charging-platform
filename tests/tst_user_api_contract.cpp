@@ -47,7 +47,8 @@ void UserApiContractTest::documentedExamples()
         request_type::kGetUserInfo, request_type::kUpdateUserInfo, request_type::kRecharge,
         request_type::kGetRechargeRecords, request_type::kGetOrders, request_type::kGetUserStats,
         request_type::kGetCoupons, request_type::kGetNotifications,
-        request_type::kCheckIn, request_type::kGetPoints};
+        request_type::kCheckIn, request_type::kGetPoints,
+        request_type::kSubmitChargerRating, request_type::kGetMyRatings};
     QSet<QString> seen;
     for (const QJsonValue& value : doc.array()) {
         const QJsonObject example = value.toObject();
@@ -177,6 +178,31 @@ void UserApiContractTest::documentedExamples()
             QVERIFY(!item.value("reason").toString().isEmpty());
             QVERIFY(item.value("createdAtUtc").isString());
             QVERIFY(!item.contains("userId"));
+        } else if (type == QLatin1String(request_type::kSubmitChargerRating)) {
+            // 写型响应：rating 行 = 服务端回读行（重放=首评原值），alreadyRated 旗标。
+            const QJsonObject row = output.value("rating").toObject();
+            QVERIFY(row.value("id").isString());
+            QCOMPARE(row.value("orderId"), input.value("orderId"));
+            QVERIFY(row.value("chargerId").isString());
+            QVERIFY(!row.value("chargerCode").toString().isEmpty());
+            QVERIFY(!row.value("stationName").toString().isEmpty());
+            QCOMPARE(row.value("rating"), input.value("rating"));
+            QVERIFY(row.value("createdAtUtc").isString());
+            QVERIFY(!row.contains("userId"));
+            QVERIFY(output.value("alreadyRated").isBool());
+            QVERIFY(!output.value("alreadyRated").toBool());   // 示例=首次提交
+        } else if (type == QLatin1String(request_type::kGetMyRatings)) {
+            QCOMPARE(output.value("page"), input.value("page"));
+            QCOMPARE(output.value("pageSize"), input.value("pageSize"));
+            QCOMPARE(output.value("total").toInt(), 1);
+            const QJsonArray items = output.value("ratings").toArray();
+            QCOMPARE(items.size(), 1);
+            const QJsonObject item = items.first().toObject();
+            QVERIFY(item.value("id").isString());
+            QVERIFY(item.value("orderId").isString());
+            QVERIFY(item.value("rating").isDouble());
+            QVERIFY(item.value("createdAtUtc").isString());
+            QVERIFY(!item.contains("userId"));
         } else {
             verifyModel<charging::model::User>(output.value("user").toObject());
         }
@@ -189,7 +215,7 @@ void UserApiContractTest::defaultsAndIdentity()
     for (const char* type : {request_type::kGetStations, request_type::kGetReservations,
                              request_type::kGetOrders, request_type::kGetRechargeRecords,
                              request_type::kGetCoupons, request_type::kGetNotifications,
-                             request_type::kGetPoints}) {
+                             request_type::kGetPoints, request_type::kGetMyRatings}) {
         QJsonObject output;
         QVERIFY(normalizeRequestData(type, {{"userId", "999"}, {"futureField", true}}, &output));
         QCOMPARE(output.value("page").toInt(), kDefaultPage);
@@ -262,6 +288,23 @@ void UserApiContractTest::invalidRequests_data()
         << QJsonObject{{"pageSize", 101}};
     QTest::newRow("points-page-zero") << QString(request_type::kGetPoints)
         << QJsonObject{{"page", 0}};
+    // 批次E：SUBMIT_CHARGER_RATING 写型校验（orderId 正十进制串 + rating 1..5 +
+    // comment ≤140 trimmed）。
+    QTest::newRow("rating-missing-order") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"rating", 5}, {"comment", ""}};
+    QTest::newRow("rating-order-zero") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"orderId", "0"}, {"rating", 5}, {"comment", ""}};
+    for (const QJsonValue& rating : {QJsonValue(0), QJsonValue(6), QJsonValue("5"),
+                                     QJsonValue(1.5), QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{rating}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("rating-value-" + tag).constData())
+            << QString(request_type::kSubmitChargerRating)
+            << QJsonObject{{"orderId", "7"}, {"rating", rating}, {"comment", ""}};
+    }
+    QTest::newRow("rating-comment-long") << QString(request_type::kSubmitChargerRating)
+        << QJsonObject{{"orderId", "7"}, {"rating", 5}, {"comment", QString(141, QLatin1Char('x'))}};
+    QTest::newRow("myratings-page-size-limit") << QString(request_type::kGetMyRatings)
+        << QJsonObject{{"pageSize", 101}};
     QTest::newRow("empty-update") << QString(request_type::kUpdateUserInfo) << QJsonObject{};
     QTest::newRow("protected-update") << QString(request_type::kUpdateUserInfo)
         << QJsonObject{{"balanceCents", 100}};
@@ -342,6 +385,17 @@ void UserApiContractTest::boundariesAndNormalization()
         QVERIFY(normalizeRequestData(request_type::kGetCoupons, {{"status", status}}, &output));
         QCOMPARE(output.value("status").toString(), QLatin1String(status));
     }
+    for (const int stars : {1, 3, 5}) {   // 批次E：星级全域
+        QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,
+            {{"orderId", "7"}, {"rating", stars}, {"comment", ""}}, &output));
+        QCOMPARE(output.value("rating").toInt(), stars);
+    }
+    QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,   // comment 缺省注入空串
+        {{"orderId", "7"}, {"rating", 4}}, &output));
+    QCOMPARE(output.value("comment").toString(), QString());
+    QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,   // 提交前 trim
+        {{"orderId", "7"}, {"rating", 4}, {"comment", "  很快  "}}, &output));
+    QCOMPARE(output.value("comment").toString(), QStringLiteral("很快"));
 }
 
 void UserApiContractTest::unsupportedAction()

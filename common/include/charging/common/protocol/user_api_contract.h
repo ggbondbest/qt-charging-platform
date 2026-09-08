@@ -20,8 +20,14 @@ inline constexpr int kCouponValidityDays = 30;
 // sign-off pending — amount lives here so the team can change it in one place).
 // One check-in per user per UTC day, idempotent; grants kCheckInRewardPoints.
 inline constexpr qint64 kCheckInRewardPoints = 10;
+// Charger rating (2026-09-08 批次E): 1..5 stars, optional comment capped at 140
+// code points. TODO(contract): whether to allow editing a submitted rating
+// (一期：一单一评，提交后不可改).
+inline constexpr int kMinimumRating = 1;
+inline constexpr int kMaximumRating = 5;
+inline constexpr int kMaximumRatingCommentChars = 140;
 
-// Validates only the thirteen user API request-data contracts documented in
+// Validates only the fifteen user API request-data contracts documented in
 // docs/api/user_api_contract.md. This does NOT authenticate, query SQL, or
 // register a Dispatcher handler. The caller must obtain identity from Session.
 // On success, defaults are inserted, strings are normalized, and unknown keys
