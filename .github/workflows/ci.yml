@@ -16,9 +16,11 @@ jobs:
   ubuntu-qt-6-2-4:
     name: Ubuntu 22.04 / Qt 6.2.4
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu --disable-dev-shm-usage
 
     steps:
       - name: Check out repository
@@ -37,7 +39,18 @@ jobs:
             ninja-build \
             qt6-base-dev \
             qt6-base-dev-tools \
+            qt6-declarative-dev \
+            qt6-declarative-dev-tools \
+            qt6-webengine-dev \
             libqt6charts6-dev \
+            qml6-module-qtquick \
+            qml6-module-qtquick-window \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-dialogs \
+            qml6-module-qtqml-workerscript \
+            qml6-module-qtwebengine \
             sqlite3
 
       - name: Configure
@@ -46,6 +59,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON
+          -DCHARGING_BUILD_QML=ON
+          -DCHARGING_BUILD_WIDGETS_CLIENT=OFF
 
       - name: Build
         run: cmake --build build --parallel 2
