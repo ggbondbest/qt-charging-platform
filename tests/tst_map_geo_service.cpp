@@ -4,7 +4,9 @@
 #include "services/map/map_geo_service.h"
 
 #include <QCryptographicHash>
+#include <QFile>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QUrlQuery>
 #include <QtTest>
 
@@ -82,6 +84,9 @@ private slots:
 
     void noKeyFailsAsyncWithoutAnyNetwork();
     void envPrefersNewNameOverLegacy();
+    // —— 2026-09-08 演示 key 入库批：env 三级优先 + git 配置文件回退 ——
+    void gitConfigFileSuppliesKeyWhenEnvUndefined();
+    void envDefinedStillShadowsConfigFile();
     void matrixParsesMultipleDestinations();
     void requestQueryMatchesTencentContract();
     void businessStatusMapsToTypedErrors();
@@ -92,6 +97,15 @@ private slots:
     void routeFallsBackToLegacyModeShape();
     void geocodeParsesAddress();
     void requestIdsAreDistinctAndAscending();
+    // —— QML 转发面（导航页"地图 APP"交互消费） ——
+    void qmlSurfaceNoKeyFailsAsync();
+    void ipLocationRelayParsesCityPoint();
+    void addressGeocodeEncodesChineseAndRelays();
+    void routeRelayCarriesQmlFriendlyMap();
+    void staticMapWritesPngAndRotatesFile();
+    void staticMapDownsamplesLongPolyline();
+    void staticMapJsonBodyClassifiesError();
+    void navigationUriUrlShapeAndEncoding();
     void forwardGeocodeUsesAddressAndReturnsCoordinates();
     void forwardGeocodeRejectsMissingCoordinates();
     void walkingUsesDedicatedEndpoint();
@@ -138,6 +152,49 @@ void MapGeoServiceTest::envPrefersNewNameOverLegacy()
 
     qputenv("CHARGING_TENCENT_MAP_KEY", "");
     QVERIFY(MapGeoService::apiKeyFromEnvironment().isEmpty());
+}
+
+void MapGeoServiceTest::gitConfigFileSuppliesKeyWhenEnvUndefined()
+{
+    // 两 env 名都未定义 → 回退读 git 托管配置文件（拉代码即测，无需 export）。
+    qunsetenv("TENCENT_MAP_API_KEY");
+    qunsetenv("CHARGING_TENCENT_MAP_KEY");
+    QVERIFY(!MapGeoService::environmentKeyAuthoritative());
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("map_services.json");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(R"({"tencentMapKey":"cfg-file-key","baseUrl":"https://example.test/ws/"})");
+    f.close();
+
+    QCOMPARE(MapGeoService::apiKeyFromConfigFile(path), QStringLiteral("cfg-file-key"));
+    QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("cfg-file-key"));
+    // baseUrl 尾斜杠 trim（端点拼接口径，与 env 兜底链共用判据）。
+    QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://example.test/ws"));
+    // 缺文件/坏 JSON → 静默空，不抛不打印（无 key = 页面模拟兜底，绝不炸测试）。
+    QVERIFY(MapGeoService::apiKeyFromConfigFile(dir.filePath("missing.json")).isEmpty());
+}
+
+void MapGeoServiceTest::envDefinedStillShadowsConfigFile()
+{
+    // 测试隔离锚：env"已定义即权威（含空）"——配置文件有 key 也不读，
+    // 这是 ctest 全量注入空 env 变量即与真实网络绝缘的机制前提。
+    qputenv("TENCENT_MAP_API_KEY", "");
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("map_services.json");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(R"({"tencentMapKey":"cfg-file-key"})");
+    f.close();
+
+    QVERIFY(MapGeoService::environmentKeyAuthoritative());
+    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());   // 权威空 = 无 key，文件被跳过
+
+    qputenv("CHARGING_TENCENT_MAP_KEY", "env-wins");         // env 非空 → env 链优先
+    QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("env-wins"));
 }
 
 void MapGeoServiceTest::matrixParsesMultipleDestinations()
@@ -504,6 +561,262 @@ void MapGeoServiceTest::requestIdsAreDistinctAndAscending()
     QVERIFY(second > first);
     QTRY_COMPARE_WITH_TIMEOUT(matrixFailed.count(), 1, 2000);
     QCOMPARE(server.connectionCount(), 0);
+}
+
+// —— QML 转发面用例 ——
+
+void MapGeoServiceTest::qmlSurfaceNoKeyFailsAsync()
+{
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    MapGeoService service;
+    QVERIFY(!service.usable());
+
+    QSignalSpy ipError(&service, &MapGeoService::qmlIpLocationError);
+    QSignalSpy geoError(&service, &MapGeoService::qmlGeocodeError);
+    QSignalSpy staticError(&service, &MapGeoService::qmlStaticMapError);
+    QSignalSpy routeError(&service, &MapGeoService::qmlRouteError);
+    service.requestIpLocation();
+    service.requestAddressGeocode(QStringLiteral("深圳市南山区科兴路"));
+    service.requestStaticMap(22.541, 113.943, 12, 600, 400, {}, {});
+    service.requestDrivingRoute(22.541, 113.943, 22.55, 113.95);   // QML 标量重载
+    // 0ms singleShot 在同一个事件循环轮次全部发射：用 QTRY_COMPARE 收计数
+    // （QSignalSpy::wait 只等"下一次"发射，先到先发的会把后面的吃掉）。
+    QTRY_COMPARE_WITH_TIMEOUT(ipError.count(), 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(geoError.count(), 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(staticError.count(), 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(routeError.count(), 1, 2000);
+    QCOMPARE(ipError.at(0).at(1).toString(), QStringLiteral("未配置地图密钥"));
+    // 无 key = 零网络触达 + 跳转 URL 不可得（页面隐藏"跳转导航"按钮）。
+    QCOMPARE(server.connectionCount(), 0);
+    QVERIFY(service.navigationUriUrl(22.541, 113.943, QStringLiteral("起点"),
+                                     22.55, 113.95, QStringLiteral("终点")).isEmpty());
+}
+
+void MapGeoServiceTest::ipLocationRelayParsesCityPoint()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral(R"({"status": 0, "result": {
+        "location": {"lat": 22.5432, "lng": 113.9445},
+        "ad_info": {"province": "广东省", "city": "深圳市", "district": "南山区"}}})"));
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy ready(&service, &MapGeoService::qmlIpLocationReady);
+    QSignalSpy failed(&service, &MapGeoService::qmlIpLocationError);
+    const quint64 id = service.requestIpLocation();
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(ready.at(0).at(0).toULongLong(), id);
+    const QVariantMap point = ready.at(0).at(1).toMap();
+    QVERIFY(qAbs(point.value(QStringLiteral("latitude")).toDouble() - 22.5432) < 1e-9);
+    QCOMPARE(point.value(QStringLiteral("city")).toString(), QStringLiteral("深圳市"));
+    QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/location/v1/ip/")));
+
+    // 标量读写面（导航页自动定位成功后写回）：
+    service.setUserLocationLatLng(22.5432, 113.9445);
+    const QVariantMap stored = service.userLocationMap();
+    QVERIFY(qAbs(stored.value(QStringLiteral("longitude")).toDouble() - 113.9445) < 1e-9);
+
+    // location 缺失 → qmlIpLocationError（页面自决"定位失败"文案）。
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 0, \"result\": {}}"));
+    service.requestIpLocation();
+    QVERIFY(failed.wait(5000));
+}
+
+void MapGeoServiceTest::addressGeocodeEncodesChineseAndRelays()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(kGeocodeJson);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy ready(&service, &MapGeoService::qmlGeocodeReady);
+    const quint64 id = service.requestAddressGeocode(QStringLiteral("深圳市南山区科兴路"));
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(ready.at(0).at(0).toULongLong(), id);
+    const QVariantMap point = ready.at(0).at(1).toMap();
+    QVERIFY(qAbs(point.value(QStringLiteral("latitude")).toDouble() - 22.541) < 1e-9);
+    QCOMPARE(point.value(QStringLiteral("address")).toString(),
+             QStringLiteral("广东省深圳市南山区科兴路"));
+    // 中文参数百分号编码（深=E6 B7 B1），path 口径正确。
+    QVERIFY(server.lastRequestTarget().startsWith(QStringLiteral("/ws/geocoder/v1/")));
+    QVERIFY2(server.lastRequestTarget().contains(QStringLiteral("address=%E6%B7%B1")),
+             qPrintable(server.lastRequestTarget()));
+
+    // 空文本不发请求，异步 BadResponse。
+    QSignalSpy failed(&service, &MapGeoService::qmlGeocodeError);
+    const int connectionsBefore = server.connectionCount();
+    service.requestAddressGeocode(QStringLiteral("   "));
+    QVERIFY(failed.wait(2000));
+    QCOMPARE(server.connectionCount(), connectionsBefore);
+}
+
+void MapGeoServiceTest::routeRelayCarriesQmlFriendlyMap()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(kRouteJson);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy relay(&service, &MapGeoService::qmlRouteReady);
+    // QML 标量重载 → 与 C++ 原形同点旁路 QVariantMap 形。
+    const quint64 id = service.requestDrivingRoute(22.541, 113.943, 22.55, 113.95);
+    QVERIFY(relay.wait(5000));
+    QCOMPARE(relay.at(0).at(0).toULongLong(), id);
+    const QVariantMap route = relay.at(0).at(1).toMap();
+    QCOMPARE(route.value(QStringLiteral("distanceMeters")).toInt(), 5120);
+    QCOMPARE(route.value(QStringLiteral("durationMinutes")).toInt(), 12);
+    const QVariantList polyline = route.value(QStringLiteral("polyline")).toList();
+    QVERIFY2(polyline.size() == 3,
+             qPrintable(QStringLiteral("relay=%1 first=%2")
+                            .arg(relay.count())
+                            .arg(polyline.isEmpty() ? QStringLiteral("(empty)")
+                                                   : polyline.at(0).toString())));
+    QCOMPARE(polyline.at(0).toList().size(), 2);
+    QVERIFY(qAbs(polyline.at(0).toList().at(0).toDouble() - 22.541) < 1e-9);
+    QVERIFY(qAbs(polyline.at(2).toList().at(1).toDouble() - 113.942) < 1e-9);
+    const QVariantList steps = route.value(QStringLiteral("steps")).toList();
+    QCOMPARE(steps.size(), 3);
+    QCOMPARE(steps.at(0).toMap().value(QStringLiteral("instruction")).toString(),
+             QStringLiteral("沿滨海大道直行约2000米"));
+    QCOMPARE(steps.at(1).toMap().value(QStringLiteral("distanceMeters")).toInt(), 800);
+}
+
+void MapGeoServiceTest::staticMapWritesPngAndRotatesFile()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    QByteArray png;
+    png.append("\x89" "PNG\r\n\x1a\n", 8);
+    png.append(QByteArray(64, 'x'));   // 魔数后内容随意：解析只认头部
+    server.setResponse(200, png);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy ready(&service, &MapGeoService::qmlStaticMapReady);
+    QSignalSpy failed(&service, &MapGeoService::qmlStaticMapError);
+    const QVariantList routePairs = {
+        QVariantList{22.541, 113.943}, QVariantList{22.5425, 113.945},
+    };
+    const QVariantList markerPairs = {
+        QVariantMap{{QStringLiteral("latitude"), 22.541},
+                    {QStringLiteral("longitude"), 113.943},
+                    {QStringLiteral("label"), QStringLiteral("起")}},
+        QVariantMap{{QStringLiteral("latitude"), 22.55},
+                    {QStringLiteral("longitude"), 113.95}},
+    };
+    const quint64 id = service.requestStaticMap(22.5455, 113.944, 12, 600, 400,
+                                                routePairs, markerPairs);
+    QVERIFY2(ready.wait(5000),
+             failed.count() ? qPrintable(failed.at(0).at(1).toString()) : "no png response");
+    QCOMPARE(ready.at(0).at(0).toULongLong(), id);
+    const QString firstFile = ready.at(0).at(1).toString();
+    QFile file(firstFile);
+    QVERIFY(file.exists());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.read(4), QByteArray("\x89" "PNG", 4));
+    file.close();
+
+    // 参数口径（2026-09-08 活体二分后 v2 契约）：path= 单数 kv 才画线（复数 paths=
+    // 逗号式被 v2 静默忽略）；markers 用 markers1/markers2 编号、label 仅收单 ASCII
+    // 字母数字（中文语义映射 A/B）。线上形态 ':' keep 不编码、'|' 恒 %7C（Qt
+    // toPercentEncoding 的 keep 不覆盖 |；服务端百分号解码后等价，活体 PNG 已证）。
+    const QString target = server.lastRequestTarget();
+    QVERIFY(target.startsWith(QStringLiteral("/ws/staticmap/v2/")));
+    QVERIFY(target.contains(QStringLiteral("center=22.545500,113.944000")));
+    QVERIFY(target.contains(QStringLiteral("size=600*400")));
+    QVERIFY(target.contains(QStringLiteral("path=color:0x00B578%7C22.541000,113.943000%7C22.542500,113.945000")));
+    QVERIFY(target.contains(QStringLiteral("markers1=color:0x00A46C%7Clabel:A%7C22.541000,113.943000")));
+    QVERIFY(target.contains(QStringLiteral("markers2=color:0x00A46C%7C22.550000,113.950000")));
+
+    // 第二张成功后上一张落盘文件被轮换清理（temp 不累积）。
+    service.requestStaticMap(22.5455, 113.944, 12, 600, 400, routePairs, markerPairs);
+    QVERIFY(ready.wait(5000) && ready.count() == 2);
+    QVERIFY(!QFile::exists(firstFile));
+    QVERIFY(QFile::exists(ready.at(1).at(1).toString()));
+}
+
+// 活体 414 回归钉（2026-09-08）：京→深驾车折线数千点全量注入 → URL 几十 KB
+// → 服务端回 414 URI Too Long（假 HTTP 短折线撞不到）。requestStaticMap 现等距
+// 步长抽点 ≤120 + 首尾必含；点数 ≤120 时步长 1、逐字节等价（上一用例的锚即证）。
+void MapGeoServiceTest::staticMapDownsamplesLongPolyline()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    QByteArray png;
+    png.append("\x89" "PNG\r\n\x1a\n", 8);
+    png.append(QByteArray(64, 'x'));
+    server.setResponse(200, png);
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy ready(&service, &MapGeoService::qmlStaticMapReady);
+    QSignalSpy failed(&service, &MapGeoService::qmlStaticMapError);
+
+    QVariantList routePairs;   // 长路线量级：500 点。append(QVariant(list)) 显式包
+                               // 一层——`<<` 会命中 QList 拼接重载，塞成散点。
+    for (int index = 0; index < 500; ++index) {
+        routePairs.append(QVariant(QVariantList{22.0 + index * 0.0001, 113.0 + index * 0.0001}));
+    }
+    service.requestStaticMap(22.0, 113.0, 12, 600, 400, routePairs, {});
+    QVERIFY2(ready.wait(5000),
+             failed.count() ? qPrintable(failed.at(0).at(1).toString()) : "no png response");
+
+    const QString target = server.lastRequestTarget();
+    QString pathValue;
+    const QStringList segments = target.split(QLatin1Char('&'));
+    for (const QString& segment : segments) {
+        if (segment.startsWith(QStringLiteral("path="))) {
+            pathValue = segment;
+        }
+    }
+    QVERIFY(!pathValue.isEmpty());
+    const QStringList drawn = pathValue.split(QStringLiteral("%7C")).mid(1);
+    QVERIFY2(!drawn.isEmpty() && drawn.size() <= 120,
+             qPrintable(QStringLiteral("drawn=%1").arg(drawn.size())));
+    QCOMPARE(drawn.first(), QStringLiteral("22.000000,113.000000"));
+    QCOMPARE(drawn.last(), QStringLiteral("22.049900,113.049900"));
+    QVERIFY2(target.size() < 4096, qPrintable(QStringLiteral("url=%1").arg(target.size())));
+}
+
+void MapGeoServiceTest::staticMapJsonBodyClassifiesError()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 310, \"message\": \"key 无效\"}"));
+
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy failed(&service, &MapGeoService::qmlStaticMapError);
+    service.requestStaticMap(22.541, 113.943, 12, 600, 400, {}, {});
+    QVERIFY(failed.wait(5000));
+    // 固定分类文案（不透传 message，防 key 提示进 UI）。
+    QCOMPARE(failed.at(0).at(1).toString(), QStringLiteral("密钥无效或未授权该接口"));
+}
+
+void MapGeoServiceTest::navigationUriUrlShapeAndEncoding()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    MapGeoService service;
+    const QString url = service.navigationUriUrl(
+        22.541, 113.943, QStringLiteral("我的位置"),
+        22.55, 113.95, QStringLiteral("深圳湾超充站"));
+    QVERIFY(url.startsWith(QStringLiteral("https://apis.map.qq.com/uri/v1/routeplan?type=drive")));
+    QVERIFY2(url.contains(QStringLiteral("&from=%E6%88%91%E7%9A%84%E4%BD%8D%E7%BD%AE&")),
+             qPrintable(url));   // 测试 key=unit-test-key，打印安全
+    QVERIFY(url.contains(QStringLiteral("fromcoord=22.541000,113.943000")));
+    QVERIFY(url.contains(QStringLiteral("&to=%E6%B7%B1%E5%9C%B3%E6%B9%BE%E8%B6%85%E5%85%85%E7%AB%99&")));
+    QVERIFY(url.contains(QStringLiteral("tocoord=22.550000,113.950000")));
+    QVERIFY(url.endsWith(QStringLiteral("&referer=unit-test-key")));
 }
 
 QTEST_GUILESS_MAIN(MapGeoServiceTest)

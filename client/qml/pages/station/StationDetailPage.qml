@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
-import "StationState.js" as StationState
 
 // QML twin of widgets StationDetailPage (objectName "stationDetailPage" kept).
 // arg = 列表页点击卡片带来的 map：{id, name, address, priceCentsPerKwh, distanceMeters, status}。
 // 进页 fetchDetailById（struct 参数版 QML 过不去 → 新桥方法，TODO(contract)）；
-// 桩卡彩签/故障红框/预约三重准入均按 widgets 同语义直译。
+// 桩卡彩签/故障红框按 widgets 同语义直译。
+// 2026-09-08 业务变更：预约准入从"三重门（车辆/名额/每车唯一）"改为
+// "空闲桩 → 登录 → 无充电中订单"；车辆不再强制（widgets 孪生本轮未跟改）。
 Item {
     id: page
     objectName: "stationDetailPage"
@@ -77,21 +78,23 @@ Item {
             page.failMessage = message
         }
     }
-    Component.onCompleted: fetch()
+    Component.onCompleted: { fetch(); refreshChargingBusy() }
 
-    // ---- 预约三重准入（widgets handleReserveRequested + HomeShell 弹层直译进页）----
-    function call(target, fn, args) {
-        try { return target[fn].apply(target, args) } catch (e) { return undefined }
+    // ---- 预约准入（2026-09-08 新口径）：空闲桩 → 登录 → 无"正在充电"订单 ----
+    // 车辆强制/名额=车辆数/每车唯一三道旧门已随业务变更移除；充电中拦截
+    // 数据源 = orderService.fetchOrders("charging",1)（Filter::Charging 转发）。
+    property bool chargingBusy: false
+    function refreshChargingBusy() {
+        // 桥缺位/在途丢弃：默认放行（与旧 activeReservationCount()==-1 放行同口径）。
+        try { orderService.fetchOrders("charging", 1) } catch (e) {}
     }
-    function vehicleCount() {
-        const v = call(settingsService, "vehicles", [])
-        if (v !== undefined) return v.length
-        return StationState.vehicles.length   // 桥缺位期读设置页本地通道
-    }
-    function activeReservationCount() {
-        // TODO(contract): reservationService.activeReservationCount() invokable；缺位返回 -1 放行。
-        const n = call(reservationService, "activeReservationCount", [])
-        return (typeof n === "number") ? n : -1
+    Connections {
+        target: orderService
+        function onOrdersLoaded(orders, total, hasMore) {
+            // 本页只订"charging"过滤一页；桥在途守卫可能吞并发请求，
+            // 故仅接受非空即真、空列表才判假（保守拦截偏放行）。
+            page.chargingBusy = (orders || []).length > 0 || (total || 0) > 0
+        }
     }
     function requestReserve(charger) {
         if (String(charger.status).toLowerCase() !== "available") {
@@ -102,13 +105,9 @@ Item {
             if (App) { App.showToast("请先登录再发起预约", "warning"); App.navigate("login") }
             return
         }
-        if (App.mockMode && vehicleCount() === 0) {
-            vehicleRequiredPrompt.open()
-            return
-        }
-        const act = activeReservationCount()
-        if (App.mockMode && act >= 0 && act >= vehicleCount()) {
-            unfinishedReservationPrompt.open()
+        if (page.chargingBusy) {              // 新门：有车辆正在充电 → 不可再约
+            chargingBusyPrompt.open()
+            refreshChargingBusy()             // 顺手刷新，防陈旧态挡门
             return
         }
         if (App) App.checkBeforeReservation({
@@ -121,49 +120,11 @@ Item {
             chargerType: charger.type, chargerPowerWatts: charger.powerWatts })
     }
 
-    // 无车辆引导（旧版 vehicleRequiredPrompt 弹层同文案同钮）
+    // 充电中拦截引导（旧 vehicleRequiredPrompt/unfinishedReservationPrompt 两弹层
+    // 随车辆门移除；本弹层接替其"去查看"职能 → 充电 tab）
     Popup {
-        id: vehicleRequiredPrompt
-        objectName: "vehicleRequiredPrompt"
-        modal: true
-        anchors.centerIn: parent
-        width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
-        padding: P.Style.spaceLg
-        background: Rectangle {
-            radius: P.Style.radiusLg; color: P.Style.surface
-            border.color: P.Style.line; border.width: 1
-        }
-        Column {
-            width: parent.width
-            spacing: P.Style.spaceMd
-            Text { width: parent.width; wrapMode: Text.WordWrap
-                text: "需要添加车辆"
-                font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
-            Text { width: parent.width; wrapMode: Text.WordWrap
-                text: "预约名额由车辆决定，请先在「设置 - 车辆管理」添加车辆。"
-                font.pixelSize: P.Style.fontMd; color: P.Style.muted }
-            Row {
-                width: parent.width
-                spacing: P.Style.spaceSm
-                P.ActionButton {
-                    variant: "ghost"; text: "稍后再说"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: vehicleRequiredPrompt.close()
-                }
-                P.ActionButton {
-                    objectName: "vehicleGoSettingsButton"
-                    variant: "primary"; text: "去添加车辆"
-                    width: (parent.width - parent.spacing) / 2
-                    onClicked: { vehicleRequiredPrompt.close(); if (App) App.navigate("settings") }
-                }
-            }
-        }
-    }
-
-    // 名额占满引导（旧版 unfinishedReservationPrompt 同文案同钮）
-    Popup {
-        id: unfinishedReservationPrompt
-        objectName: "unfinishedReservationPrompt"
+        id: chargingBusyPrompt
+        objectName: "chargingBusyPrompt"
         modal: true
         anchors.centerIn: parent
         width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
@@ -179,7 +140,7 @@ Item {
                 text: "无法发起新预约"
                 font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
             Text { width: parent.width; wrapMode: Text.WordWrap
-                text: "可预约名额已全部占用（名额 = 车辆数），请结束当前预约后再发起新预约"
+                text: "您有车辆正在充电中，暂无法发起新预约"
                 font.pixelSize: P.Style.fontMd; color: P.Style.muted }
             Row {
                 width: parent.width
@@ -187,13 +148,13 @@ Item {
                 P.ActionButton {
                     variant: "ghost"; text: "知道了"
                     width: (parent.width - parent.spacing) / 2
-                    onClicked: unfinishedReservationPrompt.close()
+                    onClicked: chargingBusyPrompt.close()
                 }
                 P.ActionButton {
-                    objectName: "unfinishedGoLookButton"
+                    objectName: "chargingBusyGoButton"
                     variant: "primary"; text: "去查看"
                     width: (parent.width - parent.spacing) / 2
-                    onClicked: { unfinishedReservationPrompt.close(); if (App) App.navigate("reservation_module") }
+                    onClicked: { chargingBusyPrompt.close(); if (App) App.navigate("charging") }
                 }
             }
         }

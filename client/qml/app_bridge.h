@@ -67,6 +67,10 @@ public:
     Q_INVOKABLE void logout();
     Q_INVOKABLE void checkBeforeReservation(const QVariantMap& draft);
     Q_INVOKABLE void recoverUnfinishedOrder();
+    // Test seam (setApiKeyForTesting precedent, mock channel only): cancel all
+    // non-terminal seeded orders so unfinished-check-gated flows can be
+    // exercised from the empty state. No-op on the live transport.
+    void clearUnfinishedOrdersForTesting();
     // Native file chooser is compatible with Qt 6.2.4.
     Q_INVOKABLE QString chooseAvatar();
     Q_INVOKABLE QString prepareAvatar(const QString& localFile);
