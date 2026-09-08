@@ -37,6 +37,7 @@ jobs:
             libxkbcommon-x11-0 \
             libxcb-cursor0 \
             ninja-build \
+            python3 \
             qt6-base-dev \
             qt6-base-dev-tools \
             qt6-declarative-dev \
@@ -69,6 +70,9 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
+
+      - name: Check embedded QML routes and screenshots
+        run: bash scripts/verify_qml_routes.sh "$PWD/build/client/charging-client" "$RUNNER_TEMP/qml-route-smoke"
 
       - name: Verify database schema and seed data
         run: bash scripts/verify_database.sh

@@ -17,3 +17,4 @@ cmake --build "$build_dir" --parallel "$build_jobs"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
     ctest --test-dir "$build_dir" --output-on-failure
 bash "$project_dir/scripts/verify_database.sh"
+bash "$project_dir/scripts/verify_qml_routes.sh" "$build_dir/client/charging-client"
