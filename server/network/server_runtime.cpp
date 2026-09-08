@@ -18,6 +18,7 @@
 #include <QThread>
 #include <QDateTime>
 #include <QTimer>
+#include <QDebug>
 
 namespace charging::server {
 
@@ -56,21 +57,46 @@ protected:
             }
             if (isInterruptionRequested()) return;
             UserRepository users(database.database());
+            ChargingRepository charging(database.database());
+            const auto expireReservations = [&charging] {
+                if (charging.expireReservations(QDateTime::currentDateTimeUtc())) return true;
+                qWarning() << "Reservation expiry maintenance failed; transaction rolled back";
+                return false;
+            };
+            if (!expireReservations()) {
+                emit failed(QStringLiteral("无法清理到期预约，请稍后重新启动"));
+                return;
+            }
+            QTimer expiryTimer; // lives on the same worker/SQL connection
+            expiryTimer.setInterval(1000);
+            connect(&expiryTimer, &QTimer::timeout, &expiryTimer, expireReservations);
+            expiryTimer.start();
             AdminRepository adminRepository(database.database());
             AdminService adminService(&adminRepository);
             QObject adminContext; // constructed and destroyed in this worker
             connect(this, &ServerThread::adminRequest, &adminContext,
-                    [this, &adminService](const QString& id, const QString& action,
+                    [this, &adminService, &expireReservations](const QString& id, const QString& action,
                                          const QJsonObject& data, const QString& token, qint64 deadline) {
                 if (isInterruptionRequested()) return;
                 if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close") && QDateTime::currentMSecsSinceEpoch() >= deadline) {
                     emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
                     return;
                 }
+                // Timer delivery may be delayed by a preceding request. Make
+                // expiry visible before admin reads and state-changing actions.
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close")
+                    && !expireReservations()) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("DATABASE_ERROR")));
+                    return;
+                }
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close")
+                    && QDateTime::currentMSecsSinceEpoch() >= deadline) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
+                    return;
+                }
                 const QString channel = id.contains(QLatin1Char(':')) ? id.section(QLatin1Char(':'), 0, 0) : QString();
                 emit adminResult(id, adminService.handle(action, data, token, channel));
             }, Qt::QueuedConnection);
-            ChargingRepository charging(database.database());
             OrderRepository orders(database.database());
             UserApiRepository userApi(database.database());
             UserService userService(&users);

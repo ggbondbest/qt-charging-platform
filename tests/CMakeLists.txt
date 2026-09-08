@@ -1,3 +1,11 @@
+add_executable(test_delivery_data_contract tst_delivery_data_contract.cpp)
+target_link_libraries(test_delivery_data_contract PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME delivery_data_contract COMMAND test_delivery_data_contract)
+
 add_executable(test_admin_service tst_admin_service.cpp)
 target_link_libraries(test_admin_service PRIVATE
     ChargingPlatform::ServerServices
