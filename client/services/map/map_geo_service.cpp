@@ -1,20 +1,29 @@
 #include "map_geo_service.h"
 
 #include <QCryptographicHash>
+#include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QStandardPaths>
 #include <QTimer>
-#include <QUrlQuery>
+#include <QUrl>
 #include <cmath>
 #include <limits>
 
 namespace charging::client::services::map {
 
 namespace {
+
+#ifdef CHARGING_MAP_CONFIG_FILE
+constexpr char kMapConfigFile[] = CHARGING_MAP_CONFIG_FILE;
+#else
+constexpr char kMapConfigFile[] = "";   // 库外目标未注入宏（不该发生；空=不读文件）
+#endif
 
 constexpr int kHttpRateLimitStatus1 = 120; // 触发并发/限流
 constexpr int kHttpRateLimitStatus2 = 121; // 每日配额超限
@@ -54,6 +63,23 @@ MapError errorFromBusinessStatus(int status)
     }
 }
 
+// git 托管配置文件读取（2026-09-08 key 入库批）：解析失败/文件缺失静默回空对象。
+QJsonObject readMapConfig(const QString& configPath)
+{
+    QString path = configPath;
+    if (path.isEmpty())
+        path = QString::fromLatin1(kMapConfigFile);
+    if (path.isEmpty())
+        return {};
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    return doc.isObject() ? doc.object() : QJsonObject{};
+}
+
+const QString kDefaultEndpointBase = QStringLiteral("https://apis.map.qq.com/ws");
+
 } // namespace
 
 QString mapErrorMessage(MapError error)
@@ -80,7 +106,8 @@ QString mapErrorMessage(MapError error)
 MapGeoService::MapGeoService(QObject* parent)
     : QObject(parent), network_(new QNetworkAccessManager(this))
 {
-    apiKey_ = apiKeyFromEnvironment();
+    apiKey_ = resolveApiKey();
+    endpointBase_ = resolveBaseUrl();
     // SK 仅当控制台开启签名校验时才需要；为空则请求不带 sig。
     secretKey_ = qEnvironmentVariable("TENCENT_MAP_SECRET_KEY").trimmed();
     if (secretKey_.isEmpty()) {
@@ -97,6 +124,41 @@ QString MapGeoService::apiKeyFromEnvironment()
         key = qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
     }
     return key;
+}
+
+bool MapGeoService::environmentKeyAuthoritative()
+{
+    // "已定义即权威"（含空串）：测试 initTestCase 的 qputenv(name,"") 与
+    // ctest ENVIRONMENT 注入都落在此分支 → 配置文件永不生效，零真实请求。
+    return qEnvironmentVariableIsSet("TENCENT_MAP_API_KEY")
+           || qEnvironmentVariableIsSet("CHARGING_TENCENT_MAP_KEY");
+}
+
+QString MapGeoService::apiKeyFromConfigFile(const QString& configPath)
+{
+    return readMapConfig(configPath).value(QStringLiteral("tencentMapKey")).toString().trimmed();
+}
+
+QString MapGeoService::baseUrlFromConfigFile(const QString& configPath)
+{
+    QString base = readMapConfig(configPath).value(QStringLiteral("baseUrl")).toString().trimmed();
+    while (base.endsWith(QLatin1Char('/')))
+        base.chop(1);   // 拼接点 endpointBase_+path（path 以 / 开头），去尾斜杠防双斜杠
+    return base;
+}
+
+QString MapGeoService::resolveApiKey(const QString& configPath)
+{
+    return environmentKeyAuthoritative() ? apiKeyFromEnvironment()
+                                         : apiKeyFromConfigFile(configPath);
+}
+
+QString MapGeoService::resolveBaseUrl(const QString& configPath)
+{
+    if (environmentKeyAuthoritative())
+        return kDefaultEndpointBase;
+    const QString base = baseUrlFromConfigFile(configPath);
+    return base.isEmpty() ? kDefaultEndpointBase : base;
 }
 
 bool MapGeoService::hasUsableKey() const
@@ -160,6 +222,171 @@ quint64 MapGeoService::requestReverseGeocode(LatLng location)
     return startRequest(Kind::Geocoder, {location}, location);
 }
 
+// —— QML 面实现 ——（无 key 一律走 emitFailure 异步 NoApiKey，不发请求）
+
+quint64 MapGeoService::requestDrivingRoute(double fromLat, double fromLng,
+                                           double toLat, double toLng)
+{
+    return requestDrivingRoute(LatLng{fromLat, fromLng}, LatLng{toLat, toLng});
+}
+
+quint64 MapGeoService::requestReverseGeocodeLatLng(double lat, double lng)
+{
+    return requestReverseGeocode(LatLng{lat, lng});
+}
+
+QVariantMap MapGeoService::userLocationMap() const
+{
+    return QVariantMap{
+        {QStringLiteral("latitude"), userLocation_.latitude},
+        {QStringLiteral("longitude"), userLocation_.longitude},
+    };
+}
+
+quint64 MapGeoService::requestIpLocation()
+{
+    const quint64 requestId = nextRequestId_++;
+    if (!hasKey_) {
+        QTimer::singleShot(0, this, [this, requestId] {
+            emitFailure(requestId, Kind::IpLocation, MapError::NoApiKey);
+        });
+        return requestId;
+    }
+    QMap<QString, QString> params;
+    params.insert(QStringLiteral("key"), apiKey_);
+    sendRequest(requestId, Kind::IpLocation, QStringLiteral("/location/v1/ip/"), params);
+    return requestId;
+}
+
+quint64 MapGeoService::requestAddressGeocode(const QString& address)
+{
+    const quint64 requestId = nextRequestId_++;
+    if (!hasKey_) {
+        QTimer::singleShot(0, this, [this, requestId] {
+            emitFailure(requestId, Kind::GeocodeAddress, MapError::NoApiKey);
+        });
+        return requestId;
+    }
+    const QString trimmed = address.trimmed();
+    if (trimmed.isEmpty()) {
+        QTimer::singleShot(0, this, [this, requestId] {
+            emitFailure(requestId, Kind::GeocodeAddress, MapError::BadResponse);
+        });
+        return requestId;
+    }
+    QMap<QString, QString> params;
+    params.insert(QStringLiteral("key"), apiKey_);
+    params.insert(QStringLiteral("address"), trimmed);   // 中文经 sendRequest 统一百分号编码
+    sendRequest(requestId, Kind::GeocodeAddress, QStringLiteral("/geocoder/v1/"), params);
+    return requestId;
+}
+
+quint64 MapGeoService::requestStaticMap(double centerLat, double centerLng, int zoom,
+                                        int width, int height,
+                                        const QVariantList& routePairs,
+                                        const QVariantList& markerPairs)
+{
+    const quint64 requestId = nextRequestId_++;
+    if (!hasKey_) {
+        QTimer::singleShot(0, this, [this, requestId] {
+            emitFailure(requestId, Kind::StaticMap, MapError::NoApiKey);
+        });
+        return requestId;
+    }
+    // 坐标提取：兼容 [lat,lng] 数组形与 {latitude,longitude} 对象形。
+    auto pairLatLng = [](const QVariant& value) {
+        const QVariantList list = value.toList();
+        if (list.size() >= 2) {
+            return LatLng{list.at(0).toDouble(), list.at(1).toDouble()};
+        }
+        const QVariantMap map = value.toMap();
+        return LatLng{map.value(QStringLiteral("latitude")).toDouble(),
+                      map.value(QStringLiteral("longitude")).toDouble()};
+    };
+    QMap<QString, QString> params;
+    params.insert(QStringLiteral("key"), apiKey_);
+    params.insert(QStringLiteral("center"), formatLatLng(LatLng{centerLat, centerLng}));
+    params.insert(QStringLiteral("zoom"), QString::number(qBound(1, zoom, 18)));
+    params.insert(QStringLiteral("size"), QStringLiteral("%1*%2")
+                      .arg(qBound(64, width, 1024)).arg(qBound(64, height, 1024)));
+    params.insert(QStringLiteral("scale"), QStringLiteral("2"));   // 高清（Retina）出图
+    if (!routePairs.isEmpty()) {
+        // v2 活体二分（2026-09-08）：复数 `paths=` 逗号式被 v2 **静默忽略**
+        // （出图与无参基线逐字节相同——线根本没画）；真正画线的是单数
+        // `path=color:0xRRGGBB|lat,lng|lat,lng|…` kv 管道式。长折线降采样保留：
+        // 京→深数千点全量注入曾把 URL 冲到几十 KB → 414 URI Too Long（活体案，
+        // 假 HTTP 短折线撞不到）。等距步长 ≤120 点、首尾必含；≤120 点时步长 1。
+        constexpr int kMaxPathPoints = 120;
+        const int total = routePairs.size();
+        const int stride = total > kMaxPathPoints ? (total + kMaxPathPoints - 1) / kMaxPathPoints : 1;
+        QStringList routePoints{QStringLiteral("color:0x00B578")};
+        for (int index = 0; index < total; index += stride) {
+            routePoints << formatLatLng(pairLatLng(routePairs.at(index)));
+        }
+        if ((total - 1) % stride != 0) {
+            routePoints << formatLatLng(pairLatLng(routePairs.at(total - 1)));
+        }
+        params.insert(QStringLiteral("path"), routePoints.join(QLatin1Char('|')));
+    }
+    if (!markerPairs.isEmpty()) {
+        // v2 活体二分：markers = `color:0xRRGGBB|label:单ASCII字符|lat,lng` kv 管道式，
+        // 多标记走 markers1/markers2…编号参数（单标记用 markers）。Google 逗号式、
+        // opacity 段、中文 label 各自独立触发 348 请求参数非法。中文语义标签映射
+        // 起→A、终→B；单 ASCII 字母数字原样透传；其余省略 label（只画点不炸请求）。
+        static const QHash<QString, QString> kLabelGlyphs = {
+            {QStringLiteral("起"), QStringLiteral("A")},
+            {QStringLiteral("终"), QStringLiteral("B")},
+        };
+        const int markerTotal = markerPairs.size();
+        int ordinal = 0;
+        for (const QVariant& marker : markerPairs) {
+            ++ordinal;
+            const QVariantMap map = marker.toMap();
+            QStringList spec{QStringLiteral("color:0x00A46C")};
+            const QString label = map.value(QStringLiteral("label")).toString();
+            const QString mapped = kLabelGlyphs.value(label);
+            if (!mapped.isEmpty()) {
+                spec << QStringLiteral("label:") + mapped;
+            } else if (label.size() == 1 && label.at(0).unicode() < 0x80
+                       && label.at(0).isLetterOrNumber()) {
+                spec << QStringLiteral("label:") + label;
+            }
+            spec << formatLatLng(LatLng{map.value(QStringLiteral("latitude")).toDouble(),
+                                        map.value(QStringLiteral("longitude")).toDouble()});
+            params.insert(markerTotal == 1 ? QStringLiteral("markers")
+                                           : QStringLiteral("markers%1").arg(ordinal),
+                          spec.join(QLatin1Char('|')));
+        }
+    }
+    sendRequest(requestId, Kind::StaticMap, QStringLiteral("/staticmap/v2/"), params);
+    return requestId;
+}
+
+QString MapGeoService::navigationUriUrl(double fromLat, double fromLng, const QString& fromName,
+                                        double toLat, double toLng, const QString& toName) const
+{
+    // URI API 的 referer 必填 = key；无 key 返回空串，页面隐藏跳转按钮。
+    if (!hasKey_) {
+        return QString();
+    }
+    const auto enc = [](const QString& text) {
+        return QString::fromLatin1(QUrl::toPercentEncoding(text));
+    };
+    QString url = QStringLiteral("https://apis.map.qq.com/uri/v1/routeplan?type=drive");
+    if (!fromName.isEmpty()) {
+        url += QStringLiteral("&from=%1").arg(enc(fromName));
+    }
+    url += QStringLiteral("&fromcoord=%1,%2")
+               .arg(fromLat, 0, 'f', 6).arg(fromLng, 0, 'f', 6);
+    if (!toName.isEmpty()) {
+        url += QStringLiteral("&to=%1").arg(enc(toName));
+    }
+    url += QStringLiteral("&tocoord=%1,%2")
+               .arg(toLat, 0, 'f', 6).arg(toLng, 0, 'f', 6);
+    url += QStringLiteral("&referer=%1").arg(apiKey_);   // 含 key：调用方绝不打印/入库
+    return url;
+}
+
 void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
 {
     const QString message = mapErrorMessage(error);
@@ -170,9 +397,20 @@ void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error)
     case Kind::Route:
     case Kind::WalkingRoute:
         emit routeFailed(requestId, error, message);
+        emit qmlRouteError(requestId, message);   // QML 转发面同点回报
         break;
     case Kind::Geocoder:
         emit geocodeFailed(requestId, error, message);
+        emit qmlGeocodeError(requestId, message);
+        break;
+    case Kind::IpLocation:
+        emit qmlIpLocationError(requestId, message);
+        break;
+    case Kind::GeocodeAddress:
+        emit qmlGeocodeError(requestId, message);
+        break;
+    case Kind::StaticMap:
+        emit qmlStaticMapError(requestId, message);
         break;
     case Kind::ForwardGeocoder:
         emit forwardGeocodeFailed(requestId, error, message);
@@ -234,19 +472,30 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
 void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& path,
                                 const QMap<QString, QString>& params)
 {
-    QUrlQuery query;
+    // 2026-09-08 merge：查询串保留手工百分号编码而非上游 QUrlQuery——keep set
+    // 含 : ; | 等，静态图 path/markers 测试锚（color:0x00B578|22.541000,...）要求
+    // 逐字节；QUrlQuery 会把 ':' '|' 编成 %3A 破锚。sig 路径则采纳上游口径
+    // = baseUrl 自身路径段 + path（官方规则即完整 URI path，测试锚
+    // /ws/distance/v1/matrix/?...）。
+    QString query;
     for (auto it = params.cbegin(); it != params.cend(); ++it) {
-        query.addQueryItem(it.key(), it.value());
+        if (!query.isEmpty()) {
+            query += QLatin1Char('&');
+        }
+        // 百分号编码：中文地址/markers 等必须编码；keep set 保住坐标/静态图
+        // 语法字符（, . : ; | ~ - *），使既有测试锚 from=22.541000,113.943000
+        // 逐字节不变。sig 按官方口径对编码前原文计算，故仍用 params 原值。
+        query += it.key() + QLatin1Char('=')
+            + QString::fromLatin1(
+                  QUrl::toPercentEncoding(it.value(), QByteArrayLiteral(",-.:;|~*")));
     }
     if (!secretKey_.isEmpty()) {
-        query.addQueryItem(QStringLiteral("sig"),
-                           makeSignature(QUrl(endpointBase_).path() + path, params, secretKey_));
+        query += QStringLiteral("&sig=")
+               + makeSignature(QUrl(endpointBase_).path() + path, params, secretKey_);
     }
 
     // 注意：URL 含密钥，绝不写入任何日志/错误文案；message 只用固定文案。
-    QUrl url(endpointBase_ + path);
-    url.setQuery(query);
-    QNetworkRequest request{url};
+    QNetworkRequest request{QUrl(endpointBase_ + path + QLatin1Char('?') + query)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("qt-charging-platform/1.0"));
     QNetworkReply* reply = network_->get(request);
@@ -288,6 +537,33 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
         }
         if (transportError != MapError::None) {
             emitFailure(requestId, kind, transportError);
+            return;
+        }
+
+        if (kind == Kind::StaticMap) {
+            // 静态图：成功 = PNG 字节流；失败 = JSON 错误体（status 分类）。
+            // 落盘临时文件（上一张随新请求清理），qmlStaticMapReady 回路径。
+            if (body.size() > 8 && body.startsWith(QByteArrayLiteral("\x89PNG"))) {
+                const QString filePath = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                    + QStringLiteral("/charging-staticmap-%1.png").arg(requestId);
+                QFile file(filePath);
+                if (file.open(QIODevice::WriteOnly)) {
+                    file.write(body);
+                    file.close();
+                    if (!lastStaticMapFile_.isEmpty() && lastStaticMapFile_ != filePath) {
+                        QFile::remove(lastStaticMapFile_);
+                    }
+                    lastStaticMapFile_ = filePath;
+                    emit qmlStaticMapReady(requestId, filePath);
+                } else {
+                    emitFailure(requestId, kind, MapError::BadResponse);
+                }
+            } else {
+                const QJsonDocument doc = QJsonDocument::fromJson(body);
+                const int status =
+                    doc.isObject() ? doc.object().value(QStringLiteral("status")).toInt(-1) : -1;
+                emitFailure(requestId, kind, errorFromBusinessStatus(status));
+            }
             return;
         }
 
@@ -348,6 +624,35 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                 return;
             }
             emit geocodeSucceeded(requestId, address);
+            // QML 面（逆地理 requestReverseGeocodeLatLng 走本族）：地址文本。
+            emit qmlGeocodeReady(requestId,
+                                 QVariantMap{{QStringLiteral("address"), address}});
+        } else if (kind == Kind::IpLocation) {
+            const QJsonObject location = result.value(QStringLiteral("location")).toObject();
+            const double latitude = location.value(QStringLiteral("lat")).toDouble();
+            const double longitude = location.value(QStringLiteral("lng")).toDouble();
+            if (qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude)) {
+                emitFailure(requestId, kind, MapError::BadResponse);
+                return;
+            }
+            const QJsonObject adInfo = result.value(QStringLiteral("ad_info")).toObject();
+            emit qmlIpLocationReady(requestId, QVariantMap{
+                {QStringLiteral("latitude"), latitude},
+                {QStringLiteral("longitude"), longitude},
+                {QStringLiteral("province"), adInfo.value(QStringLiteral("province")).toString()},
+                {QStringLiteral("city"), adInfo.value(QStringLiteral("city")).toString()}});
+        } else if (kind == Kind::GeocodeAddress) {
+            const QJsonObject location = result.value(QStringLiteral("location")).toObject();
+            const double latitude = location.value(QStringLiteral("lat")).toDouble();
+            const double longitude = location.value(QStringLiteral("lng")).toDouble();
+            if (qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude)) {
+                emitFailure(requestId, kind, MapError::BadResponse);
+                return;
+            }
+            emit qmlGeocodeReady(requestId, QVariantMap{
+                {QStringLiteral("latitude"), latitude},
+                {QStringLiteral("longitude"), longitude},
+                {QStringLiteral("address"), result.value(QStringLiteral("address")).toString()}});
         } else {
             // 真实响应结构为 result.routes[0]（含 distance/duration/steps[]，
             // duration 单位=分钟）；旧文档口径 result.mode 保留兼容回退。
@@ -411,6 +716,26 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             }
             route.polyline = std::move(decoded);
             emit routeSucceeded(requestId, route);
+            // QML 转发面：RouteResult 是自定义 struct，QML 读不了成员，
+            // 同点旁路 QVariantMap 形（polyline=[[lat,lng],…]）。
+            QVariantList routePointList;
+            routePointList.reserve(route.polyline.size());
+            for (const auto& point : route.polyline) {
+                // 必须显式包 QVariant：否则 append 命中 QVector 的"批量并入"
+                // 重载，嵌套结构被拍平成 2N 个标量。
+                routePointList.append(QVariant{QVariantList{point.latitude, point.longitude}});
+            }
+            QVariantList stepList;
+            stepList.reserve(route.steps.size());
+            for (const auto& step : route.steps) {
+                stepList.append(QVariantMap{{QStringLiteral("instruction"), step.instruction},
+                                            {QStringLiteral("distanceMeters"), step.distanceMeters}});
+            }
+            emit qmlRouteReady(requestId, QVariantMap{
+                {QStringLiteral("distanceMeters"), route.distanceMeters},
+                {QStringLiteral("durationMinutes"), route.durationMinutes},
+                {QStringLiteral("polyline"), routePointList},
+                {QStringLiteral("steps"), stepList}});
         }
     });
 }

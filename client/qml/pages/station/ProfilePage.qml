@@ -242,8 +242,9 @@ Item {
             Repeater {
                 model: [
                     { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
-                    // 2026-09-08 成员3 追加两入口行（成员2 文件，PR 报备）：
-                    // 月报为成员3 新页，优惠券接成员2 CouponPage。
+                    // 2026-09-08 成员2 新增消息通知行（fe325d3）与成员3 四入口行合并：
+                    // 月报/签到积分为成员3 新页，优惠券接成员2 CouponPage。
+                    { obj: "openNotificationsButton", row: "🔔　消息通知", route: "notifications" },
                     { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
                     { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
                     { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },

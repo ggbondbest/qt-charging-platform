@@ -6,7 +6,10 @@ target_link_libraries(test_delivery_admin_pages PRIVATE
     Qt6::Test
 )
 add_test(NAME delivery_admin_pages COMMAND test_delivery_admin_pages)
-set_tests_properties(delivery_admin_pages PROPERTIES TIMEOUT 40)
+# 2026-09-08 merge：上游给交付页接入 Qt Charts（QChartView 实建 QPA 面），
+# 无 DISPLAY 机器裸跑撞 xcb abort——补 offscreen（admin_login 同口径）。
+set_tests_properties(delivery_admin_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
 
 add_executable(test_delivery_data_contract tst_delivery_data_contract.cpp)
 target_link_libraries(test_delivery_data_contract PRIVATE
@@ -51,6 +54,9 @@ set_tests_properties(admin_management_pages PROPERTIES
     TIMEOUT 40
 )
 set_tests_properties(admin_service admin_gateway admin_login PROPERTIES TIMEOUT 40)
+# admin_login 建 QWidget 页，无 DISPLAY 机器上裸跑会因 xcb 直接 abort
+# （与 station_map_panel 等同一注入口径）。
+set_tests_properties(admin_login PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(test_qt_baseline tst_qt_baseline.cpp)
 target_link_libraries(test_qt_baseline PRIVATE
@@ -323,7 +329,9 @@ target_link_libraries(test_home_shell PRIVATE
 )
 add_test(NAME home_shell COMMAND test_home_shell)
 set_tests_properties(home_shell PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    # 2026-09-08 key 入库批："已定义且空"= env 权威无 key → 壳内 MapGeoService
+    # 绝不读 client/config/map_services.json 兜底 key，测试永不发真实请求。
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
 )
 
 add_executable(test_station_map_panel tst_station_map_panel.cpp)
@@ -372,7 +380,10 @@ target_link_libraries(test_station_query_service PRIVATE
     Qt6::Test
 )
 add_test(NAME station_query_service COMMAND test_station_query_service)
+# 2026-09-08 merge 补：同 delivery_admin_pages——QTEST_MAIN 链到 Qt6::Gui 时建
+# QGuiApplication，无 DISPLAY 裸跑撞 xcb（直挂 offscreen 复测 11/11 全绿）。
 set_tests_properties(station_query_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 30
 )
 
@@ -394,7 +405,9 @@ target_link_libraries(test_reservation_service PRIVATE
     Qt6::Test
 )
 add_test(NAME reservation_service COMMAND test_reservation_service)
+# 2026-09-08 merge 补：同 station_query_service——QPA 面裸跑撞 xcb，offscreen 直挂。
 set_tests_properties(reservation_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
 
@@ -471,7 +484,10 @@ target_include_directories(test_qml_map_bridge PRIVATE ${CMAKE_SOURCE_DIR}/clien
 target_link_libraries(test_qml_map_bridge PRIVATE
     ChargingPlatform::ClientMapServices Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME qml_map_bridge COMMAND test_qml_map_bridge)
-set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30)
+# 空 env 权威无 key（三级解析第一级命中即不读 git 配置文件密钥）——
+# 与其他 QML/map 套件同口径，杜绝测试进程发真实外网 HTTP。
+set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen")
 
 # QML page interaction regression (PR #33 second-round review follow-ups).
 # Same gate as client/qml — configure stays byte-identical without the Qt
@@ -507,10 +523,46 @@ target_link_libraries(test_qml_client_pages PRIVATE
 )
 add_test(NAME qml_client_pages COMMAND test_qml_client_pages)
 set_tests_properties(qml_client_pages PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
 
+# station 域真点击链回归（收藏星被 ClickableCard 盖层吞事件 / 顶栏铃铛→消息页）。
+# 与 qml_client_pages 同门（CHARGING_HAS_QML）；真鼠标事件穿完整命中栈。
+add_executable(test_qml_station_interactions tst_qml_station_interactions.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    # 2026-09-08 merge：上游 app_bridge 构造引用 MapBridge，随同列入源。
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
+)
+target_include_directories(test_qml_station_interactions PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/qml
+)
+target_compile_definitions(test_qml_station_interactions PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml"
+)
+target_link_libraries(test_qml_station_interactions PRIVATE
+    ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME qml_station_interactions COMMAND test_qml_station_interactions)
+set_tests_properties(qml_station_interactions PROPERTIES
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 90
+)
 add_executable(test_qml_tcp_delivery tst_qml_tcp_delivery.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
@@ -528,5 +580,7 @@ target_link_libraries(test_qml_tcp_delivery PRIVATE
     Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
 add_test(NAME qml_tcp_delivery COMMAND test_qml_tcp_delivery)
 set_tests_properties(qml_tcp_delivery PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
+    # 2026-09-08 merge 补：本分支 key 三级解析含 git 配置文件兜底，上游此测试写于
+    # 兜底入库之前未加空 env 隔离；并入后按全仓 QML 套件同口径撤防真实外网。
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
 endif()

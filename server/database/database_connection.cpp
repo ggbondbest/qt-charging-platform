@@ -206,6 +206,11 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
 
     database_ = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName_);
     database_.setDatabaseName(resolvedPath);
+    // 2026-09-08 merge 批：驱动级 busy 等待须早于 schema.sql——脚本首段
+    // journal_mode=WAL 等 PRAGMA 就要拿锁，而脚本内的 PRAGMA busy_timeout
+    // 要到执行那一行才生效；两线程并发 open 时先跑的 PRAGMA 撞 BUSY 即整开
+    // 失败。open 前挂选项，锁竞争一律排队（5s ≫ 毫秒级迁移）。
+    database_.setConnectOptions(QStringLiteral("QSQLITE_BUSY_TIMEOUT=5000"));
     if (!database_.open()) {
         const QString message = QStringLiteral("Unable to open SQLite database: %1")
                                     .arg(database_.lastError().text());
@@ -235,13 +240,21 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
                         "ON operation_logs(admin_id, created_at DESC, id DESC)")}
     };
 
-    if (!database_.transaction()) {
+    // 2026-09-08 merge 批：上游 concurrentDatabaseConnections 用例暴露的真竞态在
+    // 这里——Qt transaction() 发 deferred BEGIN，本函数先读 sqlite_master 再
+    // DROP/CREATE 索引属"读→写锁升级"：并发两连接互撞时 SQLite 按防死锁规则
+    // 直接回 BUSY 且不触发 busy handler（timeout 也救不了）。显式 BEGIN
+    // IMMEDIATE 提前拿写锁，竞争落到 handler 排队；Qt 驱动只在自身
+    // transaction() 后才认 commit()/rollback()，故 COMMIT/ROLLBACK 也改直发。
+    QSqlQuery beginQuery(database_);
+    if (!beginQuery.exec(QStringLiteral("BEGIN IMMEDIATE"))) {
         return fail(errorMessage, QStringLiteral("Unable to start database migration: %1")
-                                      .arg(database_.lastError().text()));
+                                      .arg(beginQuery.lastError().text()));
     }
 
     const auto rollbackWithError = [this, errorMessage](const QString& message) {
-        database_.rollback();
+        QSqlQuery rollback(database_);
+        rollback.exec(QStringLiteral("ROLLBACK"));
         return fail(errorMessage, message);
     };
 
@@ -281,9 +294,10 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
         return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
                                      .arg(migrationQuery.lastError().text()));
     }
-    if (!database_.commit()) {
+    // BEGIN IMMEDIATE 系手工直发，驱动的 commit() 不识别，COMMIT 同样直发。
+    if (!migrationQuery.exec(QStringLiteral("COMMIT"))) {
         return rollbackWithError(QStringLiteral("Unable to commit database migration: %1")
-                                     .arg(database_.lastError().text()));
+                                     .arg(migrationQuery.lastError().text()));
     }
     return true;
 }

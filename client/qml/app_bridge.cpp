@@ -116,9 +116,15 @@ void QmlApp::createSession(const charging::model::User& user)
     settingsService_ = new charging::client::services::settings::SettingsService(session_);
     mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
     reservationService_->setUserId(user.id);
-    reservationService_->setSettingsService(settingsService_);
+    // 2026-09-08 业务变更：预约不再强制车辆（QML 侧删闸同步）。撤 settings 注入
+    // = finishMockSubmit 的 0车拒绝/每车唯一两道自然失效，名额闸回退"至多 1 条
+    // 有效预约"（unfinishedSlotLimit 未注入回退 1），恰合"有充电中即不可再约"。
+    // widgets HomeShell 自带注入路径，其车辆语义测试零受影响。
+    // （原 reservationService_->setSettingsService(settingsService_);——上游 develop
+    //   该行随 favorites/notification 父对象改 session_ 一并合入，注入行按业务指令撤除。）
     favoritesService_ = new charging::client::services::favorites::FavoritesService(session_);
-    notificationService_ = new charging::client::services::favorites::NotificationService(session_);
+    notificationService_ =
+        new charging::client::services::favorites::NotificationService(session_);
     notificationService_->setSettingsService(settingsService_);
     // 通知服务端通道（2026-09-08 横闯，PR 置顶报备项）：与券同源 transport；
     // 充电结束/支付成功通知由服务端（mock 镜像）落库供此拉取。
@@ -246,6 +252,14 @@ void QmlApp::checkBeforeReservation(const QVariantMap& draft)
 { checkUnfinished(draft, true); }
 void QmlApp::recoverUnfinishedOrder()
 { if (!mockMode_) checkUnfinished({}, false); }
+
+void QmlApp::clearUnfinishedOrdersForTesting()
+{
+    // IRequestTransport 不是 QObject 血统：RTTI dynamic_cast + mock 守卫双保险。
+    if (!mockMode_) return;
+    if (auto* mock = dynamic_cast<charging::client::MockRequestTransport*>(transport_))
+        mock->cancelActiveOrders();
+}
 
 void QmlApp::checkUnfinished(const QVariantMap& draft, bool reserveAfter)
 {

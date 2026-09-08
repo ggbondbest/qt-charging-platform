@@ -41,6 +41,7 @@ QtObject {
     readonly property color warningSoft: dark ? "#382B16" : "#FFF4E0"
     readonly property color info: dark ? "#5C9CE0" : "#1971C2"
     readonly property color infoSoft: dark ? "#1B2A3A" : "#E8F3FE"
+    readonly property color starGold: "#FBBF24"   // 2026-09-08 收藏星填充色（用户指定黄色）
     // QSS 三形态补全：solid 按下加深 / disabled 浅化 / hero 对角渐变端
     readonly property color brandPressed: "#009A66"
     readonly property color dangerPressed: "#B91C1C"

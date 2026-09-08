@@ -32,6 +32,11 @@ public:
     // Test/demo helper: sets the in-memory balance so the insufficient-balance
     // path of PAY_ORDER can be exercised without a real wallet drain.
     void drainBalanceTo(qint64 cents);
+    // Test/demo helper: cancel every non-terminal seeded order (CHARGING /
+    // WAITING_PAYMENT / RESERVED) so flows gated by the app-side unfinished
+    // check (QmlApp::checkUnfinished) can be exercised in their empty state.
+    // Mock-world only; the live channel is server-authoritative.
+    void cancelActiveOrders();
     // Integrated shell: seed the mock session with the real logged-in user so
     // identity/balance shown by profile/wallet pages are the actual account.
     // Orders and recharge records stay demo seeds — the mock channel serves

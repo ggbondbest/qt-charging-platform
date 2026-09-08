@@ -126,12 +126,20 @@ Window {
             // 搜索框/铃铛随"当前页"显隐（原绑 shell.route——只在启动时求值一次，
             // 从登录进入 station 后不更新，顶栏搜索与通知图标消失；用户实测指定修复）。
             searchVisible: stack.currentItem && stack.currentItem.route === "station"
+            // 顶栏漏斗红点 = 当前页生效筛选组数（station/favorites 页提供
+            // readonly activeFilterBadge；其它页缺位=0，2026-09-08 唯一入口批）。
+            filterBadgeCount: {
+                const b = stack.currentItem ? stack.currentItem.activeFilterBadge : undefined
+                return (typeof b === "number" && b > 0) ? b : 0
+            }
             onBackRequested: shell.pop()
             // 映射稿 HomeShell 节：搜索关键词经路由 arg 注入站点首页（arg 作关键词入口）。
             onSearchSubmitted: (keyword) => { if (App) App.navigate("station", keyword) }
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
             onFilterRequested: {
+                // 找站页/收藏页均暴露 openAdvancedFilter()（station 域组件），
+                // 漏斗即开当前页的 8 组高级筛选弹层。typeof 守卫取上游口径。
                 if (stack.currentItem && typeof stack.currentItem.openAdvancedFilter === "function")
                     stack.currentItem.openAdvancedFilter()
             }
