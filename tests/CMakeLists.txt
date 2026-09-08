@@ -6,7 +6,10 @@ target_link_libraries(test_delivery_admin_pages PRIVATE
     Qt6::Test
 )
 add_test(NAME delivery_admin_pages COMMAND test_delivery_admin_pages)
-set_tests_properties(delivery_admin_pages PROPERTIES TIMEOUT 40)
+# 2026-09-08 merge：上游给交付页接入 Qt Charts（QChartView 实建 QPA 面），
+# 无 DISPLAY 机器裸跑撞 xcb abort——补 offscreen（admin_login 同口径）。
+set_tests_properties(delivery_admin_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
 
 add_executable(test_delivery_data_contract tst_delivery_data_contract.cpp)
 target_link_libraries(test_delivery_data_contract PRIVATE
@@ -348,7 +351,10 @@ target_link_libraries(test_station_query_service PRIVATE
     Qt6::Test
 )
 add_test(NAME station_query_service COMMAND test_station_query_service)
+# 2026-09-08 merge 补：同 delivery_admin_pages——QTEST_MAIN 链到 Qt6::Gui 时建
+# QGuiApplication，无 DISPLAY 裸跑撞 xcb（直挂 offscreen 复测 11/11 全绿）。
 set_tests_properties(station_query_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 30
 )
 
@@ -370,7 +376,9 @@ target_link_libraries(test_reservation_service PRIVATE
     Qt6::Test
 )
 add_test(NAME reservation_service COMMAND test_reservation_service)
+# 2026-09-08 merge 补：同 station_query_service——QPA 面裸跑撞 xcb，offscreen 直挂。
 set_tests_properties(reservation_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 60
 )
 
@@ -495,6 +503,8 @@ set_tests_properties(qml_client_pages PROPERTIES
 add_executable(test_qml_station_interactions tst_qml_station_interactions.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    # 2026-09-08 merge：上游 app_bridge 构造引用 MapBridge，随同列入源。
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
 )
 target_include_directories(test_qml_station_interactions PRIVATE
     ${CMAKE_SOURCE_DIR}/client/qml

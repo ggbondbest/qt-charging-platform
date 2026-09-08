@@ -217,6 +217,14 @@ void QmlApp::checkBeforeReservation(const QVariantMap& draft)
 void QmlApp::recoverUnfinishedOrder()
 { if (!mockMode_) checkUnfinished({}, false); }
 
+void QmlApp::clearUnfinishedOrdersForTesting()
+{
+    // IRequestTransport 不是 QObject 血统：RTTI dynamic_cast + mock 守卫双保险。
+    if (!mockMode_) return;
+    if (auto* mock = dynamic_cast<charging::client::MockRequestTransport*>(transport_))
+        mock->cancelActiveOrders();
+}
+
 void QmlApp::checkUnfinished(const QVariantMap& draft, bool reserveAfter)
 {
     if (!loggedIn_) { emit navigateRequested("login", {}); return; }

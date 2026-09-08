@@ -200,6 +200,17 @@ void MockRequestTransport::setUser(const charging::model::User& user)
     user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 }
 
+void MockRequestTransport::cancelActiveOrders()
+{
+    for (charging::model::Order& order : orders_) {
+        if (order.status != charging::model::OrderStatus::Completed
+            && order.status != charging::model::OrderStatus::Cancelled) {
+            order.status = charging::model::OrderStatus::Cancelled;
+            order.updatedAtUtc = QDateTime::currentDateTimeUtc();
+        }
+    }
+}
+
 void MockRequestTransport::registerMockReservation(qint64 reservationId, qint64 chargerId,
                                                    const QString& stationName,
                                                    const QString& chargerCode)

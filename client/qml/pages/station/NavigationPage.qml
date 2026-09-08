@@ -103,6 +103,13 @@ Item {
     property string webError: ""
     readonly property bool webRouteReady:
         typeof mapBridge !== "undefined" && mapBridge.routeHtml.length > 0
+    // mapBridge 缺位（裸 QML 测试无此 context 属性）时的 typeof 守卫降权面：
+    // 全部退回本页演示通道语义（指令⑥），避免整点式 ReferenceError。
+    readonly property string mapErr: typeof mapBridge !== "undefined" ? mapBridge.error : ""
+    readonly property bool mapBusy: typeof mapBridge !== "undefined" && mapBridge.busy
+    readonly property real mapRouteMeters:
+        typeof mapBridge !== "undefined" ? mapBridge.routeDistanceMeters : -1
+    readonly property int mapDurationMin: typeof mapBridge !== "undefined" ? mapBridge.durationMinutes : 0
 
     function requestRoute() {
         webError = ""
@@ -330,13 +337,13 @@ Item {
     // 上游 WebEngine 通道联动（2026-09-08 merge）：routeHtml 就绪即注入；arg 变更
     // （换目标站）重发路线；页面销毁撤销在途请求。
     Connections {
-        target: mapBridge
+        target: typeof mapBridge !== "undefined" ? mapBridge : null
         function onChanged() {
-            if (mapBridge.routeHtml.length > 0)
-                web.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
+            if (page.webRouteReady && webLoader.item)
+                webLoader.item.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
         }
     }
-    Component.onDestruction: mapBridge.cancelRoute()
+    Component.onDestruction: { if (typeof mapBridge !== "undefined") mapBridge.cancelRoute() }
     onArgChanged: requestRoute()
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
@@ -364,19 +371,19 @@ Item {
                 variant: "chip"; selected: page.mode === "walking"; text: "步行"
                 onClicked: { page.mode = "walking"; page.requestRoute() }
             }
-            P.ActionButton { variant: "ghost"; text: "重新规划"; enabled: !mapBridge.busy; onClicked: page.requestRoute() }
+            P.ActionButton { variant: "ghost"; text: "重新规划"; enabled: !page.mapBusy; onClicked: page.requestRoute() }
         }
         Text {
             objectName: "navigationCaptionLabel"
             width: parent.width; wrapMode: Text.WordWrap
             // 上游 mapBridge 真实路线口径优先（2026-09-08 merge）；无路线/无密钥时
             // 回落 page.caption（本页模拟先行口径，指令⑥两通道文案自洽）。
-            text: mapBridge.error.length ? mapBridge.error : page.webError.length ? page.webError
-                  : mapBridge.routeDistanceMeters >= 0
-                    ? "腾讯地图 · " + (mapBridge.routeDistanceMeters / 1000).toFixed(1)
-                      + " km · 约 " + mapBridge.durationMinutes + " 分钟"
+            text: page.mapErr.length ? page.mapErr : page.webError.length ? page.webError
+                  : page.mapRouteMeters >= 0
+                    ? "腾讯地图 · " + (page.mapRouteMeters / 1000).toFixed(1)
+                      + " km · 约 " + page.mapDurationMin + " 分钟"
                     : page.caption
-            color: mapBridge.error.length || page.webError.length ? P.Style.danger : P.Style.brandDeep
+            color: page.mapErr.length || page.webError.length ? P.Style.danger : P.Style.brandDeep
             font.pixelSize: P.Style.fontSm
         }
 
@@ -535,15 +542,30 @@ Item {
             // 上游 WebEngine 真路线层（2026-09-08 merge 并入本面板）：routeHtml 就绪
             // 即接管；为空时画布/静态图回落层继续工作（演示通道⑥）。objectName 让位
             // 给面板本体（navigationMapPanel 保持锚点在 Rectangle 上，测试口径不变）。
-            WebEngineView {
-                id: web
-                objectName: "navigationRouteWebView"
+            // Loader 惰性化：WebEngineView 创建会拉起 WebEngineContext，裸 QQmlEngine
+            // 测试进程未调 QtWebEngineQuick::initialize()（仅 preview main.cpp 有）→
+            // 直接实例化段错误。webRouteReady 需 mapBridge+routeHtml 双在，测试恒假
+            // →组件永不落地；preview 首帧就绪即实例化并 loadHtml。
+            Loader {
+                id: webLoader
                 anchors.fill: parent
-                visible: page.webRouteReady
-                settings.localContentCanAccessRemoteUrls: true
-                onLoadingChanged: function(info) {
-                    if (info.status === WebEngineView.LoadFailedStatus)
-                        page.webError = "地图页面加载失败，请检查网络和 JavaScript 地图密钥授权"
+                active: page.webRouteReady
+                sourceComponent: webRouteComponent
+                onLoaded: {
+                    if (typeof mapBridge !== "undefined" && mapBridge.routeHtml.length > 0)
+                        item.loadHtml(mapBridge.routeHtml, "https://map.qq.com/")
+                }
+            }
+            Component {
+                id: webRouteComponent
+                WebEngineView {
+                    objectName: "navigationRouteWebView"
+                    anchors.fill: parent
+                    settings.localContentCanAccessRemoteUrls: true
+                    onLoadingChanged: function(info) {
+                        if (info.status === WebEngineView.LoadFailedStatus)
+                            page.webError = "地图页面加载失败，请检查网络和 JavaScript 地图密钥授权"
+                    }
                 }
             }
         }

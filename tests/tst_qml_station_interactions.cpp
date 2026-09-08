@@ -99,6 +99,11 @@ class QmlStationInteractionsTest final : public QObject
     [[maybe_unused]] void bootShell(const QString& view)
     {
         engine_ = new QQmlEngine;
+        // 2026-09-08 merge：上游 QmlApp 默认构造改读进程环境 CHARGING_CHANNEL
+        // （qEnvironmentVariable）判 mock——QML context 属性到不了 C++ 构造期，
+        // 只注 context 会落真实 TCP 通道（138 演示号在 9527 服登不进 → 全页失明）。
+        // 与 qml_client_pages 同口径先 qputenv。
+        qputenv("CHARGING_CHANNEL", "mock");
         app_ = new QmlApp;
         auto* ctx = engine_->rootContext();
         ctx->setContextProperty(QStringLiteral("chargingView"), view);
@@ -316,6 +321,10 @@ private slots:
         auto* detail = enterDetailPage();
         QVERIFY2(detail != nullptr, "卡片文字区点击未进详情页");
         QVERIFY(detail->setProperty("chargingBusy", false));
+        // 2026-09-08 merge：预约出口改走上游 TCP 前置闸（checkUnfinished fail-closed），
+        // mock 种子自带 CHARGING/WAITING_PAYMENT 单——正断言需"无未完成订单"态，
+        // 走 MockRequestTransport::cancelActiveOrders 测试缝（QmlApp 代持）。
+        app_->clearUnfinishedOrdersForTesting();
         QList<QQuickItem*> buttons;
         collectItems(detail, QStringLiteral("detailReserveButton"), buttons);
         QQuickItem* target = nullptr;
@@ -323,7 +332,9 @@ private slots:
             if (b->isEnabled()) { target = b; break; }
         QVERIFY2(target != nullptr, "无 available 桩的启用预约按钮（mock 桩数据变了？）");
         realClick(window_, target);
-        spin(400);
+        // TCP 前置闸走 MockRequestTransport::send 的 450ms 单发延迟（kMockLatencyMs），
+        // 3 路查询并发同刻返回；2026-09-08 merge 后 spin(400) 会卡在闸内，放大到 900。
+        spin(900);
         QVERIFY2(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage"))
                      != nullptr,
                  "0 车点预约未直达确认页（旧车辆闸回归？）");
