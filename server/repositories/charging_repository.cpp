@@ -403,6 +403,22 @@ bool repository_detail::expireReservationsInTransaction(const QSqlDatabase& data
 
 ChargingRepository::ChargingRepository(const QSqlDatabase& database) : database_(database) {}
 
+bool ChargingRepository::expireReservations(const QDateTime& nowUtc, QString* diagnostic) const
+{
+    QString localDiagnostic;
+    QString* message = diagnostic != nullptr ? diagnostic : &localDiagnostic;
+    message->clear();
+    if (!validUtcInstant(nowUtc)) {
+        *message = QStringLiteral("The reservation expiry observation time is invalid");
+        return false;
+    }
+    if (!database_.isValid() || !database_.isOpen()) {
+        *message = QStringLiteral("The SQLite connection is not open");
+        return false;
+    }
+    return expireDueReservationsAtomically(database_, nowUtc.toUTC(), message);
+}
+
 ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 chargerId,
                                                      const QDateTime& reservedAtUtc,
                                                      const QDateTime& expiresAtUtc,

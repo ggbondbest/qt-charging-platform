@@ -128,7 +128,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             "s.id,s.code,s.name,s.address,s.latitude,s.longitude,s.price_cents_per_kwh AS "
             "priceCentsPerKwh,s.status,s.updated_at AS updatedAt,(SELECT COUNT(*) FROM chargers "
             "WHERE station_id=s.id) AS totalChargers,(SELECT COUNT(*) FROM chargers WHERE "
-            "station_id=s.id AND status='AVAILABLE') AS availableChargers");
+            "station_id=s.id AND status='AVAILABLE') AS availableChargers,(SELECT COUNT(*) "
+            "FROM chargers WHERE station_id=s.id AND status!='OFFLINE') AS onlineChargerCount");
         from = QStringLiteral("stations s");
         search = QStringLiteral("(s.name LIKE ? OR s.code LIKE ? OR s.address LIKE ?)");
         statusColumn = QStringLiteral("s.status");
@@ -143,7 +144,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     } else if (entity == QStringLiteral("users")) {
         select = QStringLiteral(
             "s.id,s.phone,s.nickname,s.avatar_key AS avatarKey,s.balance_cents AS "
-            "balanceCents,s.status,s.updated_at AS updatedAt,(SELECT COUNT(*) FROM orders WHERE "
+            "balanceCents,s.status,s.created_at AS createdAt,s.created_at AS createdAtUtc,"
+            "s.updated_at AS updatedAt,(SELECT COUNT(*) FROM orders WHERE "
             "user_id=s.id) AS orderCount,(SELECT COUNT(*) FROM orders WHERE user_id=s.id AND "
             "status IN ('RESERVED','CHARGING','WAITING_PAYMENT')) AS unfinishedOrderCount,(SELECT "
             "COUNT(*) FROM recharge_records WHERE user_id=s.id) AS rechargeCount");
@@ -358,6 +360,22 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     QJsonArray items;
     while (q.next()) {
         auto value = row(q);
+        if (entity == QStringLiteral("stations")) {
+            // Connectivity and availability are different concepts: a faulted
+            // charger is still online. Share the global summary's non-OFFLINE
+            // definition and compute both list/detail percentages here.
+            bool totalOk = false, onlineOk = false;
+            const qint64 totalChargers =
+                value.value(QStringLiteral("totalChargers")).toVariant().toLongLong(&totalOk);
+            const qint64 onlineChargers =
+                value.value(QStringLiteral("onlineChargerCount")).toVariant().toLongLong(&onlineOk);
+            if (!totalOk || !onlineOk || totalChargers < 0 || onlineChargers < 0 ||
+                onlineChargers > totalChargers || totalChargers > 9007199254740991LL)
+                throw AdminFailure("DATABASE_ERROR");
+            value.insert(QStringLiteral("onlineRatePercent"),
+                         totalChargers == 0 ? 0.0
+                                            : double(onlineChargers) / double(totalChargers) * 100.0);
+        }
         if (entity == QStringLiteral("chargers")) {
             const QString state = value.value(QStringLiteral("status")).toString();
             // State classification, NOT a hardware fault diagnosis or event time.

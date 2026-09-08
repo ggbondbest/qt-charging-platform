@@ -18,6 +18,11 @@ class ChargingRepository final
 public:
     explicit ChargingRepository(const QSqlDatabase& database);
 
+    // Call on the database-owning worker at startup and periodically. Expired
+    // reservations, their reserved orders and charger availability change in
+    // one transaction, even when no user requests are arriving.
+    bool expireReservations(const QDateTime& nowUtc, QString* diagnostic = nullptr) const;
+
     ChargingRepositoryResult reserve(qint64 userId, qint64 chargerId,
                                      const QDateTime& reservedAtUtc, const QDateTime& expiresAtUtc,
                                      const QString& orderNo) const;
