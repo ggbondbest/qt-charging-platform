@@ -148,6 +148,7 @@ signals:
     void submitStarted(qint64 chargerId);
     void submitSucceeded(const charging::client::services::reservation::ReservationRecord& record);
     void submitFailed(const QString& reason);
+    void submitRejected(const charging::protocol::ProtocolError& error);
     void cancelStarted(qint64 reservationId);
     void cancelSucceeded(qint64 reservationId);
     void cancelFailed(const QString& message);

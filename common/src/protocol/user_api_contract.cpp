@@ -165,9 +165,17 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
         }
         if (data.contains(avatar)) {
             const QJsonValue value = data.value(avatar);
-            if (!value.isString()
-                || !QRegularExpression(QStringLiteral("\\A[A-Za-z0-9_-]{0,64}\\z"))
-                        .match(value.toString()).hasMatch()) {
+            const QString text = value.toString();
+            const QString prefix = QStringLiteral("data:image/png;base64,");
+            const bool preset = QRegularExpression(QStringLiteral("\\A[A-Za-z0-9_-]{0,64}\\z"))
+                                    .match(text).hasMatch();
+            // Transport validation only. The Service verifies the actual PNG
+            // and its dimensions before the Repository may persist anything.
+            const bool image = text.startsWith(prefix)
+                && text.size() <= prefix.size() + ((kMaximumAvatarBytes + 2) / 3) * 4
+                && QRegularExpression(QStringLiteral("\\A[A-Za-z0-9+/]+={0,2}\\z"))
+                       .match(text.mid(prefix.size())).hasMatch();
+            if (!value.isString() || (!preset && !image)) {
                 return fail(error_code::kInvalidArgument, avatar);
             }
             result.insert(avatar, value);

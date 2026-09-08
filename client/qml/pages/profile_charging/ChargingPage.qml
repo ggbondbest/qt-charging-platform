@@ -16,6 +16,7 @@ Item {
 
     property var status: null
     property int seconds: 0
+    property bool stopping: false
 
     function dur(sec) {
         var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60
@@ -25,16 +26,22 @@ Item {
     Connections {
         target: chargingService
         function onStatusLoaded(s) {
+            const expected = page.arg && page.arg.id !== undefined ? page.arg.id : page.arg
+            if (expected && String(s.id) !== String(expected)) return
             page.status = s
             page.seconds = s.durationSeconds || 0
+            if (App && s.status === "waiting_payment") App.navigate("settlement", s)
+            else if (App && s.status === "completed") App.navigate("order")
         }
         function onStopCompleted(s) {
+            page.stopping = false
             chargingService.stopTracking()
             if (!App) return
             App.showToast("已停止充电", "success")
             App.navigate("settlement", s)
         }
         function onOperationFailed(type, code, message) {
+            if (type === "STOP_CHARGING") page.stopping = false
             if (App) App.showToast("操作失败：" + message, "danger")
         }
     }
@@ -45,12 +52,12 @@ Item {
         function onOrdersLoaded(orders, total, hasMore) {
             if (page.arg || orders.length === 0) return
             page.arg = orders[0]
-            if (chargingService) chargingService.startTracking(Number(orders[0].id))
+            if (chargingService) chargingService.startTracking(String(orders[0].id))
         }
     }
     Component.onCompleted: {
         const id = page.arg && page.arg.id !== undefined ? page.arg.id : page.arg
-        if (id) chargingService.startTracking(Number(id))
+        if (id) chargingService.startTracking(String(id))
         chargingService.fetchStatusNow()
         if (!id) orderService.fetchOrders("charging", 1)
     }
@@ -162,7 +169,8 @@ Item {
             variant: "danger"
             actionText: "停止充电"
             caption: "结束后进入结算"
-            onClicked: chargingService.stopCharging()
+            enabled: !!page.status && page.status.status === "charging" && !page.stopping
+            onClicked: { page.stopping = true; chargingService.stopCharging() }
         }
     }
 }

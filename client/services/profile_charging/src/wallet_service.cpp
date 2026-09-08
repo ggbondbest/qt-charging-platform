@@ -110,7 +110,7 @@ void WalletService::updateNickname(const QString& nickname)
 {
     const QString type =
         QString::fromLatin1(charging::protocol::request_type::kUpdateUserInfo);
-    if (updatingNickname_) {
+    if (updatingNickname_ || updatingAvatar_) {
         return; // An update is in flight; never send a second one.
     }
     if (transport_ == nullptr) {
@@ -152,6 +152,7 @@ void WalletService::updateNickname(const QString& nickname)
                 return;
             }
             emit profileLoaded(user);
+            emit profileUpdated(QStringLiteral("nickname"), user);
         });
 }
 
@@ -170,8 +171,7 @@ void WalletService::updateAvatar(const QString& avatarKey)
 
     updatingAvatar_ = true;
     QJsonObject payload;
-    // Frozen avatarKey patch: built-in keys only; empty restores the default.
-    // Image upload is not part of docs/api/user_api_contract.md.
+    // Built-in keys or a bounded PNG data URI; the server validates image bytes.
     payload.insert(QStringLiteral("avatarKey"), avatarKey);
     transport_->sendFor(this,
         type, payload,
@@ -195,6 +195,7 @@ void WalletService::updateAvatar(const QString& avatarKey)
                 return;
             }
             emit profileLoaded(user);
+            emit profileUpdated(QStringLiteral("avatar"), user);
         });
 }
 

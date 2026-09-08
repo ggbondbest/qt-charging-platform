@@ -260,7 +260,8 @@ bool validateTableDefinition(const QSqlDatabase& database, const QString& table,
     return true;
 }
 
-bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
+bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
+                            bool currentIndexes = true)
 {
     const QList<QPair<QString, QStringList>> tables = {
         {QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("phone"),
@@ -381,11 +382,13 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         }
     }
 
-    const QList<IndexDefinition> indexes = {
+    QList<IndexDefinition> indexes = {
         {QStringLiteral("idx_stations_status"), QStringLiteral("stations"),
          {QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_chargers_station_status"), QStringLiteral("chargers"),
          {QStringLiteral("station_id"), QStringLiteral("status")}, false, {}},
+        {QStringLiteral("idx_chargers_updated_at"), QStringLiteral("chargers"),
+         {QStringLiteral("updated_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_reservations_user_status"), QStringLiteral("reservations"),
          {QStringLiteral("user_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_reservations_charger_status"), QStringLiteral("reservations"),
@@ -397,13 +400,38 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
         {QStringLiteral("idx_orders_charger_status"), QStringLiteral("orders"),
          {QStringLiteral("charger_id"), QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_orders_status_created_at"), QStringLiteral("orders"),
-         {QStringLiteral("status"), QStringLiteral("created_at")}, false, {}},
+         currentIndexes
+             ? QStringList{QStringLiteral("status"), QStringLiteral("created_at"),
+                           QStringLiteral("id")}
+             : QStringList{QStringLiteral("status"), QStringLiteral("created_at")},
+         false, {}},
+        {QStringLiteral("idx_orders_created_at"), QStringLiteral("orders"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
+        {QStringLiteral("idx_users_status_id"), QStringLiteral("users"),
+         {QStringLiteral("status"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_recharge_records_user_created_at"),
          QStringLiteral("recharge_records"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
+        {QStringLiteral("idx_recharge_records_status_created_at"),
+         QStringLiteral("recharge_records"),
+         {QStringLiteral("status"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_recharge_records_created_at"),
+         QStringLiteral("recharge_records"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_operation_logs_admin_created_at"),
          QStringLiteral("operation_logs"),
-         {QStringLiteral("admin_id"), QStringLiteral("created_at")}, false, {}},
+         currentIndexes
+             ? QStringList{QStringLiteral("admin_id"), QStringLiteral("created_at"),
+                           QStringLiteral("id")}
+             : QStringList{QStringLiteral("admin_id"), QStringLiteral("created_at")},
+         false, {}},
+        {QStringLiteral("idx_operation_logs_action_created_at"),
+         QStringLiteral("operation_logs"),
+         {QStringLiteral("action"), QStringLiteral("created_at"), QStringLiteral("id")}, false,
+         {}},
+        {QStringLiteral("idx_operation_logs_created_at"), QStringLiteral("operation_logs"),
+         {QStringLiteral("created_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_notifications_user_created_at"), QStringLiteral("notifications"),
          {QStringLiteral("user_id"), QStringLiteral("created_at")}, false, {}},
         {QStringLiteral("idx_coupons_user_status"), QStringLiteral("coupons"),
@@ -425,6 +453,18 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage)
          {QStringLiteral("charger_id")}, true,
          QStringLiteral("status IN ('RESERVED', 'CHARGING')")}
     };
+    if (currentIndexes) {
+        indexes.append({QStringLiteral("idx_chargers_abnormal_updated_at"),
+                        QStringLiteral("chargers"),
+                        {QStringLiteral("updated_at"), QStringLiteral("id")}, false,
+                        QStringLiteral("status IN ('FAULT','OFFLINE')")});
+    } else {
+        indexes.append({QStringLiteral("idx_chargers_status_updated_at"),
+                        QStringLiteral("chargers"),
+                        {QStringLiteral("status"), QStringLiteral("updated_at"),
+                         QStringLiteral("id")},
+                        false, {}});
+    }
     for (const IndexDefinition& index : indexes) {
         if (!validateIndex(database, index, errorMessage)) {
             return false;
@@ -461,6 +501,61 @@ DatabaseMaintenanceResult copyAtomically(const QString& sourcePath, const QStrin
                            .arg(destination.errorString()));
     }
     return success();
+}
+
+DatabaseMaintenanceResult validateLegacyRestoreSource(const QString& databasePath)
+{
+    const QString path = QFileInfo(databasePath).absoluteFilePath();
+    const QFileInfo fileInfo(path);
+    if (!fileInfo.isFile() || fileInfo.size() == 0) {
+        return failure(QStringLiteral("Database backup does not exist or is empty: %1").arg(path));
+    }
+    if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
+        return failure(QStringLiteral("Qt SQLite driver QSQLITE is not available"));
+    }
+
+    const QString connectionName = QStringLiteral("legacy-restore-validation-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    DatabaseMaintenanceResult result = success();
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        database.setDatabaseName(path);
+        if (!database.open()) {
+            result = failure(QStringLiteral("Unable to open backup: %1")
+                                 .arg(database.lastError().text()));
+        } else {
+            QSqlQuery integrityQuery(database);
+            if (!integrityQuery.exec(QStringLiteral("PRAGMA integrity_check")) ||
+                !integrityQuery.next() ||
+                integrityQuery.value(0).toString() != QStringLiteral("ok")) {
+                result = failure(QStringLiteral("SQLite integrity check failed"));
+            }
+
+            QSqlQuery foreignKeyQuery(database);
+            if (result.ok &&
+                (!foreignKeyQuery.exec(QStringLiteral("PRAGMA foreign_key_check")) ||
+                 foreignKeyQuery.next())) {
+                result = failure(QStringLiteral("SQLite foreign key check failed"));
+            }
+
+            QSqlQuery versionQuery(database);
+            if (result.ok &&
+                (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 1)) {
+                result = failure(QStringLiteral("Unsupported database schema version"));
+            }
+            if (result.ok) {
+                QString schemaError;
+                if (!validatePlatformSchema(database, &schemaError, false)) {
+                    result = failure(schemaError);
+                }
+            }
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return result;
 }
 
 } // namespace
@@ -552,7 +647,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::validate(const QString& databaseP
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 1)) {
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 2)) {
                 result = failure(QStringLiteral("Unsupported database schema version"));
             }
             if (result.ok) {
@@ -574,9 +669,12 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (destinationPath.trimmed().isEmpty()) {
         return failure(QStringLiteral("Restore destination must not be empty"));
     }
-    const DatabaseMaintenanceResult validation = validate(backupPath);
-    if (!validation.ok) {
-        return validation;
+    const DatabaseMaintenanceResult currentValidation = validate(backupPath);
+    if (!currentValidation.ok) {
+        const DatabaseMaintenanceResult legacyValidation = validateLegacyRestoreSource(backupPath);
+        if (!legacyValidation.ok) {
+            return legacyValidation;
+        }
     }
 
     const QString destination = QFileInfo(destinationPath).absoluteFilePath();

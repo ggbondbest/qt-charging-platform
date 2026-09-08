@@ -26,4 +26,5 @@ target_link_libraries(charging_server_services
         ChargingPlatform::Common
         ChargingPlatform::ProjectOptions
         Qt6::Core
+        Qt6::Gui
 )

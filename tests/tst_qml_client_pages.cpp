@@ -14,6 +14,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopedPointer>
 
 #include "charging/client/profile_charging/avatar_library.h"
 #include "services/station/station_query_service.h"
@@ -96,6 +97,7 @@ public:
     QStringList calls; // "nick:<v>" / "avatar:<k>"
 
     Q_INVOKABLE void fetchProfile() {}
+    Q_INVOKABLE bool isUpdatingProfile() const { return false; }
     Q_INVOKABLE void updateNickname(const QString& nickname)
     {
         calls << (QStringLiteral("nick:") + nickname);
@@ -105,7 +107,12 @@ public:
         calls << (QStringLiteral("avatar:") + avatarKey);
     }
 
-    void emitProfileLoaded() { emit profileLoaded(QVariantMap{}); }
+    void emitProfileLoaded()
+    {
+        emit profileLoaded(QVariantMap{});
+        emit profileUpdated(calls.last().startsWith("nick:") ? "nickname" : "avatar", {});
+    }
+    void emitReadProfile() { emit profileLoaded(QVariantMap{}); }
     void emitFailure()
     {
         emit operationFailed(QStringLiteral("UPDATE_USER_INFO"), QStringLiteral("MOCK"),
@@ -114,6 +121,7 @@ public:
 
 signals:
     void profileLoaded(const QVariantMap& user);
+    void profileUpdated(const QString& field, const QVariantMap& user);
     void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
     void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
     void operationFailed(const QString& type, const QString& code, const QString& message);
@@ -312,6 +320,7 @@ class QmlClientPagesTest final : public QObject
 private slots:
     void init()
     {
+        qputenv("CHARGING_CHANNEL", "mock"); // Preview tests opt in; production defaults to TCP.
         if (window_ == nullptr) {
             window_ = new QQuickWindow;
             window_->resize(420, 860);
@@ -384,6 +393,70 @@ private slots:
     }
 
 private slots:
+    void shellBottomBarFollowsLoginState()
+    {
+        // Exercise the real shell and authentication state; mock is explicit
+        // because this regression concerns layout, not TCP authentication.
+        QmlApp app(QStringLiteral("127.0.0.1"), 9527, true);
+        QQmlEngine engine;
+        auto* context = engine.rootContext();
+        context->setContextObject(&app); // Service properties retain NOTIFY bindings.
+        context->setContextProperty(QStringLiteral("App"), &app);
+        context->setContextProperty(QStringLiteral("chargingView"), QStringLiteral("station"));
+        context->setContextProperty(QStringLiteral("CHARGING_CHANNEL"), QStringLiteral("mock"));
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        // The window and all pages are destroyed before their engine/services.
+        QScopedPointer<QQuickWindow> shell(qobject_cast<QQuickWindow*>(component.create()));
+        QVERIFY(shell);
+        auto* tabs = shell->findChild<QQuickItem*>(QStringLiteral("bottomTabBar"));
+        auto* stack = shell->findChild<QQuickItem*>(QStringLiteral("pageStack"));
+        auto* nav = shell->findChild<QQuickItem*>(QStringLiteral("topNavBar"));
+        QVERIFY(tabs); QVERIFY(stack); QVERIFY(nav);
+        const auto currentRoute = [stack]() {
+            auto* current = stack->property("currentItem").value<QQuickItem*>();
+            return current ? current->property("route").toString() : QString();
+        };
+
+        QVERIFY(!app.loggedIn());
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QSignalSpy rejected(&app, &QmlApp::loginFailed);
+        QVERIFY(!app.login(QStringLiteral("123")));
+        QCOMPARE(rejected.size(), 1);
+        QVERIFY(!app.loggedIn());
+        QVERIFY(!tabs->isVisible());
+        QCOMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+        QVERIFY(tabs->implicitHeight() > 0);
+        QCOMPARE(tabs->height(), tabs->implicitHeight());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height() - tabs->height());
+        QTRY_COMPARE(tabs->y() + tabs->height(), qreal(shell->height()));
+
+        // Even an authenticated session must not show navigation on the login route.
+        app.navigate(QStringLiteral("login"));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+        app.navigate(QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+
+        app.logout();
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(!app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+    }
+
     // P2·复审①：请求中切换筛选——旧("全部")响应不得落到"已完成"列表，
     // 且必须按当前筛选补查（此前按钮改了 filter、请求被吞，旧结果显示）。
     void orderListIgnoresStaleFilterResponse()
@@ -497,10 +570,20 @@ private slots:
         QCOMPARE(fake.calls, QStringList{QStringLiteral("nick:小荷")}); // 头像只登记不抢发
         QCOMPARE(backSpy.count(), 0);
 
+        // An earlier GET_USER_INFO completes while nickname saving is in flight.
+        // It must not send avatar prematurely or mark the write as successful.
+        fake.emitReadProfile();
+        QCOMPARE(fake.calls.size(), 1);
+        QCOMPARE(backSpy.count(), 0);
+        QVERIFY(page->property("sending").toBool());
+
         fake.emitProfileLoaded(); // 昵称落定 → 自动补发头像
         QCOMPARE(fake.calls.size(), 2);
         QCOMPARE(fake.calls.at(1), QStringLiteral("avatar:cat"));
         QCOMPARE(backSpy.count(), 0); // 原 bug：第一步成功就退出，头像丢失
+
+        fake.emitReadProfile(); // Reads during the second write are not ACKs either.
+        QCOMPARE(backSpy.count(), 0);
 
         fake.emitProfileLoaded(); // 头像也落定 → 才许退出
         QCOMPARE(backSpy.count(), 1);
@@ -533,6 +616,34 @@ private slots:
         QCOMPARE(backSpy.count(), 0);
         QVERIFY(!page->property("sending").toBool());          // 保存按钮恢复可点
         QCOMPARE(toastSpy.last().at(1).toString(), QStringLiteral("danger"));
+    }
+
+    void chargingStartFailureClearsPendingAndExplainsWhy()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("App", &app);
+        engine.rootContext()->setContextProperty("walletService", app.walletService());
+        engine.rootContext()->setContextProperty("orderService", app.orderService());
+        engine.rootContext()->setContextProperty("chargingService", app.chargingService());
+        engine.rootContext()->setContextProperty("reservationService", app.reservationService());
+        QObject holder;
+        auto* page = createPage(engine, "ChargingHomePage.qml", &holder);
+        QVERIFY(page);
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QSignalSpy failures(charging, &ChargingBridge::operationFailed);
+        QSignalSpy toasts(&app, &QmlApp::toastRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QVERIFY(page->property("startPending").toBool());
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QTRY_VERIFY(!page->property("startPending").toBool());
+        QVERIFY(!page->property("loadError").toString().isEmpty());
+        QVERIFY(!toasts.isEmpty());
+        int startFailures = 0;
+        for (const auto& failure : failures)
+            if (failure.at(0).toString() == "START_CHARGING") ++startFailures;
+        QCOMPARE(startFailures, 1); // The duplicate click did not submit another request.
     }
 
     // P2·复审③：QML 头像清单与 widgets AvatarLibrary 逐键对拍（双源治理）。

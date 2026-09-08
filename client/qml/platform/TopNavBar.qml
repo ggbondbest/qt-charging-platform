@@ -11,7 +11,8 @@ Rectangle {
     property bool backVisible: false
     property bool searchVisible: true
     property alias searchText: searchField.text
-    readonly property bool hasUser: user !== null
+    readonly property bool hasUser: user !== null && user.id !== undefined && String(user.id) !== "0"
+    readonly property bool defaultAvatar: !hasUser || !user.avatarKey
     // filter/notifications entries ride with the search group (C++ semantics).
     readonly property bool filterVisible: searchVisible
     readonly property bool notificationsVisible: searchVisible
@@ -56,8 +57,9 @@ Rectangle {
             }
         }
         Text {
+            id: platformTitle
             anchors.verticalCenter: parent.verticalCenter
-            text: "⚡ 充电平台"
+            text: nav.searchVisible ? "充电" : "⚡ 充电平台"
             font.pixelSize: Style.fontLg
             font.bold: true
             color: Style.ink
@@ -65,7 +67,9 @@ Rectangle {
         Item {
             anchors.verticalCenter: parent.verticalCenter
             width: nav.searchVisible
-                 ? nav.width - 2 * Style.spaceLg - 320 : 0
+                 ? Math.max(96, nav.width - 2 * Style.spaceLg - platformTitle.implicitWidth
+                            - 32 - filterText.implicitWidth - notificationText.implicitWidth
+                            - 5 * Style.spaceSm) : 0
             height: 36
             visible: nav.searchVisible
             TextField {
@@ -77,6 +81,7 @@ Rectangle {
             }
         }
         Text { // 高级筛选漏斗
+            id: filterText
             anchors.verticalCenter: parent.verticalCenter
             visible: nav.filterVisible
             text: "⛛"
@@ -86,6 +91,7 @@ Rectangle {
                 onClicked: nav.filterRequested() }
         }
         Text { // 通知铃铛
+            id: notificationText
             anchors.verticalCenter: parent.verticalCenter
             visible: nav.notificationsVisible
             text: "🔔"
@@ -93,7 +99,6 @@ Rectangle {
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                 onClicked: nav.notificationsRequested() }
         }
-        Item { width: nav.hasUser ? 1 : 1; height: 1 }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             visible: !nav.hasUser
@@ -108,10 +113,19 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             visible: nav.hasUser
             width: 32; height: 32; radius: 16
-            color: Style.brandSoft
+            color: nav.defaultAvatar ? "#D5D9DE" : Style.brandSoft
+            Image {
+                anchors.fill: parent
+                visible: nav.hasUser && nav.user.avatarKey
+                         && String(nav.user.avatarKey).indexOf("data:image/png;base64,") === 0
+                source: visible ? nav.user.avatarKey : ""
+                fillMode: Image.PreserveAspectCrop
+            }
             Text { anchors.centerIn: parent
-                text: nav.hasUser && nav.user && nav.user.nickname ? nav.user.nickname[0] : "?"
-                font.pixelSize: Style.fontSm; color: Style.brandDeep }
+                visible: !nav.hasUser || !nav.user.avatarKey
+                         || String(nav.user.avatarKey).indexOf("data:image/png;base64,") !== 0
+                text: nav.defaultAvatar ? "👤" : (nav.user.nickname ? nav.user.nickname[0] : "👤")
+                font.pixelSize: Style.fontSm; color: nav.defaultAvatar ? "#626A73" : Style.brandDeep }
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                 onClicked: nav.profileRequested() }
         }

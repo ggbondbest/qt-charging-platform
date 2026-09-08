@@ -10,19 +10,21 @@ inline constexpr int kMaximumPageSize = 100;
 inline constexpr int kMaximumPage = 2147483647;
 inline constexpr qint64 kMaximumRechargeCents = 10000000;
 inline constexpr int kMaximumStatsMonths = 12;
+inline constexpr int kMaximumAvatarBytes = 128 * 1024;
+inline constexpr int kMaximumAvatarDimension = 512;
 // Recharge-reward coupon rule (2026-09-08 proposal; TODO(contract): business
 // sign-off pending — thresholds live here so the team can change them in one place):
 // one ¥5.00 charging coupon per SUCCESS recharge of at least ¥50.00, 30-day validity.
 inline constexpr qint64 kCouponRechargeThresholdCents = 5000;
 inline constexpr qint64 kCouponValueCents = 500;
 inline constexpr int kCouponValidityDays = 30;
-// Daily check-in reward (2026-09-08 批次C proposal; TODO(contract): business
-// sign-off pending — amount lives here so the team can change it in one place).
+// Daily check-in reward (2026-09-08; TODO(contract): business sign-off pending —
+// amount lives here so the team can change it in one place).
 // One check-in per user per UTC day, idempotent; grants kCheckInRewardPoints.
 inline constexpr qint64 kCheckInRewardPoints = 10;
-// Charger rating (2026-09-08 批次E): 1..5 stars, optional comment capped at 140
+// Charger rating (2026-09-08): 1..5 stars, optional comment capped at 140
 // code points. TODO(contract): whether to allow editing a submitted rating
-// (一期：一单一评，提交后不可改).
+// (one rating per order, immutable once submitted).
 inline constexpr int kMinimumRating = 1;
 inline constexpr int kMaximumRating = 5;
 inline constexpr int kMaximumRatingCommentChars = 140;

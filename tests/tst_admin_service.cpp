@@ -7,7 +7,9 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSqlError>
 #include <QSqlQuery>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <atomic>
@@ -75,6 +77,16 @@ class AdminServiceTest final : public QObject
         if (!q.exec(sql) || !q.next())
             return -1;
         return q.value(0).toLongLong();
+    }
+    QString queryPlan(const QString& sql)
+    {
+        QSqlQuery query(db_.database());
+        if (!query.exec(QStringLiteral("EXPLAIN QUERY PLAN ") + sql))
+            return query.lastError().text();
+        QStringList details;
+        while (query.next())
+            details.append(query.value(3).toString());
+        return details.join(QLatin1Char('\n'));
     }
 private slots:
     void summariesUseFullFilteredScope()
@@ -281,6 +293,165 @@ private slots:
         const auto descending = data(call("stations.list", {{"pageSize", 1}, {"sort", "idDesc"}}));
         QCOMPARE(descending.value("items").toArray().size(), 1);
         QVERIFY(descending.value("total").toInt() >= 1);
+    }
+    void listAndDetailPayloadsStayConsistent()
+    {
+        QSqlQuery query(db_.database());
+        QVERIFY(query.exec("INSERT INTO orders(order_no,user_id,charger_id,status,"
+                           "unit_price_cents_per_kwh) "
+                           "VALUES('CONTRACT-DETAIL-1',1,1,'RESERVED',120)"));
+        QVERIFY(query.exec("INSERT INTO operation_logs(admin_id,action,target_type,target_id,"
+                           "details_json) "
+                           "VALUES(1,'contract.verify','ADMIN_COMMAND','contract-detail-1','{}')"));
+
+        for (const auto& entity : {QStringLiteral("stations"), QStringLiteral("chargers"),
+                                   QStringLiteral("users"), QStringLiteral("orders"),
+                                   QStringLiteral("recharges"), QStringLiteral("operation_logs")}) {
+            const auto firstPage = data(call(entity + QStringLiteral(".list"),
+                                             {{QStringLiteral("page"), 1},
+                                              {QStringLiteral("pageSize"), 1},
+                                              {QStringLiteral("sort"), QStringLiteral("idAsc")}}));
+            const int total = firstPage.value(QStringLiteral("total")).toInt();
+            QVERIFY2(total > 0, qPrintable(entity));
+            QCOMPARE(firstPage.value(QStringLiteral("items")).toArray().size(), 1);
+
+            QJsonArray allItems;
+            for (int page = 1; page <= total; ++page) {
+                const auto pageData = data(call(entity + QStringLiteral(".list"),
+                                                {{QStringLiteral("page"), page},
+                                                 {QStringLiteral("pageSize"), 1},
+                                                 {QStringLiteral("sort"), QStringLiteral("idAsc")}}));
+                QCOMPARE(pageData.value(QStringLiteral("total")).toInt(), total);
+                const auto items = pageData.value(QStringLiteral("items")).toArray();
+                QCOMPARE(items.size(), 1);
+                allItems.append(items.first());
+            }
+
+            QCOMPARE(allItems.size(), total);
+            for (int index = 0; index < allItems.size(); ++index) {
+                const auto listItem = allItems.at(index).toObject();
+                const auto id = listItem.value(QStringLiteral("id")).toString();
+                QVERIFY2(!id.isEmpty(), qPrintable(entity));
+                if (index > 0) {
+                    const auto previousId = allItems.at(index - 1)
+                                                .toObject()
+                                                .value(QStringLiteral("id"))
+                                                .toString();
+                    QVERIFY2(previousId.toLongLong() < id.toLongLong(), qPrintable(entity));
+                }
+                QCOMPARE(item(call(entity + QStringLiteral(".get"),
+                                   {{QStringLiteral("id"), id}})),
+                         listItem);
+            }
+        }
+    }
+    void keywordWildcardsAreMatchedLiterally()
+    {
+        QSqlQuery query(db_.database());
+        QVERIFY(query.exec("INSERT INTO stations(code,name,address,latitude,longitude,"
+                           "price_cents_per_kwh) "
+                           "VALUES('LITERAL-SEARCH','100%_Ready!','测试路',31.2,121.4,120)"));
+
+        for (const auto& entity : {QStringLiteral("stations"), QStringLiteral("chargers"),
+                                   QStringLiteral("users"), QStringLiteral("orders"),
+                                   QStringLiteral("recharges"), QStringLiteral("operation_logs")}) {
+            const auto result = data(call(entity + QStringLiteral(".list"),
+                                          {{QStringLiteral("keyword"), QStringLiteral("%_")}}));
+            QCOMPARE(result.value(QStringLiteral("total")).toInt(),
+                     entity == QStringLiteral("stations") ? 1 : 0);
+        }
+        QCOMPARE(data(call("stations.list", {{"keyword", "Ready!"}})).value("total").toInt(), 1);
+    }
+    void timestampSortsUseStableIdTieBreakers()
+    {
+        QSqlQuery query(db_.database());
+        const QString timestamp = QStringLiteral("2026-09-06T12:00:00.000Z");
+        for (int id : {801, 802}) {
+            query.prepare("INSERT INTO chargers(id,station_id,code,type,power_watts,status,updated_at) "
+                          "VALUES(?,1,?,'SLOW',7200,'AVAILABLE',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-C-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO orders(id,order_no,user_id,charger_id,status,"
+                          "unit_price_cents_per_kwh,created_at) "
+                          "VALUES(?,?,1,?,'CANCELLED',120,?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-O-%1").arg(id));
+            query.addBindValue(id);
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO recharge_records(id,transaction_no,user_id,amount_cents,"
+                          "balance_after_cents,status,created_at) "
+                          "VALUES(?,?,1,100,100,'SUCCESS',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-R-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+
+            query.prepare("INSERT INTO operation_logs(id,admin_id,action,target_type,target_id,"
+                          "details_json,created_at) VALUES(?,1,'sort.verify','ADMIN_COMMAND',?,'{}',?)");
+            query.addBindValue(id);
+            query.addBindValue(QStringLiteral("SORT-L-%1").arg(id));
+            query.addBindValue(timestamp);
+            QVERIFY(query.exec());
+        }
+
+        const QList<QPair<QString, QString>> sorts{
+            {QStringLiteral("chargers"), QStringLiteral("updatedAtDesc")},
+            {QStringLiteral("orders"), QStringLiteral("createdAtDesc")},
+            {QStringLiteral("recharges"), QStringLiteral("createdAtDesc")},
+            {QStringLiteral("operation_logs"), QStringLiteral("createdAtDesc")}};
+        for (const auto& entry : sorts) {
+            const auto result = data(call(entry.first + QStringLiteral(".list"),
+                                          {{QStringLiteral("sort"), entry.second},
+                                           {QStringLiteral("keyword"), QStringLiteral("SORT-")},
+                                           {QStringLiteral("pageSize"), 2}}));
+            const auto items = result.value(QStringLiteral("items")).toArray();
+            QCOMPARE(items.at(0).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("802"));
+            QCOMPARE(items.at(1).toObject().value(QStringLiteral("id")).toString(), QStringLiteral("801"));
+        }
+    }
+    void filteredTimestampSortsAvoidTemporaryBtrees()
+    {
+        const struct QueryCase {
+            QString action;
+            QJsonObject parameters;
+            QString sql;
+            QString index;
+        } cases[]{
+            {QStringLiteral("orders.list"),
+             {{QStringLiteral("status"), QStringLiteral("COMPLETED")},
+              {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}},
+             QStringLiteral("SELECT s.id FROM orders s JOIN users u ON u.id=s.user_id "
+                            "JOIN chargers c ON c.id=s.charger_id "
+                            "JOIN stations t ON t.id=c.station_id WHERE 1=1 "
+                            "AND s.status='COMPLETED' "
+                            "ORDER BY s.created_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_orders_status_created_at")},
+            {QStringLiteral("operation_logs.list"),
+             {{QStringLiteral("adminId"), QStringLiteral("1")},
+              {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}},
+             QStringLiteral("SELECT s.id FROM operation_logs s WHERE 1=1 AND s.admin_id='1' "
+                            "ORDER BY s.created_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_operation_logs_admin_created_at")},
+            {QStringLiteral("chargers.list"),
+             {{QStringLiteral("abnormalOnly"), true},
+              {QStringLiteral("sort"), QStringLiteral("updatedAtDesc")}},
+             QStringLiteral("SELECT s.id FROM chargers s JOIN stations t ON t.id=s.station_id "
+                            "WHERE 1=1 AND s.status IN ('FAULT','OFFLINE') "
+                            "ORDER BY s.updated_at DESC,s.id DESC LIMIT 20 OFFSET 0"),
+             QStringLiteral("idx_chargers_abnormal_updated_at")}};
+
+        for (const auto& queryCase : cases) {
+            QVERIFY2(ok(call(queryCase.action, queryCase.parameters)),
+                     qPrintable(queryCase.action));
+            const QString plan = queryPlan(queryCase.sql);
+            QVERIFY2(plan.contains(queryCase.index), qPrintable(plan));
+            QVERIFY2(!plan.contains(QStringLiteral("USE TEMP B-TREE")), qPrintable(plan));
+        }
     }
     void auditQueriesAndRechargeTimeRanges()
     {
@@ -643,10 +814,15 @@ private slots:
         DatabaseConnection setup;
         QVERIFY(setup.open(path, true));
         QJsonObject results[2];
+        std::atomic<int> openTurn{0};
         std::atomic<int> ready{0};
         const auto worker = [&](int index) {
+            while (openTurn.load() != index)
+                std::this_thread::yield();
             DatabaseConnection connection;
-            if (!connection.open(path, false)) {
+            const bool opened = connection.open(path, false);
+            ++openTurn;
+            if (!opened) {
                 ++ready;
                 return;
             }

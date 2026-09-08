@@ -1,13 +1,8 @@
 import QtQuick
 import "../../platform" as P
 
-// Schematic station/route map — QML twin of the StationMapPanel *degraded* state
-// (and the offscreen-safe stand-in for the real WebEngine map tonight).
-// Decision record: the task book offered a QQuickPaintedItem C++ wrapper, but type
-// registration would touch client/qml/main.cpp (member-3 territory) and the CMake
-// mount only forwards .qml — so this sprint paints with Canvas (zero deps,
-// grabToImage-safe). Real map = QtWebEngineQuick WebEngineView after cutover
-// (separate binary ⇒ no WebEngineWidgets conflict).
+// Coordinate overview only; it plots real station points without pretending to
+// be a geographic basemap. NavigationPage owns the actual Tencent WebEngine map.
 Item {
     id: mapItem
     objectName: "stationMapItem"
@@ -63,14 +58,11 @@ Item {
             const sx = ln => PAD + (ln - loLn) / (hiLn - loLn) * (W - 2 * PAD)
             const sy = la => H - PAD - (la - loLa) / (hiLa - loLa) * (H - 2 * PAD)
 
-            // Schematic backdrop: soft grid + a diagonal "river".
+            // Coordinate grid; do not invent rivers, roads or route geometry.
             ctx.strokeStyle = Qt.alpha(P.Style.brand, 0.10)
             ctx.lineWidth = 1
             for (let gx = 0; gx < W; gx += 36) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke() }
             for (let gy = 0; gy < H; gy += 36) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke() }
-            ctx.strokeStyle = Qt.alpha(P.Style.info, 0.18)
-            ctx.lineWidth = 10
-            ctx.beginPath(); ctx.moveTo(0, H * 0.75); ctx.lineTo(W, H * 0.25); ctx.stroke()
 
             // Route polyline (navigation): brand line under a white halo.
             if (route && route.length >= 2) {
@@ -114,6 +106,11 @@ Item {
     }
 
     // Click hit-test (topmost marker wins).
+    Text {
+        anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 6
+        text: "站点坐标示意 · 导航请点卡片上的导航按钮"
+        font.pixelSize: 11; color: P.Style.muted
+    }
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton

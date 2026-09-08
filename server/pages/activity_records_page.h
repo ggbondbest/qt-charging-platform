@@ -26,6 +26,7 @@ class ActivityRecordsPage final : public QWidget
 public:
     explicit ActivityRecordsPage(ActivityRecordsMode mode, QWidget* parent = nullptr);
     void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
 
 private:
     struct Record {
@@ -51,6 +52,7 @@ private:
     void setFeedback(const QString& text, bool isError = false);
     void requestList();
     void handleListResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
 
     ActivityRecordsMode mode_;
@@ -60,7 +62,9 @@ private:
     int selectedRecordIndex_ = -1;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
     QString listRequestId_;
+    QString summaryRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
     class AdminRequestGateway* gateway_ = nullptr;

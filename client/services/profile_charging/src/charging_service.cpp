@@ -178,7 +178,7 @@ void ChargingService::startCharging(qint64 reservationId)
     // travels as a decimal string like the other frozen request shapes.
     payload.insert(QStringLiteral("reservationId"), QString::number(reservationId));
 
-    transport_->send(
+    transport_->sendFor(this,
         type, payload,
         [this, type](bool success, const QJsonObject& data,
                      const charging::protocol::ProtocolError& error) {

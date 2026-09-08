@@ -4,10 +4,33 @@
 #include "charging/common/protocol/user_api_contract.h"
 #include <QJsonArray>
 #include <QSet>
+#include <QBuffer>
+#include <QImageReader>
+#include <QImage>
 
 namespace charging::server {
 namespace {
 using namespace charging::protocol;
+bool validAvatar(const QString& value)
+{
+    static const QSet<QString> presets{"", "bolt", "plug", "car", "leaf", "cat", "panda", "moon", "rocket"};
+    if (presets.contains(value)) return true;
+    const QString prefix = QStringLiteral("data:image/png;base64,");
+    if (!value.startsWith(prefix)) return false;
+    const QByteArray encoded = value.mid(prefix.size()).toLatin1();
+    QByteArray bytes = QByteArray::fromBase64(encoded, QByteArray::AbortOnBase64DecodingErrors);
+    if (bytes.isEmpty() || bytes.size() > user_api::kMaximumAvatarBytes
+        || bytes.toBase64() != encoded) return false;
+    QBuffer buffer(&bytes);
+    if (!buffer.open(QIODevice::ReadOnly)) return false;
+    QImageReader reader(&buffer, "png");
+    const QSize size = reader.size();
+    // Check the header BEFORE decoding: a compressed image must not request an
+    // unbounded allocation on the service worker.
+    if (!size.isValid() || size.width() > user_api::kMaximumAvatarDimension
+        || size.height() > user_api::kMaximumAvatarDimension) return false;
+    return !reader.read().isNull();
+}
 const QMap<QString, UserApiAction> actions{
     {request_type::kGetStations, UserApiAction::Stations},
     {request_type::kGetChargers, UserApiAction::Chargers},
@@ -74,9 +97,9 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     QJsonObject input;
     UserApiReply reply;
     if (!user_api::normalizeRequestData(type, data, &input, &reply.error)) return reply;
-    const QSet<QString> avatars{"", "bolt", "plug", "car", "leaf", "cat", "panda", "moon", "rocket"};
-    if (input.contains("avatarKey") && !avatars.contains(input.value("avatarKey").toString())) {
-        reply = fail(error_code::kInvalidArgument, QStringLiteral("请选择内置头像"));
+    if (input.contains("avatarKey") && !validAvatar(input.value("avatarKey").toString())) {
+        reply = fail(error_code::kInvalidArgument,
+                     QStringLiteral("头像须为内置头像或不超过128KiB、512×512的PNG图片"));
         reply.error.details.insert("field", "avatarKey");
         return reply;
     }

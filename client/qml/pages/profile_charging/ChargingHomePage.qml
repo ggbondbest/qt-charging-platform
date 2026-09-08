@@ -26,6 +26,17 @@ Item {
     property var activeOrder: null       // first charging order summary map
     property bool ordersArrived: false   // gates the hero: never flash 空态
     property var status: null            // latest GET_CHARGING_STATUS map
+    property var reservations: []
+    property bool ordersRequested: false
+    property bool queuedOrders: false
+    property string loadError: ""
+    property bool startPending: false
+    function startReservation(id) {
+        if (page.startPending || chargingService.isStarting()) return
+        page.startPending = true
+        page.loadError = ""
+        chargingService.startCharging(String(id))
+    }
     property int seconds: 0
     property real breath: 1.0            // charging_pulse breath_ parity
 
@@ -51,14 +62,35 @@ Item {
             page.seconds = (c.activeOrder && c.activeOrder.durationSeconds) || 0
         }
         refreshAll()
-        if (page.activeOrder) chargingService.startTracking(Number(page.activeOrder.id))
+        if (page.activeOrder) chargingService.startTracking(String(page.activeOrder.id))
     }
     Component.onDestruction: {
         if (chargingService) chargingService.stopTracking()   // teardown-safe
     }
     function refreshAll() {
+        page.loadError = ""
         orderService.fetchStatusCounts()
+        reservationService.fetchList()
+        requestChargingOrders()
+    }
+    function requestChargingOrders() {
+        if (orderService.isFetchingOrders()) { page.queuedOrders = true; return }
+        page.queuedOrders = false
+        page.ordersRequested = true
         orderService.fetchOrders("charging", 1)
+    }
+    Timer {
+        interval: 100; repeat: true; running: page.queuedOrders
+        onTriggered: if (!orderService.isFetchingOrders()) page.requestChargingOrders()
+    }
+    Connections {
+        target: reservationService
+        function onListSucceeded(records) {
+            page.reservations = records.filter(function(r) {
+                return r.status === "active" && Date.parse(r.expiresAtUtc) > Date.now()
+            })
+        }
+        function onListFailed(message) { page.loadError = message }
     }
 
     // ---- data plumbing ----
@@ -69,10 +101,12 @@ Item {
             page.waitingCount = waitingPaymentCount
         }
         function onOrdersLoaded(orders, total, hasMore) {
+            if (!page.ordersRequested) return
+            page.ordersRequested = false
             page.ordersArrived = true
             page.activeOrder = orders.length > 0 ? orders[0] : null
             if (page.activeOrder)
-                chargingService.startTracking(Number(page.activeOrder.id))
+                chargingService.startTracking(String(page.activeOrder.id))
             else
                 chargingService.stopTracking()
             if (pull.refreshing) pull.setRefreshing(false)
@@ -81,9 +115,24 @@ Item {
                 activeOrder: page.activeOrder
             }
         }
+        function onOperationFailed(type, code, message) {
+            if (type !== "GET_ORDERS" || !page.ordersRequested) return
+            page.ordersRequested = false
+            page.ordersArrived = true
+            page.loadError = message
+            if (pull.refreshing) pull.setRefreshing(false)
+        }
     }
     Connections {
         target: chargingService
+        function onStartCompleted(s) { page.startPending = false }
+        function onOperationFailed(type, code, message) {
+            if (type !== "START_CHARGING" || !page.startPending) return
+            page.startPending = false
+            page.refreshAll()
+            page.loadError = message
+            if (App) App.showToast("启动失败：" + message, "danger")
+        }
         function onStatusLoaded(s) {
             page.status = s
             page.seconds = s.durationSeconds || 0
@@ -124,6 +173,32 @@ Item {
                 spacing: P.Style.spaceLg
 
                 // ================== session hero ==================
+                Text {
+                    width: parent.width; wrapMode: Text.WordWrap
+                    visible: page.loadError.length > 0
+                    text: page.loadError + "（可下拉重试）"; color: P.Style.danger
+                }
+                Repeater {
+                    model: page.reservations
+                    delegate: P.Card {
+                        width: parent.width
+                        Column {
+                            width: parent.width; spacing: P.Style.spaceSm
+                            Text {
+                                width: parent.width; wrapMode: Text.WordWrap
+                                text: (modelData.stationName || "充电站") + " · "
+                                      + (modelData.chargerCode || "") + " · 已预约"
+                                color: P.Style.ink
+                            }
+                            P.ActionButton {
+                                objectName: "startReservationButton"
+                                text: "开始充电"; variant: "primary"
+                                enabled: !page.startPending
+                                onClicked: page.startReservation(modelData.reservationId || modelData.id)
+                            }
+                        }
+                    }
+                }
                 Rectangle {
                     objectName: "uiChargingHero"
                     width: parent.width
@@ -407,7 +482,7 @@ Item {
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "扫码或预约后，在这里查看实时状态"
+                            text: "预约后点击开始充电，在这里查看实时状态"
                             font.pixelSize: P.Style.fontSm; color: P.Style.muted
                         }
                     }
@@ -446,7 +521,7 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: if (App) App.navigate("order")
+                        onClicked: if (App) App.recoverUnfinishedOrder()
                     }
                     Rectangle {
                         id: payHub
@@ -470,7 +545,7 @@ Item {
                         implicitHeight: height
                         leftPadding: 18; rightPadding: 18
                         topPadding: 4; bottomPadding: 4
-                        onClicked: if (App) App.navigate("order")
+                        onClicked: if (App) App.recoverUnfinishedOrder()
                     }
                     Column {
                         anchors.left: payHub.right; anchors.right: payBtn.left

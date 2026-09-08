@@ -427,6 +427,22 @@ bool repository_detail::expireReservationsInTransaction(const QSqlDatabase& data
 
 ChargingRepository::ChargingRepository(const QSqlDatabase& database) : database_(database) {}
 
+bool ChargingRepository::expireReservations(const QDateTime& nowUtc, QString* diagnostic) const
+{
+    QString localDiagnostic;
+    QString* message = diagnostic != nullptr ? diagnostic : &localDiagnostic;
+    message->clear();
+    if (!validUtcInstant(nowUtc)) {
+        *message = QStringLiteral("The reservation expiry observation time is invalid");
+        return false;
+    }
+    if (!database_.isValid() || !database_.isOpen()) {
+        *message = QStringLiteral("The SQLite connection is not open");
+        return false;
+    }
+    return expireDueReservationsAtomically(database_, nowUtc.toUTC(), message);
+}
+
 ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 chargerId,
                                                      const QDateTime& reservedAtUtc,
                                                      const QDateTime& expiresAtUtc,
@@ -458,14 +474,18 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
     {
         QSqlQuery unfinished(database_);
         unfinished.prepare(
-            QStringLiteral("SELECT 1 FROM orders WHERE user_id = :userId "
-                           "AND status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT') LIMIT 1"));
+            QStringLiteral("SELECT %1 FROM orders WHERE user_id = :userId "
+                           "AND status IN ('RESERVED', 'CHARGING', 'WAITING_PAYMENT') "
+                           "ORDER BY id DESC LIMIT 1").arg(kOrderColumns));
         unfinished.bindValue(QStringLiteral(":userId"), userId);
         if (!unfinished.exec()) {
             return failure(RepositoryError::Database, unfinished.lastError().text());
         }
         if (unfinished.next()) {
-            return failure(RepositoryError::ExistingUnfinishedOrder);
+            if (!repository_detail::readOrder(unfinished, &result.order))
+                return failure(RepositoryError::Database);
+            result.error = RepositoryError::ExistingUnfinishedOrder;
+            return result;
         }
     }
 

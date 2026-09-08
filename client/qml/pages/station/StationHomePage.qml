@@ -3,10 +3,10 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 
 // QML twin of widgets StationHomePage (objectName "stationHomePage" kept).
-// 自上而下：地图示意（StationMapItem，真 WebEngine 图=明天）→ 筛选操作栏
+// 自上而下：手动地址定位、真实站点坐标示意、筛选操作栏
 // （排序 chips + 电价下拉 + 高级筛选入口）→ 站点卡片 ListView（星星收藏）。
 // 三源投影（关键词/电价/8 组条件）在 QML 侧复现 applyStationFilter 语义；
-// 服务桥未补前所有调用按契约名盲写（TODO(contract) 见 docs/design/qml-station-mapping.md）。
+// 正式运行使用 TCP 服务数据；地址编码失败时保留明确错误，不生成演示站点。
 Item {
     id: page
     objectName: "stationHomePage"
@@ -21,7 +21,7 @@ Item {
     property string keyword: typeof arg === "string" ? arg : ""
     property var priceTiers: [-1, 100, 120, 150]
     property int priceMax: -1
-    property int sortMode: 2            // 2=综合（服务端顺序，widgets 默认）0=空闲优先 1=距离最近
+    property int sortMode: 1            // 默认按当前起点的直线距离由近到远
     property var criteria: ({ maxDistanceKm: 0, statuses: [], operators: [],
                               accessTypes: [], parkingFees: [], features: [],
                               chargerTypes: [], voltageBands: [] })
@@ -32,6 +32,12 @@ Item {
     property int selectedMarker: -1
 
     function money(cents) { return (cents / 100).toFixed(2) }
+    function originQuery() {
+        const selected = originRegion.editText.trim()
+        const region = selected === "选择地区 / 输入完整地址" ? "" : selected
+        const address = originAddress.text.trim()
+        return !region || address.indexOf(region) === 0 ? address : (region + " " + address).trim()
+    }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
     function isFav(id) { // 桥未补时容错为未收藏
         try { return favoritesService ? favoritesService.contains(id) : false }
@@ -43,59 +49,30 @@ Item {
     }
 
     function refresh() {
-        if (!stationQueryService) { loadDemo(); return }
+        if (!stationQueryService) { failQuery("站点服务未连接，请重新登录"); return }
         loading = true; failed = false
-        try { stationQueryService.search(keyword) }   // TODO(contract): 桥补 invokable search
-        catch (e) {                                    // 桥缺位：退页内演示数据（标注清楚），
-            loadDemo()                                 // 真桥落地后信号即替换，不再走到这
-        }
+        try { stationQueryService.search(keyword) }
+        catch (e) { failQuery("无法提交站点查询，请检查服务连接") }
+    }
+    function failQuery(message) {
+        loading = false; loaded = false; failed = true; failMessage = message
+        raw = []; stationModel.clear()
     }
     property string failMessage: ""
     property bool demo: false
-
-    // ---- 演示数据通道（同优惠券页口径：标"演示数据"，不冒充真实查询结果）----
-    // 带经纬度点位 → 地图示意自动布点；关键词搜索在演示通道内同样生效。
-    function demoStations() {
-        const base = [
-            { id: 9001, name: "滨海快充站", address: "南山区滨海大道 2012 号",
-              priceCentsPerKwh: 128, availableChargers: 6, totalChargers: 12,
-              distanceMeters: 2400, status: "active", latitude: 22.5372, longitude: 113.9401,
-              operatorName: "国网电动", features: ["雨棚", "卫生间"], chargerTypes: ["fast"],
-              parkingFee: "免停车费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: false },
-            { id: 9002, name: "科技园慢充站", address: "高新区科苑南路 3188 号",
-              priceCentsPerKwh: 98, availableChargers: 4, totalChargers: 8,
-              distanceMeters: 1200, status: "active", latitude: 22.5448, longitude: 113.9512,
-              operatorName: "特来电", features: ["地下车库"], chargerTypes: ["slow"],
-              parkingFee: "首 2 小时免费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: false },
-            { id: 9003, name: "深圳湾超充站", address: "东滨路 1008 号",
-              priceCentsPerKwh: 145, availableChargers: 2, totalChargers: 6,
-              distanceMeters: 3600, status: "active", latitude: 22.5233, longitude: 113.9438,
-              operatorName: "华为超充", features: ["雨棚"], chargerTypes: ["fast"],
-              parkingFee: "收费", accessType: "公共", hasVoltageBelow700: false, hasVoltageAtLeast700: true },
-            { id: 9004, name: "世界之窗充电站", address: "深南大道 9037 号",
-              priceCentsPerKwh: 119, availableChargers: 0, totalChargers: 10,
-              distanceMeters: 5200, status: "offline", latitude: 22.5391, longitude: 113.9716,
-              operatorName: "国网电动", features: [], chargerTypes: ["fast", "slow"],
-              parkingFee: "免停车费", accessType: "公共", hasVoltageBelow700: true, hasVoltageAtLeast700: true }
-        ]
-        const kw = page.keyword.trim()
-        return kw.length === 0 ? base
-             : base.filter(s => s.name.indexOf(kw) >= 0 || s.address.indexOf(kw) >= 0)
-    }
-    function loadDemo() {
-        demo = true
-        raw = demoStations()
-        loading = false; loaded = true; failed = false
-        project()
-        try { pull.setRefreshing(false) } catch (e) {}
-    }
 
     // ---- 三源投影（与 StationQueryService.applyStationFilter 同语义，
     //      距离/电价/排序为纯客户端投影，不重发请求） ----
     function project() {
         const c = page.criteria
         const rows = []
-        for (const s of (page.raw || [])) {
+        for (const source of (page.raw || [])) {
+            const s = Object.assign({}, source)
+            // Only real station coordinates and the explicitly selected origin
+            // participate. Missing coordinates must not become a 0,0 location.
+            s.distanceMeters = (typeof mapBridge !== "undefined" && mapBridge.hasLocation
+                                && typeof s.latitude === "number" && typeof s.longitude === "number")
+                ? mapBridge.distanceMeters(s.latitude, s.longitude) : -1
             if (page.priceMax > 0 && s.priceCentsPerKwh > page.priceMax) continue
             if (c.maxDistanceKm > 0 && !(s.distanceMeters >= 0
                                          && s.distanceMeters <= c.maxDistanceKm * 1000)) continue
@@ -127,7 +104,7 @@ Item {
         stationModel.clear()
         for (const s of rows) {
             stationModel.append({
-                stationId: s.id, name: s.name, address: s.address,
+                stationId: String(s.id), name: s.name, address: s.address,
                 priceCentsPerKwh: s.priceCentsPerKwh, availableChargers: s.availableChargers,
                 totalChargers: s.totalChargers, distanceMeters: s.distanceMeters,
                 status: String(s.status).toLowerCase(),
@@ -171,10 +148,14 @@ Item {
             pull.setRefreshing(false)
         }
         function onQueryFailed(message) {
-            page.loading = false; page.loaded = false; page.failed = true
+            page.failQuery(message)
             pull.setRefreshing(false)
             if (App) App.showToast("站点查询失败：" + message, "danger")
         }
+    }
+    Connections {
+        target: typeof mapBridge !== "undefined" ? mapBridge : null
+        function onLocationChanged() { page.project() }
     }
     Connections {
         target: favoritesService
@@ -191,7 +172,49 @@ Item {
         anchors.margins: P.Style.spaceLg
         spacing: P.Style.spaceMd
 
-        // 地图示意（选卡联动高亮；真地图=明天 WebEngine 决策）
+        Column {
+            width: parent.width
+            spacing: P.Style.spaceXs
+            ComboBox {
+                id: originRegion
+                objectName: "originRegionComboBox"
+                width: parent.width
+                editable: true
+                model: ["选择地区 / 输入完整地址", "大连市", "沈阳市", "北京市", "上海市", "深圳市"]
+                // Selecting a city only edits the query; it is not GPS and does
+                // not change the origin until Tencent geocoding succeeds.
+            }
+            Row {
+                width: parent.width
+                spacing: P.Style.spaceSm
+                TextField {
+                    id: originAddress
+                    objectName: "originAddressField"
+                    width: parent.width - locateButton.width - parent.spacing
+                    placeholderText: "输入详细地址或当前位置完整地址"
+                    onAccepted: mapBridge.geocodeAddress(page.originQuery())
+                }
+                P.ActionButton {
+                    id: locateButton
+                    objectName: "locateAddressButton"
+                    text: "定位"
+                    enabled: page.originQuery().length > 0 && !mapBridge.busy
+                    onClicked: mapBridge.geocodeAddress(page.originQuery())
+                }
+            }
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: mapBridge.error.length ? mapBridge.error
+                      : mapBridge.busy ? "正在查询腾讯地图…"
+                      : mapBridge.hasLocation ? "起点：" + mapBridge.locationLabel + " · 列表显示直线距离"
+                      : "请先输入地址定位；未定位时不展示虚构距离"
+                color: mapBridge.error.length ? P.Style.danger : P.Style.muted
+                font.pixelSize: P.Style.fontSm
+            }
+        }
+
+        // 真实站点坐标投影；点击“导航”打开腾讯 WebEngine 路线页面。
         StationMapItem {
             objectName: "stationMapPanel"
             width: parent.width
@@ -251,7 +274,7 @@ Item {
             P.ActionButton {
                 objectName: "advancedFilterButton"
                 variant: "ghost"
-                text: "⛏ 筛选"      // 原手绘漏斗图标位，明天换 icon 资源
+                text: "⛏ 筛选"
                 onClicked: filterDialog.openDialog(page.criteria)
             }
         }
@@ -304,7 +327,8 @@ Item {
                             if (App) App.navigate("station_detail", {
                                 id: stationId, name: name, address: address,
                                 priceCentsPerKwh: priceCentsPerKwh,
-                                distanceMeters: distanceMeters, status: status })
+                                distanceMeters: distanceMeters, status: status,
+                                latitude: lat, longitude: lng })
                         }
                         Row {
                             width: parent.width        // Column 内容器：anchors.fill 被忽略且告警
@@ -324,21 +348,37 @@ Item {
                                 Text {
                                     text: "¥" + page.money(priceCentsPerKwh) + "/kWh · 空闲 "
                                           + availableChargers + "/" + totalChargers
-                                          + " · " + page.distText(distanceMeters)
+                                          + " · 直线 " + page.distText(distanceMeters)
                                           + (status !== "active" ? " · 暂停运营" : "")
                                     font.pixelSize: P.Style.fontSm; color: P.Style.brandDeep
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: App.navigate("navigation", {
+                                            stationName: name, stationLatitude: lat,
+                                            stationLongitude: lng, hasStationLocation: true })
+                                    }
                                 }
                             }
                             Item {
                                 width: 96
-                                height: parent.height
+                                height: cardActions.implicitHeight
                                 Column {
+                                    id: cardActions
                                     anchors.centerIn: parent
                                     spacing: P.Style.spaceXs
                                     P.StatusTag {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         tone: status === "active" ? "success" : "neutral"
                                         text: status === "active" ? "营业中" : "暂停运营"
+                                    }
+                                    P.ActionButton {
+                                        objectName: "stationNavigateButton"
+                                        text: "导航"
+                                        variant: "ghost"
+                                        onClicked: App.navigate("navigation", {
+                                            stationName: name, stationLatitude: lat,
+                                            stationLongitude: lng, hasStationLocation: true })
                                     }
                                     MouseArea {
                                         objectName: "favoriteStarButton"

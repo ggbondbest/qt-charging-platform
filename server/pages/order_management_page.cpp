@@ -23,6 +23,7 @@
 #include <QVBoxLayout>
 #include <QtMath>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -42,6 +43,19 @@ QString formatKwh(qint64 energyWh)
 {
     return QString::number(energyWh / 1000) + QStringLiteral(".")
         + QStringLiteral("%1").arg((energyWh % 1000) / 10, 2, 10, QLatin1Char('0'));
+}
+
+QString formatDuration(qint64 seconds)
+{
+    seconds = qMax<qint64>(0, seconds);
+    const qint64 hours = seconds / 3600;
+    const qint64 minutes = (seconds % 3600) / 60;
+    const qint64 remainder = seconds % 60;
+    QStringList parts;
+    if (hours > 0) parts << QObject::tr("%1 小时").arg(hours);
+    if (minutes > 0) parts << QObject::tr("%1 分").arg(minutes);
+    if (remainder > 0 || parts.isEmpty()) parts << QObject::tr("%1 秒").arg(remainder);
+    return parts.join(QStringLiteral(" "));
 }
 
 QLabel* createTextLabel(const QString& text, const QString& style, QWidget* parent)
@@ -174,7 +188,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     metricsLayout->addWidget(createManagementMetricCard(
         tr("充电中订单"), tr("286"), tr(" 笔"), tr("较昨日  -18 (-5.93%)  ↓"), QColor("#ff9a26"), 2, this));
     metricsLayout->addWidget(createManagementMetricCard(
-        tr("异常订单"), tr("16"), tr(" 笔"), tr("较昨日  -6 (-27.27%)  ↓"), QColor("#ff5b61"), 3, this));
+        tr("待支付订单"), tr("16"), tr(" 笔"), tr("当前待支付状态汇总"), QColor("#ff5b61"), 3, this));
     layout->addLayout(metricsLayout);
 
     auto* toolbar = createCompactCard(this);
@@ -193,14 +207,9 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     phoneLineEdit_->setPlaceholderText(tr("请输入手机号"));
     phoneLineEdit_->setMinimumWidth(142);
     stationComboBox_ = new QComboBox(toolbar);
-    stationComboBox_->addItems({tr("全部电站"), tr("未来科技城充电站"), tr("滨江智慧园充电站"),
-                                tr("城西银泰充电站"), tr("奥体中心充电站"),
-                                tr("萧山机场充电站"), tr("富阳智造港充电站")});
+    stationComboBox_->addItem(tr("全部电站"), QString());
     chargerComboBox_ = new QComboBox(toolbar);
-    chargerComboBox_->addItems({tr("全部电桩"), tr("CP10010086"), tr("CP10010123"), tr("CP10010205"),
-                                tr("CP10010218"), tr("CP10010267"), tr("CP10010345"),
-                                tr("CP10010378"), tr("CP10010402"), tr("CP10010495"),
-                                tr("CP10010533")});
+    chargerComboBox_->addItem(tr("全部电桩"), QString());
     for (auto* comboBox : {stationComboBox_, chargerComboBox_}) {
         comboBox->setMinimumWidth(132);
         configureManagementComboBox(comboBox);
@@ -220,6 +229,8 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     secondLine->setSpacing(10);
     statusComboBox_ = new QComboBox(toolbar);
     statusComboBox_->addItem(tr("全部状态"));
+    statusComboBox_->addItem(
+        tr("已预约"), static_cast<int>(charging::model::OrderStatus::Reserved));
     statusComboBox_->addItem(
         tr("充电中"), static_cast<int>(charging::model::OrderStatus::Charging));
     statusComboBox_->addItem(
@@ -267,10 +278,10 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
-    tableWidget_->setColumnCount(12);
+    tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
         {tr("订单号"), tr("用户"), tr("电站"), tr("电桩"), tr("开始时间"), tr("充电时长"),
-         tr("充电量 (kWh)"), tr("充电费"), tr("服务费"), tr("总金额"), tr("状态"), tr("操作")});
+         tr("充电量 (kWh)"), tr("总金额"), tr("状态"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -283,10 +294,10 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(11, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(10, kManagementStatusColumnWidth);
-    tableWidget_->setColumnWidth(11, 72);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
+    tableWidget_->setColumnWidth(8, kManagementStatusColumnWidth);
+    tableWidget_->setColumnWidth(9, 72);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
     tableLayout->addWidget(statePanel_);
@@ -479,11 +490,9 @@ void OrderManagementPage::rebuildTable()
         const QList<QString> values = {record.orderNo, record.userName + tr("\n") + record.phone, record.station,
                                        record.charger + tr("\n") + record.chargerType, record.startAt,
                                        record.duration, formatKwh(record.energyWh),
-                                       realMode_ ? tr("—") : tr("¥ %1").arg(formatCents(record.chargeFeeCents)),
-                                       realMode_ ? tr("—") : tr("¥ %1").arg(formatCents(record.serviceFeeCents)),
                                        tr("¥ %1").arg(formatCents(totalCents)), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
-            if (column == 10 || column == 11) {
+            if (column == 8 || column == 9) {
                 continue;
             }
             auto* item = createManagementTableItem(values.at(column));
@@ -491,12 +500,12 @@ void OrderManagementPage::rebuildTable()
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
         }
-        tableWidget_->setCellWidget(row, 10, createCompactStatusTag(record.status, tableWidget_));
+        tableWidget_->setCellWidget(row, 8, createCompactStatusTag(record.status, tableWidget_));
         auto* detailButton = new QPushButton(tr("详情"), tableWidget_);
         detailButton->setObjectName(QStringLiteral("tableActionButton"));
         detailButton->setAccessibleName(tr("查看订单 %1 的详情").arg(record.orderNo));
         connect(detailButton, &QPushButton::clicked, this, [this, recordIndex]() { showOrderDetails(recordIndex); });
-        tableWidget_->setCellWidget(row, 11, createManagementTableCell(detailButton, tableWidget_));
+        tableWidget_->setCellWidget(row, 9, createManagementTableCell(detailButton, tableWidget_));
     }
     tableTitleLabel_->setText(tr("订单列表（共 %1 笔）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
     paginationLabel_->setText(tr("第 %1 / %2 页").arg(currentPage_ + 1).arg(pageCount));
@@ -628,12 +637,10 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    stationComboBox_->setEnabled(false); stationComboBox_->setToolTip(tr("当前契约需要站点 ID，列表尚未提供可选项"));
-    chargerComboBox_->setEnabled(false); chargerComboBox_->setToolTip(tr("当前契约需要电桩 ID，列表尚未提供可选项"));
-    userLineEdit_->setEnabled(false); userLineEdit_->setToolTip(tr("服务端使用统一关键字；请在订单关键字输入框中查询用户或手机号"));
-    phoneLineEdit_->setEnabled(false); phoneLineEdit_->setToolTip(tr("服务端使用统一关键字；请在订单关键字输入框中查询用户或手机号"));
-    dateRangeComboBox_->setItemText(1, tr("今日（UTC）"));
-    dateRangeComboBox_->setItemText(2, tr("近 7 天（UTC）"));
+    userLineEdit_->setToolTip(tr("按昵称、订单号、手机号、电站名或电桩编号模糊查询；与其他关键字条件不能同时组合。"));
+    phoneLineEdit_->setToolTip(tr("按手机号、订单号、昵称、电站名或电桩编号模糊查询；与其他关键字条件不能同时组合。"));
+    dateRangeComboBox_->setItemText(1, tr("今日（北京时间）"));
+    dateRangeComboBox_->setItemText(2, tr("近 7 天（北京时间）"));
     if (auto* donut = findChild<QWidget*>(QStringLiteral("mockPaymentDonut"))) {
         donut->setVisible(false);
         donut->setToolTip(tr("当前契约不提供支付方式或支付状态分布"));
@@ -642,43 +649,97 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
         distribution->setVisible(false);
         distribution->setToolTip(tr("当前契约不提供支付方式或支付状态分布"));
     }
+    paymentInfoLabel_->setVisible(false);
     for (auto* label : findChildren<QLabel*>()) {
         if (label->text() == tr("支付状态分布（今日）")) {
-            label->setText(tr("支付状态分布（契约未提供）"));
+            label->setVisible(false);
         }
     }
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
+        else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
+        else if (id == stationOptionsRequestId_) handleStationOptionsResponse(response);
+        else if (id == chargerOptionsRequestId_) handleChargerOptionsResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
-        if (authenticated) requestList();
+        if (!authenticated) { hasRealSnapshot_ = false; }
+        else { requestFilterOptions(); requestList(); }
     });
     setManagementMetricCardsUnavailable(this, tr("当前契约未提供订单页汇总指标"));
-    requestList();
+    if (gateway_->isAuthenticated()) { requestFilterOptions(); requestList(); }
+}
+
+void OrderManagementPage::requestFilterOptions()
+{
+    if (!gateway_ || !gateway_->isAuthenticated()) return;
+    stationOptionsRequestId_ = gateway_->request(QStringLiteral("stations.list"),
+        {{QStringLiteral("page"), 1}, {QStringLiteral("pageSize"), 100}, {QStringLiteral("sort"), QStringLiteral("idAsc")}},
+        this, QStringLiteral("order-station-options"));
+    chargerOptionsRequestId_ = gateway_->request(QStringLiteral("chargers.list"),
+        {{QStringLiteral("page"), 1}, {QStringLiteral("pageSize"), 100}, {QStringLiteral("sort"), QStringLiteral("idAsc")}},
+        this, QStringLiteral("order-charger-options"));
 }
 
 void OrderManagementPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
-    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
-    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    // Preserve the confirmed result while the newest query is in progress.
+    if (!hasRealSnapshot_) {
+        records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+        totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    }
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
-    const QString keyword = orderNumberLineEdit_->text().trimmed();
+    const QString keyword = !orderNumberLineEdit_->text().trimmed().isEmpty() ? orderNumberLineEdit_->text().trimmed()
+                          : !userLineEdit_->text().trimmed().isEmpty() ? userLineEdit_->text().trimmed()
+                                                                        : phoneLineEdit_->text().trimmed();
     if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    if (!stationComboBox_->currentData().toString().isEmpty()) query.insert(QStringLiteral("stationId"), stationComboBox_->currentData().toString());
+    if (!chargerComboBox_->currentData().toString().isEmpty()) query.insert(QStringLiteral("chargerId"), chargerComboBox_->currentData().toString());
     const QString statusText = statusComboBox_->currentText();
-    if (statusText == tr("充电中")) query.insert(QStringLiteral("status"), QStringLiteral("CHARGING"));
+    if (statusText == tr("已预约")) query.insert(QStringLiteral("status"), QStringLiteral("RESERVED"));
+    else if (statusText == tr("充电中")) query.insert(QStringLiteral("status"), QStringLiteral("CHARGING"));
     else if (statusText == tr("待支付")) query.insert(QStringLiteral("status"), QStringLiteral("WAITING_PAYMENT"));
     else if (statusText == tr("已完成")) query.insert(QStringLiteral("status"), QStringLiteral("COMPLETED"));
     else if (statusText == tr("已取消")) query.insert(QStringLiteral("status"), QStringLiteral("CANCELLED"));
     if (dateRangeComboBox_->currentIndex() > 0) {
-        const auto now = QDateTime::currentDateTimeUtc(); QDate from = now.date();
+        const auto now = QDateTime::currentDateTime().toTimeZone(QTimeZone("Asia/Shanghai")); QDate from = now.date();
         if (dateRangeComboBox_->currentIndex() == 2) from = from.addDays(-6);
         else if (dateRangeComboBox_->currentIndex() == 3) from = QDate(from.year(), from.month(), 1);
-        query.insert(QStringLiteral("createdAtFrom"), QDateTime(from, QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
-        query.insert(QStringLiteral("createdAtTo"), QDateTime(now.date().addDays(1), QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
+        query.insert(QStringLiteral("createdAtFrom"), beijingDayStartUtc(from).toString(Qt::ISODateWithMs));
+        query.insert(QStringLiteral("createdAtTo"), beijingDayStartUtc(now.date().addDays(1)).toString(Qt::ISODateWithMs));
     }
-    listRequestId_ = gateway_->request(QStringLiteral("orders.list"), query, this, QStringLiteral("order-list")); setFeedback(tr("正在加载服务数据…"));
+    listRequestId_ = gateway_->request(QStringLiteral("orders.list"), query, this, QStringLiteral("order-list"));
+    query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
+    summaryRequestId_ = gateway_->request(QStringLiteral("orders.summary"), query, this, QStringLiteral("order-summary"));
+}
+
+void OrderManagementPage::handleStationOptionsResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) return;
+    const QString selected = stationComboBox_->currentData().toString();
+    stationComboBox_->clear();
+    stationComboBox_->addItem(tr("全部电站"), QString());
+    for (const auto& value : response.value(QStringLiteral("data")).toObject().value(QStringLiteral("items")).toArray()) {
+        const auto item = value.toObject();
+        stationComboBox_->addItem(item.value(QStringLiteral("name")).toString(), item.value(QStringLiteral("id")).toString());
+    }
+    const int index = stationComboBox_->findData(selected);
+    stationComboBox_->setCurrentIndex(index >= 0 ? index : 0);
+}
+
+void OrderManagementPage::handleChargerOptionsResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) return;
+    const QString selected = chargerComboBox_->currentData().toString();
+    chargerComboBox_->clear();
+    chargerComboBox_->addItem(tr("全部电桩"), QString());
+    for (const auto& value : response.value(QStringLiteral("data")).toObject().value(QStringLiteral("items")).toArray()) {
+        const auto item = value.toObject();
+        chargerComboBox_->addItem(item.value(QStringLiteral("code")).toString() + tr("（%1）").arg(item.value(QStringLiteral("stationName")).toString()), item.value(QStringLiteral("id")).toString());
+    }
+    const int index = chargerComboBox_->findData(selected);
+    chargerComboBox_->setCurrentIndex(index >= 0 ? index : 0);
 }
 
 void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
@@ -695,36 +756,56 @@ void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
     record.orderNo = item.value(QStringLiteral("orderNo")).toString(); record.userName = item.value(QStringLiteral("nickname")).toString(); record.phone = item.value(QStringLiteral("phone")).toString();
     record.station = item.value(QStringLiteral("stationName")).toString(); record.charger = item.value(QStringLiteral("chargerCode")).toString();
     record.status = code == QStringLiteral("CHARGING") ? charging::model::OrderStatus::Charging : code == QStringLiteral("WAITING_PAYMENT") ? charging::model::OrderStatus::WaitingPayment : code == QStringLiteral("COMPLETED") ? charging::model::OrderStatus::Completed : code == QStringLiteral("CANCELLED") ? charging::model::OrderStatus::Cancelled : charging::model::OrderStatus::Reserved;
-    record.startAt = item.value(QStringLiteral("createdAt")).toString(); record.duration = tr("%1 分钟").arg(item.value(QStringLiteral("durationSeconds")).toInt() / 60); record.energyWh = item.value(QStringLiteral("energyWh")).toInteger(); record.chargeFeeCents = item.value(QStringLiteral("amountCents")).toInteger();
+    record.startAt = formatBeijingDateTime(item.value(QStringLiteral("createdAt")).toString()); record.duration = formatDuration(item.value(QStringLiteral("durationSeconds")).toInteger()); record.energyWh = item.value(QStringLiteral("energyWh")).toInteger(); record.chargeFeeCents = item.value(QStringLiteral("amountCents")).toInteger();
     showOrderDetails(selectedRecordIndex_, false);
     chargingInfoLabel_->setText(tr("电站名称　%1\n电桩编号　%2\n创建时间　%3\n启动时间　%4\n结束时间　%5\n时长　%6\n电量　%7 kWh")
                                       .arg(record.station, record.charger, record.startAt,
-                                           item.value(QStringLiteral("startedAt")).toString(),
-                                           item.value(QStringLiteral("stoppedAt")).toString(),
+                                           formatBeijingDateTime(item.value(QStringLiteral("startedAt")).toString()),
+                                           formatBeijingDateTime(item.value(QStringLiteral("stoppedAt")).toString()),
                                            record.duration, formatKwh(record.energyWh)));
     feeInfoLabel_->setText(tr("电价快照　¥ %1 / kWh\n订单金额　¥ %2")
                                  .arg(formatCents(item.value(QStringLiteral("unitPriceCentsPerKwh")).toInteger()),
                                       formatCents(record.chargeFeeCents)));
     paymentInfoLabel_->setText(tr("支付时间　%1\n订单状态　%2")
-                                     .arg(item.value(QStringLiteral("paidAt")).toString(), orderStatusText(record.status)));
+                                     .arg(formatBeijingDateTime(item.value(QStringLiteral("paidAt")).toString()), orderStatusText(record.status)));
 }
 
 void OrderManagementPage::handleListResponse(const QJsonObject& response)
 {
+    if (!response.value(QStringLiteral("success")).toBool()) { setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return; }
+    const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
+        ? records_.at(selectedRecordIndex_).serverId : QString();
     records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
-    if (!response.value(QStringLiteral("success")).toBool()) { totalRecords_ = 0; rebuildTable(); setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return; }
     const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    hasRealSnapshot_ = true;
     for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
         const auto i = value.toObject(); const auto code = i.value(QStringLiteral("status")).toString();
         const auto status = code == QStringLiteral("CHARGING") ? charging::model::OrderStatus::Charging : code == QStringLiteral("WAITING_PAYMENT") ? charging::model::OrderStatus::WaitingPayment : code == QStringLiteral("COMPLETED") ? charging::model::OrderStatus::Completed : code == QStringLiteral("CANCELLED") ? charging::model::OrderStatus::Cancelled : charging::model::OrderStatus::Reserved;
         const qint64 amount = i.value(QStringLiteral("amountCents")).toInteger();
         records_.append({i.value(QStringLiteral("orderNo")).toString(), i.value(QStringLiteral("nickname")).toString(), i.value(QStringLiteral("phone")).toString(),
             i.value(QStringLiteral("stationName")).toString(), i.value(QStringLiteral("chargerCode")).toString(), tr("契约未提供"), status,
-            i.value(QStringLiteral("createdAt")).toString(), tr("%1 分钟").arg(i.value(QStringLiteral("durationSeconds")).toInt() / 60),
+            formatBeijingDateTime(i.value(QStringLiteral("createdAt")).toString()), formatDuration(i.value(QStringLiteral("durationSeconds")).toInteger()),
             i.value(QStringLiteral("energyWh")).toInteger(), amount, 0, 0, tr("契约未提供"), tr("契约未提供"), i.value(QStringLiteral("id")).toString()});
         filteredRecordIndexes_.append(records_.size() - 1);
     }
-    rebuildTable(); setFeedback(totalRecords_ ? tr("已加载 %1 笔订单（服务端分页）").arg(totalRecords_) : tr("当前没有订单数据"));
+    for (int index = 0; index < records_.size(); ++index) {
+        if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
+    }
+    rebuildTable();
+    if (selectedRecordIndex_ >= 0) showOrderDetails(selectedRecordIndex_, false);
+    setFeedback(totalRecords_ ? tr("已加载 %1 笔订单（服务端分页）").arg(totalRecords_) : tr("当前没有订单数据"));
+}
+
+void OrderManagementPage::handleSummaryResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) return;
+    const auto data = response.value(QStringLiteral("data")).toObject();
+    const qint64 revenueCents = data.value(QStringLiteral("todayRevenueCents")).toInteger();
+    const QString revenue = tr("¥ %1.%2").arg(revenueCents / 100).arg(revenueCents % 100, 2, 10, QLatin1Char('0'));
+    setManagementMetricCardValue(this, 0, tr("%1 笔").arg(data.value(QStringLiteral("todayOrderCount")).toInteger()), tr("北京时间今日"));
+    setManagementMetricCardValue(this, 1, revenue, tr("北京时间今日"));
+    setManagementMetricCardValue(this, 2, tr("%1 笔").arg(data.value(QStringLiteral("chargingOrderCount")).toInteger()), tr("当前筛选范围"));
+    setManagementMetricCardValue(this, 3, tr("%1 笔").arg(data.value(QStringLiteral("waitingPaymentOrderCount")).toInteger()), tr("当前筛选范围"));
 }
 
 } // namespace charging::server

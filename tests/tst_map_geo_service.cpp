@@ -5,6 +5,7 @@
 
 #include <QCryptographicHash>
 #include <QSignalSpy>
+#include <QUrlQuery>
 #include <QtTest>
 
 using namespace charging::client::services::map;
@@ -91,6 +92,11 @@ private slots:
     void routeFallsBackToLegacyModeShape();
     void geocodeParsesAddress();
     void requestIdsAreDistinctAndAscending();
+    void forwardGeocodeUsesAddressAndReturnsCoordinates();
+    void forwardGeocodeRejectsMissingCoordinates();
+    void walkingUsesDedicatedEndpoint();
+    void invalidCoordinatesDoNotReachNetwork();
+    void routeRoundsFractionalMinutesUp();
 };
 
 void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
@@ -187,13 +193,95 @@ void MapGeoServiceTest::requestQueryMatchesTencentContract()
 
     // 官方签名规则：sig = MD5小写(path + "?" + 参数按 key 升序拼接 + SK)。
     const QByteArray expectedRaw = QByteArrayLiteral(
-        "/distance/v1/matrix/?from=22.541000,113.943000&key=unit-test-key"
+        "/ws/distance/v1/matrix/?from=22.541000,113.943000&key=unit-test-key"
         "&mode=driving&to=22.550000,113.950000unit-sk");
     const QByteArray expectedSig =
         QCryptographicHash::hash(expectedRaw, QCryptographicHash::Md5).toHex();
     QVERIFY2(target.contains(QStringLiteral("sig=") + QString::fromLatin1(expectedSig)),
              qPrintable(target));
     // key 绝不出现在信号错误文案里（本用例成功路径无文案，此处保护口径注释）。
+}
+
+void MapGeoServiceTest::forwardGeocodeUsesAddressAndReturnsCoordinates()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(kGeocodeJson);
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::forwardGeocodeSucceeded);
+    const QString address = QStringLiteral("深圳市南山区 A&B 大厦 #2");
+    const quint64 id = service.requestForwardGeocode(address);
+    QTRY_COMPARE(succeeded.size(), 1);
+    QCOMPARE(succeeded.first().at(0).toULongLong(), id);
+    const auto location = succeeded.first().at(1).value<LatLng>();
+    QCOMPARE(location.latitude, 22.541);
+    QCOMPARE(location.longitude, 113.943);
+    const QUrl url(QStringLiteral("http://localhost") + server.lastRequestTarget());
+    QCOMPARE(url.path(), QStringLiteral("/ws/geocoder/v1/"));
+    QCOMPARE(QUrlQuery(url).queryItemValue("address", QUrl::FullyDecoded), address);
+    QCOMPARE(QUrlQuery(url).queryItemValue("key"), QStringLiteral("unit-test-key"));
+    QVERIFY(!QUrlQuery(url).hasQueryItem("location"));
+}
+
+void MapGeoServiceTest::forwardGeocodeRejectsMissingCoordinates()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(R"({"status":0,"result":{"location":{"lat":22.5}}})");
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy failed(&service, &MapGeoService::forwardGeocodeFailed);
+    service.requestForwardGeocode(QStringLiteral("深圳市南山区"));
+    QTRY_COMPARE(failed.size(), 1);
+    QCOMPARE(failed.first().at(1).value<MapError>(), MapError::BadResponse);
+}
+
+void MapGeoServiceTest::walkingUsesDedicatedEndpoint()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(kRouteJson);
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestWalkingRoute({22.541, 113.943}, {22.55, 113.95});
+    QTRY_COMPARE(succeeded.size(), 1);
+    QVERIFY(server.lastRequestTarget().startsWith("/ws/direction/v1/walking/"));
+    const auto route = succeeded.first().at(1).value<RouteResult>();
+    QCOMPARE(route.durationMinutes, 12);
+    QCOMPARE(route.distanceMeters, 5120);
+}
+
+void MapGeoServiceTest::invalidCoordinatesDoNotReachNetwork()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy failed(&service, &MapGeoService::routeFailed);
+    service.requestWalkingRoute({91, 0}, {22.55, 113.95});
+    QTRY_COMPARE(failed.size(), 1);
+    QCOMPARE(server.connectionCount(), 0);
+}
+
+void MapGeoServiceTest::routeRoundsFractionalMinutesUp()
+{
+    qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(R"({"status":0,"result":{"routes":[{"distance":800,
+        "duration":1.5,"polyline":[22.541,113.943,1000,1000]}]}})");
+    MapGeoService service;
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy succeeded(&service, &MapGeoService::routeSucceeded);
+    service.requestDrivingRoute({22.541, 113.943}, {22.542, 113.944});
+    QTRY_COMPARE(succeeded.size(), 1);
+    QCOMPARE(succeeded.first().at(1).value<RouteResult>().durationMinutes, 2);
 }
 
 void MapGeoServiceTest::businessStatusMapsToTypedErrors()

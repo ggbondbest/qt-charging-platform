@@ -1,4 +1,30 @@
-# QML 迁移契约 —— widgets/QML 双轨期的唯一 API 依据
+# QML 客户端契约
+
+## 正式交付约定（2026-09-08，优先于下方历史迁移记录）
+
+- 正式入口为 `charging-client`，默认真实 TCP；`--host HOST --port PORT` 或
+  `CHARGING_SERVER_HOST` / `CHARGING_SERVER_PORT` 设置服务器地址。仅显式
+  `CHARGING_CHANNEL=mock` 启用测试演示，生产不能自动回退 Mock。
+- QML/JS/qmldir 资源内嵌；运行时从 `qrc:/charging/Shell.qml` 加载，不依赖源码目录。
+- `authService` 是 QmlApp 的认证入口：`login(phone)` 异步认证，
+  `loginSucceeded(userMap, created)` / `loginFailed(message)` 回报结果；`logout()`
+  断开会话。每次登录重建服务图，`servicesChanged` 更新上下文，旧用户页面和缓存销毁。
+- 所有业务 ID 为十进制**字符串**，页面不得用 Number/parseInt 转成 JS 数字。
+  数据中的 UTC 时间为完整 ISO8601（含毫秒与 Z）；仅展示时转换为北京时间，
+  `App.displayTime(isoUtc)` 可用于显示，倒计时直接解析带 Z 的时间。
+- `App.checkBeforeReservation(draft)` 在真实查询未完成订单后才能进入确认页；
+  `App.recoverUnfinishedOrder()` 恢复充电中、待支付或已有预约。提交时的并发冲突
+  通过 `reservationService.submitRejected(code, details, message)` 返回；
+  `details.reason == "UNFINISHED_ORDER"` 时重新恢复已有订单。
+- 真实预约立即生效、15分钟保留；不支持未来时段和车辆绑定。扣费只认服务器账单。
+- 本地头像通过 `App.chooseAvatar()` / `prepareAvatar(localFile)` 压缩为128像素PNG，
+  使用 `walletService.updateAvatar(dataUri)` 持久化；服务端复核PNG大小、尺寸和内容。
+- 腾讯地图由独立 `mapBridge` 暴露地址正向编码、用户位置、真实驾驶/步行路线及HTML。
+  页面使用WebEngine呈现地图；没有Key或API失败时明确报错，不显示伪造路线。
+- 端到端验收见 `qml_tcp_delivery`：QML页面→TCP→业务→SQLite→管理端查询，
+  覆盖充值、头像、充电/支付、重登录恢复、冻结、超时和跨用户隔离。
+
+以下为历史迁移约定；涉及默认入口、Mock与正式数据通道的描述以上述交付约定为准。
 
 **基线**：`feature/client-ui-modernization`。改本文件须走会签 PR。以下名字**逐字使用**，不许改名、不许发明；后端没定的字段写 `TODO(contract)`。
 

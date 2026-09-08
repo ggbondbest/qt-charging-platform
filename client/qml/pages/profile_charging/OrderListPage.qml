@@ -92,7 +92,7 @@ Item {
     // keeps the raw applied rows so the test's count semantics stay intact.
     property var rows: []
     function monthKeyOf(createdAt) {
-        const s = String(createdAt || "")
+        const s = App ? App.displayTime(String(createdAt || "")) : String(createdAt || "")
         return /^\d{4}-\d{2}/.test(s) ? s.substring(0, 7) : "zz"
     }
     function monthLabelOf(key) {
@@ -377,7 +377,7 @@ Item {
                             }
                             Text {
                                 width: parent.width; elide: Text.ElideRight
-                                text: (card.o.createdAt || "") + " · "
+                                text: (App ? App.displayTime(card.o.createdAt || "") : (card.o.createdAt || "")) + " · "
                                       + ((card.o.energyWh || 0) / 1000).toFixed(2) + " kWh"
                                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
                             }
