@@ -230,6 +230,10 @@ Item {
             Repeater {
                 model: [
                     { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
+                    // 2026-09-08 成员3 追加两入口行（成员2 文件，PR 报备）：
+                    // 月报为成员3 新页，优惠券接成员2 CouponPage。
+                    { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
+                    { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
                     { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
                 delegate: Rectangle {

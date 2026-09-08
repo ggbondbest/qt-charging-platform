@@ -8,4 +8,5 @@ set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
     ${CMAKE_CURRENT_SOURCE_DIR}/ChargingPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/SettlementPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/ProfileEditPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/StatsPage.qml
     PARENT_SCOPE)

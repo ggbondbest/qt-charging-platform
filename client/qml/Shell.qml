@@ -26,7 +26,8 @@ Window {
                                      "station", "login", "profile",
                                      "station_detail", "reservation_confirm",
                                      "reservation_module", "navigation",
-                                     "favorites", "notifications", "settings"]
+                                     "favorites", "notifications", "settings",
+                                     "stats", "coupon"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
         const t = {
@@ -48,6 +49,8 @@ Window {
             "favorites":           "pages/station/FavoritesPage.qml",
             "notifications":       "pages/station/NotificationPage.qml",
             "settings":            "pages/station/SettingsPage.qml",
+            "stats":               "pages/profile_charging/StatsPage.qml",
+            "coupon":              "pages/station/CouponPage.qml",
         }
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
