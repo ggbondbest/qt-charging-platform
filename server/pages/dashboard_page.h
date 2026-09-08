@@ -21,8 +21,8 @@ public:
     explicit DashboardPage(QWidget* parent = nullptr);
 
     void setAdminGateway(class AdminRequestGateway* gateway);
-    void refresh(int days = 7);
-    void setClientCount(int count);
+    void refresh(int days = 7, bool clearExisting = true);
+    void refreshCurrent(bool clearExisting = false) { refresh(requestedDays_, clearExisting); }
 
 signals:
     void exceptionListRequested();
@@ -33,9 +33,9 @@ private:
     void handleDashboardResponse(const QJsonObject& response);
     class AdminRequestGateway* gateway_ = nullptr;
     QString requestId_;
-    QLabel* clientCountValue_ = nullptr;
     QLabel* todayRevenueValue_ = nullptr;
     QLabel* monthRevenueValue_ = nullptr;
+    QLabel* totalRevenueValue_ = nullptr;
     QLabel* onlineChargersValue_ = nullptr;
     QLabel* onlineChargersHint_ = nullptr;
     QLabel* totalChargersLabel_ = nullptr;
@@ -46,7 +46,7 @@ private:
     QPushButton* refreshButton_ = nullptr;
     RevenueTrendWidget* trendWidget_ = nullptr;
     DeviceStatusWidget* deviceStatusWidget_ = nullptr;
-    QLabel* onlineLegendValue_ = nullptr;
+    QLabel* normalLegendValue_ = nullptr;
     QLabel* offlineLegendValue_ = nullptr;
     QLabel* faultLegendValue_ = nullptr;
     int requestedDays_ = 7;
