@@ -13,8 +13,12 @@
 PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由、`UserApiService`、
 `UserApiRepository` 和 `NetworkRequestTransport`，八个动作可通过 TCP 查询/修改真实 SQLite。
 2026-09-08 迭代追加数据域三个只读动作 `GET_USER_STATS`/`GET_COUPONS`/`GET_NOTIFICATIONS`
-（冻结只新增），动作总数达十一个；配套 `notifications`/`coupons` 两张新表与两个写挂点
-（`STOP_CHARGING` 落充电结束通知、`PAY_ORDER` 落支付成功通知；`RECHARGE` 达标同事务发券）。
+（冻结只新增），配套 `notifications`/`coupons` 两张新表与三个写挂点
+（`STOP_CHARGING` 落充电结束通知、`PAY_ORDER` 落支付成功通知、预约到期清扫落超时提醒；
+`RECHARGE` 达标同事务发券）。同日再加签到积分域 `CHECK_IN`/`GET_POINTS`
+（`user_checkins`/`points_ledger` 两表，日粒度幂等）与评价域
+`SUBMIT_CHARGER_RATING`/`GET_MY_RATINGS`（`charger_ratings` 表，`order_id UNIQUE`
+一单一评幂等），动作总数达十五个。
 本次不依赖 PR #19，不引入其管理查询或备份恢复代码，不修改 schema v1。
 运行、验证及剩余 UI 工作见 [用户业务接入说明](../development/user_api_runtime.md)。
 
@@ -30,7 +34,11 @@ PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由�
 | `GET_ORDERS` | 本人订单/状态/关联名称/分页 | 已实现 | 真实传输；点击 CHARGING 订单进入实时页面 |
 | `GET_USER_STATS` | 本人已完成订单按月聚合 + 碳排换算 | 已实现 | 月报页 StatsPage（statsService 桥），mock 同形 |
 | `GET_COUPONS` | 本人券状态过滤 + 分页 | 已实现 | 券页 CouponPage（couponService 桥），接线即拉缓存 |
-| `GET_NOTIFICATIONS` | 本人站内通知分页（充电结束/支付成功） | 已实现 | NotificationPage（NotificationService 服务端通道） |
+| `GET_NOTIFICATIONS` | 本人站内通知分页（充电结束/支付成功/超时提醒） | 已实现 | NotificationPage（NotificationService 服务端通道） |
+| `CHECK_IN` | 每日签到幂等入账 + 积分余额 | 已实现 | PointsPage 签到按钮（pointsService 桥），mock 同形 |
+| `GET_POINTS` | 本人积分总分 + 流水分页 | 已实现 | PointsPage 流水卡（pointsService 桥） |
+| `SUBMIT_CHARGER_RATING` | 完成单一次评价（order_id UNIQUE 幂等重放） | 已实现 | OrderDetailPage 完成态评价卡（ratingsService 桥） |
+| `GET_MY_RATINGS` | 本人评价分页（JOIN 桩/站展示字段） | 已实现 | RatingsPage 我的评价（ratingsService 桥） |
 
 仍已实现的七个动作：`USER_LOGIN`、`RESERVE_CHARGER`、`CANCEL_RESERVATION`、
 `START_CHARGING`、`GET_CHARGING_STATUS`、`STOP_CHARGING`、`PAY_ORDER`。
@@ -40,7 +48,7 @@ PR #19 是数据层工作，不自动使以上八个动作上线；合入前须�
 
 - 请求/响应继续使用 v1 envelope 与长度前缀 TCP 帧，`requestId` 用于对应请求和响应。
   下文及示例文件展示的是 envelope 中的 `data`，不是可直接写入 Socket 的完整报文。
-- 八个动作均要求登录用户 Session。未登录返回 `UNAUTHORIZED`；用户被冻结返回
+- 本文档动作均要求登录用户 Session。未登录返回 `UNAUTHORIZED`；用户被冻结返回
   `USER_FROZEN`。Service 每次操作检查当前用户状态。不能信任客户端 `userId`，即使
   传入也忽略。断线后重新登录，不能把旧连接 Session 当成仍有效。
 - ID 为 `[1-9][0-9]*` 的十进制字符串，范围不超过正 `qint64`。ID 不允许 JSON number、
@@ -80,7 +88,7 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 以上是已接入接口的业务错误；其余未注册动作仍返回 `UNKNOWN_REQUEST_TYPE`。
 失败 `data` 为 `{}`，不返回部分业务结果；`success: false` 与主协议一致。
 
-## 3. 十一个接口
+## 3. 十五个接口
 
 完整成功示例位于 [user_api_examples.json](user_api_examples.json)，由测试读取。
 表中 User/Station/Charger/Reservation/Order/RechargeRecord 均指现有
@@ -180,10 +188,11 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 
 ### GET_USER_STATS
 
-- 请求：`months?` 整数 `1..12`，缺省 6。
-- 返回：`{months: [{monthKey: "YYYY-MM", orderCount, energyWh, amountCents,
-  durationSeconds, co2Grams}]}`，新→旧；**仅 COMPLETED 订单**按 `created_at` 所在月
-  聚合。不分页。
+- 请求：`period?` ∈ `"week" | "month" | "year"`（缺省 `"month"` = 冻结前行为）、
+  `months?` 整数 `1..12`，缺省 6（= 取最近 N 个周期）。
+- 返回：`{months: [{monthKey, orderCount, energyWh, amountCents,
+  durationSeconds, co2Grams}]}`，新→旧；**仅 COMPLETED 订单**按 `created_at` 所在
+  周期聚合，不分页。`monthKey` 随档位取 `%Y-W%W` / `YYYY-MM` / `YYYY`（周期键）。
 - `co2Grams = round(energyWh × 0.5568)`（生态环境部全国电网平均排放因子
   0.5568 tCO₂/MWh）；TODO(contract)：因子与取整口径业务终确认。
 - 金额为分、电量 Wh、时长秒；展示单位换算留在页面层。
@@ -211,6 +220,41 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
   通知；两者幂等重放不重复落库（重放分支在挂点前返回）。
 - 已读标记（`read_at`）与推送通道一期不冻结；TODO(contract)。
 
+### CHECK_IN
+
+- 请求：无字段（`{}`）。
+- 返回：`{day: "YYYY-MM-DD", points, gained, alreadyCheckedIn}`。`day` 为服务端
+  UTC 日期，与 `user_checkins` 落库键同一时刻换算（响应与入库不跨 UTC 午夜漂移）；
+  `points` = 签到后总分（`points_ledger` 聚合单一事实源）。
+- 幂等语义：`(user_id, day)` 主键，当日重放返回 `alreadyCheckedIn: true`、
+  `gained: 0`、总分不变（重放不报错——与 `RECHARGE` 同族）。
+- 奖励常量（每日 10 分）定义于 contract.h；TODO(contract)：积分数值规则业务终确认。
+
+### GET_POINTS
+
+- 请求：`page?`、`pageSize?`。
+- 返回：`{points, entries: [{id, amount, reason, createdAtUtc}], page, pageSize,
+  total}`，新→旧。`reason` 词表一期只映射 `CHECK_IN` → "每日签到"，其余运营文案
+  原样透传；TODO(contract)：词表评审。不回显 `userId`。
+
+### SUBMIT_CHARGER_RATING
+
+- 请求：`orderId` 正整数、`rating` 整数 `1..5`、`comment?` 字符串（trim 后
+  `≤140`，normalize + DB CHECK 双层）。
+- 返回：`{rating: {id, orderId, chargerId, chargerCode, stationName, rating,
+  comment, createdAtUtc}, alreadyRated}`。
+- 一单一评：`charger_ratings.order_id UNIQUE` + `INSERT OR IGNORE`——重放返回
+  首评原值且 `alreadyRated: true`，不改写（无"改评"动作，TODO(contract) 二期）。
+- 安全口径：`chargerId` 取订单快照不信客户端；订单必须属于本人且 `COMPLETED`，
+  否则 `NOT_FOUND`（不泄露存在性）。
+
+### GET_MY_RATINGS
+
+- 请求：`page?`、`pageSize?`（`≤100`）。
+- 返回：`{ratings: [{id, orderId, chargerId, chargerCode, stationName, rating,
+  comment, createdAtUtc}], page, pageSize, total}`，`created_at DESC, id DESC`。
+  JOIN chargers/stations 带展示字段，页面无需二次查询；不回显 `userId`。
+
 ## 4. 本次不冻结为必填的扩展
 
 - R1 的照片、营业时间、停车费/占位费、快充计数及嵌套 `price/chargers` 尚未冻结，
@@ -220,7 +264,15 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 - R3 `estimatedMinutesRemaining`、`soc` 尚未冻结/实现，缺失显示“暂无估算”，不当作 0。
 - PR #18 的未来时间段、车辆绑定及预约时长是客户端演示，不改变已有
   `RESERVE_CHARGER {chargerId}` 的服务器即时预约规则。真实时段预约须独立设计冲突检测。
-- 扫码新动作、故障上报、资金消费/退款流水、管理端接口不在本 PR 范围。
+- 扫码启动通道不在本契约：桩码 payload 格式、摄像头通道与 `SCAN_START` 类动作均
+  TODO(contract)。客户端已落 **mock 模拟扫码页**（ScanPage，"模拟通道"演示态：
+  速选桩码/手输 `CHG://<站>/<桩>` → 走 `GET_STATIONS`/`GET_CHARGERS` 真查询 →
+  引导既有 `RESERVE_CHARGER`），真通道就位时只替换页面数据源接缝（`scanSource`），
+  不动本契约动作。
+- 峰谷分时电价、电桩停车费/场地情况说明未冻结（TODO(contract)：`GET_STATIONS`/
+  `GET_CHARGERS` 扩展字段与计费快照规则一起评审）；客户端按固定单价演示。
+- 优惠券核销/抵扣不在本契约（TODO(contract)：`PAY_ORDER` 抵扣规则二期，一期只读
+  券列表）；故障上报、资金消费/退款流水、管理端接口不在本 PR 范围。
 
 ## 5. 并行接入分工与验收
 
@@ -237,6 +289,6 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 使用 `model::toJson()` 输出基础部分后补充字段，不修改数据库基础模型来塞 UI 字段。
 
 `user_api_contract` 测试覆盖示例与字段校验；`user_api_integration` 使用真实 TCP+SQLite
-验证八个接口、已有充电闭环、用户隔离、充值事务、独立数据库连接并发、重连和超时。
+验证十五个接口、已有充电闭环、用户隔离、充值事务、独立数据库连接并发、重连和超时。
 独立页面预览仍使用 Mock，保留部分旧字段兼容预览；不能把 Mock 作为鉴权或事务验收依据。
 新增或改变必填字段、枚举、金额/状态语义时，先改本文、公共定义和测试，再改双方实现。
