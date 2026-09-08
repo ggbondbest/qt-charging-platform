@@ -55,8 +55,10 @@ private:
     bool recordMatchesFilters(const ChargerRecord& record) const;
     void requestList();
     void requestStationOptions();
+    void requestStationById(const QString& stationId);
     void handleListResponse(const QJsonObject& response);
     void handleStationOptionsResponse(const QJsonObject& response);
+    void handleStationLookupResponse(const QJsonObject& response);
     void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
@@ -78,6 +80,7 @@ private:
     // the sole source of the actual list filter, so it cannot be overridden.
     QString pendingStationFilterId_;
     QString stationOptionsRequestId_;
+    QString stationLookupRequestId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;

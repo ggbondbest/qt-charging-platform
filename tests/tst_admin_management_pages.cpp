@@ -1,6 +1,7 @@
 #include "admin_request_gateway.h"
 #include "charger_management_page.h"
 #include "dashboard_page.h"
+#include "database_connection.h"
 #include "server_runtime.h"
 #include "station_management_page.h"
 
@@ -14,6 +15,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QSqlQuery>
 #include <QTableWidget>
 #include <QTemporaryDir>
@@ -238,6 +240,88 @@ private slots:
         (*queryButton)->click();
         QTRY_VERIFY(table->rowCount() > 0 && table->item(0, 1) != nullptr);
         QTRY_COMPARE(table->item(0, 1)->text(), stationBName);
+        runtime.stop();
+    }
+
+    void stationJumpBeyondFirstOptionsPageUsesTargetLookup()
+    {
+        QTemporaryDir directory;
+        const QString databasePath = directory.filePath(QStringLiteral("admin-large-options.sqlite"));
+        ServerRuntime runtime;
+        QSignalSpy listening(&runtime, &ServerRuntime::listening);
+        QVERIFY(runtime.start(databasePath, true, QHostAddress::LocalHost, 0));
+        QTRY_COMPARE(listening.size(), 1);
+
+        const QString lastCode = QStringLiteral("STA-LARGE-101");
+        const QString lastName = QStringLiteral("第 101 个回归电站");
+        qint64 lastStationId = 0;
+        {
+            DatabaseConnection databaseConnection;
+            QVERIFY(databaseConnection.open(databasePath, false));
+            QSqlQuery insertStation(databaseConnection.database());
+            insertStation.prepare(QStringLiteral(
+                "INSERT INTO stations(code,name,address,latitude,longitude,price_cents_per_kwh,status) "
+                "VALUES(?,?,?,?,?,?,'ACTIVE')"));
+            for (int index = 4; index <= 101; ++index) {
+                const QString code = index == 101
+                    ? lastCode : QStringLiteral("STA-LARGE-%1").arg(index, 3, 10, QLatin1Char('0'));
+                const QString name = index == 101
+                    ? lastName : QStringLiteral("批量回归电站 %1").arg(index);
+                insertStation.bindValue(0, code);
+                insertStation.bindValue(1, name);
+                insertStation.bindValue(2, QStringLiteral("测试路 %1 号").arg(index));
+                insertStation.bindValue(3, 30.0);
+                insertStation.bindValue(4, 120.0);
+                insertStation.bindValue(5, 100);
+                QVERIFY2(insertStation.exec(), qPrintable(insertStation.lastError().text()));
+            }
+            QSqlQuery stationIdQuery(databaseConnection.database());
+            stationIdQuery.prepare(QStringLiteral("SELECT id FROM stations WHERE code=?"));
+            stationIdQuery.addBindValue(lastCode);
+            QVERIFY(stationIdQuery.exec() && stationIdQuery.next());
+            lastStationId = stationIdQuery.value(0).toLongLong();
+            QSqlQuery insertCharger(databaseConnection.database());
+            insertCharger.prepare(QStringLiteral(
+                "INSERT INTO chargers(station_id,code,type,power_watts,status) VALUES(?,?, 'FAST',60000,'AVAILABLE')"));
+            insertCharger.addBindValue(lastStationId);
+            insertCharger.addBindValue(QStringLiteral("CHG-LARGE-101-A1"));
+            QVERIFY2(insertCharger.exec(), qPrintable(insertCharger.lastError().text()));
+            databaseConnection.close();
+        }
+
+        AdminRequestGateway gateway(&runtime);
+        gateway.request(QStringLiteral("auth.login"),
+                        {{QStringLiteral("username"), QStringLiteral("admin")},
+                         {QStringLiteral("password"), QStringLiteral("123456")}},
+                        this, QStringLiteral("admin-large-options-login"));
+        QTRY_VERIFY(gateway.isAuthenticated());
+
+        ChargerManagementPage page;
+        page.setAdminGateway(&gateway);
+        page.show();
+        auto* stationFilter = page.findChild<QComboBox*>(QStringLiteral("chargerStationFilterComboBox"));
+        auto* table = page.findChild<QTableWidget*>(QStringLiteral("chargerManagementTable"));
+        QVERIFY(stationFilter != nullptr && table != nullptr);
+        QTRY_COMPARE(stationFilter->count(), 101); // "所属电站" plus the first 100 stations.
+        const QString lastStationIdText = QString::number(lastStationId);
+        QCOMPARE(stationFilter->findData(lastStationIdText), -1);
+
+        page.showStationRecords(lastStationIdText);
+        QTRY_VERIFY(stationFilter->findData(lastStationIdText) >= 0);
+        QTRY_VERIFY(table->rowCount() > 0 && table->item(0, 1) != nullptr);
+        QTRY_COMPARE(table->item(0, 1)->text(), lastName);
+
+        stationFilter->setCurrentIndex(1);
+        const auto pageButtons = page.findChildren<QPushButton*>();
+        const auto queryButton = std::find_if(pageButtons.cbegin(), pageButtons.cend(),
+                                              [](QPushButton* button) {
+                                                  return button->text() == QObject::tr("查询");
+                                              });
+        QVERIFY(queryButton != pageButtons.cend());
+        const QString manuallySelectedName = stationFilter->currentText();
+        (*queryButton)->click();
+        QTRY_VERIFY(table->rowCount() > 0 && table->item(0, 1) != nullptr);
+        QTRY_COMPARE(table->item(0, 1)->text(), manuallySelectedName);
         runtime.stop();
     }
 

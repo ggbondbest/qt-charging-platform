@@ -280,6 +280,10 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     connect(statePanel_, &ManagementStatePanel::retryRequested, this,
             &ChargerManagementPage::applyFilters);
     connect(resetButton, &QPushButton::clicked, this, &ChargerManagementPage::resetFilters);
+    connect(stationComboBox_, qOverload<int>(&QComboBox::activated), this, [this](int) {
+        // A manual choice always wins over an outstanding cross-page lookup.
+        pendingStationFilterId_.clear();
+    });
     connect(keywordLineEdit_, &QLineEdit::returnPressed, this, &ChargerManagementPage::applyFilters);
     connect(previousPageButton_, &QPushButton::clicked, this, &ChargerManagementPage::showPreviousPage);
     connect(nextPageButton_, &QPushButton::clicked, this, &ChargerManagementPage::showNextPage);
@@ -326,12 +330,12 @@ void ChargerManagementPage::showStationRecords(const QString& stationId)
     powerComboBox_->setCurrentIndex(0);
     const int stationIndex = stationComboBox_->findData(stationId);
     if (stationIndex < 0) {
-        // The options request may still be in flight after sign-in.  Do not
-        // retain this value as a hidden query override; apply it to the combo
-        // when its data arrives instead.
+        // Station options are intentionally limited to one page for a compact
+        // filter menu.  A valid target beyond that page must be resolved by
+        // ID, not mistaken for a deleted station.
         pendingStationFilterId_ = stationId;
-        requestStationOptions();
-        setFeedback(tr("正在加载目标电站筛选项…"));
+        requestStationById(stationId);
+        setFeedback(tr("正在确认目标电站…"));
         return;
     }
     pendingStationFilterId_.clear();
@@ -829,6 +833,7 @@ void ChargerManagementPage::setAdminGateway(AdminRequestGateway* gateway)
         else if (id == writeRequestId_) handleWriteResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
         else if (id == stationOptionsRequestId_) handleStationOptionsResponse(response);
+        else if (id == stationLookupRequestId_) handleStationLookupResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (!authenticated) { hasRealSnapshot_ = false; }
@@ -884,12 +889,19 @@ void ChargerManagementPage::requestStationOptions()
         this, QStringLiteral("charger-station-options"));
 }
 
+void ChargerManagementPage::requestStationById(const QString& stationId)
+{
+    if (!gateway_ || !gateway_->isAuthenticated() || stationId.isEmpty()) return;
+    stationLookupRequestId_ = gateway_->request(
+        QStringLiteral("stations.get"), {{QStringLiteral("id"), stationId}}, this,
+        QStringLiteral("charger-station-lookup"));
+}
+
 void ChargerManagementPage::handleStationOptionsResponse(const QJsonObject& response)
 {
     if (!response.value(QStringLiteral("success")).toBool()) return;
-    const QString selectedId = pendingStationFilterId_.isEmpty()
-        ? stationComboBox_->currentData().toString() : pendingStationFilterId_;
-    const bool appliesPendingStation = !pendingStationFilterId_.isEmpty();
+    const QString selectedId = stationComboBox_->currentData().toString();
+    const QString selectedName = stationComboBox_->currentText();
     stationComboBox_->clear();
     stationComboBox_->addItem(tr("所属电站"), QString());
     for (const auto& value : response.value(QStringLiteral("data")).toObject()
@@ -899,16 +911,42 @@ void ChargerManagementPage::handleStationOptionsResponse(const QJsonObject& resp
                                   station.value(QStringLiteral("id")).toString());
     }
     const int index = stationComboBox_->findData(selectedId);
-    stationComboBox_->setCurrentIndex(index >= 0 ? index : 0);
-    pendingStationFilterId_.clear();
-    if (appliesPendingStation) {
-        if (index >= 0) {
-            currentPage_ = 0;
-            requestList();
-        } else {
-            setFeedback(tr("目标电站已不可用，未应用筛选。"));
-        }
+    if (index >= 0) {
+        stationComboBox_->setCurrentIndex(index);
+    } else if (!selectedId.isEmpty()) {
+        // Preserve a successfully looked-up station that is outside the first
+        // options page when the ordinary options refresh arrives afterwards.
+        stationComboBox_->addItem(selectedName, selectedId);
+        stationComboBox_->setCurrentIndex(stationComboBox_->count() - 1);
+    } else {
+        stationComboBox_->setCurrentIndex(0);
     }
+}
+
+void ChargerManagementPage::handleStationLookupResponse(const QJsonObject& response)
+{
+    const QString requestedId = pendingStationFilterId_;
+    pendingStationFilterId_.clear();
+    if (requestedId.isEmpty()) return;
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("目标电站不存在或当前不可访问，未应用筛选。"));
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject()
+                          .value(QStringLiteral("item")).toObject();
+    const QString stationId = item.value(QStringLiteral("id")).toString();
+    if (stationId.isEmpty() || stationId != requestedId) {
+        setFeedback(tr("目标电站确认失败，未应用筛选。"));
+        return;
+    }
+    int stationIndex = stationComboBox_->findData(stationId);
+    if (stationIndex < 0) {
+        stationComboBox_->addItem(item.value(QStringLiteral("name")).toString(), stationId);
+        stationIndex = stationComboBox_->count() - 1;
+    }
+    stationComboBox_->setCurrentIndex(stationIndex);
+    currentPage_ = 0;
+    requestList();
 }
 
 void ChargerManagementPage::handleDetailResponse(const QJsonObject& response)
