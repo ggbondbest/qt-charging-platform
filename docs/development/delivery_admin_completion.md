@@ -26,7 +26,7 @@ RESERVED 预约、OFFLINE 离线绘制五类互斥分布，外侧显示数量和
 
 ## 构建与验证
 
-Ubuntu 22.04 构建依赖增加 `qt6-charts-dev`，Qt 基线仍为 6.2.4。
+Ubuntu 22.04 构建依赖增加 `libqt6charts6-dev`，Qt 基线仍为 6.2.4。
 新增 `delivery_admin_pages` 测试，包含图表单测和真实
 Gateway → Runtime → Service → Repository → SQLite 页面集成测试。
 
