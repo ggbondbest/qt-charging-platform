@@ -2,6 +2,7 @@
 
 #include "admin_request_gateway.h"
 #include "management_page_widgets.h"
+#include "management_time_format.h"
 
 #include <QAbstractItemView>
 #include <QColor>
@@ -249,9 +250,10 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    tableWidget_->setObjectName(QStringLiteral("managementUsersTable"));
     tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
-        {tr("用户ID"), tr("用户昵称"), tr("手机号"), tr("账户余额（元）"), tr("注册时间"),
+        {tr("用户ID"), tr("用户昵称"), tr("手机号"), tr("账户余额（元）"), tr("注册时间（北京时间）"),
          tr("最近充电时间"), tr("累计订单"), tr("状态"), tr("风控操作"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -310,6 +312,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     profileRow->addLayout(identityLayout, 1);
     detailLayout->addLayout(profileRow);
     detailAccountLabel_ = createTextLabel(QString(), QStringLiteral("color:#55647c; font-size:13px;"), detailCard);
+    detailAccountLabel_->setObjectName(QStringLiteral("managementUserDetails"));
     detailAccountLabel_->setWordWrap(true);
     detailLayout->addWidget(detailAccountLabel_);
     auto* riskHeading = new QHBoxLayout();
@@ -539,8 +542,10 @@ void UserManagementPage::showUserDetails(int recordIndex, bool requestDetails)
     detailIdLabel_->setText(tr("用户ID：%1").arg(record.id));
     detailPhoneLabel_->setText(tr("手机号：%1").arg(record.phone));
     if (realMode_) {
-        detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n用户状态　%3\n记录更新时间　%4\n实名认证、登录轨迹和常用电站：契约未提供")
-                                         .arg(formatCents(record.balanceCents)).arg(record.totalOrders).arg(record.status, record.expectedUpdatedAt));
+        detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n用户状态　%3\n注册时间（北京时间）\n%4\n记录更新时间（北京时间）\n%5\n实名认证、登录轨迹和常用电站：契约未提供")
+                                         .arg(formatCents(record.balanceCents)).arg(record.totalOrders)
+                                         .arg(record.status, record.registeredAt,
+                                              managementBeijingTime(record.expectedUpdatedAt)));
         riskTagLabel_->setText(tr("契约未提供"));
         riskTagLabel_->setStyleSheet(QStringLiteral("background:#f1f4f8; color:#708096; border-radius:5px; padding:4px 7px; font-size:12px; font-weight:600;"));
         updateDetailActions();
@@ -727,12 +732,14 @@ void UserManagementPage::handleDetailResponse(const QJsonObject& response)
     record.id = item.value(QStringLiteral("id")).toString(); record.nickname = item.value(QStringLiteral("nickname")).toString(); record.phone = item.value(QStringLiteral("phone")).toString();
     record.balanceCents = item.value(QStringLiteral("balanceCents")).toInteger(); record.status = item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常");
     record.totalOrders = item.value(QStringLiteral("orderCount")).toInt(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    record.registeredAt = managementRegistrationTime(item);
     showUserDetails(selectedRecordIndex_, false);
-    detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n未完成订单　%3 笔\n充值次数　%4 次\n用户状态　%5\n记录更新时间　%6")
+    detailAccountLabel_->setText(tr("账户余额　¥ %1\n累计订单　%2 笔\n未完成订单　%3 笔\n充值次数　%4 次\n用户状态　%5\n注册时间（北京时间）\n%6\n记录更新时间（北京时间）\n%7")
                                      .arg(formatCents(record.balanceCents)).arg(record.totalOrders)
                                      .arg(item.value(QStringLiteral("unfinishedOrderCount")).toInt())
                                      .arg(item.value(QStringLiteral("rechargeCount")).toInt())
-                                     .arg(record.status, record.expectedUpdatedAt));
+                                     .arg(record.status, record.registeredAt,
+                                          managementBeijingTime(record.expectedUpdatedAt)));
 }
 
 void UserManagementPage::handleListResponse(const QJsonObject& response)
@@ -746,7 +753,7 @@ void UserManagementPage::handleListResponse(const QJsonObject& response)
         const auto item = value.toObject();
         records_.append({item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("nickname")).toString(), item.value(QStringLiteral("phone")).toString(),
             item.value(QStringLiteral("balanceCents")).toInteger(), item.value(QStringLiteral("status")).toString() == QStringLiteral("FROZEN") ? tr("冻结") : tr("正常"),
-            tr("契约未提供"), tr("契约未提供"), item.value(QStringLiteral("orderCount")).toInt(), false, false,
+            managementRegistrationTime(item), tr("契约未提供"), item.value(QStringLiteral("orderCount")).toInt(), false, false,
             item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
         filteredRecordIndexes_.append(records_.size() - 1);
     }

@@ -189,10 +189,11 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    tableWidget_->setObjectName(QStringLiteral("managementStationsTable"));
     tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
         {tr("电站名称"), tr("城市 / 区域"), tr("详细地址"), tr("电桩数量"), tr("快充桩"),
-         tr("慢充桩"), tr("今日订单"), tr("利用率"), tr("运营状态"), tr("操作")});
+         tr("慢充桩"), tr("今日订单"), tr("在线率 / 在线桩"), tr("运营状态"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -255,6 +256,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     detailLayout->addWidget(divider);
     detailLayout->addWidget(createTextLabel(tr("电桩配置"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
     detailConfigurationLabel_ = createTextLabel(QString(), QStringLiteral("color:#53627b; font-size:13px;"), detailCard);
+    detailConfigurationLabel_->setObjectName(QStringLiteral("managementStationConfiguration"));
     detailConfigurationLabel_->setAlignment(Qt::AlignCenter);
     detailLayout->addWidget(detailConfigurationLabel_);
     detailLayout->addWidget(createTextLabel(tr("实时状态"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
@@ -362,7 +364,9 @@ void StationManagementPage::rebuildTable()
                                        realMode_ ? tr("—") : QString::number(record.fastChargerCount),
                                        realMode_ ? tr("—") : QString::number(record.slowChargerCount),
                                        realMode_ ? tr("—") : QString::number(record.todayOrders),
-                                       realMode_ ? tr("—") : QString::number(record.utilizationPercent) + tr("%"), QString(), QString()};
+                                       realMode_ && record.onlineChargerCount >= 0 && record.onlineRatePercent >= 0
+                                           ? tr("%1% / %2 台").arg(record.onlineRatePercent, 0, 'f', 1).arg(record.onlineChargerCount)
+                                           : tr("—"), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
             if (column == 8 || column == 9) {
                 continue;
@@ -463,7 +467,11 @@ void StationManagementPage::showStationDetails(int recordIndex, bool requestDeta
                                               QString::number(record.longitude, 'f', 6), formatPriceCents(record.priceCentsPerKwh),
                                               record.expectedUpdatedAt));
         detailContactLabel_->setText(tr("负责人及营业时间：契约未提供"));
-        detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩数：由服务端列表摘要提供").arg(record.chargerCount));
+        detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩　%2 台\n在线电桩　%3 台\n在线率　%4\n在线包含故障桩，不代表可用。")
+            .arg(record.chargerCount)
+            .arg(record.availableChargerCount >= 0 ? QString::number(record.availableChargerCount) : tr("—"))
+            .arg(record.onlineChargerCount >= 0 ? QString::number(record.onlineChargerCount) : tr("—"))
+            .arg(record.onlineRatePercent >= 0 ? tr("%1%").arg(record.onlineRatePercent, 0, 'f', 1) : tr("—")));
         detailRealtimeLabel_->setText(tr("快慢充分类、今日订单与利用率：契约未提供"));
         updateDetailActions();
         return;
@@ -798,10 +806,10 @@ void StationManagementPage::handleDetailResponse(const QJsonObject& response)
     record.longitude = item.value(QStringLiteral("longitude")).toDouble(); record.priceCentsPerKwh = item.value(QStringLiteral("priceCentsPerKwh")).toInteger();
     record.status = item.value(QStringLiteral("status")).toString() == QStringLiteral("ACTIVE") ? tr("运营中") : tr("已停用");
     record.chargerCount = item.value(QStringLiteral("totalChargers")).toInt(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    record.availableChargerCount = item.value(QStringLiteral("availableChargers")).toInt(-1);
+    record.onlineChargerCount = item.value(QStringLiteral("onlineChargerCount")).toInt(-1);
+    record.onlineRatePercent = item.value(QStringLiteral("onlineRatePercent")).toDouble(-1);
     showStationDetails(selectedRecordIndex_, false);
-    detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩数　%2 台")
-                                           .arg(record.chargerCount)
-                                           .arg(item.value(QStringLiteral("availableChargers")).toInt()));
 }
 
 void StationManagementPage::handleListResponse(const QJsonObject& response)
@@ -817,7 +825,10 @@ void StationManagementPage::handleListResponse(const QJsonObject& response)
         records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("name")).toString(), tr("—"), tr("—"),
             item.value(QStringLiteral("address")).toString(), item.value(QStringLiteral("latitude")).toDouble(), item.value(QStringLiteral("longitude")).toDouble(),
             item.value(QStringLiteral("priceCentsPerKwh")).toInteger(), active ? tr("运营中") : tr("已停用"), item.value(QStringLiteral("totalChargers")).toInt(), 0, 0, 0, 0,
-            tr("契约未提供"), tr("—"), item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
+            tr("契约未提供"), tr("—"), item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString(),
+            item.value(QStringLiteral("availableChargers")).toInt(-1),
+            item.value(QStringLiteral("onlineChargerCount")).toInt(-1),
+            item.value(QStringLiteral("onlineRatePercent")).toDouble(-1)});
         filteredRecordIndexes_.append(records_.size() - 1);
     }
     rebuildTable();
