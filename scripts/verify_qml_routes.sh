@@ -60,12 +60,11 @@ for route in login station profile wallet recharge order order_detail charging c
     esac
     screenshot="$output_dir/$route.png"
     log="$output_dir/$route.log"
-    login_flags=()
+    command_args=("$binary" "--view=$route" "--arg=$arg" --size=420x860 "--screenshot=$screenshot")
     if [[ "$route" != login ]]; then
-        login_flags=(--logged-in)
+        command_args+=(--logged-in)
     fi
-    if run_with_timeout "$binary" "--view=$route" "--arg=$arg" "${login_flags[@]}" \
-            --size=420x860 "--screenshot=$screenshot" >"$log" 2>&1; then
+    if run_with_timeout "${command_args[@]}" >"$log" 2>&1; then
         exit_status=0
     else
         exit_status=$?
