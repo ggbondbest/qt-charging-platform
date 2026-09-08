@@ -33,7 +33,7 @@ void PointService::fetchPoints(int page, int pageSize)
     }
     busy_ = true;
     const QString type = getPointsType();
-    transport_->send(type, {{QStringLiteral("page"), page},
+    transport_->sendFor(this, type, {{QStringLiteral("page"), page},
                             {QStringLiteral("pageSize"), pageSize}},
                      [this, type](bool ok, const QJsonObject& data,
                                   const charging::protocol::ProtocolError& error) {
@@ -56,7 +56,7 @@ void PointService::checkIn()
     }
     busy_ = true;
     const QString type = checkInType();
-    transport_->send(type, QJsonObject{},
+    transport_->sendFor(this, type, QJsonObject{},
                      [this, type](bool ok, const QJsonObject& data,
                                   const charging::protocol::ProtocolError& error) {
                          busy_ = false;

@@ -29,7 +29,7 @@ void CouponService::fetchCoupons()
     fetching_ = true;
     const QString type =
         QString::fromLatin1(charging::protocol::request_type::kGetCoupons);
-    transport_->send(type, {{QStringLiteral("pageSize"), kCouponsPageSize}},
+    transport_->sendFor(this, type, {{QStringLiteral("pageSize"), kCouponsPageSize}},
                      [this, type](bool ok, const QJsonObject& data,
                                   const charging::protocol::ProtocolError& error) {
                          fetching_ = false;

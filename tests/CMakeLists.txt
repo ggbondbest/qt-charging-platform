@@ -295,6 +295,17 @@ target_link_libraries(test_rating_service PRIVATE
 )
 add_test(NAME rating_service COMMAND test_rating_service)
 
+# sendFor lifetime guard for the four user-domain services (PR review P1-1).
+add_executable(test_service_lifecycle tst_service_lifecycle.cpp)
+target_link_libraries(test_service_lifecycle PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME service_lifecycle COMMAND test_service_lifecycle)
+set_tests_properties(service_lifecycle PROPERTIES TIMEOUT 60)
+
 add_executable(test_charging_service tst_charging_service.cpp)
 target_link_libraries(test_charging_service PRIVATE
     ChargingPlatform::ClientProfileChargingServices

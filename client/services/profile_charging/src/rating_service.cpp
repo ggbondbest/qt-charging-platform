@@ -33,7 +33,7 @@ void RatingService::fetchMyRatings(int page, int pageSize)
     }
     busy_ = true;
     const QString type = listType();
-    transport_->send(type, {{QStringLiteral("page"), page},
+    transport_->sendFor(this, type, {{QStringLiteral("page"), page},
                             {QStringLiteral("pageSize"), pageSize}},
                      [this, type](bool ok, const QJsonObject& data,
                                   const charging::protocol::ProtocolError& error) {
@@ -56,7 +56,7 @@ void RatingService::submitRating(const QString& orderId, int rating, const QStri
     busy_ = true;
     const QString type = submitType();
     // orderId 必须正十进制串（服务端 normalize 形态校验）；rating 1..5。
-    transport_->send(type, {{QStringLiteral("orderId"), orderId},
+    transport_->sendFor(this, type, {{QStringLiteral("orderId"), orderId},
                             {QStringLiteral("rating"), rating},
                             {QStringLiteral("comment"), comment.trimmed()}},
                      [this, type](bool ok, const QJsonObject& data,
