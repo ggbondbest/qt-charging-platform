@@ -14,6 +14,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopedPointer>
 
 #include "charging/client/profile_charging/avatar_library.h"
 
@@ -205,6 +206,70 @@ private slots:
     }
 
 private slots:
+    void shellBottomBarFollowsLoginState()
+    {
+        // Exercise the real shell and authentication state; mock is explicit
+        // because this regression concerns layout, not TCP authentication.
+        QmlApp app(QStringLiteral("127.0.0.1"), 9527, true);
+        QQmlEngine engine;
+        auto* context = engine.rootContext();
+        context->setContextObject(&app); // Service properties retain NOTIFY bindings.
+        context->setContextProperty(QStringLiteral("App"), &app);
+        context->setContextProperty(QStringLiteral("chargingView"), QStringLiteral("station"));
+        context->setContextProperty(QStringLiteral("CHARGING_CHANNEL"), QStringLiteral("mock"));
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        // The window and all pages are destroyed before their engine/services.
+        QScopedPointer<QQuickWindow> shell(qobject_cast<QQuickWindow*>(component.create()));
+        QVERIFY(shell);
+        auto* tabs = shell->findChild<QQuickItem*>(QStringLiteral("bottomTabBar"));
+        auto* stack = shell->findChild<QQuickItem*>(QStringLiteral("pageStack"));
+        auto* nav = shell->findChild<QQuickItem*>(QStringLiteral("topNavBar"));
+        QVERIFY(tabs); QVERIFY(stack); QVERIFY(nav);
+        const auto currentRoute = [stack]() {
+            auto* current = stack->property("currentItem").value<QQuickItem*>();
+            return current ? current->property("route").toString() : QString();
+        };
+
+        QVERIFY(!app.loggedIn());
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QSignalSpy rejected(&app, &QmlApp::loginFailed);
+        QVERIFY(!app.login(QStringLiteral("123")));
+        QCOMPARE(rejected.size(), 1);
+        QVERIFY(!app.loggedIn());
+        QVERIFY(!tabs->isVisible());
+        QCOMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+        QVERIFY(tabs->implicitHeight() > 0);
+        QCOMPARE(tabs->height(), tabs->implicitHeight());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height() - tabs->height());
+        QTRY_COMPARE(tabs->y() + tabs->height(), qreal(shell->height()));
+
+        // Even an authenticated session must not show navigation on the login route.
+        app.navigate(QStringLiteral("login"));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+        app.navigate(QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+
+        app.logout();
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(!app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+    }
+
     // P2·复审①：请求中切换筛选——旧("全部")响应不得落到"已完成"列表，
     // 且必须按当前筛选补查（此前按钮改了 filter、请求被吞，旧结果显示）。
     void orderListIgnoresStaleFilterResponse()
