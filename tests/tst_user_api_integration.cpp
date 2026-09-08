@@ -22,6 +22,7 @@
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QSettings>
+#include <QSet>
 #include <QSqlQuery>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -94,7 +95,11 @@ const QMap<QString, QJsonObject> requests{
     {kGetStations, {}}, {kGetChargers, {{"stationId", "1"}}}, {kGetReservations, {}},
     {kGetUserInfo, {}}, {kUpdateUserInfo, {{"nickname", "小明"}}},
     {kRecharge, {{"amountCents", 500}, {"transactionNo", "auth-1"}}},
-    {kGetRechargeRecords, {}}, {kGetOrders, {}}
+    {kGetRechargeRecords, {}}, {kGetOrders, {}},
+    {kGetUserStats, {}}, {kGetCoupons, {}}, {kGetNotifications, {}},
+    {kCheckIn, {}}, {kGetPoints, {}},
+    {kSubmitChargerRating, {{"orderId", "1"}, {"rating", 5}, {"comment", ""}}},
+    {kGetMyRatings, {}}
 };
 } // namespace
 
@@ -102,6 +107,10 @@ class UserApiIntegrationTest final : public QObject {
     Q_OBJECT
 private slots:
     void eightRoutesAndWorkflow();
+    void statsCouponsAndNotifications();
+    void couponExpiryDerivedFromServerClock();
+    void checkInAndPoints();
+    void chargerRatings();
     void authorizationAndValidation();
     void pagingExpiryAndLiveLists();
     void rechargeRollbackAndReplay();
@@ -254,6 +263,321 @@ void UserApiIntegrationTest::eightRoutesAndWorkflow()
     QVERIFY(query.next()); QCOMPARE(query.value(0).toInt(), balance);
 }
 
+void UserApiIntegrationTest::statsCouponsAndNotifications()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+    QCOMPARE(call(a, kGetNotifications).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 0);
+    QVERIFY(call(a, kGetUserStats).data.value("months").toArray().isEmpty());
+    QCOMPARE(call(a, kGetUserStats, {{"months", 13}}).error.code, QStringLiteral("INVALID_ARGUMENT"));
+
+    const auto wf = call(a, kReserveCharger, {{"chargerId", "1"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString reservationId = wf.data.value("reservation").toObject().value("id").toString();
+    const QString orderId = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId", reservationId}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", orderId}}).success);
+
+    auto response = call(a, kGetNotifications);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    QJsonObject note = response.data.value("notifications").toArray().first().toObject();
+    QCOMPARE(note.value("type").toString(), QStringLiteral("charging_stopped"));
+    QVERIFY(note.value("body").toString().contains(QStringLiteral("kWh")));
+    QVERIFY(note.value("createdAtUtc").isString());
+    QVERIFY(!note.contains("userId"));
+
+    QVERIFY(call(a, kPayOrder, {{"orderId", orderId}}).success);
+    response = call(a, kGetNotifications, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);
+    QCOMPARE(response.data.value("notifications").toArray().first().toObject().value("type").toString(),
+             QStringLiteral("order_paid"));   // newest first within one clock tick (id DESC)
+
+    response = call(a, kGetUserStats);
+    QVERIFY(response.success);
+    const QJsonArray months = response.data.value("months").toArray();
+    QCOMPARE(months.size(), 1);
+    const QJsonObject month = months.first().toObject();
+    QCOMPARE(month.value("orderCount").toInt(), 1);
+    QVERIFY(month.value("monthKey").toString().size() == 7);
+    QVERIFY(month.value("energyWh").toDouble() > 0);
+    QCOMPARE(month.value("co2Grams").toDouble(), qRound64(month.value("energyWh").toDouble() * 0.5568));
+
+    // 批次B 聚合档：同一单数据，year 档键为 4 位年份、week 档为 "YYYY-Www"，
+    // 聚合总量必须与 month 档一致（三档只是 GROUP BY 表达式不同）。
+    response = call(a, kGetUserStats, {{"period", "year"}});
+    QVERIFY(response.success);
+    const QJsonArray years = response.data.value("months").toArray();
+    QCOMPARE(years.size(), 1);
+    const QJsonObject year = years.first().toObject();
+    QCOMPARE(year.value("monthKey").toString().size(), 4);
+    QCOMPARE(year.value("orderCount").toInt(), 1);
+    QCOMPARE(year.value("energyWh").toDouble(), month.value("energyWh").toDouble());
+    response = call(a, kGetUserStats, {{"period", "week"}});
+    QVERIFY(response.success);
+    const QJsonArray weeks = response.data.value("months").toArray();
+    QCOMPARE(weeks.size(), 1);
+    const QJsonObject week = weeks.first().toObject();
+    QVERIFY(QRegularExpression(QStringLiteral("^\\d{4}-W\\d{2}$"))
+               .match(week.value("monthKey").toString()).hasMatch());
+    QCOMPARE(week.value("amountCents").toDouble(), month.value("amountCents").toDouble());
+    QCOMPARE(call(a, kGetUserStats, {{"period", "WEEK"}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));   // 白名单只收小写
+
+    // Coupon grant: >= ¥50 recharge once; below threshold none; idempotent
+    // replay of the same transaction never re-grants.
+    QVERIFY(call(a, kRecharge, {{"amountCents", 4999}, {"transactionNo", "coupon-below"}}).success);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 0);
+    QVERIFY(call(a, kRecharge, {{"amountCents", 5000}, {"transactionNo", "coupon-hit"}}).success);
+    response = call(a, kGetCoupons);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    const QJsonObject coupon = response.data.value("coupons").toArray().first().toObject();
+    QCOMPARE(coupon.value("kind").toString(), QStringLiteral("cash"));
+    QCOMPARE(coupon.value("status").toString(), QStringLiteral("available"));
+    QCOMPARE(coupon.value("valueCents").toInt(), 500);
+    QCOMPARE(coupon.value("condition").toString(), QStringLiteral("无门槛"));
+    QVERIFY(coupon.value("expiresAtUtc").toDouble() > 0);
+    QVERIFY(!coupon.value("id").toString().isEmpty());
+    QVERIFY(call(a, kRecharge, {{"amountCents", 5000}, {"transactionNo", "coupon-hit"}}).success);
+    QCOMPARE(call(a, kGetCoupons).data.value("total").toInt(), 1);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "AVAILABLE"}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+    QCOMPARE(f.number("SELECT COUNT(*) FROM coupons WHERE status='AVAILABLE' AND value_cents=500"), 1);
+    // Coupons belong to the session user only; the second account sees none.
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kGetCoupons).data.value("total").toInt(), 0);
+    QCOMPARE(call(b, kGetNotifications).data.value("total").toInt(), 0);
+}
+
+// 审查 P2#4：EXPIRED 是派生态——存储 AVAILABLE 但已过期的行，过滤/total/响应
+// status 都必须按有效态呈现；USED 优先不被到期改写。注入时钟走边界两侧。
+void UserApiIntegrationTest::couponExpiryDerivedFromServerClock()
+{
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+    const qint64 uid = f.number("SELECT id FROM users WHERE phone='13800138000'");
+    QVERIFY(uid > 0);
+    const auto stamp = [](const QDateTime& v) {
+        return v.toUTC().toString(Qt::ISODateWithMs);
+    };
+    const auto insertCoupon = [&](const QString& storedStatus, const QDateTime& expires) {
+        return f.sql(QStringLiteral(
+            "INSERT INTO coupons (user_id,kind,title,value_cents,threshold_cents,"
+            "status,source,expires_at,created_at,updated_at) VALUES "
+            "(%1,'CASH','%2',500,0,'%3','测试','%4','%5','%5')")
+            .arg(uid)
+            .arg(storedStatus == QLatin1String("USED")
+                     ? QStringLiteral("用过的券") : QStringLiteral("到期的券"))
+            .arg(storedStatus, stamp(expires), stamp(f.now)));
+    };
+    const QDateTime now = f.now;
+    QVERIFY(insertCoupon(QStringLiteral("AVAILABLE"), now.addDays(-1)));   // 过期派生
+    QVERIFY(insertCoupon(QStringLiteral("AVAILABLE"), now.addDays(1)));    // 仍有效
+    QVERIFY(insertCoupon(QStringLiteral("USED"), now.addDays(-3)));        // USED 优先
+    QVERIFY(f.sql(QStringLiteral(
+        "INSERT INTO coupons (user_id,kind,title,value_cents,threshold_cents,"
+        "status,source,expires_at,created_at,updated_at) VALUES "
+        "(%1,'CASH','边界券',500,0,'AVAILABLE','测试','%2','%3','%3')")
+        .arg(uid).arg(stamp(now)).arg(stamp(now))));                     // 恰到期（<= 界内）
+
+    auto response = call(a, kGetCoupons, {{"status", "expired"}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);   // 存储 AVAILABLE 的 2 行派生到期
+    for (const auto& item : response.data.value("coupons").toArray())
+        QCOMPARE(item.toObject().value("status").toString(), QStringLiteral("expired"));
+    QCOMPARE(call(a, kGetCoupons, {{"status", "available"}}).data.value("total").toInt(), 1);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 1);
+    response = call(a, kGetCoupons);                     // 全量：响应形也携带派生态
+    QCOMPARE(response.data.value("total").toInt(), 4);
+    QSet<QString> statuses;
+    for (const auto& item : response.data.value("coupons").toArray())
+        statuses.insert(item.toObject().value("status").toString());
+    const QSet<QString> expected{"expired", "available", "used"};
+    QCOMPARE(statuses, expected);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM coupons WHERE status='AVAILABLE'"), 3);
+                                     // 纯读侧派生：存储列不改写
+
+    // 时钟前进一天：原本有效 + 边界券并入到期，available 清空。
+    f.now = now.addDays(2);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "available"}}).data.value("total").toInt(), 0);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "expired"}}).data.value("total").toInt(), 3);
+    QCOMPARE(call(a, kGetCoupons, {{"status", "used"}}).data.value("total").toInt(), 1);
+}
+
+void UserApiIntegrationTest::checkInAndPoints()
+{
+    // 批次C（2026-09-08）：CHECK_IN 日粒度幂等 + GET_POINTS 分页/隔离。
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+
+    auto response = call(a, kGetPoints);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 0);
+    QCOMPARE(response.data.value("points").toInt(), 0);
+
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("gained").toInt(), 10);
+    QCOMPARE(response.data.value("alreadyCheckedIn").toBool(), false);
+    QCOMPARE(response.data.value("points").toInt(), 10);
+    const QString day = response.data.value("day").toString();
+    QVERIFY2(QRegularExpression(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}$")).match(day).hasMatch(),
+             qPrintable(day));
+    // 落库对拍：day 与 user_checkins 行一致（响应不是现算的幌子）。
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT COUNT(*) FROM user_checkins WHERE user_id=1 AND day='%1'").arg(day)), 1);
+
+    // 同日重放：幂等成功、不再入账（RECHARGE 同款语义，非错误）。
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("alreadyCheckedIn").toBool(), true);
+    QCOMPARE(response.data.value("gained").toInt(), 0);
+    QCOMPARE(response.data.value("points").toInt(), 10);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM points_ledger WHERE user_id=1"), 1);
+
+    // 跨 UTC 日再签两天 → 三条流水，总分 30；分页 pageSize=1 翻页。
+    f.now = f.now.addDays(1);
+    QVERIFY(call(a, kCheckIn).success);
+    f.now = f.now.addDays(1);
+    response = call(a, kCheckIn);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("gained").toInt(), 10);
+    QCOMPARE(response.data.value("points").toInt(), 30);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM user_checkins WHERE user_id=1"), 3);
+
+    response = call(a, kGetPoints, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 3);
+    QCOMPARE(response.data.value("points").toInt(), 30);   // 总分随每页回传
+    const QJsonObject entry = response.data.value("entries").toArray().first().toObject();
+    QCOMPARE(entry.value("amount").toInt(), 10);
+    QCOMPARE(entry.value("reason").toString(), QStringLiteral("每日签到"));  // CHECK_IN 词映射
+    QVERIFY(entry.value("createdAtUtc").isString());
+    QVERIFY(!entry.contains("userId"));
+    QVERIFY(!entry.value("id").toString().isEmpty());
+    // 新→旧：第 2 页时间戳必须早于第 1 页。
+    const QString newest = entry.value("createdAtUtc").toString();
+    response = call(a, kGetPoints, {{"page", 2}, {"pageSize", 1}});
+    QCOMPARE(response.data.value("entries").toArray().first().toObject()
+                 .value("createdAtUtc").toString().compare(newest) < 0, true);
+    QCOMPARE(call(a, kGetPoints, {{"pageSize", 101}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 账户隔离：另一账号积分从零开始。
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kGetPoints).data.value("total").toInt(), 0);
+    QCOMPARE(call(b, kCheckIn).data.value("points").toInt(), 10);
+}
+
+void UserApiIntegrationTest::chargerRatings()
+{
+    // 批次E（2026-09-08）：SUBMIT_CHARGER_RATING 一单一评 + GET_MY_RATINGS 分页。
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+
+    auto response = call(a, kGetMyRatings);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("total").toInt(), 0);
+    QVERIFY(response.data.value("ratings").toArray().isEmpty());
+
+    // 完整工作流造一笔 COMPLETED 单（评价对象绑定订单桩快照）。stats 用例同款
+    // 内联形态——lambda 装 QVERIFY 会撞宏内 `return;`（返回值推导冲突）。
+    auto wf = call(a, kReserveCharger, {{"chargerId", "1"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString pending = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId",
+                 wf.data.value("reservation").toObject().value("id").toString()}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", pending}}).success);
+    // 未支付（WAITING_PAYMENT）不可评价。
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 5}}).error.code,
+             QStringLiteral("NOT_FOUND"));
+    QVERIFY(call(a, kPayOrder, {{"orderId", pending}}).success);
+
+    response = call(a, kSubmitChargerRating,
+                    {{"orderId", pending}, {"rating", 5}, {"comment", "  很快  "}});
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QJsonObject row = response.data.value("rating").toObject();
+    QCOMPARE(row.value("orderId").toString(), pending);
+    QVERIFY(row.value("id").isString());
+    QVERIFY(row.value("chargerId").isString());
+    QCOMPARE(row.value("rating").toInt(), 5);
+    QCOMPARE(row.value("comment").toString(), QStringLiteral("很快"));   // 服务端 trim 落库
+    QVERIFY(!row.value("chargerCode").toString().isEmpty());
+    QVERIFY(!row.value("stationName").toString().isEmpty());
+    QVERIFY(row.value("createdAtUtc").isString());
+    QVERIFY(!row.contains("userId"));
+    QCOMPARE(response.data.value("alreadyRated").toBool(), false);
+    // 落库对拍 + 桩取订单快照（不信客户端）。
+    QCOMPARE(f.number(QStringLiteral("SELECT COUNT(*) FROM charger_ratings")), 1);
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT charger_id FROM charger_ratings WHERE order_id=%1").arg(pending)),
+             f.number(QStringLiteral("SELECT charger_id FROM orders WHERE id=%1").arg(pending)));
+
+    // 重放：幂等成功、alreadyRated=true、返回首评原值，不产生第二行不改值。
+    response = call(a, kSubmitChargerRating,
+                    {{"orderId", pending}, {"rating", 1}, {"comment", "改了"}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("alreadyRated").toBool(), true);
+    QCOMPARE(response.data.value("rating").toObject().value("rating").toInt(), 5);
+    QCOMPARE(f.number("SELECT COUNT(*) FROM charger_ratings"), 1);
+    QCOMPARE(call(a, kGetMyRatings).data.value("ratings").toArray()
+                 .first().toObject().value("comment").toString(), QStringLiteral("很快"));
+
+    // 非法入参（normalize 域）。
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 6}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+    QCOMPARE(call(a, kSubmitChargerRating,
+                  {{"orderId", "0"}, {"rating", 5}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 第二单一评 + 分页：新→旧（同 tick 由 id DESC 定序），行形无 userId。
+    wf = call(a, kReserveCharger, {{"chargerId", "2"}});
+    QVERIFY2(wf.success, qPrintable(wf.error.message));
+    const QString second = wf.data.value("order").toObject().value("id").toString();
+    QVERIFY(call(a, kStartCharging, {{"reservationId",
+                 wf.data.value("reservation").toObject().value("id").toString()}}).success);
+    f.now = f.now.addSecs(600);
+    QVERIFY(call(a, kStopCharging, {{"orderId", second}}).success);
+    QVERIFY(call(a, kPayOrder, {{"orderId", second}}).success);
+    QVERIFY(call(a, kSubmitChargerRating,
+                 {{"orderId", second}, {"rating", 3}}).success);
+    response = call(a, kGetMyRatings, {{"page", 1}, {"pageSize", 1}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);
+    QCOMPARE(response.data.value("page").toInt(), 1);
+    row = response.data.value("ratings").toArray().first().toObject();
+    QCOMPARE(row.value("orderId").toString(), second);   // 新单在前
+    QVERIFY(!row.value("id").toString().isEmpty());
+    QVERIFY(!row.contains("userId"));
+    response = call(a, kGetMyRatings, {{"page", 2}, {"pageSize", 1}});
+    QCOMPARE(response.data.value("ratings").toArray().first().toObject()
+                 .value("orderId").toString(), pending);
+    QCOMPARE(call(a, kGetMyRatings, {{"pageSize", 101}}).error.code,
+             QStringLiteral("INVALID_ARGUMENT"));
+
+    // 越权：他人订单不可评（NOT_FOUND 与不存在同码，不泄露订单存在性）；列表隔离。
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kSubmitChargerRating,
+                  {{"orderId", pending}, {"rating", 5}}).error.code,
+             QStringLiteral("NOT_FOUND"));
+    QCOMPARE(call(b, kGetMyRatings).data.value("total").toInt(), 0);
+}
+
 void UserApiIntegrationTest::authorizationAndValidation()
 {
     Fixture f; QVERIFY(f.start());
@@ -307,6 +631,23 @@ void UserApiIntegrationTest::pagingExpiryAndLiveLists()
     QVERIFY(response.success); QCOMPARE(response.data.value("total").toInt(), 1);
     QCOMPARE(f.number("SELECT COUNT(*) FROM orders WHERE status='CANCELLED' AND user_id=1"), 1);
     QCOMPARE(f.number("SELECT COUNT(*) FROM chargers WHERE id=1 AND status='AVAILABLE'"), 1);
+    // 批次D（2026-09-08）：超时清扫与翻转同事务落一条通知，词表复用
+    // reservation_expiry_reminder（客户端 typeFromServerWord 现成映射）。
+    QCOMPARE(f.number("SELECT COUNT(*) FROM notifications "
+                      "WHERE type='RESERVATION_EXPIRY_REMINDER' AND user_id=1"), 1);
+    response = call(c, kGetNotifications);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 1);
+    const QJsonObject expiryNote =
+        response.data.value("notifications").toArray().first().toObject();
+    QCOMPARE(expiryNote.value("type").toString(),
+             QStringLiteral("reservation_expiry_reminder"));
+    QVERIFY(expiryNote.value("title").toString().contains(QStringLiteral("预约")));
+    QVERIFY(!expiryNote.value("body").toString().isEmpty());
+    QVERIFY(expiryNote.value("createdAtUtc").isString());
+    // 重放清扫（任意读动作再触发）不双写：翻转 UPDATE 以 status='ACTIVE' 守卫。
+    QVERIFY(call(c, kGetReservations).success);
+    QCOMPARE(call(c, kGetNotifications).data.value("total").toInt(), 1);
     charging::client::services::reservation::ReservationService reservationService;
     reservationService.setConnection(&c); reservationService.setLiveMode(true); reservationService.setUserId(1);
     QSignalSpy reservations(&reservationService, &charging::client::services::reservation::ReservationService::listSucceeded);

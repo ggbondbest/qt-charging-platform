@@ -60,6 +60,9 @@ MockRequestTransport::MockRequestTransport()
 {
     seedDemoData();
     seedDemoOrders();
+    seedDemoCoupons();
+    seedDemoPoints();
+    seedDemoRatings();   // 依赖 orders_，必须排在 seedDemoOrders 之后。
 }
 
 void MockRequestTransport::seedDemoData()
@@ -174,6 +177,122 @@ void MockRequestTransport::seedDemoOrders()
                              31 * 60, 0, 0));
 
     std::reverse(orders_.begin(), orders_.end());
+}
+
+void MockRequestTransport::seedDemoCoupons()
+{
+    // 与 CouponPage.qml 内置演示数据同 shape（桥注册后页面自动退演示态）。
+    // 字段即 GET_COUPONS 响应形；id 用服务端同款十进制字符串，expiresAtUtc 毫秒数。
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const qint64 dayMs = 86400000;
+    const auto coupon = [](qint64 id, const QString& kind, const QString& title,
+                           qint64 valueCents, int discountTenths, const QString& condition,
+                           qint64 expiresAtUtc, const QString& status, const QString& source) {
+        QJsonObject object;
+        object.insert(QStringLiteral("id"), QString::number(id));
+        object.insert(QStringLiteral("kind"), kind);
+        object.insert(QStringLiteral("title"), title);
+        if (kind == QLatin1String("cash")) {
+            object.insert(QStringLiteral("valueCents"), static_cast<double>(valueCents));
+        } else {
+            object.insert(QStringLiteral("discountTenths"), discountTenths);
+        }
+        object.insert(QStringLiteral("thresholdCents"), 0);
+        object.insert(QStringLiteral("condition"), condition);
+        object.insert(QStringLiteral("expiresAtUtc"), static_cast<double>(expiresAtUtc));
+        object.insert(QStringLiteral("status"), status);
+        object.insert(QStringLiteral("source"), source);
+        return object;
+    };
+    coupons_ = {
+        coupon(1, QStringLiteral("cash"), QStringLiteral("新客立减券"), 1000, 0,
+               QStringLiteral("充电满 ¥20 可用"), nowMs + 6 * dayMs,
+               QStringLiteral("available"), QStringLiteral("平台新客礼")),
+        coupon(2, QStringLiteral("discount"), QStringLiteral("充电折扣券"), 0, 88,
+               QStringLiteral("单笔最高抵 ¥5"), nowMs + 3 * dayMs,
+               QStringLiteral("available"), QStringLiteral("充值回馈")),
+        coupon(3, QStringLiteral("cash"), QStringLiteral("服务费减免券"), 500, 0,
+               QStringLiteral("服务费满 ¥5 可用"), nowMs + 14 * dayMs,
+               QStringLiteral("available"), QStringLiteral("活动发放")),
+        coupon(4, QStringLiteral("cash"), QStringLiteral("节日充电券"), 2000, 0,
+               QStringLiteral("满 ¥30 可用"), nowMs - 2 * dayMs,
+               QStringLiteral("used"), QStringLiteral("节日活动")),
+        coupon(5, QStringLiteral("cash"), QStringLiteral("早鸟体验券"), 800, 0,
+               QStringLiteral("无门槛"), nowMs - 5 * dayMs,
+               QStringLiteral("expired"), QStringLiteral("拉新奖励")),
+    };
+}
+
+void MockRequestTransport::appendMockNotification(const QString& type, const QString& title,
+                                                  const QString& body,
+                                                  const QDateTime& createdAtUtc)
+{
+    notifications_.prepend({type, title, body, createdAtUtc});
+}
+
+void MockRequestTransport::grantRechargeCoupon(qint64 amountCents, const QDateTime& nowUtc)
+{
+    // 镜像服务端规则：单笔充值 ≥ ¥50 送一张 ¥5 充电券、30 天有效
+    //（常量单点在 user_api_contract.h，TODO(contract): 业务终确认待定稿）。
+    if (amountCents < charging::protocol::user_api::kCouponRechargeThresholdCents) {
+        return;
+    }
+    QJsonObject object;
+    object.insert(QStringLiteral("id"), QString::number(nextCouponId_++));
+    object.insert(QStringLiteral("kind"), QStringLiteral("cash"));
+    object.insert(QStringLiteral("title"), QStringLiteral("充值回馈 ¥5 充电券"));
+    object.insert(QStringLiteral("valueCents"),
+                  static_cast<double>(charging::protocol::user_api::kCouponValueCents));
+    object.insert(QStringLiteral("thresholdCents"), 0);
+    object.insert(QStringLiteral("condition"), QStringLiteral("无门槛"));
+    object.insert(QStringLiteral("expiresAtUtc"),
+                  static_cast<double>(nowUtc.addDays(
+                      charging::protocol::user_api::kCouponValidityDays).toMSecsSinceEpoch()));
+    object.insert(QStringLiteral("status"), QStringLiteral("available"));
+    object.insert(QStringLiteral("source"), QStringLiteral("充值回馈"));
+    coupons_.prepend(object);
+}
+
+void MockRequestTransport::seedDemoPoints()
+{
+    // 批次C 演示流水：注册礼包 +50（3 天前）。不预置今日签到——签到按钮
+    // 的首演留给 CHECK_IN 本身（与真机语义一致：日粒度幂等由 checkInDay_ 记）。
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    QJsonObject welcome;
+    welcome.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+    welcome.insert(QStringLiteral("amount"), 50);
+    welcome.insert(QStringLiteral("reason"), QStringLiteral("注册礼包"));
+    welcome.insert(QStringLiteral("createdAtUtc"),
+                   now.addDays(-3).toUTC().toString(Qt::ISODateWithMs));
+    pointsLedger_.append(welcome);
+    pointsTotal_ += 50;
+}
+
+void MockRequestTransport::seedDemoRatings()
+{
+    // 批次E 演示：给最近一笔已完成订单预置一条五星评价，让"我的评价"页与
+    // OrderDetail 完成态首演即有内容。幂等锚 order_id UNIQUE——同一订单只此一条。
+    for (const charging::model::Order& order : orders_) {
+        if (order.status != charging::model::OrderStatus::Completed) {
+            continue;
+        }
+        const QString orderId = QString::number(order.id);
+        QJsonObject object;
+        object.insert(QStringLiteral("id"), QString::number(nextRatingId_++));
+        object.insert(QStringLiteral("orderId"), orderId);
+        object.insert(QStringLiteral("chargerId"), QString::number(order.chargerId));
+        const auto display = chargerDisplays_.constFind(order.chargerId);
+        if (display != chargerDisplays_.constEnd()) {
+            object.insert(QStringLiteral("stationName"), display->first);
+            object.insert(QStringLiteral("chargerCode"), display->second);
+        }
+        object.insert(QStringLiteral("rating"), 5);
+        object.insert(QStringLiteral("comment"), QStringLiteral("充电很快，环境不错。"));
+        object.insert(QStringLiteral("createdAtUtc"),
+                      order.updatedAtUtc.toUTC().toString(Qt::ISODateWithMs));
+        ratings_.prepend(object);
+        break;   // 只预置一条，其余留给真实提交演示。
+    }
 }
 
 void MockRequestTransport::setNextFailure(const QString& code, int times)
@@ -305,6 +424,20 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kStartCharging);
     const QString payOrderType =
         QString::fromLatin1(charging::protocol::request_type::kPayOrder);
+    const QString getUserStatsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetUserStats);
+    const QString getCouponsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetCoupons);
+    const QString getNotificationsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetNotifications);
+    const QString checkInType =
+        QString::fromLatin1(charging::protocol::request_type::kCheckIn);
+    const QString getPointsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetPoints);
+    const QString submitChargerRatingType =
+        QString::fromLatin1(charging::protocol::request_type::kSubmitChargerRating);
+    const QString getMyRatingsType =
+        QString::fromLatin1(charging::protocol::request_type::kGetMyRatings);
 
     if (type == getUserInfoType) {
         QJsonObject payload;
@@ -393,6 +526,7 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
 
         user_.balanceCents += amountCents;
         user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
+        grantRechargeCoupon(amountCents, user_.updatedAtUtc);
 
         charging::model::RechargeRecord record;
         record.id = nextRecordId_++;
@@ -437,6 +571,291 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         payload.insert(QStringLiteral("pageSize"), pageSize);
         payload.insert(QStringLiteral("total"), records_.size());
         callback(true, payload, charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getUserStatsType) {
+        // 与服务端 GET_USER_STATS 同口径：仅 COMPLETED、按月倒序、月数默认 6；
+        // co2 = energyWh × 0.5568 g/Wh（全国电网平均排放因子，TODO(contract)）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int months = normalized.value(QStringLiteral("months")).toInt(6);
+        // 批次B：聚合档透传（normalize 已注入 "month" 缺省）。周档与服务端
+        // strftime('%Y-W%W') 同语义：周一为始的年度周序号（tm 公式，00-53），
+        // 不用 ISO 周（%G-%V 需 SQLite 3.44+）。字典序即时间序。
+        const QString period = normalized.value(QStringLiteral("period")).toString(
+            QStringLiteral("month"));
+        auto periodKey = [&period](const QDateTime& utc) {
+            const QDate date = utc.date();
+            if (period == QLatin1String("year")) {
+                return utc.toString(QStringLiteral("yyyy"));
+            }
+            if (period == QLatin1String("week")) {
+                const int wday = date.dayOfWeek() % 7;     // Qt Mon=1..Sun=7 → tm Sun=0
+                const int week = (date.dayOfYear() - 1 + 7 - wday) / 7;
+                return QStringLiteral("%1-W%2").arg(date.year()).arg(week, 2, 10,
+                                                                     QLatin1Char('0'));
+            }
+            return utc.toString(QStringLiteral("yyyy-MM"));
+        };
+        struct MonthAggregate
+        {
+            int orderCount = 0;
+            qint64 energyWh = 0;
+            qint64 amountCents = 0;
+            qint64 durationSeconds = 0;
+        };
+        QHash<QString, MonthAggregate> byMonth;
+        QStringList monthKeys;   // insertion order; orders_ is newest first
+        for (const charging::model::Order& order : orders_) {
+            if (order.status != charging::model::OrderStatus::Completed) {
+                continue;
+            }
+            const QString key = periodKey(order.createdAtUtc.toUTC());
+            if (!byMonth.contains(key)) {
+                monthKeys.append(key);
+            }
+            MonthAggregate& aggregate = byMonth[key];
+            ++aggregate.orderCount;
+            aggregate.energyWh += order.energyWh;
+            aggregate.amountCents += order.amountCents;
+            aggregate.durationSeconds += order.durationSeconds;
+        }
+        std::sort(monthKeys.begin(), monthKeys.end(),
+                  [](const QString& left, const QString& right) { return left > right; });
+        QJsonArray array;
+        for (int index = 0; index < monthKeys.size() && index < months; ++index) {
+            const MonthAggregate& aggregate = byMonth.constFind(monthKeys.at(index)).value();
+            QJsonObject item;
+            item.insert(QStringLiteral("monthKey"), monthKeys.at(index));
+            item.insert(QStringLiteral("orderCount"), aggregate.orderCount);
+            item.insert(QStringLiteral("energyWh"), static_cast<double>(aggregate.energyWh));
+            item.insert(QStringLiteral("amountCents"),
+                        static_cast<double>(aggregate.amountCents));
+            item.insert(QStringLiteral("durationSeconds"),
+                        static_cast<double>(aggregate.durationSeconds));
+            item.insert(QStringLiteral("co2Grams"), qRound64(aggregate.energyWh * 0.5568));
+            array.append(item);
+        }
+        callback(true, QJsonObject{{QStringLiteral("months"), array}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getCouponsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString statusFilter = normalized.value(QStringLiteral("status")).toString();
+        // 审查 P2#4：与服务端同款派生状态口径——USED 最优先，其次按到期时间，
+        // 存储 status 只当种子值；过滤、total、响应字段都只认有效态。
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        QJsonArray matched;
+        for (QJsonObject coupon : coupons_) {
+            const QString stored = coupon.value(QStringLiteral("status")).toString();
+            const qint64 expiresMs =
+                qRound64(coupon.value(QStringLiteral("expiresAtUtc")).toDouble());
+            const QString effective = stored == QLatin1String("used")
+                ? stored
+                : (expiresMs <= nowMs ? QStringLiteral("expired")
+                                      : QStringLiteral("available"));
+            coupon.insert(QStringLiteral("status"), effective);
+            if (statusFilter.isEmpty() || effective == statusFilter) {
+                matched.append(coupon);
+            }
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < matched.size() && index < start + pageSize; ++index) {
+            array.append(matched.at(index));
+        }
+        callback(true, QJsonObject{{QStringLiteral("coupons"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), matched.size()}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getNotificationsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < notifications_.size() && index < start + pageSize;
+             ++index) {
+            const MockNotification& notification = notifications_.at(index);
+            array.append(QJsonObject{
+                {QStringLiteral("type"), notification.type.toLower()},
+                {QStringLiteral("title"), notification.title},
+                {QStringLiteral("body"), notification.body},
+                {QStringLiteral("createdAtUtc"),
+                 notification.createdAtUtc.toUTC().toString(Qt::ISODateWithMs)},
+            });
+        }
+        callback(true, QJsonObject{{QStringLiteral("notifications"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), notifications_.size()}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == checkInType) {
+        // 批次C：日粒度幂等——镜像服务端 user_checkins (user_id, day) 主键；
+        // 重放返回现总分 + gained=0，不报错。reason 存显示词（服务端对
+        // CHECK_IN 映射"每日签到"，输出侧同款）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString day = QDateTime::currentDateTimeUtc().toUTC()
+                                .toString(QStringLiteral("yyyy-MM-dd"));
+        bool already = false;
+        qint64 gained = 0;
+        if (checkInDay_ == day) {
+            already = true;
+        } else {
+            checkInDay_ = day;
+            gained = charging::protocol::user_api::kCheckInRewardPoints;
+            pointsTotal_ += gained;
+            QJsonObject entry;
+            entry.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+            entry.insert(QStringLiteral("amount"), static_cast<double>(gained));
+            entry.insert(QStringLiteral("reason"), QStringLiteral("每日签到"));
+            entry.insert(QStringLiteral("createdAtUtc"),
+                         QDateTime::currentDateTimeUtc().toUTC().toString(Qt::ISODateWithMs));
+            pointsLedger_.prepend(entry);
+        }
+        callback(true, QJsonObject{{QStringLiteral("day"), day},
+                                   {QStringLiteral("points"), static_cast<double>(pointsTotal_)},
+                                   {QStringLiteral("gained"), static_cast<double>(gained)},
+                                   {QStringLiteral("alreadyCheckedIn"), already}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getPointsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < pointsLedger_.size() && index < start + pageSize;
+             ++index) {
+            array.append(pointsLedger_.at(index));
+        }
+        callback(true, QJsonObject{{QStringLiteral("points"), static_cast<double>(pointsTotal_)},
+                                   {QStringLiteral("entries"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), pointsLedger_.size()}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == submitChargerRatingType) {
+        // 批次E：镜像服务端一单一评——订单必须存在且已完成，否则 NOT_FOUND；
+        // order_id UNIQUE 幂等（重放不覆盖首评、不报错，TODO(contract) 改评二期）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const QString orderId = normalized.value(QStringLiteral("orderId")).toString();
+        const charging::model::Order* order = nullptr;
+        for (const charging::model::Order& candidate : orders_) {
+            if (QString::number(candidate.id) == orderId) {
+                order = &candidate;
+                break;
+            }
+        }
+        if (order == nullptr || order->status != charging::model::OrderStatus::Completed) {
+            callback(false, QJsonObject{},
+                     mockError(QString::fromLatin1(charging::protocol::error_code::kNotFound),
+                               QStringLiteral("订单不存在或不可评价")));
+            return;
+        }
+        QJsonObject existing;
+        bool alreadyRated = false;
+        for (const QJsonObject& candidate : ratings_) {
+            if (candidate.value(QStringLiteral("orderId")).toString() == orderId) {
+                existing = candidate;
+                alreadyRated = true;
+                break;
+            }
+        }
+        if (!alreadyRated) {
+            existing.insert(QStringLiteral("id"), QString::number(nextRatingId_++));
+            existing.insert(QStringLiteral("orderId"), orderId);
+            existing.insert(QStringLiteral("chargerId"), QString::number(order->chargerId));
+            const auto display = chargerDisplays_.constFind(order->chargerId);
+            if (display != chargerDisplays_.constEnd()) {
+                existing.insert(QStringLiteral("stationName"), display->first);
+                existing.insert(QStringLiteral("chargerCode"), display->second);
+            }
+            existing.insert(QStringLiteral("rating"), normalized.value(QStringLiteral("rating")));
+            existing.insert(QStringLiteral("comment"),
+                            normalized.value(QStringLiteral("comment")));
+            existing.insert(QStringLiteral("createdAtUtc"),
+                            QDateTime::currentDateTimeUtc().toUTC().toString(Qt::ISODateWithMs));
+            ratings_.prepend(existing);
+        }
+        callback(true, QJsonObject{{QStringLiteral("rating"), existing},
+                                   {QStringLiteral("alreadyRated"), alreadyRated}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
+    if (type == getMyRatingsType) {
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const int page = normalized.value(QStringLiteral("page")).toInt();
+        const int pageSize = normalized.value(QStringLiteral("pageSize")).toInt();
+        const int start = (page - 1) * pageSize;
+        QJsonArray array;
+        for (int index = start; index < ratings_.size() && index < start + pageSize; ++index) {
+            array.append(ratings_.at(index));
+        }
+        callback(true, QJsonObject{{QStringLiteral("ratings"), array},
+                                   {QStringLiteral("page"), page},
+                                   {QStringLiteral("pageSize"), pageSize},
+                                   {QStringLiteral("total"), ratings_.size()}},
+                 charging::protocol::ProtocolError{});
         return;
     }
 
@@ -566,6 +985,14 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         order->stoppedAtUtc = now;
         order->status = charging::model::OrderStatus::WaitingPayment;
         order->updatedAtUtc = now;
+        // 镜像服务端 STOP 事务里的通知落库（文案同款，TODO(contract) 评审）。
+        appendMockNotification(QStringLiteral("CHARGING_STOPPED"),
+                               QStringLiteral("充电已结束"),
+                               QStringLiteral("本次充电 %1 kWh，用时 %2 分钟，产生费用 ¥%3，请及时支付")
+                                   .arg(liveEnergy / 1000.0, 0, 'f', 2)
+                                   .arg(liveDuration / 60)
+                                   .arg(order->amountCents / 100.0, 0, 'f', 2),
+                               now);
 
         callback(true,
                  buildStatusPayload(*order, 0, order->energyWh, order->durationSeconds),
@@ -619,6 +1046,14 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         order->status = charging::model::OrderStatus::Completed;
         order->paidAtUtc = now;
         order->updatedAtUtc = now;
+        // 镜像服务端 PAY 事务里的通知落库（幂等重放分支已在上方返回）。
+        appendMockNotification(QStringLiteral("ORDER_PAID"),
+                               QStringLiteral("支付成功"),
+                               QStringLiteral("订单 %1 已支付 ¥%2，当前余额 ¥%3")
+                                   .arg(order->orderNo)
+                                   .arg(order->amountCents / 100.0, 0, 'f', 2)
+                                   .arg(user_.balanceCents / 100.0, 0, 'f', 2),
+                               now);
 
         callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
         return;

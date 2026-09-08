@@ -26,7 +26,8 @@ Window {
                                      "station", "login", "profile",
                                      "station_detail", "reservation_confirm",
                                      "reservation_module", "navigation",
-                                     "favorites", "notifications", "settings", "coupon"]
+                                     "favorites", "notifications", "settings",
+                                     "stats", "coupon", "points", "ratings", "scan"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
         const t = {
@@ -48,7 +49,11 @@ Window {
             "favorites":           "pages/station/FavoritesPage.qml",
             "notifications":       "pages/station/NotificationPage.qml",
             "settings":            "pages/station/SettingsPage.qml",
+            "stats":               "pages/profile_charging/StatsPage.qml",
             "coupon":              "pages/station/CouponPage.qml",
+            "points":              "pages/profile_charging/PointsPage.qml",
+            "ratings":             "pages/profile_charging/RatingsPage.qml",
+            "scan":                "pages/profile_charging/ScanPage.qml",
         }
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
@@ -90,6 +95,25 @@ Window {
             if (!App.loggedIn) shell.pushRoute("login")
             else shell.pushRoute("station")
         }
+    }
+
+    // —— 外观同步（2026-09-08 批次A）——
+    // Style 的色/字号令牌全是对 theme/fontScale 的绑定，这里只做"服务→单例"
+    // 的值搬运；启动拉一次 + appearanceChanged 持续跟。桥缺位场景（单页测试
+    // 上下文）用 typeof 守卫，Style 保持默认亮色/标准档。
+    function syncAppearance() {
+        if (typeof settingsService === "undefined" || !settingsService) return
+        try {
+            const t = settingsService.theme()
+            if (typeof t === "string" && t.length > 0) P.Style.theme = t
+            const f = settingsService.fontScale()
+            if (typeof f === "string" && f.length > 0) P.Style.fontScale = f
+        } catch (e) { /* 桥未实现外观方法：静默按默认档 */ }
+    }
+    Component.onCompleted: syncAppearance()
+    Connections {
+        target: typeof settingsService !== "undefined" ? settingsService : null
+        function onAppearanceChanged() { shell.syncAppearance() }
     }
 
     Column {

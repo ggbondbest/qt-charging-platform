@@ -6,15 +6,20 @@
 #include <QObject>
 #include <QVector>
 
+namespace charging::client { class IRequestTransport; }
+
 namespace charging::client::services::favorites {
 
-// 通知消息类型：与 SettingsService::Notification 三个开关一一对应，
+// 通知消息类型：与 SettingsService::Notification 开关一一对应（int 值序对拍，
+// 新类型只可尾部追加），
 // “设置页关闭的类型不在通知页展示”的联动语义在 Service 层落地。
 enum class NotificationType
 {
     ReservationExpiryReminder, // 🔔 预约到期提醒（含迟到自动取消）
     ReservationSuccessNotice,  // ✅ 预约成功通知
     ReservationCancelNotice,   // ❌ 预约取消通知（用户主动取消）
+    ChargingStopped,           // 🔌 充电结束通知（服务端通道 GET_NOTIFICATIONS）
+    OrderPaid,                 // 💰 支付成功通知（服务端通道 GET_NOTIFICATIONS）
 };
 
 // 一条站内通知（标题/内容/时间——迭代 3 通知页展示口径）。
@@ -31,10 +36,10 @@ struct NotificationItem
 // 与收藏服务同属“迭代 3 个人中心域”（同库 charging_client_favorites_services，
 // 命名空间共用 services::favorites）。
 //
-// 后端通知中心接口尚未定义（协议属成员 1/3 领域）——当前为客户端 Service
-// 模拟：构造时按预约业务口径生成演示历史，运行期由 HomeShell 桥接
-// ReservationService 信号（提交成功/取消/到期·迟到）实时追加；TODO(contract)：
-// 接口就绪后仅替换数据源，notifications()/notificationsChanged() 形状不变。
+// 后端通知中心接口 2026-09-08 落地（GET_NOTIFICATIONS，成员 3）：注入 transport
+// 后 refresh() 拉服务端通知（充电结束/支付成功）；未注入 = 纯本地通道，
+// 行为与迭代 3 完全一致（widgets 端零影响）。本地演示历史与 HomeShell
+// 桥接追加通道（提交成功/取消/到期·迟到）原样保留，两通道按时间合并展示。
 //
 // 开关联动：setSettingsService() 注入后，notifications() 只返回“对应开关
 // 开启”的类型；设置页 notificationsChanged 原样转发，页面即时重渲染。
@@ -47,6 +52,14 @@ public:
     explicit NotificationService(QObject* parent = nullptr);
 
     void setSettingsService(settings::SettingsService* settings);
+
+    // —— 服务端通道（2026-09-08 追加，成员 3）——
+    // 不注入 transport 时下面两个方法均 no-op（保持既有 widgets/测试口径）。
+    void setTransport(charging::client::IRequestTransport* transport);
+    // 拉取 GET_NOTIFICATIONS（pageSize=kMaxNotifications），服务端段整体替换；
+    // 单飞：在途重复调用直接丢弃；失败静默保留上一次服务端段（通知页无 toast）。
+    void refresh();
+    bool isRefreshing() const;
 
     // 演示/测试：清空并重新生成模拟历史。
     void resetForTesting();
@@ -76,8 +89,13 @@ private:
     bool enabledForType(NotificationType type) const;
 
     settings::SettingsService* settings_ = nullptr;
-    QVector<NotificationItem> items_; // 全量（含被开关隐藏的），新在前
+    QVector<NotificationItem> items_; // 本地通道全量（含被开关隐藏的），新在前
     qint64 nextId_ = 1;
+
+    charging::client::IRequestTransport* transport_ = nullptr;
+    QVector<NotificationItem> serverItems_; // 服务端段全量，refresh 整体替换，新在前
+    bool refreshing_ = false;
+    qint64 nextServerId_ = -1; // 无 id 行的合成 id：负值段，与本地正整数段防撞
 };
 
 } // namespace charging::client::services::favorites

@@ -202,7 +202,9 @@ Item {
                 Rectangle {
                     objectName: "uiChargingHero"
                     width: parent.width
-                    height: 250
+                    // 字号档位（批次A）下固定高容器必须随 fontScaleFactor 呼吸，
+                    // 否则放大档文字溢出/碰撞（2026-09-08 用户实测 large 档修复）。
+                    height: Math.round(250 * P.Style.fontScaleFactor)
                     radius: P.Style.radiusLg
                     // Qt6.2: GradientStop bindings never re-evaluate → two
                     // constant layers switched by visible.
@@ -251,8 +253,9 @@ Item {
                         anchors.right: parent.right; anchors.top: parent.top
                         anchors.rightMargin: 22; anchors.topMargin: 16
                         visible: page.ordersArrived && page.busy
-                        width: livePillText.implicitWidth + 22; height: 24
-                        radius: 12
+                        width: livePillText.implicitWidth + 22
+                        height: Math.round(24 * P.Style.fontScaleFactor)
+                        radius: height / 2
                         color: "#33FFFFFF"
                         Row {
                             anchors.centerIn: parent
@@ -306,36 +309,42 @@ Item {
                         // scale .92→1) — the widgets bolt polygon, same points.
                         Canvas {
                             objectName: "chargingPulse"
-                            width: 56; height: 56
+                            // 字号档适配（2026-09-08 二轮）：画布尺寸随档等比，
+                            // 画刷几何全部按 width/56 换算（56px 为设计基准）。
+                            width: Math.round(56 * P.Style.fontScaleFactor)
+                            height: width
                             property real phase: 0.0
                             property real b: page.breath
                             onPhaseChanged: requestPaint()
                             onBChanged: requestPaint()
+                            onWidthChanged: requestPaint()
                             onPaint: {
                                 const ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
-                                ctx.lineWidth = 4
+                                const u = width / 56
+                                const c = width / 2
+                                ctx.lineWidth = 4 * u
                                 ctx.strokeStyle = "rgba(255,255,255,0.28)"
                                 ctx.beginPath()
-                                ctx.arc(28, 28, 22, 0, 2 * Math.PI)
+                                ctx.arc(c, c, 22 * u, 0, 2 * Math.PI)
                                 ctx.stroke()
                                 ctx.lineCap = "round"
                                 ctx.strokeStyle = "rgba(255,255,255,0.95)"
                                 const a0 = (-90 + phase * 360) * Math.PI / 180
                                 ctx.beginPath()
-                                ctx.arc(28, 28, 22, a0, a0 + 100 * Math.PI / 180)
+                                ctx.arc(c, c, 22 * u, a0, a0 + 100 * Math.PI / 180)
                                 ctx.stroke()
                                 const lvl = 0.38 + 0.62 * b
-                                const sc = 0.92 + 0.08 * b
+                                const sc = (0.92 + 0.08 * b) * u
                                 const bw = 15 * sc, bh = 24 * sc
                                 ctx.fillStyle = "rgba(255,255,255," + lvl.toFixed(3) + ")"
                                 ctx.beginPath()
-                                ctx.moveTo(28 - bw * 0.15, 28 - bh / 2)
-                                ctx.lineTo(28 - bw / 2,    28 + bh * 0.12)
-                                ctx.lineTo(28 - bw * 0.05, 28 + bh * 0.12)
-                                ctx.lineTo(28 + bw * 0.15, 28 + bh / 2)
-                                ctx.lineTo(28 + bw / 2,    28 - bh * 0.12)
-                                ctx.lineTo(28 + bw * 0.05, 28 - bh * 0.12)
+                                ctx.moveTo(c - bw * 0.15, c - bh / 2)
+                                ctx.lineTo(c - bw / 2,    c + bh * 0.12)
+                                ctx.lineTo(c - bw * 0.05, c + bh * 0.12)
+                                ctx.lineTo(c + bw * 0.15, c + bh / 2)
+                                ctx.lineTo(c + bw / 2,    c - bh * 0.12)
+                                ctx.lineTo(c + bw * 0.05, c - bh * 0.12)
                                 ctx.closePath()
                                 ctx.fill()
                             }
@@ -348,7 +357,7 @@ Item {
                         }
                         Item {
                             width: powerCol.implicitWidth
-                            height: 56
+                            height: powerCol.implicitHeight + 8
                             Column {
                                 id: powerCol
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -403,8 +412,9 @@ Item {
                                 { val: "¥" + page.yuan.toFixed(2), unit: "", k: "预估费用" },
                             ]
                             delegate: Item {
-                                width: heroStats.colW; height: 50
+                                width: heroStats.colW; height: statCol.implicitHeight
                                 Column {
+                                    id: statCol
                                     anchors.centerIn: parent
                                     spacing: 3
                                     Row {
@@ -440,7 +450,7 @@ Item {
                     Repeater {
                         model: 2
                         delegate: Rectangle {
-                            width: 1; height: 30
+                            width: 1; height: Math.round(30 * P.Style.fontScaleFactor)
                             x: heroStats.x + (index + 1) * heroStats.colW + index
                             y: heroStats.y - (height - heroStats.height) / 2
                             visible: page.ordersArrived && page.busy
@@ -458,7 +468,7 @@ Item {
                             objectName: "uiHeroGlyph"
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: "⚡"
-                            font.pixelSize: 40
+                            font.pixelSize: Math.round(40 * P.Style.fontScaleFactor)
                             // 空态也呼吸：widgets motion::startBreathing(glyph)
                             // "空态不冷清 —— 在等你的下一单"
                             opacity: 0.38 + 0.62 * page.breath
@@ -492,8 +502,9 @@ Item {
                     width: parent.width
                     variant: "secondary"
                     text: "模拟扫码（demo）"
-                    // TODO(contract): scan-start protocol undefined; keep demo honest.
-                    onClicked: if (App) App.showToast("扫码启动协议未定，走 mock 预约流程（TODO(contract)）", "info")
+                    // 批次F：mock 扫码页落地（ScanPage），真扫码通道仍 TODO(contract)
+                    // ——届时 ScanPage 的 scanSource 接缝切换为摄像头通道。
+                    onClicked: if (App) App.navigate("scan")
                 }
 
                 // Pending-payment — compact reminder ROW (widgets buildPaymentCard
@@ -502,7 +513,7 @@ Item {
                     objectName: "rechargePendingNotice"
                     visible: page.waitingCount > 0
                     width: parent.width
-                    height: 72
+                    height: Math.round(72 * P.Style.fontScaleFactor)   // 字号档呼吸
                     radius: P.Style.radiusLg
                     color: P.Style.surface
                     border.width: 1; border.color: P.Style.line
@@ -516,11 +527,12 @@ Item {
                         id: payHub
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                         anchors.leftMargin: 16
-                        width: 40; height: 40; radius: 20
+                        width: Math.round(40 * P.Style.fontScaleFactor)
+                        height: width; radius: width / 2
                         color: P.Style.warningSoft
                         Text {
                             anchors.centerIn: parent
-                            text: "💰"; font.pixelSize: 18
+                            text: "💰"; font.pixelSize: Math.round(18 * P.Style.fontScaleFactor)
                         }
                     }
                     P.ActionButton {
@@ -529,7 +541,8 @@ Item {
                         anchors.rightMargin: 14
                         text: "去处理"
                         variant: "primary"
-                        height: 36; implicitHeight: 36
+                        height: Math.round(36 * P.Style.fontScaleFactor)
+                        implicitHeight: height
                         leftPadding: 18; rightPadding: 18
                         topPadding: 4; bottomPadding: 4
                         onClicked: if (App) App.recoverUnfinishedOrder()

@@ -9,6 +9,8 @@
 #include "charging/common/protocol/protocol.h"
 
 #include <QCoreApplication>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QObject>
 #include <QSignalSpy>
 #include <QTest>
@@ -56,6 +58,7 @@ struct TransportReply
 bool sendAndWait(MockRequestTransport& transport, const QString& type, const QJsonObject& data,
                  TransportReply* reply, int timeoutMs = kWaitMs)
 {
+    reply->done = false;   // allow reusing one reply across sequential calls
     transport.send(type, data, [reply](bool ok, const QJsonObject& payload,
                                        const charging::protocol::ProtocolError& error) {
         reply->done = true;
@@ -484,6 +487,117 @@ private slots:
         QCOMPARE(defaults.data.value(QStringLiteral("page")).toInt(), 1);
         QCOMPARE(defaults.data.value(QStringLiteral("pageSize")).toInt(), 20);
         QCOMPARE(defaults.data.value(QStringLiteral("total")).toInt(), 3);
+    }
+
+    // Contract-v1 parity: the mock answers the three new read actions with
+    // the same shapes the server emits (docs/api/user_api_contract.md).
+    void mockServesStatsCouponsAndNotifications()
+    {
+        MockRequestTransport transport;
+        TransportReply reply;
+
+        // Empty inbox and the five seeded demo coupons across all statuses.
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetNotifications),
+                            QJsonObject{}, &reply));
+        QVERIFY2(reply.ok, qPrintable(reply.error.message));
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 0);
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetCoupons),
+                            QJsonObject{}, &reply));
+        QVERIFY(reply.ok);
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 5);
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetCoupons),
+                            {{QStringLiteral("status"), QStringLiteral("available")}}, &reply));
+        QVERIFY(reply.ok);
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 3);
+
+        // Stop + pay the seeded CHARGING order: one notification per event.
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetOrders),
+                            {{QStringLiteral("status"), QStringLiteral("CHARGING")}}, &reply));
+        QVERIFY(reply.ok);
+        const QString orderId = reply.data.value(QStringLiteral("orders")).toArray()
+                                    .first().toObject().value(QStringLiteral("id")).toString();
+        QVERIFY(!orderId.isEmpty());
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kStopCharging),
+                            {{QStringLiteral("orderId"), orderId}}, &reply));
+        QVERIFY2(reply.ok, qPrintable(reply.error.message));
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kPayOrder),
+                            {{QStringLiteral("orderId"), orderId}}, &reply));
+        QVERIFY2(reply.ok, qPrintable(reply.error.message));
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetNotifications),
+                            QJsonObject{}, &reply));
+        QVERIFY(reply.ok);
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 2);
+        const QJsonObject newest = reply.data.value(QStringLiteral("notifications")).toArray()
+                                       .first().toObject();
+        QCOMPARE(newest.value(QStringLiteral("type")).toString(), QStringLiteral("order_paid"));
+        QVERIFY(newest.value(QStringLiteral("createdAtUtc")).isString());
+
+        // Stats now include the fresh COMPLETED order in the current month.
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetUserStats),
+                            QJsonObject{}, &reply));
+        QVERIFY(reply.ok);
+        const QJsonArray months = reply.data.value(QStringLiteral("months")).toArray();
+        QVERIFY(months.size() >= 1);
+        const QJsonObject current = months.first().toObject();
+        QCOMPARE(current.value(QStringLiteral("monthKey")).toString(),
+                 QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM")));
+        QCOMPARE(current.value(QStringLiteral("co2Grams")).toDouble(),
+                 qRound64(current.value(QStringLiteral("energyWh")).toDouble() * 0.5568));
+
+        // Recharge at/over the threshold grants exactly one coupon; below it
+        // and on idempotent replay, nothing new appears.
+        const QString rechargeType =
+            QString::fromLatin1(charging::protocol::request_type::kRecharge);
+        QVERIFY(sendAndWait(transport, rechargeType,
+                            {{QStringLiteral("amountCents"), 4999},
+                             {QStringLiteral("transactionNo"), QStringLiteral("mock-coupon-below")}},
+                            &reply));
+        QVERIFY(reply.ok);
+        const QString couponsType =
+            QString::fromLatin1(charging::protocol::request_type::kGetCoupons);
+        QVERIFY(sendAndWait(transport, couponsType, QJsonObject{}, &reply));
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 5);
+        QVERIFY(sendAndWait(transport, rechargeType,
+                            {{QStringLiteral("amountCents"), 5000},
+                             {QStringLiteral("transactionNo"), QStringLiteral("mock-coupon-hit")}},
+                            &reply));
+        QVERIFY(reply.ok);
+        QVERIFY(sendAndWait(transport, couponsType, QJsonObject{}, &reply));
+        QVERIFY(reply.ok);
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 6);
+        const QJsonObject granted = reply.data.value(QStringLiteral("coupons")).toArray()
+                                        .first().toObject();
+        QCOMPARE(granted.value(QStringLiteral("title")).toString(),
+                 QStringLiteral("充值回馈 ¥5 充电券"));
+        QCOMPARE(granted.value(QStringLiteral("valueCents")).toInt(), 500);
+        QVERIFY(granted.value(QStringLiteral("expiresAtUtc")).toDouble() >
+                QDateTime::currentMSecsSinceEpoch());
+        QVERIFY(sendAndWait(transport, rechargeType,
+                            {{QStringLiteral("amountCents"), 5000},
+                             {QStringLiteral("transactionNo"), QStringLiteral("mock-coupon-hit")}},
+                            &reply));
+        QVERIFY(reply.data.value(QStringLiteral("idempotent")).toBool());
+        QVERIFY(sendAndWait(transport, couponsType, QJsonObject{}, &reply));
+        QCOMPARE(reply.data.value(QStringLiteral("total")).toInt(), 6);
+
+        // Validation parity with the server normalizer.
+        QVERIFY(sendAndWait(transport,
+                            QString::fromLatin1(charging::protocol::request_type::kGetUserStats),
+                            {{QStringLiteral("months"), 13}}, &reply));
+        QVERIFY(!reply.ok);
+        QCOMPARE(reply.error.code, QString::fromLatin1(charging::protocol::error_code::kInvalidArgument));
+        QVERIFY(sendAndWait(transport, couponsType, {{QStringLiteral("status"), QStringLiteral("AVAILABLE")}},
+                            &reply));
+        QVERIFY(!reply.ok);
+        QCOMPARE(reply.error.code, QString::fromLatin1(charging::protocol::error_code::kInvalidArgument));
     }
 };
 

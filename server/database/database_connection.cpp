@@ -197,7 +197,9 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
                                           .arg(versionError));
         }
     }
-    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 2) {
+    // Supported on-disk versions: 1 and 2 (pre-user-domain tables, migrated in
+    // place below) and 3 (current). 0 means an empty file (treated as new).
+    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 3) {
         return fail(errorMessage, QStringLiteral("Unsupported database schema version: %1")
                                       .arg(schemaVersion));
     }
@@ -288,7 +290,7 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
     QSqlQuery migrationQuery(database_);
     if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS "
                                             "idx_chargers_status_updated_at")) ||
-        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 2"))) {
+        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 3"))) {
         return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
                                      .arg(migrationQuery.lastError().text()));
     }

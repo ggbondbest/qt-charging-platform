@@ -84,14 +84,18 @@ Item {
             font.pixelSize: P.Style.fontMd; color: P.Style.muted
         }
 
-        // Breathing pulse ring.
+        // Breathing pulse ring. 字号档适配（2026-09-08 二轮）：环径按
+        // fontScaleFactor 等比放大，中心功率字改走缩放档——此前 220/176/34
+        // 全是钉死像素，放大档字不涨、环撞比例失衡。
         Item {
+            id: pulseRing
             objectName: "chargingPulse"
+            readonly property real scaleF: P.Style.fontScaleFactor
             anchors.horizontalCenter: parent.horizontalCenter
-            width: 220; height: 220
+            width: Math.round(220 * scaleF); height: width
             Rectangle {
                 anchors.centerIn: parent
-                width: 220; height: 220; radius: 110
+                width: parent.width; height: parent.height; radius: width / 2
                 color: P.Style.brandSoft
                 SequentialAnimation on scale {
                     running: P.Style.motionEnabled
@@ -104,7 +108,8 @@ Item {
             }
             Rectangle {
                 anchors.centerIn: parent
-                width: 176; height: 176; radius: 88
+                width: Math.round(176 * parent.scaleF)
+                height: width; radius: width / 2
                 gradient: Gradient {
                     orientation: Gradient.Vertical
                     GradientStop { position: 0.0; color: P.Style.brand }
@@ -117,7 +122,8 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: page.status && page.status.powerKnown
                               ? ((page.status.powerWatts / 1000).toFixed(1)) : "—"
-                        font.pixelSize: 34; color: P.Style.surface
+                        font.pixelSize: Math.round(34 * P.Style.fontScaleFactor)
+                        color: P.Style.surface
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter

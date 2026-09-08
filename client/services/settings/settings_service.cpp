@@ -12,6 +12,9 @@ namespace {
 // QSettings 持久化键（组织/应用名在 client/app/main.cpp 统一设置）。
 constexpr char kPasswordHashKey[] = "settings/security/passwordHash";
 constexpr char kProtectionEnabledKey[] = "settings/security/protectionEnabled";
+// 外观（2026-09-08 批次A，成员3 追加）：主题与字号，白名单值，非法 set 忽略。
+constexpr char kThemeKey[] = "settings/appearance/theme";
+constexpr char kFontScaleKey[] = "settings/appearance/fontScale";
 
 QString hashPassword(const QString& password)
 {
@@ -225,6 +228,10 @@ QString SettingsService::notificationKey(Notification key)
         return QStringLiteral("settings/notifications/reservationSuccessNotice");
     case Notification::ReservationCancelNotice:
         return QStringLiteral("settings/notifications/reservationCancelNotice");
+    case Notification::ChargingStopped:
+        return QStringLiteral("settings/notifications/chargingStopped");
+    case Notification::OrderPaid:
+        return QStringLiteral("settings/notifications/orderPaid");
     }
     return QString();
 }
@@ -242,6 +249,48 @@ void SettingsService::setNotificationEnabled(Notification key, bool enabled)
     emit notificationsChanged();
 }
 
+// —— 外观（主题/字号，2026-09-08 批次A，成员3 追加）——
+// 值白名单在 getter 再收一次口：QSettings 里被外部写脏的值按默认档读回，
+// UI 永远不会拿到词表外的字符串（Style.qml 的三元绑定据此安全）。
+
+QString SettingsService::theme() const
+{
+    const QString value
+        = QSettings().value(QLatin1String(kThemeKey), QStringLiteral("light")).toString();
+    return value == QLatin1String("dark") ? value : QStringLiteral("light");
+}
+
+bool SettingsService::setTheme(const QString& theme)
+{
+    if (theme != QLatin1String("light") && theme != QLatin1String("dark")) {
+        return false; // 白名单外：不改状态不发信号
+    }
+    QSettings settings;
+    settings.setValue(QLatin1String(kThemeKey), theme);
+    emit appearanceChanged();
+    return true;
+}
+
+QString SettingsService::fontScale() const
+{
+    const QString value
+        = QSettings().value(QLatin1String(kFontScaleKey), QStringLiteral("standard")).toString();
+    return (value == QLatin1String("large") || value == QLatin1String("extraLarge"))
+        ? value : QStringLiteral("standard");
+}
+
+bool SettingsService::setFontScale(const QString& scale)
+{
+    if (scale != QLatin1String("standard") && scale != QLatin1String("large")
+        && scale != QLatin1String("extraLarge")) {
+        return false;
+    }
+    QSettings settings;
+    settings.setValue(QLatin1String(kFontScaleKey), scale);
+    emit appearanceChanged();
+    return true;
+}
+
 void SettingsService::resetForTesting()
 {
     QSettings settings;
@@ -250,6 +299,10 @@ void SettingsService::resetForTesting()
     settings.remove(notificationKey(Notification::ReservationExpiryReminder));
     settings.remove(notificationKey(Notification::ReservationSuccessNotice));
     settings.remove(notificationKey(Notification::ReservationCancelNotice));
+    settings.remove(notificationKey(Notification::ChargingStopped));
+    settings.remove(notificationKey(Notification::OrderPaid));
+    settings.remove(QLatin1String(kThemeKey));
+    settings.remove(QLatin1String(kFontScaleKey));
     settings.sync();
     vehicles_.clear();
     nextVehicleId_ = 1;

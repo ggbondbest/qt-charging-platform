@@ -241,10 +241,15 @@ Item {
             }
             Repeater {
                 model: [
-                    { obj: "openFavoritesButton",   row: "⭐　收藏",     route: "favorites" },
+                    { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
+                    // 2026-09-08 成员2 新增消息通知行（fe325d3）与成员3 四入口行合并：
+                    // 月报/签到积分为成员3 新页，优惠券接成员2 CouponPage。
                     { obj: "openNotificationsButton", row: "🔔　消息通知", route: "notifications" },
-                    { obj: "openCouponButton",      row: "🎟　优惠券",   route: "coupon" },
-                    { obj: "openSettingsButton",    row: "⚙️　设置",     route: "settings" }
+                    { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
+                    { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
+                    { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
+                    { obj: "openRatingsButton",   row: "⭐　我的评价", route: "ratings" },
+                    { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
                 delegate: Rectangle {
                     objectName: modelData.obj

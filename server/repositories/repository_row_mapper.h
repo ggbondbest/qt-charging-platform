@@ -4,6 +4,8 @@
 #include "charging/common/model/models.h"
 
 #include <QDateTime>
+#include <QSqlDatabase>
+#include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
 
@@ -130,6 +132,34 @@ inline bool readCharger(const QSqlQuery& query, charging::model::Charger* charge
         return false;
     }
     *charger = value;
+    return true;
+}
+
+// Inserts one user notification row within the caller's open transaction.
+// Callers map a false result to RepositoryError::Database and let the
+// transaction roll back. Title/body copy is a product draft:
+// TODO(contract): wording review pending.
+inline bool insertNotificationInTransaction(const QSqlDatabase& database, qint64 userId,
+                                            const QString& type, const QString& title,
+                                            const QString& body, const QDateTime& createdAtUtc,
+                                            QString* diagnostic)
+{
+    QSqlQuery query(database);
+    query.prepare(QStringLiteral(
+        "INSERT INTO notifications (user_id, type, title, body, created_at) "
+        "VALUES (:userId, :type, :title, :body, :now)"));
+    query.bindValue(QStringLiteral(":userId"), userId);
+    query.bindValue(QStringLiteral(":type"), type);
+    query.bindValue(QStringLiteral(":title"), title);
+    query.bindValue(QStringLiteral(":body"), body);
+    query.bindValue(QStringLiteral(":now"),
+                    createdAtUtc.toUTC().toString(Qt::ISODateWithMs));
+    if (!query.exec()) {
+        if (diagnostic != nullptr) {
+            *diagnostic = query.lastError().text();
+        }
+        return false;
+    }
     return true;
 }
 

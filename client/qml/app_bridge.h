@@ -5,7 +5,9 @@
 #include "charging/common/model/models.h"
 
 namespace charging::client {
-class WalletService; class OrderService; class ChargingService; class IRequestTransport;
+class WalletService; class OrderService; class ChargingService;
+class StatsService; class CouponService; class PointService; class RatingService;
+class IRequestTransport;
 namespace network { class ClientConnection; }
 namespace services {
 namespace station { class AuthService; class StationQueryService; }
@@ -21,6 +23,8 @@ class WalletBridge; class OrderBridge; class ChargingBridge; class StationQueryB
 class ReservationBridge; class SettingsBridge; class FavoritesBridge; class NotificationBridge;
 class MapBridge;
 
+class StatsBridge; class CouponBridge; class PointBridge; class RatingBridge;
+
 // Each login owns a separate graph; obsolete callbacks cannot mutate a new user.
 class QmlApp final : public QObject
 {
@@ -35,6 +39,10 @@ class QmlApp final : public QObject
     Q_PROPERTY(QObject* favoritesService READ favoritesService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* notificationService READ notificationService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* stationQueryService READ stationQueryService NOTIFY servicesChanged)
+    Q_PROPERTY(QObject* statsService READ statsService NOTIFY servicesChanged)
+    Q_PROPERTY(QObject* couponService READ couponService NOTIFY servicesChanged)
+    Q_PROPERTY(QObject* pointsService READ pointsService NOTIFY servicesChanged)
+    Q_PROPERTY(QObject* ratingsService READ ratingsService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* authService READ authService CONSTANT)
     Q_PROPERTY(QVariantMap currentUser READ currentUser NOTIFY userChanged)
     Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY loginStateChanged)
@@ -54,6 +62,10 @@ public:
     QObject* favoritesService() const;
     QObject* notificationService() const;
     QObject* stationQueryService() const;
+    QObject* statsService() const;
+    QObject* couponService() const;
+    QObject* pointsService() const;
+    QObject* ratingsService() const;
     QObject* authService() const;
     QVariantMap currentUser() const;
     bool loggedIn() const { return loggedIn_; }
@@ -112,6 +124,14 @@ private:
     charging::client::services::favorites::FavoritesService* favoritesService_ = nullptr;
     charging::client::services::favorites::NotificationService* notificationService_ = nullptr;
     charging::client::services::station::StationQueryService* stationQueryService_ = nullptr;
+    charging::client::StatsService* statsService_ = nullptr;
+    charging::client::CouponService* couponService_ = nullptr;
+    charging::client::PointService* pointService_ = nullptr;
+    charging::client::RatingService* ratingService_ = nullptr;
+    StatsBridge* statsBridge_ = nullptr;
+    CouponBridge* couponBridge_ = nullptr;
+    PointBridge* pointBridge_ = nullptr;
+    RatingBridge* ratingBridge_ = nullptr;
     QVariantMap user_;
     quint64 generation_ = 0;
     bool mockMode_ = false;

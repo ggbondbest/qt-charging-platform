@@ -24,6 +24,10 @@ namespace charging::client {
 class WalletService;
 class OrderService;
 class ChargingService;
+class StatsService;
+class CouponService;
+class PointService;
+class RatingService;
 struct OrderSummary;
 namespace services::station { class StationQueryService; }
 namespace services::reservation { class ReservationService; }
@@ -210,11 +214,18 @@ public:
     // key ∈ "expiry" | "success" | "cancel"
     Q_INVOKABLE bool notificationEnabled(const QString& key) const;
     Q_INVOKABLE void setNotificationEnabled(const QString& key, bool enabled);
+    // 外观（2026-09-08 批次A）：值域即 Service 白名单——
+    // theme ∈ "light" | "dark"；fontScale ∈ "standard" | "large" | "extraLarge"。
+    Q_INVOKABLE QString theme() const;
+    Q_INVOKABLE bool setTheme(const QString& theme);
+    Q_INVOKABLE QString fontScale() const;
+    Q_INVOKABLE bool setFontScale(const QString& scale);
 
 signals:
     void vehiclesChanged();
     void protectionStateChanged();
     void notificationsChanged();
+    void appearanceChanged();   // 主题/字号任一变更（批次A，Shell 据此重同步 Style）
 
 private:
     charging::client::services::settings::SettingsService* svc_;
@@ -247,7 +258,9 @@ public:
         QObject* parent = nullptr);
 
     // [{id, type("reservation_expiry_reminder"|"reservation_success_notice"
-    //     |"reservation_cancel_notice"), title, body, createdAtUtc}] 新→旧
+    //     |"reservation_cancel_notice"|"charging_stopped"|"order_paid"),
+    //   title, body, createdAtUtc}] 新→旧。服务端通道类型由
+    //   NotificationService::refresh() 拉入（2026-09-08）。
     Q_INVOKABLE QVariantList notifications() const;
 
 signals:
@@ -255,6 +268,99 @@ signals:
 
 private:
     charging::client::services::favorites::NotificationService* svc_;
+};
+
+// ————— 2026-09-08 月报/优惠券桥（成员3 新页 + 成员2 CouponPage 盲调退演示态）。
+
+class StatsBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit StatsBridge(charging::client::StatsService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE void fetchStats(int months = 6,
+                                const QString& period = QStringLiteral("month"));
+    Q_INVOKABLE bool isFetchingStats() const;
+
+signals:
+    // [{monthKey, orderCount, energyWh, amountCents, durationSeconds, co2Grams}] 新→旧
+    void statsLoaded(const QVariantList& months);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::StatsService* svc_;
+};
+
+class CouponBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit CouponBridge(charging::client::CouponService* svc, QObject* parent = nullptr);
+
+    // CouponPage 契约：[{id,title,kind,valueCents,discountTenths,thresholdCents,
+    //                   condition,expiresAtUtc(ms),status,source}] 新→旧。
+    // 页面进入时 fetchCoupons() 拉取、couponsChanged 后 coupons() 取缓存。
+    // redeem 一期不提供（TODO(contract): PAY_ORDER 抵扣规则）。
+    Q_INVOKABLE QVariantList coupons() const;
+    Q_INVOKABLE void fetchCoupons();
+    Q_INVOKABLE int couponCount() const;
+
+signals:
+    void couponsChanged();
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::CouponService* svc_;
+};
+
+// ————— 2026-09-08 批次C：签到/积分桥（成员3 新页 StatsPage 同目录的
+// PointsPage 消费；context property 名 pointsService）。
+
+class PointBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit PointBridge(charging::client::PointService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE bool isBusy() const;
+    Q_INVOKABLE void fetchPoints(int page = 1, int pageSize = 20);
+    Q_INVOKABLE void checkIn();
+
+signals:
+    // entries 行 = GET_POINTS 响应形 [{id,amount,reason,createdAtUtc}] 新→旧
+    void pointsLoaded(qint64 points, const QVariantList& entries, int total);
+    void checkInCompleted(const QString& day, qint64 points, qint64 gained,
+                          bool alreadyCheckedIn);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::PointService* svc_;
+};
+
+// ————— 2026-09-08 批次E：电桩评价桥（RatingsPage + OrderDetailPage 评价卡
+// 消费；context property 名 ratingsService）。
+
+class RatingBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    explicit RatingBridge(charging::client::RatingService* svc, QObject* parent = nullptr);
+
+    Q_INVOKABLE bool isBusy() const;
+    Q_INVOKABLE void fetchMyRatings(int page = 1, int pageSize = 20);
+    // orderId 须正十进制串（服务端 normalize 形态校验）；rating 1..5。
+    Q_INVOKABLE void submitRating(const QString& orderId, int rating, const QString& comment);
+
+signals:
+    // ratings 行 = GET_MY_RATINGS 响应形 [{id,orderId,chargerId,chargerCode,
+    // stationName,rating,comment,createdAtUtc}] 新→旧
+    void ratingsLoaded(const QVariantList& ratings, int total);
+    // 提交成功与幂等重放都发；ratingRow = 服务端回读行（重放=首评原值）
+    void ratingSubmitted(const QVariantMap& ratingRow, bool alreadyRated);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    charging::client::RatingService* svc_;
 };
 
 } // namespace charging::qml

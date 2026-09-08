@@ -1,7 +1,11 @@
 #include "service_bridges.h"
 
 #include "charging/client/profile_charging/charging_service.h"
+#include "charging/client/profile_charging/coupon_service.h"
 #include "charging/client/profile_charging/order_service.h"
+#include "charging/client/profile_charging/stats_service.h"
+#include "charging/client/profile_charging/point_service.h"
+#include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/protocol.h"
@@ -14,6 +18,7 @@
 #include <QDateTime>
 #include <QDate>
 #include <QTime>
+#include <QTimer>
 
 namespace charging::qml {
 namespace {
@@ -96,6 +101,10 @@ QString notificationTypeWord(
         return QStringLiteral("reservation_success_notice");
     case charging::client::services::favorites::NotificationType::ReservationCancelNotice:
         return QStringLiteral("reservation_cancel_notice");
+    case charging::client::services::favorites::NotificationType::ChargingStopped:
+        return QStringLiteral("charging_stopped");
+    case charging::client::services::favorites::NotificationType::OrderPaid:
+        return QStringLiteral("order_paid");
     }
     return QStringLiteral("reservation_success_notice");
 }
@@ -553,6 +562,8 @@ SettingsBridge::SettingsBridge(
             this, &SettingsBridge::protectionStateChanged);
     connect(svc_, &charging::client::services::settings::SettingsService::notificationsChanged,
             this, &SettingsBridge::notificationsChanged);
+    connect(svc_, &charging::client::services::settings::SettingsService::appearanceChanged,
+            this, &SettingsBridge::appearanceChanged);
 }
 
 QVariantList SettingsBridge::vehicles() const
@@ -616,6 +627,11 @@ void SettingsBridge::setNotificationEnabled(const QString& key, bool enabled)
     svc_->setNotificationEnabled(notificationFromKey(key), enabled);
 }
 
+QString SettingsBridge::theme() const { return svc_->theme(); }
+bool SettingsBridge::setTheme(const QString& theme) { return svc_->setTheme(theme); }
+QString SettingsBridge::fontScale() const { return svc_->fontScale(); }
+bool SettingsBridge::setFontScale(const QString& scale) { return svc_->setFontScale(scale); }
+
 // ————————————————————————————— FavoritesBridge ——————————————————————————————
 
 FavoritesBridge::FavoritesBridge(
@@ -661,5 +677,86 @@ QVariantList NotificationBridge::notifications() const
     }
     return out;
 }
+
+// ———————————————————————————— StatsBridge / CouponBridge ————————————————————————————
+
+StatsBridge::StatsBridge(charging::client::StatsService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::StatsService::statsLoaded,
+            this, &StatsBridge::statsLoaded);
+    connect(svc_, &charging::client::StatsService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+}
+
+void StatsBridge::fetchStats(int months, const QString& period)
+{
+    svc_->fetchStats(months, period);
+}
+bool StatsBridge::isFetchingStats() const { return svc_->isFetchingStats(); }
+
+CouponBridge::CouponBridge(charging::client::CouponService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::CouponService::couponsChanged,
+            this, &CouponBridge::couponsChanged);
+    connect(svc_, &charging::client::CouponService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm here: an eager GET_COUPONS would consume the mock's
+    // scripted setNextFailure sequences and race QSignalSpy starts. The page
+    // pulls on entry (Component.onCompleted fetchCoupons) instead.
+}
+
+QVariantList CouponBridge::coupons() const { return svc_->coupons(); }
+void CouponBridge::fetchCoupons() { svc_->fetchCoupons(); }
+int CouponBridge::couponCount() const { return static_cast<int>(svc_->coupons().size()); }
+
+// ————— 2026-09-08 批次C：签到/积分桥 —————
+PointBridge::PointBridge(charging::client::PointService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::PointService::pointsLoaded,
+            this, &PointBridge::pointsLoaded);
+    connect(svc_, &charging::client::PointService::checkInCompleted,
+            this, &PointBridge::checkInCompleted);
+    connect(svc_, &charging::client::PointService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm: the page pulls on entry (Component.onCompleted fetchPoints),
+    // same as CouponBridge — an eager GET would eat the mock's scripted failures.
+}
+
+bool PointBridge::isBusy() const { return svc_->isBusy(); }
+void PointBridge::fetchPoints(int page, int pageSize) { svc_->fetchPoints(page, pageSize); }
+void PointBridge::checkIn() { svc_->checkIn(); }
+
+// ————— 2026-09-08 批次E：电桩评价桥 —————
+RatingBridge::RatingBridge(charging::client::RatingService* svc, QObject* parent)
+    : QObject(parent), svc_(svc)
+{
+    connect(svc_, &charging::client::RatingService::ratingsLoaded,
+            this, &RatingBridge::ratingsLoaded);
+    connect(svc_, &charging::client::RatingService::ratingSubmitted,
+            this, &RatingBridge::ratingSubmitted);
+    connect(svc_, &charging::client::RatingService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError& error) {
+                emit operationFailed(type, error.code, error.message);
+            });
+    // No self-warm: RatingsPage pulls on entry; the order-detail card only
+    // fetches for completed orders.
+}
+
+bool RatingBridge::isBusy() const { return svc_->isBusy(); }
+void RatingBridge::fetchMyRatings(int page, int pageSize) { svc_->fetchMyRatings(page, pageSize); }
+void RatingBridge::submitRating(const QString& orderId, int rating, const QString& comment)
+{
+    svc_->submitRating(orderId, rating, comment);
+}
+
 
 } // namespace charging::qml

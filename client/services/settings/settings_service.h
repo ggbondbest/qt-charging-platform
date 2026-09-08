@@ -28,7 +28,8 @@ struct Vehicle
 // 2) 车辆管理——多台车增删改、默认车辆（至多一台）；车辆数量决定
 //    用户可同时持有的有效预约名额（ReservationService 读取）；默认车
 //    接口类型用于站点详情/预约场景的充电桩匹配提示；
-// 3) 通知与提醒——预约到期提醒/成功通知/取消通知三个开关，
+// 3) 通知与提醒——预约到期提醒/成功通知/取消通知 + 充电结束/支付成功
+//    （2026-09-08 服务端通道追加）共五个开关，
 //    QSettings 本地持久化（组织/应用名在 client/app/main.cpp 设置）。
 //
 // 本服务为纯本地通道（无网络请求）；真实后端 SETTINGS/VEHICLE 命令就绪
@@ -39,11 +40,16 @@ class SettingsService final : public QObject
 
 public:
     // 通知开关键（与 QSettings 持久化键一一对应）。
+    // 2026-09-08 追加服务端通道两值（成员 3 横闯：GET_NOTIFICATIONS 类型接真
+    // 数据）——**只可在尾部追加**，与 favorites::NotificationType 的 int 对拍
+    // 约定依赖值序（tst_settings_service 对拍用例同步）。
     enum class Notification
     {
         ReservationExpiryReminder, // 🔔 预约到期提醒
         ReservationSuccessNotice,  // ✅ 预约成功通知
         ReservationCancelNotice,   // ❌ 预约取消通知
+        ChargingStopped,           // 🔌 充电结束通知（服务端通道）
+        OrderPaid,                 // 💰 支付成功通知（服务端通道）
     };
 
     explicit SettingsService(QObject* parent = nullptr);
@@ -76,6 +82,15 @@ public:
     bool notificationEnabled(Notification key) const;
     void setNotificationEnabled(Notification key, bool enabled);
 
+    // —— 外观（2026-09-08 批次A，成员3 追加）——
+    // theme ∈ "light" | "dark"（默认 light）；fontScale ∈ "standard" |
+    // "large" | "extraLarge"（默认 standard）。白名单外 set* 返回 false 且
+    // 不改状态；get* 恒返回词表内值（被写脏的存储按默认档读回）。
+    QString theme() const;
+    bool setTheme(const QString& theme);
+    QString fontScale() const;
+    bool setFontScale(const QString& scale);
+
     // 清除本服务全部本地持久化（测试隔离用）。
     void resetForTesting();
 
@@ -83,6 +98,7 @@ signals:
     void vehiclesChanged();
     void protectionStateChanged();
     void notificationsChanged();
+    void appearanceChanged();   // 主题/字号任一变更（批次A）
 
 private:
     static QString notificationKey(Notification key);
