@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QList>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QStringList>
@@ -16,6 +17,7 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QtMath>
@@ -84,19 +86,19 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
                                                             tr("较昨日  +24 (+9.16%)  ↑"), QColor("#347cf6"), 1, this));
         metricsLayout->addWidget(createManagementMetricCard(tr("今日充值金额"), tr("¥ 18,460"), QString(),
                                                             tr("成功率  98.64%"), QColor("#43c7bc"), 3, this));
-        metricsLayout->addWidget(createManagementMetricCard(tr("处理中"), tr("4"), tr(" 笔"),
-                                                            tr("需等待支付渠道回调"), QColor("#ff9a26"), 2, this));
+        metricsLayout->addWidget(createManagementMetricCard(tr("今日失败笔数"), tr("4"), tr(" 笔"),
+                                                            tr("充值失败记录汇总"), QColor("#ff9a26"), 2, this));
         metricsLayout->addWidget(createManagementMetricCard(tr("本月累计"), tr("¥ 428,960"), QString(),
                                                             tr("仅本地 Mock 统计"), QColor("#8a72e8"), 0, this));
     } else {
         metricsLayout->addWidget(createManagementMetricCard(tr("今日操作"), tr("128"), tr(" 次"),
                                                             tr("来自 6 位管理员"), QColor("#347cf6"), 1, this));
-        metricsLayout->addWidget(createManagementMetricCard(tr("受控操作"), tr("32"), tr(" 次"),
-                                                            tr("冻结、启停、设备处置"), QColor("#ff9a26"), 2, this));
-        metricsLayout->addWidget(createManagementMetricCard(tr("执行成功"), tr("126"), tr(" 次"),
-                                                            tr("成功率  98.44%"), QColor("#43c7bc"), 3, this));
-        metricsLayout->addWidget(createManagementMetricCard(tr("需要关注"), tr("2"), tr(" 条"),
-                                                            tr("失败记录可筛选查看"), QColor("#ef6268"), 0, this));
+        metricsLayout->addWidget(createManagementMetricCard(tr("本月操作"), tr("32"), tr(" 次"),
+                                                            tr("本月日志总数"), QColor("#ff9a26"), 2, this));
+        metricsLayout->addWidget(createManagementMetricCard(tr("管理员操作"), tr("126"), tr(" 次"),
+                                                            tr("管理员发起的日志"), QColor("#43c7bc"), 3, this));
+        metricsLayout->addWidget(createManagementMetricCard(tr("系统操作"), tr("2"), tr(" 次"),
+                                                            tr("系统发起的日志"), QColor("#ef6268"), 0, this));
     }
     layout->addLayout(metricsLayout);
 
@@ -108,18 +110,22 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     keywordLineEdit_->setMinimumWidth(210);
     keywordLineEdit_->setPlaceholderText(isRecharge ? tr("⌕  搜索充值单号、用户或手机号")
                                                      : tr("⌕  搜索操作编号、对象或管理员"));
-    categoryComboBox_ = new QComboBox(toolbar);
-    statusComboBox_ = new QComboBox(toolbar);
     dateRangeComboBox_ = new QComboBox(toolbar);
     if (isRecharge) {
-        categoryComboBox_->addItems({tr("充值渠道"), tr("微信支付"), tr("支付宝"), tr("银行卡")});
+        statusComboBox_ = new QComboBox(toolbar);
         statusComboBox_->addItems({tr("充值状态"), tr("成功"), tr("处理中"), tr("失败")});
     } else {
+        categoryComboBox_ = new QComboBox(toolbar);
         categoryComboBox_->addItems({tr("操作类型"), tr("冻结用户"), tr("解冻用户"), tr("新增电站"), tr("设备处置")});
-        statusComboBox_->addItems({tr("执行结果"), tr("成功"), tr("失败")});
     }
     dateRangeComboBox_->addItems({tr("全部时间"), tr("今日"), tr("近 7 天"), tr("本月")});
-    for (auto* comboBox : {categoryComboBox_, statusComboBox_, dateRangeComboBox_}) {
+    QList<QComboBox*> filterComboBoxes{dateRangeComboBox_};
+    if (isRecharge) {
+        filterComboBoxes.prepend(statusComboBox_);
+    } else {
+        filterComboBoxes.prepend(categoryComboBox_);
+    }
+    for (auto* comboBox : filterComboBoxes) {
         comboBox->setMinimumWidth(122);
         configureManagementComboBox(comboBox);
     }
@@ -134,8 +140,12 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     feedbackLabel_->setFixedWidth(180);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
-    toolbarLayout->addWidget(categoryComboBox_);
-    toolbarLayout->addWidget(statusComboBox_);
+    if (!isRecharge) {
+        toolbarLayout->addWidget(categoryComboBox_);
+    }
+    if (isRecharge) {
+        toolbarLayout->addWidget(statusComboBox_);
+    }
     toolbarLayout->addWidget(dateRangeComboBox_);
     toolbarLayout->addWidget(feedbackLabel_);
     toolbarLayout->addStretch();
@@ -155,10 +165,10 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
-    tableWidget_->setColumnCount(isRecharge ? 7 : 7);
+    tableWidget_->setColumnCount(6);
     tableWidget_->setHorizontalHeaderLabels(isRecharge
-        ? QStringList{tr("充值单号"), tr("用户"), tr("充值金额"), tr("渠道"), tr("状态"), tr("完成时间"), tr("操作")}
-        : QStringList{tr("时间"), tr("管理员"), tr("操作类型"), tr("操作对象"), tr("执行结果"), tr("说明"), tr("操作")});
+        ? QStringList{tr("充值单号"), tr("用户"), tr("充值金额"), tr("状态"), tr("完成时间"), tr("操作")}
+        : QStringList{tr("时间"), tr("管理员"), tr("操作类型"), tr("操作对象"), tr("说明"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -170,11 +180,14 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(isRecharge ? 1 : 5, QHeaderView::Stretch);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Fixed);
-    tableWidget_->setColumnWidth(4, kManagementStatusColumnWidth);
-    tableWidget_->setColumnWidth(6, 72);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(isRecharge ? 1 : 4, QHeaderView::Stretch);
+    const int actionColumn = 5;
+    if (isRecharge) {
+        tableWidget_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
+        tableWidget_->setColumnWidth(3, kManagementStatusColumnWidth);
+    }
+    tableWidget_->horizontalHeader()->setSectionResizeMode(actionColumn, QHeaderView::Fixed);
+    tableWidget_->setColumnWidth(actionColumn, 72);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
     tableLayout->addWidget(statePanel_);
@@ -236,10 +249,10 @@ void ActivityRecordsPage::createMockRecords()
 {
     if (mode_ == ActivityRecordsMode::Recharge) {
         records_ = {
-            {tr("RC202506010001"), tr("2025-06-01 10:26:42"), tr("张先生　138****5678"), tr("微信支付"), tr("¥ 50.00"), tr("成功"), tr("余额已到账，渠道流水号 WX20250601102642。")},
-            {tr("RC202506010002"), tr("2025-06-01 10:18:06"), tr("李女士　159****8899"), tr("支付宝"), tr("¥ 100.00"), tr("成功"), tr("余额已到账，渠道流水号 AL20250601101806。")},
-            {tr("RC202506010003"), tr("2025-06-01 10:04:17"), tr("王先生　137****1122"), tr("微信支付"), tr("¥ 30.00"), tr("处理中"), tr("等待支付渠道确认；本地 Mock 状态不会影响用户余额。")},
-            {tr("RC202506010004"), tr("2025-06-01 09:48:35"), tr("陈女士　186****3344"), tr("银行卡"), tr("¥ 200.00"), tr("失败"), tr("支付渠道拒绝，未写入用户余额。")},
+            {tr("RC202506010001"), tr("2025-06-01 10:26:42"), tr("张先生　138****5678"), tr("微信支付"), tr("¥ 50.00"), tr("成功"), tr("余额已到账。")},
+            {tr("RC202506010002"), tr("2025-06-01 10:18:06"), tr("李女士　159****8899"), tr("支付宝"), tr("¥ 100.00"), tr("成功"), tr("余额已到账。")},
+            {tr("RC202506010003"), tr("2025-06-01 10:04:17"), tr("王先生　137****1122"), tr("微信支付"), tr("¥ 30.00"), tr("处理中"), tr("等待充值结果确认；本地 Mock 状态不会影响用户余额。")},
+            {tr("RC202506010004"), tr("2025-06-01 09:48:35"), tr("陈女士　186****3344"), tr("银行卡"), tr("¥ 200.00"), tr("失败"), tr("充值处理失败，未写入用户余额。")},
             {tr("RC202506010005"), tr("2025-06-01 09:32:10"), tr("刘先生　152****7788"), tr("支付宝"), tr("¥ 80.00"), tr("成功"), tr("余额已到账。")},
             {tr("RC202506010006"), tr("2025-06-01 09:15:22"), tr("赵先生　139****9900"), tr("微信支付"), tr("¥ 60.00"), tr("成功"), tr("余额已到账。")},
             {tr("RC202506010007"), tr("2025-06-01 09:02:11"), tr("吴女士　158****2211"), tr("银行卡"), tr("¥ 100.00"), tr("成功"), tr("余额已到账。")},
@@ -272,9 +285,11 @@ bool ActivityRecordsPage::matchesFilters(const Record& record) const
     const QString keyword = keywordLineEdit_->text().trimmed();
     const bool matchesKeyword = keyword.isEmpty() || record.id.contains(keyword, Qt::CaseInsensitive)
         || record.subject.contains(keyword, Qt::CaseInsensitive) || record.amountOrTarget.contains(keyword, Qt::CaseInsensitive);
-    const bool matchesCategory = categoryComboBox_->currentIndex() == 0
+    const bool matchesCategory = mode_ == ActivityRecordsMode::Recharge
+        || categoryComboBox_->currentIndex() == 0
         || record.category == categoryComboBox_->currentText();
-    const bool matchesStatus = statusComboBox_->currentIndex() == 0
+    const bool matchesStatus = mode_ != ActivityRecordsMode::Recharge
+        || statusComboBox_->currentIndex() == 0
         || record.status == statusComboBox_->currentText();
     // The deterministic sample covers the current day and its preceding day.
     // "近 7 天" keeps both; the current-day and current-month filters show June only.
@@ -302,8 +317,12 @@ void ActivityRecordsPage::applyFilters()
 void ActivityRecordsPage::resetFilters()
 {
     keywordLineEdit_->clear();
-    categoryComboBox_->setCurrentIndex(0);
-    statusComboBox_->setCurrentIndex(0);
+    if (mode_ != ActivityRecordsMode::Recharge) {
+        categoryComboBox_->setCurrentIndex(0);
+    }
+    if (mode_ == ActivityRecordsMode::Recharge) {
+        statusComboBox_->setCurrentIndex(0);
+    }
     dateRangeComboBox_->setCurrentIndex(0);
     applyFilters();
     if (!realMode_) setFeedback(tr("已重置筛选条件，显示全部本地 Mock 记录"));
@@ -322,10 +341,12 @@ void ActivityRecordsPage::rebuildTable()
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
         const Record& record = records_.at(recordIndex);
         const QStringList values = isRecharge
-            ? QStringList{record.id, record.subject, record.amountOrTarget, record.category, QString(), record.occurredAt, QString()}
-            : QStringList{record.occurredAt, record.subject, record.category, record.amountOrTarget, QString(), record.details, QString()};
+            ? QStringList{record.id, record.subject, record.amountOrTarget, QString(), record.occurredAt, QString()}
+            : QStringList{record.occurredAt, record.subject, record.category, record.amountOrTarget, record.details, QString()};
+        const int statusColumn = isRecharge ? 3 : -1;
+        const int actionColumn = 5;
         for (int column = 0; column < values.size(); ++column) {
-            if (column == 4 || column == 6) {
+            if (column == statusColumn || column == actionColumn) {
                 continue;
             }
             auto* item = createManagementTableItem(values.at(column));
@@ -333,11 +354,15 @@ void ActivityRecordsPage::rebuildTable()
             item->setTextAlignment(Qt::AlignCenter);
             tableWidget_->setItem(row, column, item);
         }
-        tableWidget_->setCellWidget(row, 4, createStatusTag(record.status, tableWidget_));
+        if (isRecharge) {
+            tableWidget_->setCellWidget(row, statusColumn,
+                                        createStatusTag(record.status, tableWidget_));
+        }
         auto* detailButton = new QPushButton(tr("详情"), tableWidget_);
         detailButton->setObjectName(QStringLiteral("tableActionButton"));
         connect(detailButton, &QPushButton::clicked, this, [this, recordIndex]() { showDetails(recordIndex); });
-        tableWidget_->setCellWidget(row, 6, createManagementTableCell(detailButton, tableWidget_));
+        tableWidget_->setCellWidget(row, actionColumn,
+                                    createManagementTableCell(detailButton, tableWidget_));
     }
     tableTitleLabel_->setText((isRecharge ? tr("充值记录") : tr("操作日志"))
                               + tr("（共 %1 条）").arg(realMode_ ? totalRecords_ : filteredRecordIndexes_.size()));
@@ -347,7 +372,9 @@ void ActivityRecordsPage::rebuildTable()
     const bool isEmpty = filteredRecordIndexes_.isEmpty();
     tableWidget_->setVisible(!isEmpty);
     const bool hasFilter = !keywordLineEdit_->text().trimmed().isEmpty()
-        || statusComboBox_->currentIndex() > 0 || dateRangeComboBox_->currentIndex() > 0;
+        || (mode_ == ActivityRecordsMode::Recharge && statusComboBox_->currentIndex() > 0)
+        || (mode_ != ActivityRecordsMode::Recharge && categoryComboBox_->currentIndex() > 0)
+        || dateRangeComboBox_->currentIndex() > 0;
     const auto state = !isEmpty ? ManagementListState::Hidden
         : realMode_ && !hasFilter ? ManagementListState::EmptyInitial
         : ManagementListState::EmptyFiltered;
@@ -387,16 +414,16 @@ void ActivityRecordsPage::showDetails(int recordIndex, bool requestDetails)
                                          : tr("发生时间：%1\n执行人：%2").arg(record.occurredAt, record.subject));
     if (realMode_) {
         detailContentLabel_->setText(isRecharge
-            ? tr("充值金额　%1\n充值渠道　契约未提供\n处理状态　%2\n\n%3")
+            ? tr("充值金额　%1\n处理状态　%2\n\n%3")
                   .arg(record.amountOrTarget, record.status, record.details)
-            : tr("操作类型　%1\n操作对象　%2\n执行结果　契约未提供\n\n%3")
+            : tr("操作类型　%1\n操作对象　%2\n\n%3")
                   .arg(record.category, record.amountOrTarget, record.details));
     } else {
         detailContentLabel_->setText(isRecharge
-            ? tr("充值金额　%1\n充值渠道　%2\n处理状态　%3\n\n%4\n\n仅本地 Mock 展示。")
-                  .arg(record.amountOrTarget, record.category, record.status, record.details)
-            : tr("操作类型　%1\n操作对象　%2\n执行结果　%3\n\n%4\n\n仅本地 Mock 展示。")
-                  .arg(record.category, record.amountOrTarget, record.status, record.details));
+            ? tr("充值金额　%1\n处理状态　%2\n\n%3\n\n仅本地 Mock 展示。")
+                  .arg(record.amountOrTarget, record.status, record.details)
+            : tr("操作类型　%1\n操作对象　%2\n\n%3\n\n仅本地 Mock 展示。")
+                  .arg(record.category, record.amountOrTarget, record.details));
     }
     for (int row = 0; row < tableWidget_->rowCount(); ++row) {
         if (auto* item = tableWidget_->item(row, 0);
@@ -449,21 +476,20 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    if (mode_ == ActivityRecordsMode::Recharge) {
-        categoryComboBox_->setEnabled(false); categoryComboBox_->setToolTip(tr("当前契约不返回充值渠道"));
-    } else {
+    if (mode_ != ActivityRecordsMode::Recharge) {
         categoryComboBox_->setEnabled(false); categoryComboBox_->setToolTip(tr("当前操作类型下拉项不是契约枚举；请使用关键字查询"));
-        statusComboBox_->setEnabled(false); statusComboBox_->setToolTip(tr("操作日志只读且不提供执行结果字段"));
     }
     setManagementMetricCardsUnavailable(
         this, tr("当前契约未提供%1页汇总指标")
                   .arg(mode_ == ActivityRecordsMode::Recharge ? tr("充值记录") : tr("操作日志")));
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
+        else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
-        if (authenticated) requestList();
+        if (!authenticated) { hasRealSnapshot_ = false; }
+        else requestList();
     });
     requestList();
 }
@@ -471,8 +497,11 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
 void ActivityRecordsPage::requestList()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
-    records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
-    totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    // Preserve the last successful snapshot during background refreshes.
+    if (!hasRealSnapshot_) {
+        records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
+        totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
+    }
     const bool recharge = mode_ == ActivityRecordsMode::Recharge;
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize},
                       {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
@@ -480,15 +509,17 @@ void ActivityRecordsPage::requestList()
     if (recharge && statusComboBox_->currentIndex() == 1) query.insert(QStringLiteral("status"), QStringLiteral("SUCCESS"));
     if (recharge && statusComboBox_->currentIndex() == 3) query.insert(QStringLiteral("status"), QStringLiteral("FAILED"));
     if (dateRangeComboBox_->currentIndex() > 0) {
-        const auto now = QDateTime::currentDateTimeUtc(); QDate from = now.date();
+        const auto now = QDateTime::currentDateTime().toTimeZone(QTimeZone("Asia/Shanghai")); QDate from = now.date();
         if (dateRangeComboBox_->currentIndex() == 2) from = from.addDays(-6);
         else if (dateRangeComboBox_->currentIndex() == 3) from = QDate(from.year(), from.month(), 1);
-        query.insert(QStringLiteral("createdAtFrom"), QDateTime(from, QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
-        query.insert(QStringLiteral("createdAtTo"), QDateTime(now.date().addDays(1), QTime(0,0), Qt::UTC).toString(Qt::ISODateWithMs));
+        query.insert(QStringLiteral("createdAtFrom"), beijingDayStartUtc(from).toString(Qt::ISODateWithMs));
+        query.insert(QStringLiteral("createdAtTo"), beijingDayStartUtc(now.date().addDays(1)).toString(Qt::ISODateWithMs));
     }
     listRequestId_ = gateway_->request(recharge ? QStringLiteral("recharges.list") : QStringLiteral("operation_logs.list"), query, this,
                                        recharge ? QStringLiteral("recharge-list") : QStringLiteral("operation-log-list"));
-    setFeedback(tr("正在加载服务数据…"));
+    query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
+    summaryRequestId_ = gateway_->request(recharge ? QStringLiteral("recharges.summary") : QStringLiteral("operation_logs.summary"), query, this,
+                                          recharge ? QStringLiteral("recharge-summary") : QStringLiteral("operation-log-summary"));
 }
 
 void ActivityRecordsPage::handleDetailResponse(const QJsonObject& response)
@@ -504,7 +535,7 @@ void ActivityRecordsPage::handleDetailResponse(const QJsonObject& response)
     auto& record = records_[selectedRecordIndex_];
     const bool recharge = mode_ == ActivityRecordsMode::Recharge;
     record.id = recharge ? item.value(QStringLiteral("transactionNo")).toString() : item.value(QStringLiteral("id")).toString();
-    record.occurredAt = item.value(QStringLiteral("createdAt")).toString();
+    record.occurredAt = formatBeijingDateTime(item.value(QStringLiteral("createdAt")).toString());
     record.subject = recharge ? item.value(QStringLiteral("nickname")).toString() + tr("　") + item.value(QStringLiteral("phone")).toString()
                               : (item.value(QStringLiteral("adminId")).isNull() ? tr("系统") : tr("管理员 ID：%1").arg(item.value(QStringLiteral("adminId")).toString()));
     record.category = recharge ? tr("契约未提供") : item.value(QStringLiteral("action")).toString();
@@ -518,27 +549,55 @@ void ActivityRecordsPage::handleDetailResponse(const QJsonObject& response)
 
 void ActivityRecordsPage::handleListResponse(const QJsonObject& response)
 {
+    if (!response.value(QStringLiteral("success")).toBool()) { setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return; }
+    const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
+        ? records_.at(selectedRecordIndex_).serverId : QString();
     records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
-    if (!response.value(QStringLiteral("success")).toBool()) { totalRecords_ = 0; rebuildTable(); setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return; }
     const auto data = response.value(QStringLiteral("data")).toObject(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    hasRealSnapshot_ = true;
     const bool recharge = mode_ == ActivityRecordsMode::Recharge;
     for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
         const auto i = value.toObject();
         if (recharge) {
             const bool success = i.value(QStringLiteral("status")).toString() == QStringLiteral("SUCCESS");
-            records_.append({i.value(QStringLiteral("transactionNo")).toString(), i.value(QStringLiteral("createdAt")).toString(),
+            records_.append({i.value(QStringLiteral("transactionNo")).toString(), formatBeijingDateTime(i.value(QStringLiteral("createdAt")).toString()),
                 i.value(QStringLiteral("nickname")).toString() + tr("　") + i.value(QStringLiteral("phone")).toString(), tr("契约未提供"),
                 tr("¥ %1").arg(QString::number(i.value(QStringLiteral("amountCents")).toInteger() / 100.0, 'f', 2)), success ? tr("成功") : tr("失败"),
                 tr("余额变更后余额：¥ %1").arg(QString::number(i.value(QStringLiteral("balanceAfterCents")).toInteger() / 100.0, 'f', 2)), i.value(QStringLiteral("id")).toString()});
         } else {
-            records_.append({i.value(QStringLiteral("id")).toString(), i.value(QStringLiteral("createdAt")).toString(),
+            records_.append({i.value(QStringLiteral("id")).toString(), formatBeijingDateTime(i.value(QStringLiteral("createdAt")).toString()),
                 i.value(QStringLiteral("adminId")).isNull() ? tr("系统") : tr("管理员 ID：%1").arg(i.value(QStringLiteral("adminId")).toString()),
                 i.value(QStringLiteral("action")).toString(), i.value(QStringLiteral("targetType")).toString() + tr("：") + i.value(QStringLiteral("targetId")).toString(),
                 tr("—"), tr("审计日志仅返回安全元数据；不暴露 details_json。"), i.value(QStringLiteral("id")).toString()});
         }
         filteredRecordIndexes_.append(records_.size() - 1);
     }
-    rebuildTable(); setFeedback(totalRecords_ ? tr("已加载 %1 条记录（服务端分页）").arg(totalRecords_) : tr("当前没有记录"));
+    for (int index = 0; index < records_.size(); ++index) {
+        if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
+    }
+    rebuildTable();
+    if (selectedRecordIndex_ >= 0) showDetails(selectedRecordIndex_, false);
+    setFeedback(totalRecords_ ? tr("已加载 %1 条记录（服务端分页）").arg(totalRecords_) : tr("当前没有记录"));
+}
+
+void ActivityRecordsPage::handleSummaryResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) return;
+    const auto data = response.value(QStringLiteral("data")).toObject();
+    if (mode_ == ActivityRecordsMode::Recharge) {
+        const qint64 todayCents = data.value(QStringLiteral("todayAmountCents")).toInteger();
+        const qint64 monthCents = data.value(QStringLiteral("monthAmountCents")).toInteger();
+        const auto cents = [](qint64 value) { return QObject::tr("¥ %1.%2").arg(value / 100).arg(value % 100, 2, 10, QLatin1Char('0')); };
+        setManagementMetricCardValue(this, 0, tr("%1 笔").arg(data.value(QStringLiteral("todayCount")).toInteger()), tr("北京时间今日"));
+        setManagementMetricCardValue(this, 1, cents(todayCents), tr("北京时间今日"));
+        setManagementMetricCardValue(this, 2, tr("%1 笔").arg(data.value(QStringLiteral("failedCountToday")).toInteger()), tr("北京时间今日"));
+        setManagementMetricCardValue(this, 3, cents(monthCents), tr("北京时间本月"));
+        return;
+    }
+    setManagementMetricCardValue(this, 0, tr("%1 次").arg(data.value(QStringLiteral("todayCount")).toInteger()), tr("北京时间今日"));
+    setManagementMetricCardValue(this, 1, tr("%1 次").arg(data.value(QStringLiteral("monthCount")).toInteger()), tr("北京时间本月"));
+    setManagementMetricCardValue(this, 2, tr("%1 次").arg(data.value(QStringLiteral("adminInitiatedCountToday")).toInteger()), tr("北京时间今日"));
+    setManagementMetricCardValue(this, 3, tr("%1 次").arg(data.value(QStringLiteral("systemInitiatedCountToday")).toInteger()), tr("北京时间今日"));
 }
 
 } // namespace charging::server

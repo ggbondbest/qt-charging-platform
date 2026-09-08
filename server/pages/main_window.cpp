@@ -216,8 +216,10 @@ MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     connect(adminGateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (!authenticated) { loginPage_->setBusy(false); showLoginPage(); }
     });
-    connect(server_, &ServerRuntime::clientCountChanged, this, &MainWindow::updateClientCount);
-    dashboardPage_->setClientCount(server_->clientCount());
+    // Ten seconds keeps the current page reasonably fresh without repeatedly
+    // competing with normal filtering and detail actions.
+    autoRefreshTimer_.setInterval(10000);
+    connect(&autoRefreshTimer_, &QTimer::timeout, this, &MainWindow::refreshActivePage);
     showLoginPage();
 }
 
@@ -357,14 +359,14 @@ QWidget* MainWindow::createManagementPage()
     chargerScrollArea->setContentWidget(chargerManagementPage_);
     pageStackedWidget_->addWidget(chargerScrollArea);
     auto* stationScrollArea = new ManagementScrollArea(pageStackedWidget_);
-    auto* stationPage = new StationManagementPage(stationScrollArea);
-    stationPage->setAdminGateway(adminGateway_);
-    stationScrollArea->setContentWidget(stationPage);
+    stationManagementPage_ = new StationManagementPage(stationScrollArea);
+    stationManagementPage_->setAdminGateway(adminGateway_);
+    stationScrollArea->setContentWidget(stationManagementPage_);
     pageStackedWidget_->addWidget(stationScrollArea);
     auto* userScrollArea = new ManagementScrollArea(pageStackedWidget_);
-    auto* userPage = new UserManagementPage(userScrollArea);
-    userPage->setAdminGateway(adminGateway_);
-    userScrollArea->setContentWidget(userPage);
+    userManagementPage_ = new UserManagementPage(userScrollArea);
+    userManagementPage_->setAdminGateway(adminGateway_);
+    userScrollArea->setContentWidget(userManagementPage_);
     pageStackedWidget_->addWidget(userScrollArea);
     auto* orderScrollArea = new ManagementScrollArea(pageStackedWidget_);
     orderManagementPage_ = new OrderManagementPage(orderScrollArea);
@@ -372,14 +374,14 @@ QWidget* MainWindow::createManagementPage()
     orderScrollArea->setContentWidget(orderManagementPage_);
     pageStackedWidget_->addWidget(orderScrollArea);
     auto* rechargeScrollArea = new ManagementScrollArea(pageStackedWidget_);
-    auto* rechargePage = new ActivityRecordsPage(ActivityRecordsMode::Recharge, rechargeScrollArea);
-    rechargePage->setAdminGateway(adminGateway_);
-    rechargeScrollArea->setContentWidget(rechargePage);
+    rechargeRecordsPage_ = new ActivityRecordsPage(ActivityRecordsMode::Recharge, rechargeScrollArea);
+    rechargeRecordsPage_->setAdminGateway(adminGateway_);
+    rechargeScrollArea->setContentWidget(rechargeRecordsPage_);
     pageStackedWidget_->addWidget(rechargeScrollArea);
     auto* operationLogScrollArea = new ManagementScrollArea(pageStackedWidget_);
-    auto* operationLogPage = new ActivityRecordsPage(ActivityRecordsMode::OperationLog, operationLogScrollArea);
-    operationLogPage->setAdminGateway(adminGateway_);
-    operationLogScrollArea->setContentWidget(operationLogPage);
+    operationLogPage_ = new ActivityRecordsPage(ActivityRecordsMode::OperationLog, operationLogScrollArea);
+    operationLogPage_->setAdminGateway(adminGateway_);
+    operationLogScrollArea->setContentWidget(operationLogPage_);
     pageStackedWidget_->addWidget(operationLogScrollArea);
     contentLayout->addWidget(pageStackedWidget_, 1);
 
@@ -398,6 +400,7 @@ QWidget* MainWindow::createManagementPage()
         pageTitleLabel_->setText(navigationTitles.at(index));
         pageSubtitleLabel_->setText(navigationDescriptions.at(index));
         navigationGroup->button(index)->setChecked(true);
+        refreshActivePage();
     };
     connect(navigationGroup, &QButtonGroup::idClicked, this,
             [showPage](int index) { showPage(index); });
@@ -409,6 +412,11 @@ QWidget* MainWindow::createManagementPage()
         orderManagementPage_->showLatestOrders();
         showPage(4);
     });
+    connect(stationManagementPage_, &StationManagementPage::stationChargersRequested, this,
+            [this, showPage](const QString& stationId) {
+                chargerManagementPage_->showStationRecords(stationId);
+                showPage(1);
+            });
     navigationGroup->button(0)->setChecked(true);
 
 
@@ -428,12 +436,31 @@ void MainWindow::showManagementShell()
 {
     rootStackedWidget_->setCurrentIndex(1);
     dashboardPage_->refresh();
+    autoRefreshTimer_.start();
 }
 
 void MainWindow::showLoginPage()
 {
+    autoRefreshTimer_.stop();
     rootStackedWidget_->setCurrentIndex(0);
     loginPage_->resetForm();
+}
+
+void MainWindow::refreshActivePage()
+{
+    if (!adminGateway_->isAuthenticated() || pageStackedWidget_ == nullptr) {
+        return;
+    }
+    switch (pageStackedWidget_->currentIndex()) {
+    case 0: dashboardPage_->refreshCurrent(); break;
+    case 1: chargerManagementPage_->refreshData(); break;
+    case 2: stationManagementPage_->refreshData(); break;
+    case 3: userManagementPage_->refreshData(); break;
+    case 4: orderManagementPage_->refreshData(); break;
+    case 5: rechargeRecordsPage_->refreshData(); break;
+    case 6: operationLogPage_->refreshData(); break;
+    default: break;
+    }
 }
 
 void MainWindow::handleLoginSubmitted(const QString& username, const QString& password)
@@ -442,13 +469,6 @@ void MainWindow::handleLoginSubmitted(const QString& username, const QString& pa
         {{QStringLiteral("username"), username}, {QStringLiteral("password"), password}},
         loginPage_, QStringLiteral("login"));
     loginPage_->setBusy(!loginRequestId_.isEmpty());
-}
-
-void MainWindow::updateClientCount(int count)
-{
-    if (dashboardPage_ != nullptr) {
-        dashboardPage_->setClientCount(count);
-    }
 }
 
 void MainWindow::updateSidebarWidth()
