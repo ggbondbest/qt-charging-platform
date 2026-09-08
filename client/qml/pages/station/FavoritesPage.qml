@@ -126,7 +126,6 @@ Item {
         spacing: P.Style.spaceMd
 
         Text {
-            anchors.verticalCenter: parent.verticalCenter
             width: parent.width
             objectName: "favoritesPageTitle"
             text: "我的收藏"; font.pixelSize: P.Style.fontXl; font.bold: true; color: P.Style.ink
