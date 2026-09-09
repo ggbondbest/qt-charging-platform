@@ -17,6 +17,9 @@ public:
     DatabaseConnection& operator=(const DatabaseConnection&) = delete;
 
     bool open(const QString& databasePath, bool loadDemoSeed, QString* errorMessage = nullptr);
+    // Explicit, additive demo catalog. Does not overwrite existing stations,
+    // chargers or user transactions; safe to repeat on an existing demo DB.
+    bool applyCityDemoSeed(QString* errorMessage = nullptr);
     void close();
 
     bool isOpen() const;

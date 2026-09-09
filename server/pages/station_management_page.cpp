@@ -529,15 +529,16 @@ void StationManagementPage::showStationDialog(int recordIndex)
     // target before entering it so a refreshed list cannot retarget a write.
     const StationRecord editingRecord = isEditing ? records_.at(recordIndex) : StationRecord{};
     QDialog dialog(this);
+    applyManagementLightPalette(&dialog);
     dialog.setWindowTitle(isEditing ? (realMode_ ? tr("编辑电站") : tr("编辑电站（Mock）"))
                                     : (realMode_ ? tr("新增电站") : tr("新增电站（Mock）")));
-    dialog.setMinimumWidth(460);
+    dialog.setMinimumWidth(520);
     dialog.setStyleSheet(QStringLiteral(
         "QDialog { background:#ffffff; color:#1d2c46; font-size:14px; }"
-        "QLineEdit, QComboBox { background:#ffffff; border:1px solid #d0d7de; border-radius:9px;"
+        "QLineEdit, QComboBox, QSpinBox { background:#ffffff; color:#1d2c46; border:1px solid #d0d7de; border-radius:9px;"
         " min-height:40px; padding:0 12px; font-size:14px; }"
-        "QLineEdit:focus, QComboBox:focus { border:2px solid #2878d4; }"
-        "QPushButton { background:#ffffff; border:1px solid #d0d7de; border-radius:8px; min-height:38px;"
+        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border:2px solid #2878d4; }"
+        "QPushButton { background:#ffffff; color:#2878f0; border:1px solid #d0d7de; border-radius:8px; min-height:38px;"
         " padding:0 14px; font-size:15px; }"
         "QPushButton#primaryButton { background:#2878d4; border:none; color:#ffffff; min-height:42px; font-weight:600; }"));
     auto* layout = new QVBoxLayout(&dialog);
@@ -556,6 +557,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
     auto* contactLineEdit = new QLineEdit(&dialog);
     auto* phoneLineEdit = new QLineEdit(&dialog);
     auto* chargerCountSpinBox = new QSpinBox(&dialog);
+    chargerCountSpinBox->setObjectName(QStringLiteral("stationChargerCountSpinBox"));
     chargerCountSpinBox->setRange(1, 100);
     chargerCountSpinBox->setValue(4);
     auto* chargerTypeComboBox = new QComboBox(&dialog);
@@ -563,6 +565,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
     chargerTypeComboBox->addItem(tr("慢充"), QStringLiteral("SLOW"));
     configureManagementComboBox(chargerTypeComboBox);
     auto* chargerPowerSpinBox = new QSpinBox(&dialog);
+    chargerPowerSpinBox->setObjectName(QStringLiteral("stationChargerPowerSpinBox"));
     codeLineEdit->setObjectName(QStringLiteral("stationCodeLineEdit"));
     nameLineEdit->setObjectName(QStringLiteral("stationNameLineEdit"));
     addressLineEdit->setObjectName(QStringLiteral("stationAddressLineEdit"));
@@ -604,24 +607,39 @@ void StationManagementPage::showStationDialog(int recordIndex)
     }
     formLayout->addRow(tr("电站编号 *"), codeLineEdit);
     formLayout->addRow(tr("电站名称 *"), nameLineEdit);
-    formLayout->addRow(tr("城市 *"), cityComboBox);
-    formLayout->addRow(tr("区域 *"), districtLineEdit);
+    if (!realMode_) {
+        formLayout->addRow(tr("城市 *"), cityComboBox);
+        formLayout->addRow(tr("区域 *"), districtLineEdit);
+    } else {
+        // Do not offer apparently required fields which the real contract
+        // does not save. This also keeps the delivered form within 720px.
+        cityComboBox->hide();
+        districtLineEdit->hide();
+        contactLineEdit->hide();
+        phoneLineEdit->hide();
+    }
     formLayout->addRow(tr("详细地址 *"), addressLineEdit);
     formLayout->addRow(tr("纬度 *（-90 ～ 90）"), latitudeLineEdit);
     formLayout->addRow(tr("经度 *（-180 ～ 180）"), longitudeLineEdit);
     formLayout->addRow(tr("电价 *（元 / kWh）"), priceLineEdit);
-    formLayout->addRow(tr("负责人 *"), contactLineEdit);
-    formLayout->addRow(tr("联系电话 *"), phoneLineEdit);
+    if (!realMode_) {
+        formLayout->addRow(tr("负责人 *"), contactLineEdit);
+        formLayout->addRow(tr("联系电话 *"), phoneLineEdit);
+    }
     if (!isEditing) {
         formLayout->addRow(tr("初始电桩数量 *"), chargerCountSpinBox);
         formLayout->addRow(tr("初始电桩类型 *"), chargerTypeComboBox);
         formLayout->addRow(tr("单桩额定功率 *"), chargerPowerSpinBox);
+    } else {
+        chargerCountSpinBox->hide();
+        chargerTypeComboBox->hide();
+        chargerPowerSpinBox->hide();
     }
     layout->addLayout(formLayout);
     if (realMode_) {
         auto* hint = createTextLabel(isEditing
-                                         ? tr("本次保存只提交名称、地址、经纬度和电价；城市、区域与联系人字段尚无管理契约，已禁用。")
-                                         : tr("新增会原子创建电站及其初始电桩；城市、区域与联系人仅用于本地 Mock，不会提交。"),
+                                         ? tr("保存名称、地址、经纬度和电价；电站编号不可更改。")
+                                         : tr("确认后将同时创建电站与初始电桩；请填写真实的站点坐标。"),
                                      QStringLiteral("color:#718098; font-size:13px;"), &dialog);
         hint->setWordWrap(true);
         layout->addWidget(hint);
@@ -631,6 +649,19 @@ void StationManagementPage::showStationDialog(int recordIndex)
     buttons->button(QDialogButtonBox::Ok)->setObjectName(QStringLiteral("primaryButton"));
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     layout->addWidget(buttons);
+    // A styled dialog does not guarantee palette inheritance for its children.
+    // In particular Qt 6.2's QSpinBox owns a separate qt_spinbox_lineedit which
+    // can otherwise keep the application's dark-theme white text. Set both
+    // the compound input and its editor explicitly, in every palette group.
+    for (auto* spinBox : dialog.findChildren<QSpinBox*>()) {
+        applyManagementLightPalette(spinBox);
+    }
+    for (auto* comboBox : dialog.findChildren<QComboBox*>()) {
+        applyManagementLightPalette(comboBox);
+    }
+    for (auto* edit : dialog.findChildren<QLineEdit*>()) {
+        applyManagementLightPalette(edit);
+    }
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, &dialog,
             [this, &dialog, codeLineEdit, nameLineEdit, districtLineEdit, addressLineEdit,

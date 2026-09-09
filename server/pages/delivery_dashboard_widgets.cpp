@@ -1,4 +1,5 @@
 #include "delivery_dashboard_widgets.h"
+#include "management_page_widgets.h"
 
 #include <QCategoryAxis>
 #include <QChart>
@@ -15,9 +16,28 @@
 
 namespace charging::server {
 
+namespace {
+
+void configureLightChart(QChartView* view)
+{
+    applyManagementLightPalette(view);
+    view->setFrameShape(QFrame::NoFrame);
+    view->setBackgroundBrush(QColor("#ffffff"));
+    view->setStyleSheet(QStringLiteral("QChartView { background: #ffffff; border: none; }"));
+    // A QChartView also owns a scene/viewport. Styling its outer QWidget alone
+    // leaves a dark margin around the chart under a dark application palette.
+    applyManagementLightPalette(view->viewport());
+    view->chart()->setTheme(QChart::ChartThemeLight);
+    view->chart()->setBackgroundBrush(QColor("#ffffff"));
+    view->chart()->setBackgroundRoundness(0);
+}
+
+} // namespace
+
 DeliveryRevenueTrendWidget::DeliveryRevenueTrendWidget(QWidget* parent)
     : QChartView(new QChart(), parent)
 {
+    configureLightChart(this);
     setObjectName(QStringLiteral("deliveryRevenueChart"));
     setMinimumHeight(240);
     setRenderHint(QPainter::Antialiasing);
@@ -146,6 +166,7 @@ void DeliveryRevenueTrendWidget::rebuild()
 DeliveryDeviceStatusWidget::DeliveryDeviceStatusWidget(QWidget* parent)
     : QChartView(new QChart(), parent)
 {
+    configureLightChart(this);
     setObjectName(QStringLiteral("deliveryDeviceStateChart"));
     setMinimumSize(150, 190);
     setMaximumWidth(210);

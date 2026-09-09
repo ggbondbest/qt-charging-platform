@@ -284,8 +284,21 @@ void ReservationService::fetchList()
 
 void ReservationService::cancel(qint64 reservationId)
 {
-    emit cancelStarted(reservationId);
+    // Keep one owner for the request/response pair. A repeated click or a
+    // second view must not replace the ID whose acknowledgement is in flight.
+    if (pendingCancelId_ > 0) return;
+    if (reservationId <= 0) {
+        emit cancelFailed(tr("预约编号无效，请刷新后重试"));
+        return;
+    }
     pendingCancelId_ = reservationId;
+    emit cancelStarted(reservationId);
+
+    if (liveMode_ && connection_ == nullptr) {
+        pendingCancelId_ = 0;
+        emit cancelFailed(tr("预约服务未连接，请重新登录后重试"));
+        return;
+    }
 
     if (liveMode_ && connection_ != nullptr) {
         QJsonObject data;
@@ -503,6 +516,7 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             emit submitRejected(response.error);
         } else {
             pendingCancelRequestId_.clear();
+            pendingCancelId_ = 0;
             emit cancelFailed(message);
         }
         return;
@@ -552,6 +566,7 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             emit submitFailed(message);
         } else {
             pendingCancelRequestId_.clear();
+            pendingCancelId_ = 0;
             emit cancelFailed(message);
         }
         return;
@@ -568,6 +583,7 @@ void ReservationService::handleResponse(const charging::protocol::ResponseEnvelo
             emit submitFailed(message);
         } else {
             pendingCancelRequestId_.clear();
+            pendingCancelId_ = 0;
             emit cancelFailed(message);
         }
         return;

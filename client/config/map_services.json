@@ -1,5 +1,0 @@
-{
-  "_comment": "腾讯地图 WebService 配置。2026-09-08 用户拍板：演示 key 随 git 入库，队友拉代码即可直接测地图，无需手动配置。优先级：环境变量 TENCENT_MAP_API_KEY / CHARGING_TENCENT_MAP_KEY 任一已定义（含空值=权威无 key）即忽略本文件——CI/测试靠该口径保持零真实请求。安全口径：仓库可见=key 可见，本 key 仅演示配额（8QPS/日 1 万）；腾讯控制台请配签名校验 + 域名/IP 白名单。",
-  "tencentMapKey": "GY6BZ-GDQC4-KI4U5-K3FZD-G4IPF-NOF5Y",
-  "baseUrl": "https://apis.map.qq.com/ws"
-}

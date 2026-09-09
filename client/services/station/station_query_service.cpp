@@ -25,7 +25,7 @@ StationList mockStations()
         station.id = id;
         station.code = QString::fromUtf8(code);
         station.name = QString::fromUtf8(name);
-        station.address = QString::fromUtf8(address);
+        station.address = QStringLiteral("深圳市") + QString::fromUtf8(address);
         station.latitude = lat;
         station.longitude = lng;
         station.priceCentsPerKwh = priceCents;

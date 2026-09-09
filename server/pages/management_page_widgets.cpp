@@ -5,6 +5,7 @@
 #include <QAbstractItemView>
 #include <QFrame>
 #include <QComboBox>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
@@ -18,6 +19,42 @@ namespace charging::server {
 
 namespace {
 
+class ComboArrow final : public QWidget
+{
+public:
+    explicit ComboArrow(QComboBox* combo) : QWidget(combo)
+    {
+        setObjectName(QStringLiteral("managementComboArrow"));
+        setFixedSize(16, 16);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        combo->installEventFilter(this);
+        reposition();
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() == QEvent::Resize) reposition();
+        return QWidget::eventFilter(watched, event);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(QColor(isEnabled() ? "#718098" : "#b7c1ce"),
+                            1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.drawLine(QPointF(3, 6), QPointF(8, 11));
+        painter.drawLine(QPointF(8, 11), QPointF(13, 6));
+    }
+
+private:
+    void reposition()
+    {
+        move(parentWidget()->width() - width() - 10, (parentWidget()->height() - height()) / 2);
+    }
+};
+
 QLabel* createLabel(const QString& text, const QString& style, QWidget* parent)
 {
     auto* label = new QLabel(text, parent);
@@ -26,6 +63,29 @@ QLabel* createLabel(const QString& text, const QString& style, QWidget* parent)
 }
 
 } // namespace
+
+void applyManagementLightPalette(QWidget* widget)
+{
+    Q_ASSERT(widget != nullptr);
+    QPalette palette = widget->palette();
+    for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
+        const bool disabled = group == QPalette::Disabled;
+        palette.setColor(group, QPalette::Window, QColor("#f5f7fb"));
+        palette.setColor(group, QPalette::WindowText, QColor(disabled ? "#8995a7" : "#1d2c46"));
+        palette.setColor(group, QPalette::Base, QColor(disabled ? "#f2f5f9" : "#ffffff"));
+        palette.setColor(group, QPalette::AlternateBase, QColor("#f8fafd"));
+        palette.setColor(group, QPalette::Text, QColor(disabled ? "#8995a7" : "#1d2c46"));
+        palette.setColor(group, QPalette::PlaceholderText, QColor("#7a879b"));
+        palette.setColor(group, QPalette::Button, QColor("#ffffff"));
+        palette.setColor(group, QPalette::ButtonText, QColor(disabled ? "#8995a7" : "#1d2c46"));
+        palette.setColor(group, QPalette::Highlight, QColor("#eaf3ff"));
+        palette.setColor(group, QPalette::HighlightedText, QColor("#1d2c46"));
+        palette.setColor(group, QPalette::ToolTipBase, QColor("#ffffff"));
+        palette.setColor(group, QPalette::ToolTipText, QColor("#1d2c46"));
+        palette.setColor(group, QPalette::Link, QColor("#2878f0"));
+    }
+    widget->setPalette(palette);
+}
 
 class ManagementStatePanel::StateGlyph final : public QWidget
 {
@@ -162,6 +222,8 @@ QFrame* createManagementMetricCard(const QString& title, const QString& value, c
     textLayout->addWidget(valueLabel);
     auto* hintLabel = createLabel(hint, QStringLiteral("color:#68758a; font-size:13px;"), card);
     hintLabel->setObjectName(QStringLiteral("managementMetricHint"));
+    hintLabel->setWordWrap(true);
+    hintLabel->setMinimumWidth(0);
     textLayout->addWidget(hintLabel);
     layout->addLayout(textLayout, 1);
     return card;
@@ -235,19 +297,23 @@ QTableWidgetItem* createManagementTableItem(const QString& text)
 void configureManagementComboBox(QComboBox* comboBox)
 {
     Q_ASSERT(comboBox != nullptr);
+    if (comboBox->findChild<QWidget*>(QStringLiteral("managementComboArrow")) == nullptr) {
+        new ComboArrow(comboBox);
+    }
     // Keep the trigger as a light icon area rather than the platform's raised
     // button, while the popup itself remains styled independently below.
     comboBox->setStyleSheet(QStringLiteral(
-        "QComboBox { background:#ffffff; border:1px solid #dfe6f0; border-radius:9px;"
+        "QComboBox { background:#ffffff; color:#1d2c46; border:1px solid #dfe6f0; border-radius:9px;"
         " min-height:40px; padding:0 34px 0 12px; font-size:14px; }"
+        "QComboBox:disabled { background:#f2f5f9; color:#8995a7; border-color:#e4e9f1; }"
         "QComboBox:focus { border:2px solid #2878d4; }"
         "QComboBox::drop-down { subcontrol-origin:padding; subcontrol-position:top right; width:30px;"
         " border:none; background:transparent; }"
         "QComboBox::drop-down:hover { background:#f4f7fb; border-radius:7px; }"
         "QComboBox::drop-down:pressed { background:#eaf3ff; }"
-        "QComboBox::down-arrow { width:0; height:0; margin-right:11px;"
-        " border-left:4px solid transparent; border-right:4px solid transparent;"
-        " border-top:5px solid #718098; }"));
+        // QSS border triangles are not consistently rendered as arrows.
+        // Draw the chevron above in Qt, with no font or image dependency.
+        "QComboBox::down-arrow { image:none; border:none; width:0; height:0; }"));
     auto* popupView = comboBox->view();
     QPalette popupPalette = popupView->palette();
     popupPalette.setColor(QPalette::Active, QPalette::Highlight, QColor("#eaf3ff"));

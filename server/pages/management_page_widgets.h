@@ -73,6 +73,10 @@ QWidget* createManagementTableCell(QWidget* content, QWidget* parent);
 // one consistent visual size instead of letting a page-specific fixed column cut them off.
 int managementStatusTagWidth(const QString& text);
 
+// The operations UI is intentionally light. Set every input/table palette role
+// explicitly so a dark desktop palette cannot leak into unstyled subcontrols.
+void applyManagementLightPalette(QWidget* widget);
+
 // Native item tooltips provide the complete value whenever a responsive column
 // still has to elide long text.  This keeps rows compact without hiding data.
 QTableWidgetItem* createManagementTableItem(const QString& text);

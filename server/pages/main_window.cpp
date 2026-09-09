@@ -7,6 +7,7 @@
 #include "server_runtime.h"
 #include "dashboard_page.h"
 #include "order_management_page.h"
+#include "management_page_widgets.h"
 #include "station_management_page.h"
 #include "user_management_page.h"
 
@@ -52,7 +53,7 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        const QRectF buttonRect = rect().adjusted(0.5, 1.0, -0.5, -1.0);
+        const QRectF buttonRect = QRectF(rect()).adjusted(0.5, 1.0, -0.5, -1.0);
         const bool selected = isChecked();
         const bool hovered = underMouse();
         if (selected || hovered) {
@@ -129,10 +130,10 @@ public:
     {
         setFrameShape(QFrame::NoFrame);
         setWidgetResizable(true);
-        // Keep wheel and touchpad scrolling available, while removing the
-        // native vertical scrollbar and its width from every page state.
-        // This keeps empty and populated pages at the same content width.
-        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        // Compact presentation windows still need a discoverable way to reach
+        // all rows and the right-hand detail panel, including with a mouse.
+        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         setStyleSheet(QStringLiteral(
             // A softly tinted canvas makes the white cards visibly float above
             // the page without introducing a dark or distracting backdrop.
@@ -191,6 +192,7 @@ MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     : QMainWindow(parent), server_(server)
 {
     Q_ASSERT(server != nullptr);
+    applyManagementLightPalette(this);
     adminGateway_ = new AdminRequestGateway(server, this);
 
     setWindowTitle(tr("充电平台运营管理系统"));
@@ -230,10 +232,19 @@ QWidget* MainWindow::createManagementPage()
     managementPage->setStyleSheet(QStringLiteral(
         "QWidget#managementPage, QWidget#contentWidget { background: #f5f7fb; color: #1d2c46;"
         " font-size: 14px; }"
+        "QLabel { color: #1d2c46; }"
+        "QDialog, QMessageBox { background: #f5f7fb; color: #1d2c46; }"
         "QFrame#sidebar { background: #ffffff; border-right: 1px solid #e7edf5; }"
         "QFrame#contentCard, QFrame#summaryCard { background: #ffffff; border: 1px solid #e8eef6; border-radius: 14px; }"
-        "QLineEdit, QComboBox { background: white; border: 1px solid #dfe6f0; border-radius: 9px;"
+        "QLineEdit, QComboBox, QAbstractSpinBox { background: white; color: #1d2c46;"
+        " selection-background-color: #eaf3ff; selection-color: #1d2c46;"
+        " border: 1px solid #dfe6f0; border-radius: 9px;"
         " min-height: 40px; padding: 0 12px; font-size: 14px; }"
+        "QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {"
+        " background: #f2f5f9; color: #8995a7; border-color: #e4e9f1; }"
+        "QAbstractSpinBox QLineEdit { border: none; min-height: 30px; padding: 0; }"
+        "QTextEdit, QPlainTextEdit { background: #ffffff; color: #1d2c46;"
+        " border: 1px solid #dfe6f0; border-radius: 8px; padding: 8px; }"
         "QComboBox { padding: 0 34px 0 12px; }"
         "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 30px;"
         " border: none; background: transparent; }"
@@ -253,18 +264,25 @@ QWidget* MainWindow::createManagementPage()
         " color: white; min-height: 42px; padding: 0 16px; font-size: 15px;"
         " font-weight: 600; }"
         "QPushButton#primaryButton:hover { background: #1769e8; }"
+        "QPushButton#primaryButton:disabled { background: #b6ccef; color: #ffffff; }"
         "QPushButton#secondaryButton, QPushButton#tableActionButton { background: white;"
         " border: 1px solid #e1e7f0; border-radius: 8px; color: #2878f0; min-height: 38px;"
         " padding: 0 12px; font-size: 15px; }"
         "QPushButton#tableActionButton { min-height: 26px; max-height: 26px; min-width: 0;"
         " padding: 0 8px; font-size: 12px; }"
+        "QPushButton#secondaryButton:hover, QPushButton#tableActionButton:hover { background: #edf4ff; }"
+        "QPushButton#secondaryButton:disabled, QPushButton#tableActionButton:disabled {"
+        " background: #f2f5f9; color: #8995a7; border-color: #e4e9f1; }"
+        "QDialogButtonBox QPushButton { background: #ffffff; color: #2878f0; border: 1px solid #dfe6f0;"
+        " border-radius: 8px; min-height: 36px; min-width: 70px; padding: 0 14px; }"
         "QPushButton#sessionButton { background: transparent; border: none; border-radius: 8px;"
         " color: #34435b; min-height: 38px; padding: 0 10px; font-size: 14px; font-weight: 600; }"
         "QPushButton#sessionButton:hover { background: #f7f9fc; }"
         "QPushButton#sessionButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center;"
         " width: 0; height: 0; margin-right: 3px; border-left: 4px solid transparent;"
         " border-right: 4px solid transparent; border-top: 5px solid #718098; }"
-        "QTableWidget { background: white; border: none; gridline-color: #edf1f7;"
+        "QTableWidget { background: white; color: #1d2c46; alternate-background-color: #f8fafd;"
+        " border: none; gridline-color: #edf1f7;"
         " selection-background-color: #eaf3ff; selection-color: #1d2c46; font-size: 14px; }"
         "QTableWidget::item { border: none; padding: 0 8px; }"
         "QTableWidget::item:selected, QTableWidget::item:selected:active,"
@@ -314,6 +332,7 @@ QWidget* MainWindow::createManagementPage()
     auto* topBarLayout = new QHBoxLayout(topBar);
     topBarLayout->setContentsMargins(0, 0, 0, 0);
     pageTitleLabel_ = new QLabel(tr("运营概览"), topBar);
+    pageTitleLabel_->setStyleSheet(QStringLiteral("color: #1d2c46;"));
     QFont titleFont = pageTitleLabel_->font();
     titleFont.setBold(true);
     titleFont.setPixelSize(24);
@@ -322,6 +341,7 @@ QWidget* MainWindow::createManagementPage()
     titleLayout->setSpacing(2);
     pageSubtitleLabel_ = new QLabel(tr("全局数据实时监控，掌握运营核心指标"), topBar);
     pageSubtitleLabel_->setStyleSheet(QStringLiteral("color: #77849a; font-size: 13px;"));
+    pageSubtitleLabel_->setWordWrap(true);
     titleLayout->addWidget(pageTitleLabel_);
     titleLayout->addWidget(pageSubtitleLabel_);
     auto* userBadge = new QLabel(tr("A"), topBar);
@@ -341,8 +361,7 @@ QWidget* MainWindow::createManagementPage()
     // Revoke the shared management session before returning to the login page.
     connect(signOutAction, &QAction::triggered, adminGateway_, &AdminRequestGateway::logout);
     userMenuButton->setMenu(sessionMenu);
-    topBarLayout->addLayout(titleLayout);
-    topBarLayout->addStretch();
+    topBarLayout->addLayout(titleLayout, 1);
     topBarLayout->addWidget(userBadge);
     topBarLayout->addWidget(userMenuButton);
     contentLayout->addWidget(topBar);

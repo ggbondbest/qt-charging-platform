@@ -1,3 +1,16 @@
+add_executable(test_city_demo_seed tst_city_demo_seed.cpp)
+target_link_libraries(test_city_demo_seed PRIVATE ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME city_demo_seed COMMAND test_city_demo_seed)
+set_tests_properties(city_demo_seed PROPERTIES TIMEOUT 40)
+
+add_executable(test_admin_ui_presentation tst_admin_ui_presentation.cpp)
+target_link_libraries(test_admin_ui_presentation PRIVATE
+    ChargingPlatform::ServerPages ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME admin_ui_presentation COMMAND test_admin_ui_presentation)
+set_tests_properties(admin_ui_presentation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+
 add_executable(test_delivery_admin_pages tst_delivery_admin_pages.cpp)
 target_link_libraries(test_delivery_admin_pages PRIVATE
     ChargingPlatform::ServerPages
@@ -502,6 +515,38 @@ set_tests_properties(map_geocoding_recovery PROPERTIES TIMEOUT 30
 # Same gate as client/qml — configure stays byte-identical without the Qt
 # Quick declarative packages, so the existing CI is unaffected either way.
 if(CHARGING_HAS_QML)
+add_executable(test_qml_charging_unified tst_qml_charging_unified.cpp)
+target_compile_definitions(test_qml_charging_unified PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_charging_unified PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_charging_unified COMMAND test_qml_charging_unified)
+set_tests_properties(qml_charging_unified PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_map_views tst_qml_map_views.cpp)
+target_compile_definitions(test_qml_map_views PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_map_views PRIVATE
+    Qt6::Test Qt6::Quick Qt6::QuickControls2 Qt6::WebEngineQuick)
+add_test(NAME qml_map_views COMMAND test_qml_map_views)
+set_tests_properties(qml_map_views PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
+
+add_executable(test_qml_navigation_page tst_qml_navigation_page.cpp)
+target_compile_definitions(test_qml_navigation_page PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_navigation_page PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_navigation_page COMMAND test_qml_navigation_page)
+set_tests_properties(qml_navigation_page PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_platform_controls tst_qml_platform_controls.cpp)
+target_compile_definitions(test_qml_platform_controls PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_platform_controls PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_platform_controls COMMAND test_qml_platform_controls)
+set_tests_properties(qml_platform_controls PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 add_executable(test_qml_client_pages tst_qml_client_pages.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
@@ -588,6 +633,24 @@ target_link_libraries(test_qml_tcp_delivery PRIVATE
     ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
     Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
 add_test(NAME qml_tcp_delivery COMMAND test_qml_tcp_delivery)
+add_executable(test_qml_reservation_cancel tst_qml_reservation_cancel.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_reservation_cancel PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_compile_definitions(test_qml_reservation_cancel PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_reservation_cancel PRIVATE
+    ChargingPlatform::ProjectOptions ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
+    Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
+add_test(NAME qml_reservation_cancel COMMAND test_qml_reservation_cancel)
+set_tests_properties(qml_reservation_cancel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
 set_tests_properties(qml_tcp_delivery PROPERTIES
     # 2026-09-08 merge 补：本分支 key 三级解析含 git 配置文件兜底，上游此测试写于
     # 兜底入库之前未加空 env 隔离；并入后按全仓 QML 套件同口径撤防真实外网。

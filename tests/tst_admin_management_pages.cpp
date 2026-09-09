@@ -350,10 +350,11 @@ private slots:
         auto* value = page.findChild<QLabel*>(QStringLiteral("dashboardOnlineChargersValue"));
         auto* hint = page.findChild<QLabel*>(QStringLiteral("dashboardOnlineChargersHint"));
         QVERIFY(value != nullptr && hint != nullptr);
-        // Seed data: 7 chargers, 1 OFFLINE and 1 FAULT.  FAULT remains online
-        // under the frozen contract, so the headline must be 6 / 85.7%.
-        QTRY_COMPARE(value->text(), QStringLiteral("6 台"));
-        QTRY_COMPARE(hint->text(), QStringLiteral("在线率 85.7%（北京时间快照）"));
+        // Runtime demo catalogue: 75 chargers, preserving 1 OFFLINE and 1
+        // FAULT from the original seed. FAULT remains online under the
+        // frozen contract, so the headline must be 74 / 98.7%.
+        QTRY_COMPARE(value->text(), QStringLiteral("74 台"));
+        QTRY_COMPARE(hint->text(), QStringLiteral("在线率 98.7%（北京时间快照）"));
         // Online includes FAULT, while the delivery chart splits all five
         // charger states without counting any charger twice.
         auto* distribution = page.findChild<DeliveryDeviceStatusWidget*>();
@@ -361,21 +362,21 @@ private slots:
         QVERIFY(distribution && trend);
         auto* pie = qobject_cast<QPieSeries*>(distribution->chart()->series().first());
         QVERIFY(pie);
-        QCOMPARE(pie->sum(), 7.0);
-        const QStringList expected{"5（71.4%）", "0（0.0%）", "1（14.3%）", "0（0.0%）", "1（14.3%）"};
+        QCOMPARE(pie->sum(), 75.0);
+        const QStringList expected{"73（97.3%）", "0（0.0%）", "1（1.3%）", "0（0.0%）", "1（1.3%）"};
         for (int index = 0; index < expected.size(); ++index) {
             auto* legend = page.findChild<QLabel*>(QStringLiteral("deviceStateCount%1").arg(index));
             QVERIFY(legend);
             QCOMPARE(legend->text(), expected.at(index));
         }
         page.refreshCurrent();
-        QCOMPARE(value->text(), QStringLiteral("6 台")); // timer refresh preserves the confirmed snapshot
+        QCOMPARE(value->text(), QStringLiteral("74 台")); // timer refresh preserves the confirmed snapshot
         page.refreshCurrent(true);
         QCOMPARE(value->text(), QStringLiteral("—")); // a new admin session explicitly clears it
         pie = qobject_cast<QPieSeries*>(distribution->chart()->series().first());
         QVERIFY(pie);
         QCOMPARE(pie->sum(), 0.0);
-        QTRY_COMPARE(value->text(), QStringLiteral("6 台"));
+        QTRY_COMPARE(value->text(), QStringLiteral("74 台"));
         runtime.stop();
     }
 };

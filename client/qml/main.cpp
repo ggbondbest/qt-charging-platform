@@ -4,6 +4,7 @@
 //   --screenshot=PATH      grab after first render, then exit (CI-safe)
 //   --size=WxH             default 420x860
 #include <QDir>
+#include <QFileInfo>
 #include <QApplication>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -13,6 +14,8 @@
 #include <QQuickItemGrabResult>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QPalette>
+#include <QSettings>
 #include <QTimer>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
@@ -28,6 +31,31 @@ int main(int argc, char* argv[])
     // Basic is the only Controls style guaranteed shipped by the base module.
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
+    // Controls not yet using the platform wrappers must still match the
+    // application's light default, independent of the desktop color scheme.
+    // Use Qt 6.2 palette roles only (QPalette::Accent is newer).
+    QPalette palette;
+    palette.setColor(QPalette::Window, QColor(QStringLiteral("#F4F6F8")));
+    palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#1F2937")));
+    palette.setColor(QPalette::Base, Qt::white);
+    palette.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#EEF2F6")));
+    palette.setColor(QPalette::Text, QColor(QStringLiteral("#1F2937")));
+    palette.setColor(QPalette::Button, Qt::white);
+    palette.setColor(QPalette::ButtonText, QColor(QStringLiteral("#1F2937")));
+    palette.setColor(QPalette::PlaceholderText, QColor(QStringLiteral("#6B7280")));
+    palette.setColor(QPalette::Highlight, QColor(QStringLiteral("#00A76D")));
+    palette.setColor(QPalette::HighlightedText, Qt::white);
+    palette.setColor(QPalette::ToolTipBase, Qt::white);
+    palette.setColor(QPalette::ToolTipText, QColor(QStringLiteral("#1F2937")));
+    palette.setColor(QPalette::Light, Qt::white);
+    palette.setColor(QPalette::Midlight, QColor(QStringLiteral("#EEF2F6")));
+    palette.setColor(QPalette::Mid, QColor(QStringLiteral("#D5DCE4")));
+    palette.setColor(QPalette::Dark, QColor(QStringLiteral("#9CA3AF")));
+    palette.setColor(QPalette::Shadow, QColor(QStringLiteral("#6B7280")));
+    palette.setColor(QPalette::Disabled, QPalette::Text, QColor(QStringLiteral("#9CA3AF")));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(QStringLiteral("#9CA3AF")));
+    app.setPalette(palette);
+
     // Hand-rolled arg parsing (same contract as the widgets preview tool), so
     // unknown flags never abort us.
     auto valueOf = [&argc, argv](const char* key) -> QString {
@@ -41,6 +69,14 @@ int main(int argc, char* argv[])
     };
 
     const QString shot = valueOf("--screenshot=");
+    if (!shot.isEmpty()) {
+        // Preview processes must not mutate the real user's appearance or
+        // race each other's theme. QSettings native stores do not uniformly
+        // honor XDG_CONFIG_HOME, so make screenshot isolation explicit.
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                          QDir(QFileInfo(shot).absolutePath()).filePath(QStringLiteral("config")));
+    }
     const QString view = valueOf("--view=");
     // --arg=JSON: deep-link route parameter (map for detail/confirm pages,
     // bare string for keyword args). Falls back to plain string if not JSON.

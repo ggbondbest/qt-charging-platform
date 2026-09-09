@@ -84,9 +84,9 @@ private slots:
 
     void noKeyFailsAsyncWithoutAnyNetwork();
     void envPrefersNewNameOverLegacy();
-    // —— 2026-09-08 演示 key 入库批：env 三级优先 + git 配置文件回退 ——
-    void gitConfigFileSuppliesKeyWhenEnvUndefined();
-    void envDefinedStillShadowsConfigFile();
+    // Local configuration files must never supply credentials or redirect their requests.
+    void configFileCannotSupplyKeyOrEndpoint();
+    void environmentIsOnlyProductionConfiguration();
     void matrixParsesMultipleDestinations();
     void requestQueryMatchesTencentContract();
     void businessStatusMapsToTypedErrors();
@@ -154,9 +154,9 @@ void MapGeoServiceTest::envPrefersNewNameOverLegacy()
     QVERIFY(MapGeoService::apiKeyFromEnvironment().isEmpty());
 }
 
-void MapGeoServiceTest::gitConfigFileSuppliesKeyWhenEnvUndefined()
+void MapGeoServiceTest::configFileCannotSupplyKeyOrEndpoint()
 {
-    // 两 env 名都未定义 → 回退读 git 托管配置文件（拉代码即测，无需 export）。
+    // Even undefined environment variables do not enable a credential-file fallback.
     qunsetenv("TENCENT_MAP_API_KEY");
     qunsetenv("CHARGING_TENCENT_MAP_KEY");
     QVERIFY(!MapGeoService::environmentKeyAuthoritative());
@@ -169,32 +169,51 @@ void MapGeoServiceTest::gitConfigFileSuppliesKeyWhenEnvUndefined()
     f.write(R"({"tencentMapKey":"cfg-file-key","baseUrl":"https://example.test/ws/"})");
     f.close();
 
-    QCOMPARE(MapGeoService::apiKeyFromConfigFile(path), QStringLiteral("cfg-file-key"));
-    QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("cfg-file-key"));
-    // baseUrl 尾斜杠 trim（端点拼接口径，与 env 兜底链共用判据）。
-    QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://example.test/ws"));
-    // 缺文件/坏 JSON → 静默空，不抛不打印（无 key = 页面模拟兜底，绝不炸测试）。
+    QVERIFY(MapGeoService::apiKeyFromConfigFile(path).isEmpty());
+    QVERIFY(MapGeoService::baseUrlFromConfigFile(path).isEmpty());
+    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());
+    QVERIFY(MapGeoService::resolveApiKey().isEmpty());
+    QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
+    QCOMPARE(MapGeoService::resolveBaseUrl(), QStringLiteral("https://apis.map.qq.com/ws"));
     QVERIFY(MapGeoService::apiKeyFromConfigFile(dir.filePath("missing.json")).isEmpty());
+
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    MapGeoService service;
+    QVERIFY(!service.hasUsableKey());
+    service.setEndpointBaseForTesting(server.endpointBase());
+    QSignalSpy failed(&service, &MapGeoService::forwardGeocodeFailed);
+    const quint64 requestId = service.requestForwardGeocode(QStringLiteral("大连市 软件园路"));
+    QCOMPARE(failed.size(), 0); // no-key failure remains asynchronous
+    QTRY_COMPARE(failed.size(), 1);
+    QCOMPARE(failed.first().at(0).toULongLong(), requestId);
+    QCOMPARE(failed.first().at(1).value<MapError>(), MapError::NoApiKey);
+    QCOMPARE(server.connectionCount(), 0);
 }
 
-void MapGeoServiceTest::envDefinedStillShadowsConfigFile()
+void MapGeoServiceTest::environmentIsOnlyProductionConfiguration()
 {
-    // 测试隔离锚：env"已定义即权威（含空）"——配置文件有 key 也不读，
-    // 这是 ctest 全量注入空 env 变量即与真实网络绝缘的机制前提。
+    // File contents are ignored both with empty and nonempty environment keys.
     qputenv("TENCENT_MAP_API_KEY", "");
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("map_services.json");
     QFile f(path);
     QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    f.write(R"({"tencentMapKey":"cfg-file-key"})");
+    f.write(R"({"tencentMapKey":"cfg-file-key","baseUrl":"https://example.test/ws"})");
     f.close();
 
     QVERIFY(MapGeoService::environmentKeyAuthoritative());
-    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());   // 权威空 = 无 key，文件被跳过
+    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());
+    QVERIFY(!MapGeoService{}.hasUsableKey());
 
-    qputenv("CHARGING_TENCENT_MAP_KEY", "env-wins");         // env 非空 → env 链优先
+    qputenv("CHARGING_TENCENT_MAP_KEY", "env-wins");
     QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("env-wins"));
+    qputenv("TENCENT_MAP_API_KEY", "preferred-env-key");
+    QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("preferred-env-key"));
+    QVERIFY(MapGeoService::apiKeyFromConfigFile(path).isEmpty());
+    QVERIFY(MapGeoService::baseUrlFromConfigFile(path).isEmpty());
+    QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
 }
 
 void MapGeoServiceTest::matrixParsesMultipleDestinations()

@@ -169,6 +169,9 @@ Item {
         }
     }
     Component.onCompleted: {
+        if (typeof page.arg === "string"
+            && ["all", "charging", "waiting_payment", "completed"].indexOf(page.arg) >= 0)
+            page.filter = page.arg
         orderService.fetchStatusCounts()
         load(true)
     }

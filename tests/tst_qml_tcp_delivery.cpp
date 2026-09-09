@@ -1,5 +1,7 @@
 #include "app_bridge.h"
 #include "service_bridges.h"
+#include "map_bridge.h"
+#include <QJSValue>
 #include "admin_request_gateway.h"
 #include "server_runtime.h"
 #include "charging/common/model/models.h"
@@ -97,6 +99,68 @@ private slots:
         const QVariantMap mapped = marshalling::orderToMap(order);
         QCOMPARE(mapped.value("id").metaType().id(), QMetaType::QString);
         QCOMPARE(mapped.value("createdAt").toString(), QString("2026-09-08T01:02:03.456Z"));
+    }
+
+    void homeCitySwitchProjectsRealTcpStationsAndMapTogether()
+    {
+        QTemporaryDir temp;
+        ServerRuntime runtime;
+        QVERIFY(runtime.start(temp.filePath("cities.sqlite"), true, QHostAddress::LocalHost, 0));
+        QTRY_VERIFY(runtime.isListening());
+        QmlApp app("127.0.0.1", runtime.serverPort(), false);
+        QVERIFY(app.login("13900139026"));
+        QTRY_VERIFY(app.loggedIn());
+        QTRY_VERIFY(!app.checkingOrders());
+        QQmlEngine engine;
+        bind(engine, app);
+        auto* map = qobject_cast<MapBridge*>(app.mapBridge());
+        QVERIFY(map);
+        engine.rootContext()->setContextProperty("mapBridge", map);
+        engine.rootContext()->setContextProperty("stationQueryService", app.stationQueryService());
+        engine.rootContext()->setContextProperty("favoritesService", app.favoritesService());
+        QQuickWindow window;
+        window.resize(420, 860); window.show();
+        QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
+            + "/pages/station/StationHomePage.qml"));
+        QVERIFY2(!component.isError(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> object(component.create());
+        auto* home = qobject_cast<QQuickItem*>(object.get());
+        QVERIFY(home);
+        home->setParentItem(window.contentItem());
+        QTRY_VERIFY(home->property("loaded").toBool());
+        auto variant = [](QVariant v) {
+            return v.canConvert<QJSValue>() ? v.value<QJSValue>().toVariant() : v;
+        };
+        const auto raw = variant(home->property("raw")).toList();
+        QCOMPARE(raw.size(), 25);
+        auto* combo = home->findChild<QObject*>("originRegionComboBox");
+        QVERIFY(combo);
+        for (int i = 0; i < map->availableCities().size(); ++i) {
+            map->setUserLocation(38.88, 121.53);
+            if (i == 0) QVERIFY(map->setBrowsingCity(QStringLiteral("深圳市")));
+            QVERIFY(QMetaObject::invokeMethod(combo, "activated", Q_ARG(int, i)));
+            QCOMPARE(map->browsingCity(), map->availableCities().at(i));
+            QVERIFY(!map->hasLocation());
+            const auto markers = variant(home->property("mapMarkers")).toList();
+            QCOMPARE(markers.size(), 5);
+            for (const auto& markerValue : markers) {
+                const auto marker = markerValue.toMap();
+                bool matched = false;
+                for (const auto& rowValue : raw) {
+                    const auto row = rowValue.toMap();
+                    if (row.value("id").toString() != marker.value("id").toString()) continue;
+                    QVERIFY(row.value("address").toString().startsWith(map->browsingCity()));
+                    QCOMPARE(row.value("latitude").toDouble(), marker.value("lat").toDouble());
+                    QCOMPARE(row.value("longitude").toDouble(), marker.value("lng").toDouble());
+                    matched = true;
+                }
+                QVERIFY(matched);
+            }
+            QVERIFY(QMetaObject::invokeMethod(home, "selectMapStation",
+                    Q_ARG(QVariant, markers.first().toMap().value("id"))));
+            const auto selection = variant(home->property("selectedStation")).toMap();
+            QVERIFY(selection.value("address").toString().startsWith(map->browsingCity()));
+        }
     }
 
     void clientPagesShareDatabaseWithAdmin()
@@ -201,7 +265,7 @@ private slots:
         QTRY_VERIFY(app.loggedIn());
         QTRY_VERIFY(!app.checkingOrders());
         QVERIFY(!routes.isEmpty());
-        QCOMPARE(routes.last().at(0).toString(), QString("charging_run"));
+        QCOMPARE(routes.last().at(0).toString(), QString("charging"));
         QCOMPARE(app.currentUser().value("avatarKey").toString(), avatar);
         bind(engine, app);
         charging = qobject_cast<ChargingBridge*>(app.chargingService());

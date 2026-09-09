@@ -172,7 +172,7 @@ void QmlApp::createSession(const charging::model::User& user)
     connect(chargingBridge_, &ChargingBridge::startCompleted, this,
             [this, generation](const QVariantMap& status) {
         if (generation == generation_ && loggedIn_)
-            emit navigateRequested(QStringLiteral("charging_run"), status);
+            emit navigateRequested(QStringLiteral("charging"), status);
     });
     emit servicesChanged();
 }
@@ -303,7 +303,7 @@ void QmlApp::checkUnfinished(const QVariantMap& draft, bool reserveAfter)
             }
             if (!state->charging.isEmpty()) {
                 emit toastRequested(tr("您有正在充电的订单，请先结束充电并结算"), "warning");
-                emit navigateRequested("charging_run", state->charging);
+                emit navigateRequested("charging", state->charging);
             } else if (!state->waiting.isEmpty()) {
                 emit toastRequested(tr("您有待支付订单，请先结算"), "warning");
                 emit navigateRequested("settlement", state->waiting);

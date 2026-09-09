@@ -56,8 +56,10 @@ QFrame* createMetricCard(const QString& title, const QString& value, const QStri
     textLayout->addWidget(makeLabel(value + unit,
                                     QStringLiteral("color:#1b2a45; font-size:26px; font-weight:700;"),
                                     card));
-    textLayout->addWidget(
-        makeLabel(comparison, QStringLiteral("color:#68758a; font-size:13px;"), card));
+    auto* comparisonLabel = makeLabel(comparison,
+        QStringLiteral("color:#68758a; font-size:13px;"), card);
+    comparisonLabel->setWordWrap(true);
+    textLayout->addWidget(comparisonLabel);
     layout->addLayout(textLayout, 1);
     return card;
 }
@@ -183,6 +185,9 @@ QFrame* createTableCard(const QString& title, const QString& badge, const QStrin
 DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("dashboardPage"));
+    // Preserve the chart/table grid on smaller desktops; the shell provides
+    // visible scrollbars instead of silently clipping controls and legends.
+    setMinimumWidth(kManagementPageMinimumWidth);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(18);
@@ -191,12 +196,12 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     summaryLayout->setSpacing(16);
     auto* todayCard = createMetricCard(
         tr("今日营收"), tr("¥ —"), QString(),
-        tr("服务数据加载后显示（北京时间）"), QColor("#347cf6"), 0, this);
+        tr("统计时区：北京时间"), QColor("#347cf6"), 0, this);
     todayRevenueValue_ = todayCard->findChildren<QLabel*>().at(1);
     summaryLayout->addWidget(todayCard);
     auto* monthCard = createMetricCard(
         tr("本月营收"), tr("¥ —"), QString(),
-        tr("服务数据加载后显示（北京时间）"), QColor("#43c7bc"), 1, this);
+        tr("统计时区：北京时间"), QColor("#43c7bc"), 1, this);
     monthRevenueValue_ = monthCard->findChildren<QLabel*>().at(1);
     summaryLayout->addWidget(monthCard);
     auto* onlineCard = createMetricCard(
@@ -210,7 +215,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     summaryLayout->addWidget(onlineCard);
     auto* totalCard = createMetricCard(
         tr("累计营收"), tr("¥ —"), QString(),
-        tr("服务数据加载后显示（北京时间）"), QColor("#43c7bc"), 3, this);
+        tr("统计时区：北京时间"), QColor("#43c7bc"), 3, this);
     totalRevenueValue_ = totalCard->findChildren<QLabel*>().at(1);
     summaryLayout->addWidget(totalCard);
     layout->addLayout(summaryLayout);
@@ -378,6 +383,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     deviceFooter->addStretch();
     refreshedAtLabel_ = makeLabel(tr("刷新时间：等待服务响应"),
                                        QStringLiteral("color:#8490a4; font-size:13px;"), deviceCard);
+    refreshedAtLabel_->setWordWrap(true);
     auto* refreshButton = new QPushButton(tr("刷新概览"), deviceCard);
     refreshButton->setCursor(Qt::PointingHandCursor);
     refreshButton->setStyleSheet(QStringLiteral(
@@ -390,9 +396,9 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     // turned a normal click into days=0/1, which the service correctly rejects.
     connect(refreshButton, &QPushButton::clicked, this,
             [this]() { refresh(requestedDays_); });
-    deviceFooter->addWidget(refreshedAtLabel_);
     deviceFooter->addWidget(refreshButton);
     deviceLayout->addLayout(deviceFooter);
+    deviceLayout->addWidget(refreshedAtLabel_);
     dataLayout->addWidget(deviceCard, 3);
     layout->addLayout(dataLayout);
 

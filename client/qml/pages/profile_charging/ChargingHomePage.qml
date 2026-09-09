@@ -1,16 +1,10 @@
 import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
 import "../../platform" as P
 
-// QML twin of widgets ChargingHomePage (tab route: "charging").
-// Hero follows the EV-app "charging session card" pattern (Electrix /
-// ArusEV / ChargePoint conventions): status header row → station meta →
-// ONE focal live number (34px power, QSS powerValue) riding the sweeping
-// pulse ring → hairline → three-column stats (20px values, QSS statValue)
-// with bottom-aligned units. Empty state stays centered & calm; the glyph
-// breathes in both states (charging_pulse breath_: 1400ms InOutSine,
-// alpha .38→1, scale .92→1 — "空态不冷清").
-// Anti-flash: skeleton until first data lands; P.TabCache keeps the last
-// snapshot so tab revisits render stale-then-refresh silently.
+// The single live-charging surface. All values are server snapshots; the ring
+// is decorative only and never increments energy, time, power or billed money.
 Item {
     id: page
     objectName: "chargingHomePage"
@@ -19,53 +13,53 @@ Item {
     width: parent ? parent.width : 420
     height: parent ? parent.height : 600
 
-    Rectangle { anchors.fill: parent; color: P.Style.bg }
-
     property int chargingCount: 0
     property int waitingCount: 0
-    property var activeOrder: null       // first charging order summary map
-    property bool ordersArrived: false   // gates the hero: never flash 空态
-    property var status: null            // latest GET_CHARGING_STATUS map
+    property var activeOrder: null
+    property bool ordersArrived: false
+    property var status: null
     property var reservations: []
     property bool ordersRequested: false
     property bool queuedOrders: false
     property string loadError: ""
+    property string statusError: ""
     property bool startPending: false
-    function startReservation(id) {
-        if (page.startPending || chargingService.isStarting()) return
-        page.startPending = true
-        page.loadError = ""
-        chargingService.startCharging(String(id))
-    }
-    property int seconds: 0
-    property real breath: 1.0            // charging_pulse breath_ parity
+    property bool stopping: false
+    property bool leaving: false
+    property string pendingCancelId: ""
+    property string trackingId: ""
+    property bool ownsTracking: false
+    property var cancelCandidate: null
 
-    readonly property bool busy: chargingCount > 0 && activeOrder !== null
-    readonly property real kw: status && status.powerKnown
-                               ? status.powerWatts / 1000 : -1
-    readonly property real kwh: status ? (status.energyWh || 0) / 1000 : 0
-    readonly property real yuan: status ? (status.amountCents || 0) / 100 : 0
+    readonly property bool busy: activeOrder !== null
+    readonly property bool hasSnapshot: status !== null && status.status === "charging"
+    readonly property int seconds: hasSnapshot ? (status.durationSeconds || 0) : 0
+    readonly property real kw: hasSnapshot && status.powerKnown ? status.powerWatts / 1000 : -1
+    readonly property real kwh: hasSnapshot ? (status.energyWh || 0) / 1000 : 0
+    readonly property real yuan: hasSnapshot ? (status.amountCents || 0) / 100 : 0
+    readonly property real pageMargin: Math.min(P.Style.spaceXl, width / 20)
 
     function dur(sec) {
         var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60
         return (h > 0 ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
     }
-
-    // ---- stale-while-revisit boot (before first paint) ----
-    Component.onCompleted: {
-        const c = P.TabCache.charging
-        if (c) {
-            page.ordersArrived = true
-            page.chargingCount = c.chargingCount
-            page.waitingCount = c.waitingCount
-            page.activeOrder = c.activeOrder
-            page.seconds = (c.activeOrder && c.activeOrder.durationSeconds) || 0
-        }
-        refreshAll()
-        if (page.activeOrder) chargingService.startTracking(String(page.activeOrder.id))
+    function accepts(s) {
+        return page.ownsTracking && s && page.trackingId.length > 0 && String(s.id) === page.trackingId
     }
-    Component.onDestruction: {
-        if (chargingService) chargingService.stopTracking()   // teardown-safe
+    function track(order) {
+        page.activeOrder = order
+        const id = order ? String(order.id) : ""
+        if (page.trackingId !== id) page.status = null
+        if (!id) { page.releaseTracking(); return }
+        if (page.ownsTracking && page.trackingId === id) return
+        page.trackingId = id
+        page.ownsTracking = true
+        chargingService.startTracking(id)
+    }
+    function releaseTracking() {
+        if (!page.ownsTracking) return
+        page.ownsTracking = false
+        if (chargingService) chargingService.stopTracking()
     }
     function refreshAll() {
         page.loadError = ""
@@ -79,8 +73,53 @@ Item {
         page.ordersRequested = true
         orderService.fetchOrders("charging", 1)
     }
+    function startReservation(id) {
+        if (page.startPending || page.pendingCancelId.length > 0 || chargingService.isStarting()) return
+        page.startPending = true
+        page.loadError = ""
+        chargingService.startCharging(String(id))
+    }
+    function requestCancel(record) {
+        if (page.startPending || page.pendingCancelId.length > 0) return
+        page.cancelCandidate = record
+        cancelDialog.open()
+    }
+    function confirmCancel() {
+        if (!page.cancelCandidate || page.pendingCancelId.length > 0 || page.startPending) return
+        page.pendingCancelId = String(page.cancelCandidate.reservationId || page.cancelCandidate.id)
+        page.loadError = ""
+        reservationService.cancel(page.pendingCancelId)
+    }
+    function stopCurrentCharging() {
+        if (page.stopping || !page.hasSnapshot || !page.ownsTracking) return
+        page.stopping = true
+        page.statusError = ""
+        chargingService.stopCharging()
+    }
+    function finishCharging(s) {
+        if (!page.accepts(s) || page.leaving) return
+        page.leaving = true
+        page.stopping = false
+        page.status = s
+        page.activeOrder = null
+        page.releaseTracking()
+        P.TabCache.charging = null
+        if (App) App.navigate(s.status === "waiting_payment" ? "settlement" : "order", s)
+    }
+
+    Component.onCompleted: {
+        if (page.arg && page.arg.id && page.arg.status === "charging") {
+            page.ordersArrived = true
+            page.track(page.arg)
+            // START_CHARGING may carry a full authoritative snapshot.
+            if (page.arg.powerKnown !== undefined) page.status = page.arg
+        }
+        page.refreshAll()
+    }
+    Component.onDestruction: page.releaseTracking()
+
     Timer {
-        interval: 100; repeat: true; running: page.queuedOrders
+        interval: 100; repeat: true; running: page.queuedOrders && !page.leaving
         onTriggered: if (!orderService.isFetchingOrders()) page.requestChargingOrders()
     }
     Connections {
@@ -91,9 +130,19 @@ Item {
             })
         }
         function onListFailed(message) { page.loadError = message }
+        function onCancelSucceeded(id) {
+            if (String(id) !== page.pendingCancelId) return
+            page.pendingCancelId = ""
+            page.cancelCandidate = null
+            page.refreshAll()
+            if (App) App.showToast("预约已取消，充电桩已释放", "success")
+        }
+        function onCancelFailed(message) {
+            if (!page.pendingCancelId.length) return
+            page.pendingCancelId = ""
+            page.loadError = message
+        }
     }
-
-    // ---- data plumbing ----
     Connections {
         target: orderService
         function onStatusCountsUpdated(chargingCount, waitingPaymentCount, completedCount) {
@@ -101,19 +150,12 @@ Item {
             page.waitingCount = waitingPaymentCount
         }
         function onOrdersLoaded(orders, total, hasMore) {
-            if (!page.ordersRequested) return
+            if (!page.ordersRequested || page.leaving) return
             page.ordersRequested = false
             page.ordersArrived = true
-            page.activeOrder = orders.length > 0 ? orders[0] : null
-            if (page.activeOrder)
-                chargingService.startTracking(String(page.activeOrder.id))
-            else
-                chargingService.stopTracking()
+            const selected = orders.filter(function(o) { return String(o.id) === page.trackingId })
+            page.track(selected.length ? selected[0] : orders.length ? orders[0] : null)
             if (pull.refreshing) pull.setRefreshing(false)
-            P.TabCache.charging = {
-                chargingCount: page.chargingCount, waitingCount: page.waitingCount,
-                activeOrder: page.activeOrder
-            }
         }
         function onOperationFailed(type, code, message) {
             if (type !== "GET_ORDERS" || !page.ordersRequested) return
@@ -126,57 +168,64 @@ Item {
     Connections {
         target: chargingService
         function onStartCompleted(s) { page.startPending = false }
-        function onOperationFailed(type, code, message) {
-            if (type !== "START_CHARGING" || !page.startPending) return
-            page.startPending = false
-            page.refreshAll()
-            page.loadError = message
-            if (App) App.showToast("启动失败：" + message, "danger")
-        }
         function onStatusLoaded(s) {
-            page.status = s
-            page.seconds = s.durationSeconds || 0
+            if (!page.accepts(s) || page.leaving) return
+            page.statusError = ""
+            if (s.status === "waiting_payment" || s.status === "completed") {
+                page.finishCharging(s)
+                return
+            }
+            if (s.status === "charging") page.status = s
+        }
+        function onStopCompleted(s) {
+            if (!page.accepts(s)) return
+            if (App) App.showToast("已停止充电，请确认支付", "success")
+            page.finishCharging(s)
+        }
+        function onOperationFailed(type, code, message) {
+            if (type === "START_CHARGING" && page.startPending) {
+                page.startPending = false
+                page.refreshAll()
+                page.loadError = message
+                if (App) App.showToast("启动失败：" + message, "danger")
+            } else if (type === "STOP_CHARGING" && page.stopping) {
+                page.stopping = false
+                page.statusError = "停止失败：" + message + "。请重试"
+            } else if (type === "GET_CHARGING_STATUS" && page.ownsTracking) {
+                page.statusError = "状态更新失败，当前为上次数据：" + message
+            }
         }
     }
-    // Local 1s tick between server pushes so the timer always moves.
-    Timer {
-        running: page.busy && P.Style.motionEnabled
-        repeat: true; interval: 1000
-        onTriggered: page.seconds += 1
-    }
-    // breathAnim_ port: 0.15→1→0.15, InOutSine, 1400ms, infinite.
-    SequentialAnimation on breath {
-        running: page.ordersArrived && P.Style.motionEnabled
-        loops: Animation.Infinite
-        NumberAnimation { to: 0.15; duration: P.Style.durBreathe / 2
-            easing.type: Easing.InOutSine }
-        NumberAnimation { to: 1.0; duration: P.Style.durBreathe / 2
-            easing.type: Easing.InOutSine }
-    }
 
-    Column {
+    Rectangle { anchors.fill: parent; color: P.Style.bg }
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: P.Style.spaceXl
-        spacing: P.Style.spaceLg
-
-        Text { text: "充电"; font.pixelSize: P.Style.fontXl; color: P.Style.ink }
-
+        anchors.margins: page.pageMargin
+        spacing: P.Style.spaceMd
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: "充电"; color: P.Style.ink; font.pixelSize: P.Style.fontXl; Layout.fillWidth: true }
+            P.ActionButton {
+                objectName: "chargingRefreshButton"
+                text: "刷新"; variant: "ghost"
+                enabled: !page.stopping && !page.startPending && !page.pendingCancelId.length
+                onClicked: page.refreshAll()
+            }
+        }
         P.PullToRefreshArea {
             id: pull
             objectName: "uiChargingPull"
-            width: parent.width
-            height: parent.height - y
-            onRefreshRequested: refreshAll()
-
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            pullEnabled: !page.stopping && !page.startPending && !page.pendingCancelId.length
+            onRefreshRequested: page.refreshAll()
             Column {
                 width: pull.width
-                spacing: P.Style.spaceLg
-
-                // ================== session hero ==================
+                spacing: P.Style.spaceMd
                 Text {
-                    width: parent.width; wrapMode: Text.WordWrap
+                    width: parent.width; wrapMode: Text.Wrap
                     visible: page.loadError.length > 0
-                    text: page.loadError + "（可下拉重试）"; color: P.Style.danger
+                    text: page.loadError; color: P.Style.danger; font.pixelSize: P.Style.fontSm
                 }
                 Repeater {
                     model: page.reservations
@@ -185,386 +234,237 @@ Item {
                         Column {
                             width: parent.width; spacing: P.Style.spaceSm
                             Text {
-                                width: parent.width; wrapMode: Text.WordWrap
-                                text: (modelData.stationName || "充电站") + " · "
-                                      + (modelData.chargerCode || "") + " · 已预约"
-                                color: P.Style.ink
+                                width: parent.width; wrapMode: Text.Wrap
+                                text: (modelData.stationName || "充电站") + " · 已预约"
+                                color: P.Style.ink; font.pixelSize: P.Style.fontMd; font.bold: true
                             }
-                            P.ActionButton {
-                                objectName: "startReservationButton"
-                                text: "开始充电"; variant: "primary"
-                                enabled: !page.startPending
-                                onClicked: page.startReservation(modelData.reservationId || modelData.id)
+                            Text {
+                                width: parent.width; wrapMode: Text.Wrap
+                                text: "桩号 " + (modelData.chargerCode || "—") + " · 请在预约有效期内开始"
+                                color: P.Style.muted; font.pixelSize: P.Style.fontSm
+                            }
+                            Flow {
+                                width: parent.width; spacing: P.Style.spaceSm
+                                P.ActionButton {
+                                    objectName: "startReservationButton"
+                                    text: page.startPending ? "正在启动…" : "开始充电"; variant: "primary"
+                                    enabled: !page.startPending && !page.pendingCancelId.length
+                                    onClicked: page.startReservation(modelData.reservationId || modelData.id)
+                                }
+                                P.ActionButton {
+                                    objectName: "chargingCancelReservationButton"
+                                    text: page.pendingCancelId === String(modelData.reservationId || modelData.id)
+                                          ? "取消中…" : "取消预约"
+                                    variant: "secondary"
+                                    enabled: !page.startPending && !page.pendingCancelId.length
+                                    onClicked: page.requestCancel(modelData)
+                                }
                             }
                         }
                     }
                 }
+
                 Rectangle {
                     objectName: "uiChargingHero"
                     width: parent.width
-                    // 字号档位（批次A）下固定高容器必须随 fontScaleFactor 呼吸，
-                    // 否则放大档文字溢出/碰撞（2026-09-08 用户实测 large 档修复）。
-                    height: Math.round(250 * P.Style.fontScaleFactor)
+                    height: heroContent.implicitHeight + 2 * P.Style.spaceLg
                     radius: P.Style.radiusLg
-                    // Qt6.2: GradientStop bindings never re-evaluate → two
-                    // constant layers switched by visible.
-                    gradient: Gradient {
-                        orientation: Gradient.Vertical
-                        GradientStop { position: 0.0; color: P.Style.brandSoft }
-                        GradientStop { position: 1.0; color: P.Style.infoSoft }
+                    color: page.busy ? "#00AC83" : P.Style.surface
+                    border.width: page.busy ? 0 : 1
+                    border.color: P.Style.line
+                    gradient: page.busy ? chargingGradient : null
+                    Gradient {
+                        id: chargingGradient
+                        GradientStop { position: 0; color: "#00A77C" }
+                        GradientStop { position: 1; color: "#00C898" }
                     }
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: P.Style.radiusLg
-                        // 注意：用 opacity 不用 visible——6.2 offscreen 实测
-                        // visible 切换不刷新 gradient 纹理（白字浮浅底发白）。
-                        opacity: page.busy ? 1.0 : 0.0
-                        Behavior on opacity {
-                            NumberAnimation { duration: P.Style.motionEnabled ? 250 : 0 }
-                        }
-                        gradient: Gradient {
-                            orientation: Gradient.Vertical
-                            GradientStop { position: 0.0; color: P.Style.heroFrom }
-                            GradientStop { position: 1.0; color: P.Style.heroTo }
-                        }
-                    }
-
-                    // --- first-load skeleton (equal height, no 空态 flash) ---
-                    Text {
-                        anchors.centerIn: parent
-                        visible: !page.ordersArrived
-                        text: "正在加载充电状态…"
-                        font.pixelSize: P.Style.fontMd; color: P.Style.muted
-                    }
-
-                    // ================== busy layout ==================
-                    // header row
-                    Text {
-                        id: heroTitle; objectName: "uiHeroTitle"
-                        anchors.left: parent.left; anchors.top: parent.top
-                        anchors.leftMargin: 22; anchors.topMargin: 18
-                        visible: page.ordersArrived && page.busy
-                        text: "正在充电"
-                        font.pixelSize: P.Style.fontLg2; font.bold: true
-                        color: P.Style.surface
-                    }
-                    Rectangle {
-                        id: livePill
-                        anchors.right: parent.right; anchors.top: parent.top
-                        anchors.rightMargin: 22; anchors.topMargin: 16
-                        visible: page.ordersArrived && page.busy
-                        width: livePillText.implicitWidth + 22
-                        height: Math.round(24 * P.Style.fontScaleFactor)
-                        radius: height / 2
-                        color: "#33FFFFFF"
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 5
-                            Rectangle {
-                                width: 6; height: 6; radius: 3
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: P.Style.surface
-                                SequentialAnimation on opacity {
-                                    running: page.busy && P.Style.motionEnabled
-                                    loops: Animation.Infinite
-                                    NumberAnimation { to: 0.35; duration: P.Style.durBreathe / 2 }
-                                    NumberAnimation { to: 1.0; duration: P.Style.durBreathe / 2 }
+                    Column {
+                        id: heroContent
+                        x: P.Style.spaceLg; y: P.Style.spaceLg
+                        width: parent.width - 2 * P.Style.spaceLg
+                        spacing: P.Style.spaceLg
+                        Column {
+                            width: parent.width; spacing: P.Style.spaceXs
+                            RowLayout {
+                                width: parent.width
+                                Text {
+                                    objectName: "uiHeroTitle"
+                                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                                    text: page.busy ? "正在充电" : page.ordersArrived ? "暂无进行中的充电" : "正在加载…"
+                                    font.pixelSize: P.Style.fontLg2; font.bold: true
+                                    color: page.busy ? "#FFFFFF" : P.Style.ink
+                                }
+                                Text {
+                                    visible: page.busy
+                                    text: "● 充电中"; font.pixelSize: P.Style.fontXs; color: "#E5FFF5"
                                 }
                             }
                             Text {
-                                id: livePillText
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "充电中"
-                                font.pixelSize: P.Style.fontXs
-                                font.weight: Font.DemiBold; color: P.Style.surface
+                                width: parent.width; wrapMode: Text.Wrap
+                                text: page.busy
+                                      ? (page.activeOrder.stationName || (page.status && page.status.stationName) || "充电站")
+                                        + " · 桩号 " + (page.activeOrder.chargerCode || (page.status && page.status.chargerCode) || "—")
+                                      : "预约后点击开始充电，实时状态会显示在这里"
+                                font.pixelSize: P.Style.fontSm
+                                color: page.busy ? "#E5FFF5" : P.Style.muted
                             }
                         }
-                    }
-                    Text {
-                        id: heroMeta
-                        anchors.left: parent.left; anchors.right: parent.right
-                        anchors.top: heroTitle.bottom
-                        anchors.leftMargin: 22; anchors.rightMargin: 22
-                        anchors.topMargin: 5
-                        visible: page.ordersArrived && page.busy
-                        elide: Text.ElideRight
-                        text: (page.activeOrder && page.activeOrder.stationName
-                               ? page.activeOrder.stationName : "充电站")
-                              + " · 桩号 " + ((page.activeOrder && page.activeOrder.chargerCode) || "--")
-                        font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
-                    }
-
-                    // focal: pulse ring + 34px power
-                    Row {
-                        id: mainRow
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: heroMeta.bottom
-                        anchors.topMargin: 16
-                        visible: page.ordersArrived && page.busy
-                        spacing: P.Style.spaceMd
-
-                        // ChargingPulse port: 56px, white translucent track on
-                        // the green wash + 100° round-cap sweep 1600ms Linear,
-                        // vector lightning inside breathing (alpha .38→1,
-                        // scale .92→1) — the widgets bolt polygon, same points.
-                        Canvas {
-                            objectName: "chargingPulse"
-                            // 字号档适配（2026-09-08 二轮）：画布尺寸随档等比，
-                            // 画刷几何全部按 width/56 换算（56px 为设计基准）。
-                            width: Math.round(56 * P.Style.fontScaleFactor)
-                            height: width
-                            property real phase: 0.0
-                            property real b: page.breath
-                            onPhaseChanged: requestPaint()
-                            onBChanged: requestPaint()
-                            onWidthChanged: requestPaint()
-                            onPaint: {
-                                const ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
-                                const u = width / 56
-                                const c = width / 2
-                                ctx.lineWidth = 4 * u
-                                ctx.strokeStyle = "rgba(255,255,255,0.28)"
-                                ctx.beginPath()
-                                ctx.arc(c, c, 22 * u, 0, 2 * Math.PI)
-                                ctx.stroke()
-                                ctx.lineCap = "round"
-                                ctx.strokeStyle = "rgba(255,255,255,0.95)"
-                                const a0 = (-90 + phase * 360) * Math.PI / 180
-                                ctx.beginPath()
-                                ctx.arc(c, c, 22 * u, a0, a0 + 100 * Math.PI / 180)
-                                ctx.stroke()
-                                const lvl = 0.38 + 0.62 * b
-                                const sc = (0.92 + 0.08 * b) * u
-                                const bw = 15 * sc, bh = 24 * sc
-                                ctx.fillStyle = "rgba(255,255,255," + lvl.toFixed(3) + ")"
-                                ctx.beginPath()
-                                ctx.moveTo(c - bw * 0.15, c - bh / 2)
-                                ctx.lineTo(c - bw / 2,    c + bh * 0.12)
-                                ctx.lineTo(c - bw * 0.05, c + bh * 0.12)
-                                ctx.lineTo(c + bw * 0.15, c + bh / 2)
-                                ctx.lineTo(c + bw / 2,    c - bh * 0.12)
-                                ctx.lineTo(c + bw * 0.05, c - bh * 0.12)
-                                ctx.closePath()
-                                ctx.fill()
+                        RowLayout {
+                            width: parent.width
+                            visible: page.busy
+                            spacing: P.Style.spaceMd
+                            Item { Layout.fillWidth: true }
+                            Canvas {
+                                objectName: "chargingPulse"
+                                Layout.preferredWidth: Math.min(56 * P.Style.fontScaleFactor, heroContent.width / 5)
+                                Layout.preferredHeight: width
+                                property real phase: 0
+                                onPhaseChanged: requestPaint()
+                                onWidthChanged: requestPaint()
+                                onPaint: {
+                                    const ctx = getContext("2d"), c = width / 2
+                                    ctx.clearRect(0, 0, width, height)
+                                    ctx.lineWidth = width / 14
+                                    ctx.strokeStyle = "rgba(255,255,255,0.26)"
+                                    ctx.beginPath(); ctx.arc(c, c, width * 0.4, 0, 2 * Math.PI); ctx.stroke()
+                                    ctx.strokeStyle = "white"; ctx.lineCap = "round"
+                                    const a = phase * 2 * Math.PI - Math.PI / 2
+                                    ctx.beginPath(); ctx.arc(c, c, width * 0.4, a, a + 1.75); ctx.stroke()
+                                    ctx.fillStyle = "#FFFFFF"
+                                    ctx.beginPath()
+                                    ctx.moveTo(width * 0.52, width * 0.23)
+                                    ctx.lineTo(width * 0.35, width * 0.54)
+                                    ctx.lineTo(width * 0.5, width * 0.54)
+                                    ctx.lineTo(width * 0.47, width * 0.77)
+                                    ctx.lineTo(width * 0.67, width * 0.44)
+                                    ctx.lineTo(width * 0.52, width * 0.44)
+                                    ctx.closePath(); ctx.fill()
+                                }
+                                NumberAnimation on phase {
+                                    running: page.busy && page.visible && P.Style.motionEnabled
+                                    from: 0; to: 1; duration: 1600; loops: Animation.Infinite
+                                }
                             }
-                            SequentialAnimation on phase {
-                                running: P.Style.motionEnabled
-                                loops: Animation.Infinite
-                                NumberAnimation { from: 0; to: 1
-                                    duration: 1600; easing.type: Easing.Linear }
-                            }
-                        }
-                        Item {
-                            width: powerCol.implicitWidth
-                            height: powerCol.implicitHeight + 8
                             Column {
-                                id: powerCol
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top: parent.top; anchors.topMargin: 4
+                                Layout.maximumWidth: heroContent.width * 0.65
                                 spacing: 2
-                                Row {
-                                    spacing: 4
-                                    Text {
-                                        id: powerVal
-                                        text: page.kw >= 0 ? page.kw.toFixed(1) : "—"
-                                        font.pixelSize: P.Style.fontPower
-                                        font.weight: Font.Black; color: P.Style.surface
-                                    }
-                                    Text {
-                                        text: "kW"
-                                        font.pixelSize: P.Style.fontSm
-                                        font.weight: Font.DemiBold; color: P.Style.heroPhone
-                                        height: powerVal.height
-                                        verticalAlignment: Text.AlignBottom
-                                        bottomPadding: 6
-                                    }
+                                Text {
+                                    objectName: "chargingPowerValue"
+                                    width: Math.min(implicitWidth, heroContent.width * 0.65)
+                                    text: (page.kw >= 0 ? page.kw.toFixed(1) : "—") + " kW"
+                                    font.pixelSize: P.Style.fontPower; font.bold: true
+                                    minimumPixelSize: P.Style.fontLg; fontSizeMode: Text.Fit
+                                    color: "#FFFFFF"
                                 }
                                 Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: "实时充电功率"
-                                    font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
+                                    text: "实时充电功率"; color: "#E5FFF5"
+                                    font.pixelSize: P.Style.fontSm
                                 }
                             }
+                            Item { Layout.fillWidth: true }
                         }
-                    }
-
-                    // hairline + three-column live stats (QSS statValue)
-                    Rectangle {
-                        id: heroHr
-                        anchors.left: parent.left; anchors.right: parent.right
-                        anchors.bottom: heroStats.top
-                        anchors.bottomMargin: 14; anchors.leftMargin: 22; anchors.rightMargin: 22
-                        visible: page.ordersArrived && page.busy
-                        height: 1; color: "#30FFFFFF"
-                    }
-                    Row {
-                        id: heroStats
-                        anchors.left: parent.left; anchors.right: parent.right
-                        anchors.bottom: parent.bottom; anchors.bottomMargin: 18
-                        anchors.leftMargin: 22; anchors.rightMargin: 22
-                        visible: page.ordersArrived && page.busy
-                        readonly property real colW: (width - 2) / 3
-                        Repeater {
-                            model: [
-                                { val: page.kwh.toFixed(2), unit: "kWh", k: "已充电量" },
-                                { val: page.dur(page.seconds), unit: "",  k: "充电时长" },
-                                { val: "¥" + page.yuan.toFixed(2), unit: "", k: "预估费用" },
-                            ]
-                            delegate: Item {
-                                width: heroStats.colW; height: statCol.implicitHeight
-                                Column {
-                                    id: statCol
-                                    anchors.centerIn: parent
-                                    spacing: 3
-                                    Row {
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        spacing: 3
-                                        Text {
-                                            id: sv
-                                            text: modelData.val
-                                            font.pixelSize: P.Style.fontStat
-                                            font.weight: Font.ExtraBold; color: P.Style.surface
-                                        }
-                                        Text {
-                                            visible: modelData.unit.length > 0
-                                            text: modelData.unit
-                                            font.pixelSize: P.Style.fontXs
-                                            color: P.Style.heroPhone
-                                            height: sv.height
-                                            verticalAlignment: Text.AlignBottom
-                                            bottomPadding: 3
-                                        }
+                        Rectangle { visible: page.busy; width: parent.width; height: 1; color: "#40FFFFFF" }
+                        Grid {
+                            id: chargingStatsGrid
+                            objectName: "chargingStats"
+                            visible: page.busy
+                            width: parent.width
+                            columns: width < 300 * P.Style.fontScaleFactor ? 1 : 3
+                            rowSpacing: P.Style.spaceMd
+                            Repeater {
+                                model: [
+                                    { value: page.hasSnapshot ? page.kwh.toFixed(2) + " kWh" : "—", label: "已充电量" },
+                                    { value: page.hasSnapshot ? page.dur(page.seconds) : "—", label: "充电时长" },
+                                    { value: page.hasSnapshot ? "¥" + page.yuan.toFixed(2) : "—", label: "预估费用" }
+                                ]
+                                delegate: Column {
+                                    width: chargingStatsGrid.width / chargingStatsGrid.columns
+                                    spacing: P.Style.spaceXs
+                                    Text {
+                                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                                        text: modelData.value; color: "#FFFFFF"
+                                        font.pixelSize: P.Style.fontStat; font.bold: true
+                                        fontSizeMode: Text.Fit; minimumPixelSize: P.Style.fontSm
                                     }
                                     Text {
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        text: modelData.k
-                                        font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
+                                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                                        text: modelData.label; color: "#E5FFF5"; font.pixelSize: P.Style.fontSm
                                     }
                                 }
                             }
-                        }
-                        // column dividers — Row 会覆盖子项 x，故为 Row 兄弟节点
-                        // （见下方 heroDiv1/2），语言同 widgets 卡内白细线。
-                    }
-                    Repeater {
-                        model: 2
-                        delegate: Rectangle {
-                            width: 1; height: Math.round(30 * P.Style.fontScaleFactor)
-                            x: heroStats.x + (index + 1) * heroStats.colW + index
-                            y: heroStats.y - (height - heroStats.height) / 2
-                            visible: page.ordersArrived && page.busy
-                            color: "#26FFFFFF"
-                        }
-                    }
-
-                    // ================== empty layout ==================
-                    Column {
-                        id: emptyCol
-                        anchors.centerIn: parent
-                        spacing: P.Style.spaceSm
-                        visible: page.ordersArrived && !page.busy
-                        Text {
-                            objectName: "uiHeroGlyph"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: "⚡"
-                            font.pixelSize: Math.round(40 * P.Style.fontScaleFactor)
-                            // 空态也呼吸：widgets motion::startBreathing(glyph)
-                            // "空态不冷清 —— 在等你的下一单"
-                            opacity: 0.38 + 0.62 * page.breath
-                            scale: 0.92 + 0.08 * page.breath
-                        }
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: "暂无进行中的充电"
-                            font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
-                            color: P.Style.ink
-                        }
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: "预约后点击开始充电，在这里查看实时状态"
-                            font.pixelSize: P.Style.fontSm; color: P.Style.muted
                         }
                     }
                 }
 
+                Text {
+                    width: parent.width; wrapMode: Text.Wrap
+                    visible: page.statusError.length > 0
+                    text: page.statusError; color: P.Style.danger; font.pixelSize: P.Style.fontSm
+                }
+                Text {
+                    width: parent.width; wrapMode: Text.Wrap; visible: page.busy
+                    text: page.hasSnapshot ? "数据由服务器定期更新，最终费用以停止充电后的结算为准。" : "正在读取充电桩状态…"
+                    color: P.Style.muted; font.pixelSize: P.Style.fontSm
+                }
                 P.ActionButton {
-                    objectName: "viewChargingRunButton"
-                    visible: page.busy
+                    objectName: "stopChargingBar"
+                    visible: page.busy; width: parent.width
+                    variant: "danger"; text: page.stopping ? "正在停止…" : "停止充电并结算"
+                    enabled: page.hasSnapshot && !page.stopping
+                    onClicked: page.stopCurrentCharging()
+                }
+                P.Card {
+                    objectName: "rechargePendingNotice"
+                    visible: page.waitingCount > 0
                     width: parent.width
-                    variant: "primary"
-                    text: "查看实时充电"
-                    onClicked: if (App && page.activeOrder) App.navigate("charging_run", page.activeOrder)
+                    Column {
+                        width: parent.width; spacing: P.Style.spaceSm
+                        Text {
+                            width: parent.width; wrapMode: Text.Wrap
+                            text: "有 " + page.waitingCount + " 笔待支付订单"
+                            font.pixelSize: P.Style.fontMd; font.bold: true; color: P.Style.ink
+                        }
+                        P.ActionButton {
+                            width: parent.width
+                            text: "查看待支付订单"; variant: "secondary"
+                            onClicked: if (App) App.navigate("order", "waiting_payment")
+                        }
+                    }
                 }
                 P.ActionButton {
                     objectName: "simulatedScanButton"
                     visible: typeof CHARGING_CHANNEL !== "undefined" && CHARGING_CHANNEL === "mock"
-                    width: parent.width
-                    variant: "secondary"
-                    text: "模拟扫码（demo）"
-                    // 批次F：mock 扫码页落地（ScanPage），真扫码通道仍 TODO(contract)
-                    // ——届时 ScanPage 的 scanSource 接缝切换为摄像头通道。
+                    width: parent.width; variant: "secondary"; text: "模拟扫码（demo）"
                     onClicked: if (App) App.navigate("scan")
                 }
-
-                // Pending-payment — compact reminder ROW (widgets buildPaymentCard
-                // 语义：icon hub + 双行文案 + 小主按钮一行摆完)，不用竖排占位面板。
-                Rectangle {
-                    objectName: "rechargePendingNotice"
-                    visible: page.waitingCount > 0
-                    width: parent.width
-                    height: Math.round(72 * P.Style.fontScaleFactor)   // 字号档呼吸
-                    radius: P.Style.radiusLg
-                    color: P.Style.surface
-                    border.width: 1; border.color: P.Style.line
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: if (App) App.recoverUnfinishedOrder()
-                    }
-                    Rectangle {
-                        id: payHub
-                        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 16
-                        width: Math.round(40 * P.Style.fontScaleFactor)
-                        height: width; radius: width / 2
-                        color: P.Style.warningSoft
-                        Text {
-                            anchors.centerIn: parent
-                            text: "💰"; font.pixelSize: Math.round(18 * P.Style.fontScaleFactor)
-                        }
-                    }
-                    P.ActionButton {
-                        id: payBtn
-                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                        anchors.rightMargin: 14
-                        text: "去处理"
-                        variant: "primary"
-                        height: Math.round(36 * P.Style.fontScaleFactor)
-                        implicitHeight: height
-                        leftPadding: 18; rightPadding: 18
-                        topPadding: 4; bottomPadding: 4
-                        onClicked: if (App) App.recoverUnfinishedOrder()
-                    }
-                    Column {
-                        anchors.left: payHub.right; anchors.right: payBtn.left
-                        anchors.leftMargin: 12; anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 3
-                        Text {
-                            width: parent.width; elide: Text.ElideRight
-                            text: "有 " + page.waitingCount + " 笔待支付订单"
-                            font.pixelSize: P.Style.fontMd; font.bold: true
-                            color: P.Style.ink
-                        }
-                        Text {
-                            width: parent.width; elide: Text.ElideRight
-                            text: "先完成结算才能开始下一次充电"
-                            font.pixelSize: P.Style.fontSm; color: P.Style.muted
-                        }
-                    }
-                }
+                Item { width: 1; height: P.Style.spaceSm }
+            }
+        }
+    }
+    Dialog {
+        id: cancelDialog
+        objectName: "chargingCancelDialog"
+        anchors.centerIn: parent
+        width: Math.min(page.width - 2 * page.pageMargin, 380)
+        modal: true; title: "取消预约"
+        padding: P.Style.spaceLg
+        background: Rectangle { color: P.Style.surface; radius: P.Style.radiusLg; border.color: P.Style.line }
+        header: Text { text: "取消预约"; padding: P.Style.spaceLg; color: P.Style.ink; font.pixelSize: P.Style.fontLg; font.bold: true }
+        contentItem: Column {
+            spacing: P.Style.spaceMd
+            Text {
+                width: parent.width; wrapMode: Text.Wrap; color: P.Style.ink; font.pixelSize: P.Style.fontMd
+                text: "确认取消本次预约？取消后将释放充电桩，需要时可重新预约。"
+            }
+            P.ActionButton {
+                objectName: "confirmChargingCancelButton"
+                width: parent.width; text: "确认取消"; variant: "danger"
+                onClicked: { page.confirmCancel(); cancelDialog.close() }
+            }
+            P.ActionButton {
+                objectName: "keepChargingReservationButton"
+                width: parent.width; text: "保留预约"; variant: "secondary"
+                onClicked: cancelDialog.close()
             }
         }
     }

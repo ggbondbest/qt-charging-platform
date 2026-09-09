@@ -1,448 +1,362 @@
-// test_qml_station_interactions — station 域真机点击链回归（2026-09-07 用户实测两报）。
-//
-// 与既有 qml_client_pages 的分工：那边用"信号发射=点击"绕开 offscreen delegate
-// 时序问题驱动页面状态；本文件专测**事件投递本身**——真实鼠标事件经
-// itemsAtPosition 命中栈送达，钉死两类只在真点击下暴露的缺陷：
-//   ① ClickableCard 盖层 MouseArea 吞掉卡内子 MouseArea（收藏 ☆ 点不动，
-//      点击被卡面 onClicked 劫持去详情页）；
-//   ② 顶栏铃铛 → App.navigate("notifications") → Shell 翻页全链（消息页进不去），
-//      以及"我的"页消息通知入口行（修复前该入口根本不存在）；
-//   ③ 找站页重设计 map⇄list 分段 + peek 浮卡：selectedMarker=-1 越界守卫；
-//   ④ 2026-09-08 批量指令①：车辆强制校验撤除——0 车（无充电中）点"预约"直达
-//      确认页；chargingBusy=true 时 chargingBusyPrompt 拦截且不导航。
-//      chargingBusy 两态由属性直注（mock 服务数据是否含充电中单不作保），
-//      钉的是 UI 拦截分支本身，服务侧名额语义归 reservation_service 测试。
-//   ⑤ 2026-09-08 用户实测：导航页【更换】弹窗打开即冻结——裸宽 Column ×
-//      子项 parent.height - y 自回边 → QQuickItem::polish() loop 每帧刷。
-//      修复=Column anchors.fill 显式定高；本例真点【更换】+message handler
-//      计数钉"零 loop 行 + 弹层有行"。
-//
-// 宿主与 charging-qml-preview 同构：QmlApp + 全量契约 context property +
-// Shell.qml file:// 加载（offscreen 可跑，QTEST_MAIN 自带 QGuiApplication）。
+// Mouse-event regression for the delivered address -> map -> station UI.
+// App uses MockRequestTransport; all map credentials and preferences are isolated.
 #include <QtTest>
+#include <QJSValue>
+#include <QDir>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQmlError>
 #include <QQuickItem>
-#include <QQuickItemGrabResult>
 #include <QQuickWindow>
-#include <QTimer>
-
-#include <atomic>
-#include <functional>
-#include <memory>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 
 #include "app_bridge.h"
+#include "map_bridge.h"
+#include "service_bridges.h"
 
 using charging::qml::QmlApp;
+using charging::qml::MapBridge;
+using charging::qml::SettingsBridge;
 
 namespace {
-
-// 递归找第一个 objectName 匹配的 item（StackView 页面/顶栏子树均在 contentItem 下）。
-QQuickItem* findItem(QQuickItem* root, const QString& objectName)
+QQuickItem* findItem(QQuickItem* root, const QString& name)
 {
-    if (root == nullptr)
-        return nullptr;
-    for (QQuickItem* child : root->childItems()) {
-        if (child->objectName() == objectName)
-            return child;
-        if (QQuickItem* hit = findItem(child, objectName))
-            return hit;
+    if (!root) return nullptr;
+    if (root->objectName() == name) return root;
+    for (auto* child : root->childItems()) {
+        if (auto* found = findItem(child, name)) return found;
     }
     return nullptr;
 }
-
-// 递归收集 objectName 匹配的全部 item（桩列表里每卡一个预约按钮）。
-void collectItems(QQuickItem* root, const QString& objectName, QList<QQuickItem*>& out)
+QQuickItem* findText(QQuickItem* root, const QString& text)
 {
-    if (root == nullptr)
-        return;
-    for (QQuickItem* child : root->childItems()) {
-        if (child->objectName() == objectName)
-            out.append(child);
-        collectItems(child, objectName, out);
+    if (!root) return nullptr;
+    if (root->property("text").toString() == text) return root;
+    for (auto* child : root->childItems()) {
+        if (auto* found = findText(child, text)) return found;
     }
+    return nullptr;
 }
-
-// polish() loop 行数计数——QtMessageHandler 是函数指针，lambda 不可带捕获，
-// 放文件级（仅 navigationPickPopupOpensWithoutPolishLoop 安装期间有流量）。
-std::atomic<int> g_polishLoops{0};
-void countPolishLoopHandler(QtMsgType, const QMessageLogContext&, const QString& msg)
+QVariant plainVariant(const QVariant& value)
 {
-    if (msg.contains(QStringLiteral("polish() loop")))
-        ++g_polishLoops;
+    return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
 }
-
-// 真实鼠标点击：mapToScene 取中心 → 经窗口事件系统投递（含命中栈穿透）。
-void realClick(QQuickWindow* window, QQuickItem* item)
+bool realClick(QQuickWindow* window, QQuickItem* item)
 {
-    QVERIFY(item != nullptr);
-    const QPointF center = item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
+    if (!window || !item || !item->isVisible() || !item->isEnabled()) return false;
+    const auto center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
+    if (!QRectF(0, 0, window->width(), window->height()).contains(center)) return false;
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center.toPoint());
+    return true;
 }
-
-void spin(int msec)
-{
-    QTest::qWait(msec);
-}
-
 } // namespace
 
 class QmlStationInteractionsTest final : public QObject
 {
     Q_OBJECT
-
     QQuickWindow* window_ = nullptr;
     QQmlEngine* engine_ = nullptr;
     QmlApp* app_ = nullptr;
+    QTemporaryDir preferences_;
+    QStringList qmlWarnings_;
 
-    [[maybe_unused]] void bootShell(const QString& view)
+    void bootShell(const QString& view = QStringLiteral("station"), int width = 420)
     {
+        qmlWarnings_.clear();
         engine_ = new QQmlEngine;
-        // 2026-09-08 merge：上游 QmlApp 默认构造改读进程环境 CHARGING_CHANNEL
-        // （qEnvironmentVariable）判 mock——QML context 属性到不了 C++ 构造期，
-        // 只注 context 会落真实 TCP 通道（138 演示号在 9527 服登不进 → 全页失明）。
-        // 与 qml_client_pages 同口径先 qputenv。
-        qputenv("CHARGING_CHANNEL", "mock");
-        app_ = new QmlApp;
+        // A page can still render and accept clicks after a binding fails.
+        // Treat engine warnings as failures, just like the packaged UI smoke.
+        connect(engine_, &QQmlEngine::warnings, this, [this](const QList<QQmlError>& warnings) {
+            for (const auto& warning : warnings) qmlWarnings_.append(warning.toString());
+        });
+        app_ = new QmlApp(QStringLiteral("127.0.0.1"), 9527, true);
+        qobject_cast<MapBridge*>(app_->mapBridge())->setBrowsingCity(QStringLiteral("深圳市"));
+        app_->login(QStringLiteral("13800138000"));
+        QTRY_VERIFY(app_->loggedIn());
+        auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
+        QVERIFY(settings != nullptr);
+        settings->setTheme(QStringLiteral("light"));
+        settings->setFontScale(QStringLiteral("standard"));
         auto* ctx = engine_->rootContext();
         ctx->setContextProperty(QStringLiteral("chargingView"), view);
         ctx->setContextProperty(QStringLiteral("chargingArg"), QVariant());
         ctx->setContextProperty(QStringLiteral("App"), app_);
         ctx->setContextProperty(QStringLiteral("CHARGING_CHANNEL"), QStringLiteral("mock"));
-        app_->login(QStringLiteral("13800138000"));
         ctx->setContextProperty(QStringLiteral("walletService"), app_->walletService());
         ctx->setContextProperty(QStringLiteral("orderService"), app_->orderService());
         ctx->setContextProperty(QStringLiteral("chargingService"), app_->chargingService());
         ctx->setContextProperty(QStringLiteral("reservationService"), app_->reservationService());
         ctx->setContextProperty(QStringLiteral("settingsService"), app_->settingsService());
         ctx->setContextProperty(QStringLiteral("mapGeoService"), app_->mapGeoService());
+        ctx->setContextProperty(QStringLiteral("mapBridge"), app_->mapBridge());
         ctx->setContextProperty(QStringLiteral("favoritesService"), app_->favoritesService());
         ctx->setContextProperty(QStringLiteral("notificationService"), app_->notificationService());
         ctx->setContextProperty(QStringLiteral("stationQueryService"), app_->stationQueryService());
+        ctx->setContextProperty(QStringLiteral("statsService"), app_->statsService());
+        ctx->setContextProperty(QStringLiteral("couponService"), app_->couponService());
+        ctx->setContextProperty(QStringLiteral("pointsService"), app_->pointsService());
+        ctx->setContextProperty(QStringLiteral("ratingsService"), app_->ratingsService());
         ctx->setContextProperty(QStringLiteral("authService"), app_->authService());
-
         QQmlComponent component(engine_);
-        component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
-                                              + QStringLiteral("/Shell.qml")));
+        component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR) + "/Shell.qml"));
         QVERIFY2(!component.isError(), qPrintable(component.errorString()));
         window_ = qobject_cast<QQuickWindow*>(component.create());
-        QVERIFY(window_ != nullptr);
-        window_->resize(420, 860);
+        QVERIFY2(window_ != nullptr, qPrintable(component.errorString()));
+        window_->resize(width, 860);
         window_->show();
-        // 首屏 mock 查询 450ms + 二次布局余量。
-        spin(900);
+        QTest::qWait(100);
+        if (view == QStringLiteral("station")) {
+            auto* home = findItem(window_->contentItem(), QStringLiteral("stationHomePage"));
+            QVERIFY(home != nullptr);
+            QTRY_VERIFY(home->property("loaded").toBool());
+            QTRY_VERIFY(!plainVariant(home->property("raw")).toList().isEmpty());
+        }
     }
 
-    void teardownShell()
+    QQuickItem* visibleStationCard()
     {
-        delete window_;
-        window_ = nullptr;
-        delete engine_;
-        engine_ = nullptr;
-        delete app_;
-        app_ = nullptr;
+        auto* list = findItem(window_->contentItem(), QStringLiteral("stationList"));
+        if (!list) return nullptr;
+        // Header contains the map: instantiate AND scroll the delegate before clicking.
+        if (!QMetaObject::invokeMethod(list, "positionViewAtIndex", Q_ARG(int, 0), Q_ARG(int, 0)))
+            return nullptr;
+        QTest::qWait(100);
+        return findItem(list, QStringLiteral("stationCard"));
     }
 
-    // 公共链：station 卡文字区真点击 → 详情页（列表 mock + 翻页 + 桩 mock 各留余量）。
     QQuickItem* enterDetailPage()
     {
-        auto* card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
-        if (card == nullptr) {   // offscreen delegate 惰性：先强制一次场景图渲染
-            auto shot = window_->contentItem()->grabToImage();
-            QEventLoop loop;
-            QObject::connect(shot.get(), &QQuickItemGrabResult::ready,
-                             &loop, &QEventLoop::quit);
-            loop.exec();
-            spin(50);
-            card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
+        auto* card = visibleStationCard();
+        if (!card || !realClick(window_, findItem(card, QStringLiteral("stationReserveButton")))) return nullptr;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            QTest::qWait(50);
+            auto* detail = findItem(window_->contentItem(), QStringLiteral("stationDetailPage"));
+            auto* stack = findItem(window_->contentItem(), QStringLiteral("pageStack"));
+            if (detail && detail->isVisible() && detail->property("detailLoaded").toBool()
+                && stack && !stack->property("busy").toBool()) {
+                // A completed service callback does not imply the opacity
+                // animation has finished. Click after the scene has settled.
+                QTest::qWait(200);
+                return detail;
+            }
         }
-        if (card == nullptr)
-            return nullptr;
-        QQuickItem* title = nullptr;
-        std::function<void(QQuickItem*)> walkText = [&](QQuickItem* it) {
-            if (title) return;
-            const QString t = it->property("text").toString();
-            if (t.length() >= 4 && t != QStringLiteral("营业中")) { title = it; return; }
-            for (QQuickItem* c : it->childItems()) walkText(c);
-        };
-        walkText(card);
-        if (title == nullptr)
-            return nullptr;
-        realClick(window_, title);
-        spin(400);
-        auto* detail = findItem(window_->contentItem(), QStringLiteral("stationDetailPage"));
-        if (detail == nullptr)
-            return nullptr;
-        spin(900);   // 桩列表 mock 落定 + delegate 实例化
-        return detail;
+        return nullptr;
+    }
+
+    QQuickItem* availableReserveButton(QQuickItem* detail)
+    {
+        QList<QQuickItem*> pending{detail};
+        while (!pending.isEmpty()) {
+            auto* item = pending.takeFirst();
+            if (item->objectName() == QStringLiteral("detailReserveButton") && item->isEnabled()) return item;
+            pending.append(item->childItems());
+        }
+        return nullptr;
     }
 
 private slots:
-    void cleanup() { teardownShell(); }
+    void initTestCase()
+    {
+        QVERIFY(preferences_.isValid());
+        QStandardPaths::setTestModeEnabled(true);
+        QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatform.Tests"));
+        QCoreApplication::setApplicationName(QStringLiteral("StationInteractions"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, preferences_.path());
+        for (const char* name : {"TENCENT_MAP_API_KEY", "TENCENT_MAP_SECRET_KEY", "TENCENT_MAP_JS_KEY",
+                                 "CHARGING_TENCENT_MAP_KEY", "CHARGING_TENCENT_MAP_SECRET"}) qputenv(name, "");
+        qputenv("CHARGING_CHANNEL", "mock");
+    }
 
-    // 用户报①"消息页面进不去"：station 页真点顶栏铃铛 → notificationPage 上屏。
+    void cleanup()
+    {
+        delete window_; window_ = nullptr;
+        delete engine_; engine_ = nullptr;
+        delete app_; app_ = nullptr;
+        QVERIFY2(qmlWarnings_.isEmpty(), qPrintable(qmlWarnings_.join(QLatin1Char('\n'))));
+    }
+
     void bellOpensNotificationPage()
     {
-        bootShell(QStringLiteral("station"));
-        auto* nav = findItem(window_->contentItem(), QStringLiteral("topNavBar"));
-        QVERIFY(nav != nullptr);
-        // 铃铛 = 无 objectName 的 Text("🔔")；从顶栏子树按 text 找。
-        QQuickItem* bell = nullptr;
-        std::function<void(QQuickItem*)> walk = [&](QQuickItem* it) {
-            if (bell) return;
-            if (it->property("text").toString() == QStringLiteral("🔔")) { bell = it; return; }
-            for (QQuickItem* c : it->childItems()) walk(c);
-        };
-        walk(nav);
-        QVERIFY2(bell != nullptr, "顶栏铃铛未渲染（station 页 searchVisible 联动失效？）");
-        QVERIFY2(bell->isVisible(), "铃铛 visible=false");
-        realClick(window_, bell);
-        spin(300);
-        auto* page = findItem(window_->contentItem(), QStringLiteral("notificationPage"));
-        QVERIFY2(page != nullptr, "点击铃铛后消息页未上屏");
-        QVERIFY(page->isVisible());
+        bootShell();
+        QVERIFY(window_ != nullptr);
+        auto* bell = findText(findItem(window_->contentItem(), QStringLiteral("topNavBar")), QStringLiteral("🔔"));
+        QVERIFY(realClick(window_, bell));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
 
-    // 用户报②"收藏按钮点不了"：station 卡片右下角 ☆ 真点击 = 收藏切换，
-    // 且**不得**把点击漏给卡面（现状：ClickableCard 盖层吞事件 → 跳详情页）。
-    void stationStarClickTogglesFavorite()
+    void stationStarClickTogglesFavoriteWithoutOpeningDetails()
     {
-        bootShell(QStringLiteral("station"));
-        auto* card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
-        if (card == nullptr) { // offscreen delegate 惰性：强制一次场景图渲染再找
-            auto shot = window_->contentItem()->grabToImage();
-            QEventLoop loop;
-            QObject::connect(shot.get(), &QQuickItemGrabResult::ready,
-                             &loop, &QEventLoop::quit);
-            loop.exec();
-            spin(50);
-            card = findItem(window_->contentItem(), QStringLiteral("stationCard"));
-        }
-        QVERIFY2(card != nullptr, "stationCard delegate 未实例化（列表没渲染？）");
+        bootShell();
+        QVERIFY(window_ != nullptr);
+        auto* card = visibleStationCard();
+        QVERIFY(card != nullptr);
         auto* star = findItem(card, QStringLiteral("favoriteStarButton"));
-        QVERIFY2(star != nullptr, "favoriteStarButton 未渲染");
-        // 星 glyph（delegate 绑定 page.isFav(stationId)，role 属性 C++ 侧拿不到，
-        // 以字形翻转判定收藏态翻转）。
-        auto starGlyph = [&](QQuickItem* starItem) {
-            for (QQuickItem* c : starItem->childItems()) {
-                const QString t = c->property("text").toString();
-                if (t == QStringLiteral("★") || t == QStringLiteral("☆"))
-                    return t;
-            }
-            return QString();
-        };
-        const QString before = starGlyph(star);
-        QVERIFY2(before == QStringLiteral("★") || before == QStringLiteral("☆"),
-                 "favoriteStarButton 内未找到星字形 Text");
-        realClick(window_, star);
-        spin(200);
-        // 收藏翻转：onFavoritesChanged→project() 重建 delegate，重新取星
-        auto* card2 = findItem(window_->contentItem(), QStringLiteral("stationCard"));
-        auto* star2 = card2 ? findItem(card2, QStringLiteral("favoriteStarButton")) : nullptr;
-        QVERIFY2(card2 != nullptr, "收藏后星按钮丢失");
-        // 先钉"没被卡面吞走"（StackView push 后旧页仍在树里，故以详情页在否判劫持）
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) == nullptr,
-                 "点击收藏星后被卡面导航劫持进详情页（事件被盖层吞掉）");
-        QCOMPARE(starGlyph(star2), before == QStringLiteral("★")
-                                        ? QStringLiteral("☆") : QStringLiteral("★"));
-        // 反向：卡面文字区点击仍走卡导航（盖层下沉路径不能被本修复打断）
-        QQuickItem* title = nullptr;
-        std::function<void(QQuickItem*)> walkText = [&](QQuickItem* it) {
-            if (title) return;
-            const QString t = it->property("text").toString();
-            // DFS 先序到达的长文本 = 卡内站点名行（无自身 handler，在盖层之下）
-            if (t.length() >= 4 && t != QStringLiteral("营业中")) {
-                title = it;
-                return;
-            }
-            for (QQuickItem* c : it->childItems()) walkText(c);
-        };
-        walkText(card2);
-        QVERIFY(title != nullptr);
-        realClick(window_, title);
-        spin(300);
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) != nullptr,
-                 "卡面文字区点击丢失导航（盖层下沉链被破坏）");
+        QVERIFY(star != nullptr);
+        const QString before = star->property("text").toString();
+        QVERIFY(before == QStringLiteral("☆") || before == QStringLiteral("★"));
+        QVERIFY(realClick(window_, star));
+        QTest::qWait(150);
+        card = visibleStationCard();
+        QVERIFY(card != nullptr);
+        star = findItem(card, QStringLiteral("favoriteStarButton"));
+        QVERIFY(star != nullptr);
+        QCOMPARE(star->property("text").toString(), before == QStringLiteral("☆") ? QStringLiteral("★") : QStringLiteral("☆"));
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) == nullptr);
+        // Card surface still navigates after correcting nested button events.
+        QVERIFY(realClick(window_, card));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) != nullptr);
     }
 
-    // 用户报①的另一入口：profile"消息通知"行真点击 → 消息页上屏
-    //（修复前 profile 没有该入口，消息页从"我的"完全不可达即此）。
     void profileNotificationsRowOpensPage()
     {
         bootShell(QStringLiteral("profile"));
-        auto* row = findItem(window_->contentItem(), QStringLiteral("openNotificationsButton"));
-        QVERIFY2(row != nullptr, "profile 消息通知入口行缺失");
-        realClick(window_, row);
-        spin(300);
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr,
-                 "点击消息通知行后消息页未上屏");
+        QVERIFY(window_ != nullptr);
+        QVERIFY(realClick(window_, findItem(window_->contentItem(), QStringLiteral("openNotificationsButton"))));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
 
-    // 找站页重设计（map⇄list 分段 + peek 浮卡）回归钉：未选中时 peek 必须不浮现
-    //（selectedMarker=-1 越界崩溃守卫），选中后信息绑定 + "详情"导航链完好。
-    void mapSegmentPeekCardShowsSelectedStation()
+    void cardPriceStaysInsideCard_data()
     {
-        bootShell(QStringLiteral("station"));
-        auto* seg = findItem(window_->contentItem(), QStringLiteral("viewModeMapButton"));
-        QVERIFY2(seg != nullptr, "map⇄list 分段按钮未渲染");
-        realClick(window_, seg);
-        spin(200);
-        auto* peek = findItem(window_->contentItem(), QStringLiteral("stationPeekCard"));
-        QVERIFY2(peek != nullptr, "peek 浮卡未实例化");
-        QVERIFY2(!peek->isVisible(), "未选中站点时 peek 不应浮现（-1 越界守卫失效）");
+        QTest::addColumn<int>("windowWidth");
+        QTest::newRow("standard") << 420;
+        QTest::newRow("narrow") << 360;
+    }
+    void cardPriceStaysInsideCard()
+    {
+        QFETCH(int, windowWidth);
+        bootShell(QStringLiteral("station"), windowWidth);
+        QVERIFY(window_ != nullptr);
+        auto* card = visibleStationCard();
+        QVERIFY(card != nullptr);
+        auto* price = findItem(card, QStringLiteral("stationPrice"));
+        QVERIFY(price != nullptr);
+        const QRectF priceRect(price->mapToItem(card, QPointF()), QSizeF(price->width(), price->height()));
+        QVERIFY2(QRectF(0, 0, card->width(), card->height()).contains(priceRect), "电价溢出站点卡片");
+        QVERIFY(price->property("text").toString().startsWith(QStringLiteral("¥")));
+        for (const QString& name : {QStringLiteral("favoriteStarButton"), QStringLiteral("stationNavigateButton"),
+                                    QStringLiteral("stationReserveButton")}) {
+            auto* action = findItem(card, name);
+            QVERIFY(action != nullptr);
+            QVERIFY(QRectF(0, 0, card->width(), card->height()).contains(
+                QRectF(action->mapToItem(card, QPointF()), QSizeF(action->width(), action->height()))));
+        }
+        const auto directory = qEnvironmentVariable("CHARGING_INTERACTION_SCREENSHOTS");
+        if (!directory.isEmpty()) {
+            QVERIFY(QDir().mkpath(directory));
+            QVERIFY(window_->grabWindow().save(QDir(directory).filePath(
+                QStringLiteral("station-card-%1.png").arg(windowWidth))));
+        }
+    }
+
+    void mapSelectionRejectsUnknownIdAndOpensMatchingStation_data()
+    {
+        QTest::addColumn<int>("windowWidth");
+        QTest::newRow("standard") << 420;
+        QTest::newRow("narrow") << 360;
+    }
+
+    void mapSelectionRejectsUnknownIdAndOpensMatchingStation()
+    {
+        QFETCH(int, windowWidth);
+        bootShell(QStringLiteral("station"), windowWidth);
+        QVERIFY(window_ != nullptr);
         auto* page = findItem(window_->contentItem(), QStringLiteral("stationHomePage"));
         QVERIFY(page != nullptr);
-        QVERIFY(page->setProperty("selectedMarker", 0));
-        spin(200);
-        QVERIFY2(peek->isVisible(), "选中站点后 peek 浮卡未出现");
-        bool hasName = false;
-        std::function<void(QQuickItem*)> walkPeek = [&](QQuickItem* it) {
-            if (hasName) return;
-            if (it->property("text").toString().length() >= 4) { hasName = true; return; }
-            for (QQuickItem* c : it->childItems()) walkPeek(c);
-        };
-        walkPeek(peek);
-        QVERIFY2(hasName, "peek 卡信息绑定为空（越界守卫回归？）");
-        auto* open = findItem(peek, QStringLiteral("stationPeekOpenButton"));
-        QVERIFY(open != nullptr);
-        realClick(window_, open);
-        spin(300);
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) != nullptr,
-                 "peek 详情按钮未进入站点详情");
+        QSignalSpy navigated(app_, &QmlApp::navigateRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "selectMapStation", Q_ARG(QVariant, QStringLiteral("nonexistent-id"))));
+        QVERIFY(plainVariant(page->property("selectedStation")).toMap().isEmpty());
+        QCOMPARE(navigated.size(), 0);
+        const auto records = plainVariant(page->property("raw")).toList();
+        QVERIFY(!records.isEmpty());
+        const QString id = records.first().toMap().value(QStringLiteral("id")).toString();
+        QVERIFY(QMetaObject::invokeMethod(page, "selectMapStation", Q_ARG(QVariant, id)));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("mapStationReserveButton")) != nullptr);
+        auto* popup = page->findChild<QObject*>(QStringLiteral("mapStationPopup"));
+        QVERIFY(popup != nullptr);
+        auto* overlay = popup->property("parent").value<QQuickItem*>();
+        QVERIFY(overlay != nullptr);
+        QVERIFY(overlay != page);
+        QCOMPARE(overlay->window(), window_);
+        QCOMPARE(overlay->width(), qreal(window_->width()));
+        QCOMPARE(overlay->height(), qreal(window_->height()));
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QCOMPARE(plainVariant(page->property("selectedStation")).toMap().value(QStringLiteral("stationId")).toString(), id);
+        auto* reserve = findItem(window_->contentItem(), QStringLiteral("mapStationReserveButton"));
+        QTest::qWait(150);
+        QVERIFY(realClick(window_, reserve));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) != nullptr);
+        QCOMPARE(navigated.last().at(0).toString(), QStringLiteral("station_detail"));
+        QCOMPARE(navigated.last().at(1).toMap().value(QStringLiteral("id")).toString(), id);
     }
 
-    // 批量指令① 正断言：车辆校验整套撤除——chargingBusy=false（无充电中）时，
-    // 详情页点"预约"直达 reservationConfirmPage；拦截弹层不得出现
-    //（旧 vehicleRequiredPrompt/unfinishedReservationPrompt 链已删，弹层不实例化）。
-    void zeroVehicleNoChargingReservesStraightToConfirm()
+    void missingKeyDoesNotLeaveSecondManualOriginRequestBusy()
     {
-        bootShell(QStringLiteral("station"));
-        auto* detail = enterDetailPage();
-        QVERIFY2(detail != nullptr, "卡片文字区点击未进详情页");
-        QVERIFY(detail->setProperty("chargingBusy", false));
-        // 2026-09-08 merge：预约出口改走上游 TCP 前置闸（checkUnfinished fail-closed），
-        // mock 种子自带 CHARGING/WAITING_PAYMENT 单——正断言需"无未完成订单"态，
-        // 走 MockRequestTransport::cancelActiveOrders 测试缝（QmlApp 代持）。
+        bootShell();
+        QVERIFY(window_ != nullptr);
+        auto* bridge = qobject_cast<MapBridge*>(app_->mapBridge());
+        QVERIFY(bridge != nullptr);
+        auto* input = findItem(window_->contentItem(), QStringLiteral("originAddressField"));
+        auto* locate = findItem(window_->contentItem(), QStringLiteral("locateAddressButton"));
+        QVERIFY(input && locate);
+        QSignalSpy changed(bridge, &MapBridge::changed);
+        for (const QString& address : {QStringLiteral("软件园路"), QStringLiteral("黄浦路"), QStringLiteral("软件园路")}) {
+            input->setProperty("text", address);
+            const int before = changed.size();
+            QVERIFY(realClick(window_, locate));
+            QTRY_VERIFY(changed.size() > before);
+            QTRY_VERIFY(!bridge->busy() && !bridge->error().isEmpty());
+            QVERIFY(!bridge->hasLocation());
+            QVERIFY(bridge->routeHtml().isEmpty());
+            QVERIFY(locate->isEnabled());
+        }
+    }
+
+    void zeroVehicleNoUnfinishedOrderCanReserve()
+    {
+        bootShell();
+        QVERIFY(window_ != nullptr);
+        auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
+        QVERIFY(settings != nullptr);
+        for (const auto& vehicle : settings->vehicles()) settings->removeVehicle(vehicle.toMap().value("id"));
+        QCOMPARE(settings->vehicleCount(), 0);
         app_->clearUnfinishedOrdersForTesting();
-        QList<QQuickItem*> buttons;
-        collectItems(detail, QStringLiteral("detailReserveButton"), buttons);
-        QQuickItem* target = nullptr;
-        for (auto* b : buttons)
-            if (b->isEnabled()) { target = b; break; }
-        QVERIFY2(target != nullptr, "无 available 桩的启用预约按钮（mock 桩数据变了？）");
-        realClick(window_, target);
-        // TCP 前置闸走 MockRequestTransport::send 的 450ms 单发延迟（kMockLatencyMs），
-        // 3 路查询并发同刻返回；2026-09-08 merge 后 spin(400) 会卡在闸内，放大到 900。
-        spin(900);
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage"))
-                     != nullptr,
-                 "0 车点预约未直达确认页（旧车辆闸回归？）");
-        auto* go = findItem(window_->contentItem(), QStringLiteral("chargingBusyGoButton"));
-        QVERIFY2(go == nullptr || !go->isVisible(), "无充电中却弹出充电拦截浮层");
-    }
-
-    // 批量指令① 反断言：chargingBusy=true（有车辆正在充电）→ 预约必须被
-    // chargingBusyPrompt 拦截且不导航（新业务唯一保留闸）。
-    void chargingVehicleBlocksReserveWithPrompt()
-    {
-        bootShell(QStringLiteral("station"));
         auto* detail = enterDetailPage();
-        QVERIFY2(detail != nullptr, "卡片文字区点击未进详情页");
-        QVERIFY(detail->setProperty("chargingBusy", true));
-        QList<QQuickItem*> buttons;
-        collectItems(detail, QStringLiteral("detailReserveButton"), buttons);
-        QQuickItem* target = nullptr;
-        for (auto* b : buttons)
-            if (b->isEnabled()) { target = b; break; }
-        QVERIFY2(target != nullptr, "无 available 桩的启用预约按钮");
-        realClick(window_, target);
-        spin(300);
-        QVERIFY2(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage"))
-                     == nullptr,
-                 "有车辆充电中竟发起了预约（拦截闸失效）");
-        auto* go = findItem(window_->contentItem(), QStringLiteral("chargingBusyGoButton"));
-        QVERIFY2(go != nullptr && go->isVisible(), "chargingBusyPrompt 拦截弹层未出现");
+        QVERIFY(detail != nullptr);
+        auto* reserve = availableReserveButton(detail);
+        QVERIFY(reserve != nullptr);
+        if (qEnvironmentVariableIsSet("CHARGING_INTERACTION_SCREENSHOTS")) {
+            const auto directory = qEnvironmentVariable("CHARGING_INTERACTION_SCREENSHOTS");
+            QDir().mkpath(directory);
+            window_->grabWindow().save(QDir(directory).filePath("detail.png"));
+        }
+        QSignalSpy clicked(reserve, SIGNAL(clicked()));
+        QVERIFY(realClick(window_, reserve));
+        QCOMPARE(clicked.size(), 1);
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) != nullptr);
     }
 
-    // 批量指令③+实测冻结回归：导航页 destinationRow【更换】真点击 →
-    // navigationPickPopup 打开并出候选行；期间 QQuickItem::polish() loop 计数
-    // 必须为 0（修复前该弹窗 Column 无显式高，子项 height:parent.height-y
-    // 自回边，每帧刷 loop 告警直至 UI 冻结——offscreen 同样复现）。
-    void manualOriginInvalidatesOlderLocationCallbacks()
+    void realMockActiveOrderCheckBlocksSecondReservation()
     {
-        bootShell(QStringLiteral("navigation"));
-        auto* page = findItem(window_->contentItem(), QStringLiteral("navigationPage"));
-        QVERIFY(page != nullptr);
-        page->setProperty("pendingIpReq", 77);
-        page->setProperty("pendingGeoReq", 88);
-        page->setProperty("pendingOriginText", QStringLiteral("旧地址"));
-        QVERIFY(QMetaObject::invokeMethod(page, "parseManualOrigin",
-                                          Q_ARG(QVariant, QStringLiteral("39.9,116.4"))));
-        QCOMPARE(page->property("pendingIpReq").toInt(), -1);
-        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
-        const QVariantMap stale{{"latitude", 22.5}, {"longitude", 113.9}, {"city", "旧城市"}};
-        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlIpLocationReady",
-                                          Q_ARG(quint64, 77), Q_ARG(QVariantMap, stale)));
-        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeReady",
-                                          Q_ARG(quint64, 88), Q_ARG(QVariantMap, stale)));
-        QCOMPARE(page->property("originLat").toDouble(), 39.9);
-        QCOMPARE(page->property("originLng").toDouble(), 116.4);
-        QCOMPARE(page->property("originLabel").toString(), QStringLiteral("39.9,116.4"));
-    }
-
-    void originResponseUsesSubmittedTextAndFailureReleasesPendingState()
-    {
-        bootShell(QStringLiteral("navigation"));
-        auto* page = findItem(window_->contentItem(), QStringLiteral("navigationPage"));
-        auto* input = findItem(window_->contentItem(), QStringLiteral("originField"));
-        QVERIFY(page != nullptr && input != nullptr);
-        page->setProperty("pendingGeoReq", 88);
-        page->setProperty("pendingOriginText", QStringLiteral("已提交地址"));
-        input->setProperty("text", QStringLiteral("尚未提交的新地址"));
-        const QVariantMap point{{"latitude", 39.9}, {"longitude", 116.4}};
-        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeReady",
-                                          Q_ARG(quint64, 88), Q_ARG(QVariantMap, point)));
-        QCOMPARE(page->property("originLabel").toString(), QStringLiteral("已提交地址"));
-        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
-        page->setProperty("pendingGeoReq", 89);
-        page->setProperty("pendingOriginText", QStringLiteral("失败的地址"));
-        QVERIFY(QMetaObject::invokeMethod(app_->mapGeoService(), "qmlGeocodeError",
-                                          Q_ARG(quint64, 89), Q_ARG(QString, QStringLiteral("HTTP 403"))));
-        QCOMPARE(page->property("pendingGeoReq").toInt(), -1);
-        QVERIFY(page->property("pendingOriginText").toString().isEmpty());
-        QVERIFY(page->property("caption").toString().contains(QStringLiteral("HTTP 403")));
-    }
-
-    void navigationPickPopupOpensWithoutPolishLoop()
-    {
-        bootShell(QStringLiteral("station"));
-        QVariantMap record;
-        record.insert(QStringLiteral("stationName"), QStringLiteral("测试充电站"));
-        record.insert(QStringLiteral("stationAddress"), QStringLiteral("南山区测试路 1 号"));
-        record.insert(QStringLiteral("stationLatitude"), 22.52);
-        record.insert(QStringLiteral("stationLongitude"), 113.95);
-        record.insert(QStringLiteral("hasStationLocation"), true);
-        record.insert(QStringLiteral("distanceMeters"), 3200);
-        QMetaObject::invokeMethod(app_, "navigate",
-                                  Q_ARG(QString, QStringLiteral("navigation")),
-                                  Q_ARG(QVariant, QVariant(record)));
-        spin(600);
-        auto* change = findItem(window_->contentItem(),
-                                QStringLiteral("destinationChangeButton"));
-        QVERIFY2(change != nullptr, "导航页未出现 destinationChangeButton（③改动丢失？）");
-
-        g_polishLoops = 0;
-        auto* prev = qInstallMessageHandler(countPolishLoopHandler);
-        realClick(window_, change);
-        spin(900);   // 弹层打开 + mock 全量检索回填 + 多帧布局（修复前此处已刷千行 loop）
-        qInstallMessageHandler(prev);
-        QVERIFY2(g_polishLoops.load() == 0,
-                 qPrintable(QStringLiteral("【更换】弹层触发 %1 条 polish() loop（自回边回归）")
-                            .arg(g_polishLoops.load())));
-        auto* list = findItem(window_->contentItem(), QStringLiteral("navigationPickList"));
-        QVERIFY2(list != nullptr, "弹层内容层未实例化（Popup 未打开？）");
-        QVERIFY2(!list->childItems().isEmpty(), "弹层无候选行（检索/兜底链断了？）");
+        bootShell();
+        QVERIFY(window_ != nullptr);
+        auto* detail = enterDetailPage();
+        QVERIFY(detail != nullptr);
+        QSignalSpy navigated(app_, &QmlApp::navigateRequested);
+        QSignalSpy toast(app_, &QmlApp::toastRequested);
+        auto* reserve = availableReserveButton(detail);
+        QVERIFY(reserve != nullptr);
+        QSignalSpy clicked(reserve, SIGNAL(clicked()));
+        QVERIFY(realClick(window_, reserve));
+        QCOMPARE(clicked.size(), 1);
+        QTRY_VERIFY(!navigated.isEmpty());
+        QVERIFY(!app_->checkingOrders());
+        QCOMPARE(navigated.last().at(0).toString(), QStringLiteral("charging"));
+        QVERIFY(!toast.isEmpty());
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
     }
 };
 

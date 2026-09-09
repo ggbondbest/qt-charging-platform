@@ -55,6 +55,10 @@ protected:
                 emit failed(QStringLiteral("无法初始化服务端数据库"));
                 return;
             }
+            if (demoSeed && !database.applyCityDemoSeed(&diagnostic)) {
+                emit failed(QStringLiteral("无法加载城市示范电站，请检查数据库后重试"));
+                return;
+            }
             if (isInterruptionRequested()) return;
             UserRepository users(database.database());
             ChargingRepository charging(database.database());

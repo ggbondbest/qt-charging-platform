@@ -18,17 +18,15 @@ Rectangle {
     default property alias content: body.data
     implicitHeight: body.implicitHeight + 2 * Style.spaceLg
 
-    // 盖层点击区必须先于内容声明（后声明=更高堆叠）：原序下整卡 MouseArea 压在
-    // 内容子树之上，卡内任何交互件（收藏 ☆、行内按钮）收不到点击、被卡面吞走
-    // （用户实测 "收藏按钮点不了" 根因，2026-09-07）。文本等无 handler 区域经
-    // 命中栈下沉仍由盖层接住，卡面导航行为不变；widgets 对应物（QCard 子控件
-    // 天然优先收事件）同此语义。
+    // Keep the card hit area below its interactive children: navigation,
+    // favorite and reservation actions must not turn into a card click.
     MouseArea {
         anchors.fill: parent           // sibling of the Column, direct child of Rectangle
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onPressed: card.scale = 0.985
         onReleased: card.scale = 1.0
+        onCanceled: card.scale = 1.0
         onClicked: card.clicked()
     }
 

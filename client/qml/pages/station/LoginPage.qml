@@ -173,7 +173,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "+86"; font.pixelSize: P.Style.fontMd; color: P.Style.muted
                     }
-                    TextField {
+                    P.TextField {
                         id: phoneField
                         objectName: "phoneLineEdit"
                         width: parent.width - 44
@@ -187,7 +187,7 @@ Item {
                 }
 
                 // 二级保护密码行：命中"设过密码且开启保护"的手机号才出现。
-                TextField {
+                P.TextField {
                     id: secondField
                     objectName: "secondPasswordEdit"
                     width: parent.width

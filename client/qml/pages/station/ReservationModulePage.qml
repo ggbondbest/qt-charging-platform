@@ -31,7 +31,6 @@ Item {
 
     function refresh() {
         loading = true; failed = false
-        // TODO(contract): reservationService.fetchList() 桥 invokable。
         try { reservationService.fetchList() }
         catch (e) {
             loading = false; loaded = false; failed = true
@@ -85,14 +84,14 @@ Item {
                     objectName: "reservationOrderTabButton"
                     variant: "chip"
                     selected: page.tab === 0
-                    text: "🕒 预约订单"
+                    text: "进行中"
                     onClicked: page.tab = 0
                 }
                 P.ActionButton {
                     objectName: "reservationHistoryTabButton"
                     variant: "chip"
                     selected: page.tab === 1
-                    text: "📒 已完成的预约"
+                    text: "预约历史"
                     onClicked: page.tab = 1
                 }
             }

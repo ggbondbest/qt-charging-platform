@@ -4,6 +4,18 @@ set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
     echo "Usage: bash scripts/verify_qml_routes.sh /path/to/charging-client [screenshot-directory]" >&2
+    echo "Optional environment: CHARGING_SMOKE_SIZE=420x860 CHARGING_SMOKE_THEME=light|dark" >&2
+    exit 2
+fi
+smoke_size="${CHARGING_SMOKE_SIZE:-420x860}"
+smoke_theme="${CHARGING_SMOKE_THEME:-light}"
+if [[ ! "$smoke_size" =~ ^[1-9][0-9]{0,3}x[1-9][0-9]{0,3}$ ]] \
+   || (( ${smoke_size%x*} > 8192 || ${smoke_size#*x} > 8192 )); then
+    echo 'CHARGING_SMOKE_SIZE must be WIDTHxHEIGHT, with each dimension in 1..8192' >&2
+    exit 2
+fi
+if [[ "$smoke_theme" != light && "$smoke_theme" != dark ]]; then
+    echo 'CHARGING_SMOKE_THEME must be light or dark' >&2
     exit 2
 fi
 binary="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -43,7 +55,7 @@ passed=0
 error_pattern='QML load failed|Root is not a Window|Component is not ready|TypeError:|ReferenceError:|Unable to assign|Cannot assign|is not a type|module .* is not installed|Binding loop detected|Cannot anchor to an item|Cannot load library|Cannot find plugin|QML_ROUTE_TIMEOUT'
 for route in login station profile wallet recharge order order_detail charging charging_run \
              settlement profile_edit station_detail reservation_confirm reservation_module \
-             navigation favorites notifications settings; do
+             navigation favorites notifications settings stats coupon points ratings scan; do
     arg='{}'
     case "$route" in
         station_detail)
@@ -57,10 +69,15 @@ for route in login station profile wallet recharge order order_detail charging c
         charging_run) arg='{"id":"5"}' ;;
         settlement)
             arg='{"id":"4","orderNo":"SMOKE-ORDER-4","stationName":"界面测试电站","chargerCode":"TEST-01","status":"waiting_payment","amountCents":1250,"energyWh":10000,"durationSeconds":1800,"unitPriceCentsPerKwh":125}' ;;
+        stats|coupon|points|ratings|scan)
+            # These top-level pages fetch the current user's own data; no
+            # fabricated order/station route argument is needed to open them.
+            arg='""' ;;
     esac
     screenshot="$output_dir/$route.png"
     log="$output_dir/$route.log"
-    command_args=("$binary" "--view=$route" "--arg=$arg" --size=420x860 "--screenshot=$screenshot")
+    command_args=("$binary" "--view=$route" "--arg=$arg" "--size=$smoke_size"
+                  "--theme=$smoke_theme" "--screenshot=$screenshot")
     if [[ "$route" != login ]]; then
         command_args+=(--logged-in)
     fi
@@ -78,6 +95,6 @@ for route in login station profile wallet recharge order order_detail charging c
         passed=$((passed + 1))
     fi
 done
-echo "QML UI smoke: $passed passed, $failures failed. Screenshots: $output_dir"
+echo "QML UI smoke ($smoke_size, $smoke_theme): $passed passed, $failures failed. Screenshots: $output_dir"
 echo "Explicit Mock channel: these results do not prove real backend/database connectivity."
 [[ "$failures" -eq 0 ]]
