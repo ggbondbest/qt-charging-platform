@@ -360,14 +360,16 @@ private slots:
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
     }
 
-    // 经验等级批（2026-09-09）真壳端到端：「我的」页 hero 里等级徽章/进度条/
-    // 经验行渲染，点徽章进等级页，「每日任务」路由进任务页；App.navigate
-    // 漏斗把浏览型任务（月报）自动折算成经验且当日幂等。
+    // 经验等级批（2026-09-09）真壳端到端 + 会员中心批（同日）改版：等级三件套
+    // 从 hero 搬进昵称框与余额框之间的独立「会员等级卡」（uiLevelCard），点卡进
+    // 会员中心页（等级阶梯+每日任务区块+礼包记录）；行列表撤任务/等级两行、与
+    // 设置并列新增「积分商城」；App.navigate 漏斗与 tasks 深链路由不变。
     void profileLevelBarTasksPageAndXpFunnel()
     {
         bootShell(QStringLiteral("profile"));
         auto* prog = qobject_cast<charging::client::ProgressService*>(app_->progressService());
         QVERIFY(prog);
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("uiLevelCard")) != nullptr);
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("uiLevelBar")) != nullptr);
         auto* xpLabel = findItem(window_->contentItem(), QStringLiteral("uiLevelXpLabel"));
         QVERIFY(xpLabel != nullptr);
@@ -375,12 +377,21 @@ private slots:
 
         QVERIFY(realClick(window_, findItem(window_->contentItem(), QStringLiteral("uiLevelBadgeButton"))));
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("levelPage")) != nullptr);
+        // 每日任务已并入会员中心页（TaskSection 直子对象）。
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("uiTaskSection")) != nullptr);
 
         app_->navigate(QStringLiteral("profile"));    // tab 重进（clear+replace 同款）
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("profilePage")) != nullptr);
-        app_->navigate(QStringLiteral("tasks"));
+        // 商城行恰在 860px 折叠线附近：钉行存在（与设置并列的实据）+ 走路由进页。
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("openMallButton")) != nullptr);
+        app_->navigate(QStringLiteral("points_mall"));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("pointsMallPage")) != nullptr);
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("uiMallTitle")) != nullptr);
+
+        app_->navigate(QStringLiteral("tasks"));      // 独立任务页保留深链
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("tasksPage")) != nullptr);
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("uiTasksTitle")) != nullptr);
+        app_->navigate(QStringLiteral("profile"));
 
         // stats 任务只会被 navigate 漏斗点亮（本二进制无其它用例进月报页）。
         auto taskDone = [prog](const QString& id) {

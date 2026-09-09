@@ -25,8 +25,19 @@ Item {
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
 
     // 经验等级引擎（2026-09-09）：客户端本地成长系统，经 App.progressService
-    // 透传；裸引擎/无 App 场景取 null，等级块整体隐藏（页面对测试上下文健壮）。
+    // 透传；裸引擎/无 App 场景取 null，等级卡整体隐藏（页面对测试上下文健壮）。
     readonly property var progress: (App && App.progressService) ? App.progressService : null
+
+    // 会员中心批（参考"白金会员"卡形态）：档位主题色与星级（页内字面量，
+    // 与 LevelPage tierColor 同谱——两处小重复换零跨页耦合，映射稿有口径）。
+    function tierColor(lv) {
+        const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
+        return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
+    }
+    function tierStars(lv) {
+        const n = Math.max(1, Math.min(5, lv || 1))
+        return "★".repeat(n) + "☆".repeat(5 - n)
+    }
 
     // 待支付角标数据（widgets ordersCell waitingBadge_ 同款）
     Connections {
@@ -110,63 +121,8 @@ Item {
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
                             font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
                         }
-                        // —— 经验等级（2026-09-09 需求批）：上=等级徽章（可点进
-                        // 会员等级页），中=进度条，下=当前/所需经验。hero 渐变上
-                        // 用半透明白底承托，金色填充与顶栏星星同谱。 ——
-                        Rectangle {
-                            objectName: "uiLevelBadgeButton"
-                            visible: page.progress !== null
-                            width: levelBadgeText.implicitWidth + 16
-                            height: levelBadgeText.implicitHeight + 8
-                            radius: P.Style.radiusPill
-                            color: "#2EFFFFFF"
-                            border.width: 1; border.color: "#59FFFFFF"
-                            Text {
-                                id: levelBadgeText
-                                anchors.centerIn: parent
-                                text: (page.progress ? page.progress.tierGlyph : "")
-                                      + " Lv." + (page.progress ? page.progress.level : 1)
-                                      + " " + (page.progress ? page.progress.tierName : "") + " ›"
-                                font.pixelSize: P.Style.fontXs; font.weight: Font.DemiBold
-                                color: P.Style.surface
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { if (App) App.navigate("level") }
-                            }
-                        }
-                        Rectangle {
-                            objectName: "uiLevelBar"
-                            visible: page.progress !== null
-                            width: parent.width; height: 6; radius: 3
-                            color: "#40FFFFFF"
-                            Rectangle {
-                                objectName: "uiLevelBarFill"
-                                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                                height: parent.height; radius: parent.radius
-                                width: parent.width * (page.progress ? page.progress.progress : 0)
-                                color: P.Style.starGold
-                                Behavior on width {
-                                    enabled: P.Style.motionEnabled
-                                    NumberAnimation { duration: P.Style.durValue }
-                                }
-                            }
-                        }
-                        Text {
-                            objectName: "uiLevelXpLabel"
-                            visible: page.progress !== null
-                            width: parent.width; elide: Text.ElideRight
-                            text: page.progress
-                                  ? (page.progress.xpToNext > 0
-                                     ? "当前 " + page.progress.xpIntoLevel + "/"
-                                       + page.progress.xpSpan + " XP · 距"
-                                       + page.progress.nextTierName + "还需 "
-                                       + page.progress.xpToNext + " XP"
-                                     : "当前累计 " + page.progress.xp + " XP · 已是最高等级")
-                                  : ""
-                            font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
-                        }
+                        // 等级三件套（经验等级批）已于会员中心批移出 hero——
+                        // 现在是昵称框与钱包框之间独立的「会员等级卡」（uiLevelCard）。
                         Text {
                             objectName: "heroPhoneLabel"
                             text: page.user ? (page.user.phone || "--") : "点这里登录"
@@ -179,6 +135,127 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "编辑资料 ›"; font.pixelSize: P.Style.fontSm
                         font.weight: Font.DemiBold; color: P.Style.heroPhone
+                    }
+                }
+            }
+
+            // ---------- ①.5 会员等级卡（会员中心批，参考"白金会员"卡形态） ----------
+            // 昵称框与余额框之间的独立大卡：档位名+星级 → 成长值条 → 经验行
+            // → 当前档权益；点卡任意处进会员中心页（等级+每日任务+礼包记录）。
+            // 锚点沿用经验等级批：uiLevelBar/uiLevelXpLabel/uiLevelBadgeButton
+            // （右侧"会员中心›"入口），回归钉不破。
+            Rectangle {
+                objectName: "uiLevelCard"
+                visible: page.progress !== null
+                width: col.contentW
+                height: 118
+                radius: P.Style.radiusLg
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal   // Qt6.2 无 Diagonal
+                    GradientStop { position: 0.0
+                        color: page.progress ? page.tierColor(page.progress.level) : P.Style.heroFrom }
+                    GradientStop { position: 1.0
+                        color: Qt.lighter(page.progress ? page.tierColor(page.progress.level)
+                                                         : P.Style.heroTo, 1.35) }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (App) App.navigate("level") }
+                }
+                Item {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20; anchors.rightMargin: 16
+                    anchors.topMargin: 13; anchors.bottomMargin: 12
+                    Column {
+                        anchors.left: parent.left; anchors.right: levelEntry.left
+                        anchors.rightMargin: P.Style.spaceMd
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+                        Row {
+                            spacing: P.Style.spaceSm
+                            Text {
+                                objectName: "uiLevelCardTier"
+                                text: page.progress ? (page.progress.tierGlyph + " "
+                                                       + page.progress.tierName) : ""
+                                font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
+                                color: "white"
+                            }
+                            Text {
+                                objectName: "uiLevelCardStars"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.progress ? page.tierStars(page.progress.level) : ""
+                                font.pixelSize: P.Style.fontSm
+                                color: P.Style.starGold
+                            }
+                        }
+                        Rectangle {
+                            objectName: "uiLevelBar"
+                            width: parent.width; height: 7; radius: 3.5
+                            color: "#40FFFFFF"
+                            Rectangle {
+                                objectName: "uiLevelBarFill"
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: parent.height; radius: parent.radius
+                                width: parent.width * (page.progress ? page.progress.progress : 0)
+                                color: "white"
+                                Behavior on width {
+                                    enabled: P.Style.motionEnabled
+                                    NumberAnimation { duration: P.Style.durValue }
+                                }
+                            }
+                        }
+                        Text {
+                            objectName: "uiLevelXpLabel"
+                            width: parent.width; elide: Text.ElideRight
+                            text: page.progress
+                                  ? (page.progress.xpToNext > 0
+                                     ? "成长值 " + page.progress.xp
+                                       + "/" + (page.progress.xp + page.progress.xpToNext)
+                                       + " · 距" + page.progress.nextTierName
+                                       + "还需 " + page.progress.xpToNext + " XP"
+                                     : "成长值 " + page.progress.xp + " · 已达巅峰档位")
+                                  : ""
+                            font.pixelSize: P.Style.fontXs; color: "#E6FFFFFF"
+                        }
+                        Text {
+                            objectName: "uiLevelCardPerk"
+                            width: parent.width; elide: Text.ElideRight
+                            text: page.progress
+                                  ? String(page.progress.tiers[
+                                       Math.max(0, page.progress.level - 1)].perk) : ""
+                            font.pixelSize: P.Style.fontXs; color: "#BFFFFFFF"
+                        }
+                    }
+                    Item {
+                        id: levelEntry
+                        objectName: "uiLevelBadgeButton"
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        width: entryCol.implicitWidth; height: entryCol.implicitHeight
+                        Column {
+                            id: entryCol
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+                            Text {
+                                anchors.right: parent.right
+                                text: "会员中心 ›"
+                                font.pixelSize: P.Style.fontSm; font.weight: Font.DemiBold
+                                color: "white"
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                text: page.progress
+                                      ? "查看 " + (5 - page.progress.level + 1) + " 档权益" : ""
+                                font.pixelSize: P.Style.fontXs; color: "#BFFFFFFF"
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { if (App) App.navigate("level") }
+                        }
                     }
                 }
             }
@@ -309,9 +386,9 @@ Item {
                     { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
                     { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
                     { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
-                    // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
-                    { obj: "openTasksButton",     row: "🗓️　每日任务", route: "tasks" },
-                    { obj: "openLevelButton",     row: "🏅　会员等级", route: "level" },
+                    // 每日任务/会员等级两行（经验等级批）已被上方等级卡+会员中心
+                    // 页吸收（路由保留可深链）；会员中心批与设置并列新增积分商城。
+                    { obj: "openMallButton",      row: "🛍️　积分商城", route: "points_mall" },
                     { obj: "openRatingsButton",   row: "⭐　我的评价", route: "ratings" },
                     { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
