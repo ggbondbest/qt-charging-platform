@@ -24,6 +24,10 @@ Item {
     property int waitingCount: 0
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
 
+    // 经验等级引擎（2026-09-09）：客户端本地成长系统，经 App.progressService
+    // 透传；裸引擎/无 App 场景取 null，等级块整体隐藏（页面对测试上下文健壮）。
+    readonly property var progress: (App && App.progressService) ? App.progressService : null
+
     // 待支付角标数据（widgets ordersCell waitingBadge_ 同款）
     Connections {
         target: orderService
@@ -105,6 +109,63 @@ Item {
                             width: parent.width; elide: Text.ElideRight
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
                             font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
+                        }
+                        // —— 经验等级（2026-09-09 需求批）：上=等级徽章（可点进
+                        // 会员等级页），中=进度条，下=当前/所需经验。hero 渐变上
+                        // 用半透明白底承托，金色填充与顶栏星星同谱。 ——
+                        Rectangle {
+                            objectName: "uiLevelBadgeButton"
+                            visible: page.progress !== null
+                            width: levelBadgeText.implicitWidth + 16
+                            height: levelBadgeText.implicitHeight + 8
+                            radius: P.Style.radiusPill
+                            color: "#2EFFFFFF"
+                            border.width: 1; border.color: "#59FFFFFF"
+                            Text {
+                                id: levelBadgeText
+                                anchors.centerIn: parent
+                                text: (page.progress ? page.progress.tierGlyph : "")
+                                      + " Lv." + (page.progress ? page.progress.level : 1)
+                                      + " " + (page.progress ? page.progress.tierName : "") + " ›"
+                                font.pixelSize: P.Style.fontXs; font.weight: Font.DemiBold
+                                color: P.Style.surface
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { if (App) App.navigate("level") }
+                            }
+                        }
+                        Rectangle {
+                            objectName: "uiLevelBar"
+                            visible: page.progress !== null
+                            width: parent.width; height: 6; radius: 3
+                            color: "#40FFFFFF"
+                            Rectangle {
+                                objectName: "uiLevelBarFill"
+                                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                                height: parent.height; radius: parent.radius
+                                width: parent.width * (page.progress ? page.progress.progress : 0)
+                                color: P.Style.starGold
+                                Behavior on width {
+                                    enabled: P.Style.motionEnabled
+                                    NumberAnimation { duration: P.Style.durValue }
+                                }
+                            }
+                        }
+                        Text {
+                            objectName: "uiLevelXpLabel"
+                            visible: page.progress !== null
+                            width: parent.width; elide: Text.ElideRight
+                            text: page.progress
+                                  ? (page.progress.xpToNext > 0
+                                     ? "当前 " + page.progress.xpIntoLevel + "/"
+                                       + page.progress.xpSpan + " XP · 距"
+                                       + page.progress.nextTierName + "还需 "
+                                       + page.progress.xpToNext + " XP"
+                                     : "当前累计 " + page.progress.xp + " XP · 已是最高等级")
+                                  : ""
+                            font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
                         }
                         Text {
                             objectName: "heroPhoneLabel"
@@ -248,6 +309,9 @@ Item {
                     { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
                     { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
                     { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
+                    // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
+                    { obj: "openTasksButton",     row: "🗓️　每日任务", route: "tasks" },
+                    { obj: "openLevelButton",     row: "🏅　会员等级", route: "level" },
                     { obj: "openRatingsButton",   row: "⭐　我的评价", route: "ratings" },
                     { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
                 ]
