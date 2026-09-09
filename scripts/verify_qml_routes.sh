@@ -55,7 +55,8 @@ passed=0
 error_pattern='QML load failed|Root is not a Window|Component is not ready|TypeError:|ReferenceError:|Unable to assign|Cannot assign|is not a type|module .* is not installed|Binding loop detected|Cannot anchor to an item|Cannot load library|Cannot find plugin|QML_ROUTE_TIMEOUT'
 for route in login station profile wallet recharge order order_detail charging charging_run \
              settlement profile_edit station_detail reservation_confirm reservation_module \
-             navigation favorites notifications settings stats coupon points ratings scan queue fault_reports; do
+             navigation favorites notifications settings stats coupon points ratings scan queue fault_reports \
+             tasks level points_mall; do
     arg='{}'
     case "$route" in
         station_detail)

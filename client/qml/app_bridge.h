@@ -7,6 +7,7 @@
 namespace charging::client {
 class WalletService; class OrderService; class ChargingService;
 class StatsService; class CouponService; class PointService; class RatingService;
+class ProgressService;
 class IRequestTransport;
 namespace network { class ClientConnection; }
 namespace services {
@@ -45,6 +46,9 @@ class QmlApp final : public QObject
     Q_PROPERTY(QObject* couponService READ couponService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* pointsService READ pointsService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* ratingsService READ ratingsService NOTIFY servicesChanged)
+    // 经验等级/每日任务引擎（2026-09-09）：session 级 QSettings 持久化，
+    // 直接透传（无桥——全 QML 友好签名），QML 侧经 App.progressService 取用。
+    Q_PROPERTY(QObject* progressService READ progressService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* authService READ authService CONSTANT)
     Q_PROPERTY(QVariantMap currentUser READ currentUser NOTIFY userChanged)
     Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY loginStateChanged)
@@ -69,6 +73,7 @@ public:
     QObject* couponService() const;
     QObject* pointsService() const;
     QObject* ratingsService() const;
+    QObject* progressService() const;
     QObject* authService() const;
     QVariantMap currentUser() const;
     bool loggedIn() const { return loggedIn_; }
@@ -132,6 +137,7 @@ private:
     charging::client::CouponService* couponService_ = nullptr;
     charging::client::PointService* pointService_ = nullptr;
     charging::client::RatingService* ratingService_ = nullptr;
+    charging::client::ProgressService* progressService_ = nullptr;
     StatsBridge* statsBridge_ = nullptr;
     CouponBridge* couponBridge_ = nullptr;
     PointBridge* pointBridge_ = nullptr;

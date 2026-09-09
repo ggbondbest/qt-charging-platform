@@ -342,6 +342,15 @@ target_link_libraries(test_point_service PRIVATE
 )
 add_test(NAME point_service COMMAND test_point_service)
 
+add_executable(test_progress_service tst_progress_service.cpp)
+target_link_libraries(test_progress_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME progress_service COMMAND test_progress_service)
+
 add_executable(test_rating_service tst_rating_service.cpp)
 target_link_libraries(test_rating_service PRIVATE
     ChargingPlatform::ClientProfileChargingServices

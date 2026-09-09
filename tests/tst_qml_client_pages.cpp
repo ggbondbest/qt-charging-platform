@@ -15,8 +15,11 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScopedPointer>
+#include <QSettings>
+#include <QTemporaryDir>
 
 #include "charging/client/profile_charging/avatar_library.h"
+#include "charging/client/profile_charging/progress_service.h"
 #include "services/station/station_query_service.h"
 
 #include "app_bridge.h"
@@ -317,8 +320,20 @@ class QmlClientPagesTest final : public QObject
     Q_OBJECT
 
     QQuickWindow* window_ = nullptr;
+    QTemporaryDir settingsDir_;   // 经验等级批：QSettings 域隔离（真用户配置零污染）
 
 private slots:
+    // ProgressService/SettingsService 都落 QSettings；不设隔离域的话
+    // mock 登录号（=演示账号 13800138000）会写进真实配置文件。
+    void initTestCase()
+    {
+        QVERIFY(settingsDir_.isValid());
+        QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatformTests"));
+        QCoreApplication::setApplicationName(QStringLiteral("qml-client-pages"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir_.path());
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir_.path());
+    }
     void init()
     {
         qputenv("CHARGING_CHANNEL", "mock"); // Preview tests opt in; production defaults to TCP.
@@ -1565,6 +1580,131 @@ private slots:
         QVERIFY(arg.value(QStringLiteral("hasStationLocation")).toBool());
         QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
         QCOMPARE(routes.first().at(0).toString(), QStringLiteral("reservation_confirm"));
+    }
+
+    // —— 经验等级/每日任务批（2026-09-09）——
+    // 任务页 × 真等级引擎（本用例是隔离域内第一个写 XP 的用例）：
+    // 签到回执转经验、当日幂等、全勤奖励、跨档礼包与升级 toast 一条链钉死。
+    void tasksPageConvertsCheckInToExperience()
+    {
+        { QSettings fresh; fresh.remove(QStringLiteral("progress")); }  // 前面 PointsPage 用例已记签到经验
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QCOMPARE(prog->xp(), qint64(0));               // 隔离域内首写，基线确定
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        QObject holder; // 最后声明 → 最先析构
+        auto* page = createPage(engine, QStringLiteral("TasksPage.qml"), &holder);
+        QVERIFY(page);
+        auto* title = page->findChild<QQuickItem*>("uiTasksTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("每日任务"));
+
+        // 签到任务：页面函数发真实积分请求，积分回执回调记等级经验。
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+        QVERIFY(page->property("checkingIn").toBool());
+        fake.emitCheckIn(QStringLiteral("2026-09-09"), 60, 10, false);
+        QVERIFY(!page->property("checkingIn").toBool());
+        QCOMPARE(prog->xp(), qint64(30));
+        QCOMPARE(prog->doneTaskCount(), 1);
+
+        // 浏览型任务事件（navigate 漏斗在真机走同一入口）：重复上报当日幂等。
+        prog->reportEvent(QStringLiteral("detail"));
+        prog->reportEvent(QStringLiteral("detail"));
+        QCOMPARE(prog->xp(), qint64(50));
+        prog->reportEvent(QStringLiteral("unknown-event"));
+        QCOMPARE(prog->xp(), qint64(50));
+
+        // 打满当天：50+search20+route20+stats20=110 +全勤30 =140 → 跨白银(60)
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        prog->reportEvent(QStringLiteral("search"));
+        prog->reportEvent(QStringLiteral("route"));
+        prog->reportEvent(QStringLiteral("stats"));
+        QCOMPARE(prog->xp(), qint64(140));
+        QVERIFY(prog->allTasksDone());
+        QCOMPARE(prog->level(), 2);
+        QCOMPARE(prog->gifts().size(), 1);             // 白银礼包入账
+        QCOMPARE(prog->gifts().at(0).toMap().value("points").toLongLong(), qint64(100));
+        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 2000);   // 升级庆祝 toast
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("白银会员")));
+    }
+
+    // 等级页 × 同域状态续场：hero 文案与 tiers 属性一致、阶梯 5 档、
+    // 礼包记录 = 已升档位数（黑金无礼包口径），页面对无 pointsService 上下文健壮。
+    void levelPageMirrorsEngineState()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QQmlEngine engine;   // 不给 pointsService：LevelPage 只用等级引擎
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("LevelPage.qml"), &holder);
+        QVERIFY(page);
+        auto* heroTier = page->findChild<QQuickItem*>("uiLevelHeroTier");
+        QVERIFY(heroTier);
+        const QString expectedHero = prog->tierGlyph() + QStringLiteral(" ")
+            + prog->tierName() + QStringLiteral(" · Lv.") + QString::number(prog->level());
+        QCOMPARE(heroTier->property("text").toString(), expectedHero);
+        QVERIFY(prog->level() >= 2);                   // 上一用例已推到白银+
+        const QVariantList tiers = prog->tierTable();
+        QCOMPARE(tiers.size(), 5);
+        int currentCount = 0;
+        for (const QVariant& row : tiers)
+            currentCount += row.toMap().value("state").toString() == QLatin1String("current") ? 1 : 0;
+        QCOMPARE(currentCount, 1);
+        QCOMPARE(prog->gifts().size(), prog->level() - 1);   // 每次跨档一份礼包
+        // 会员中心批：每日任务区块嵌进等级页（TaskSection 直子对象，非 delegate）。
+        QVERIFY(page->findChild<QQuickItem*>("uiTaskSection") != nullptr);
+    }
+
+    // 积分商城（会员中心批 2026-09-09）：真余额读取 + 分类过滤 + 本机演示兑换。
+    // 服务端契约无 REDEEM → 兑换只写本机记录模型；余额不足必须拒绝。断言全钉
+    // 页根公开状态（offscreen delegate 约定），records 模型是直子对象可 findChild。
+    void pointsMallPageFiltersCatalogAndRedeemsLocally()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("PointsMallPage.qml"), &holder);
+        QVERIFY(page);
+        QVERIFY(page->findChild<QQuickItem*>("uiMallTitle") != nullptr);
+        QCOMPARE(fake.fetchCalls, 1);                     // 进页即拉真积分余额
+        QCOMPARE(page->property("listCount").toInt(), 6);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("coupon")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("card")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("all")));
+        QCOMPARE(page->property("listCount").toInt(), 6);
+
+        auto* records = page->findChild<QObject*>("uiMallRecords");
+        QVERIFY(records != nullptr);
+        fake.emitPoints(150, {}, 0);                       // 余额 150
+        QCOMPARE(page->property("points").toInt(), 150);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("k2")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 2200 分 > 150 → 拒兑
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 200 分 > 150 → 仍拒
+        fake.emitPoints(500, {}, 0);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("nope")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 未知 id 静默拒绝
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 1);   // 演示兑换成功：本机记录 +1
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c2")));
+        QCOMPARE(toast.count(), 1);                        // 500 ≥ 500：兑换回执带 toast
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("演示")));
     }
 };
 
