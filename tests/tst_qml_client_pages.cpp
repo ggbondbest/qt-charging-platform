@@ -636,6 +636,14 @@ private slots:
         QSignalSpy failures(charging, &ChargingBridge::operationFailed);
         QSignalSpy toasts(&app, &QmlApp::toastRequested);
         QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QVERIFY(!page->property("startPending").toBool()); // Selecting a target does not start a request yet.
+        auto* targetDialog = page->findChild<QObject*>("chargingTargetDialog");
+        QVERIFY(targetDialog);
+        QTRY_VERIFY(targetDialog->property("visible").toBool());
+        QCOMPARE(targetDialog->property("normalized").toDouble(), 2000.0);
+        auto* confirm = targetDialog->findChild<QObject*>("confirmChargingTargetButton");
+        QVERIFY(confirm && confirm->property("enabled").toBool());
+        click(confirm);
         QVERIFY(page->property("startPending").toBool());
         QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
         QTRY_VERIFY(!page->property("startPending").toBool());

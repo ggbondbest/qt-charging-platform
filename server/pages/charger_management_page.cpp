@@ -57,6 +57,10 @@ QString statusStyle(const QString& status)
         return QStringLiteral("background:#fff0f0; color:#ee5757; border-radius:6px; padding:0 7px;"
                               " font-size:12px; font-weight:600;");
     }
+    if (status == QObject::tr("维护中")) {
+        return QStringLiteral("background:#fff4df; color:#9a641e; border-radius:6px; padding:0 7px;"
+                              " font-size:12px; font-weight:600;");
+    }
     return QStringLiteral("background:#f1f4f8; color:#708096; border-radius:6px; padding:0 7px;"
                           " font-size:12px; font-weight:600;");
 }
@@ -556,11 +560,13 @@ void ChargerManagementPage::updateDetailActions()
     const QString status = hasSelection ? records_.at(selectedRecordIndex_).status : QString();
     const auto exception = hasSelection ? activeExceptions_.value(records_.at(selectedRecordIndex_).serverId) : QJsonObject();
     const bool writeAllowed = !realMode_ || (gateway_ && gateway_->isAuthenticated() && pendingWriteAction_.isEmpty());
-    const bool canRestart = writeAllowed && hasSelection && status != tr("充电中") && status != tr("已预约")
+    const bool maintenance = status == tr("维护中");
+    const bool canRestart = writeAllowed && hasSelection && !maintenance && status != tr("充电中") && status != tr("已预约")
         && (!realMode_ || exception.isEmpty());
     restartButton_->setEnabled(canRestart);
     restartButton_->setToolTip(canRestart ? (realMode_ ? tr("受控状态模拟；不会向真实硬件发送命令") : tr("仅更新本地 Mock 状态"))
-                                          : tr("充电中或已预约的电桩不可远程重启"));
+                                          : (maintenance ? tr("维护中的电桩请在报障维修页面完成维修后恢复")
+                                                         : tr("充电中或已预约的电桩不可远程重启")));
     refreshStatusButton_->setEnabled(hasSelection);
     const bool canClearAlert = writeAllowed && hasSelection && (status == tr("故障") || status == tr("离线"));
     clearAlertButton_->setEnabled(realMode_ ? canClearAlert && exception.value(QStringLiteral("recoverable")).toBool()
@@ -570,7 +576,7 @@ void ChargerManagementPage::updateDetailActions()
                                                 : tr("当前电桩没有可解除的告警")));
     if (realMode_) {
         editButton_->setText(tr("设置设备状态"));
-        editButton_->setEnabled(writeAllowed && hasSelection && status != tr("充电中") && status != tr("已预约"));
+        editButton_->setEnabled(writeAllowed && hasSelection && !maintenance && status != tr("充电中") && status != tr("已预约"));
         editButton_->setToolTip(tr("仅可标记为故障或离线；服务端会校验占用状态与当前版本"));
     } else {
         editButton_->setText(tr("编辑"));
@@ -595,6 +601,10 @@ void ChargerManagementPage::showEditChargerDialog()
         // QInputDialog enters a nested event loop, so a timed refresh may
         // rebuild records_ before the operator confirms a target state.
         const ChargerRecord record = records_.at(selectedRecordIndex_);
+        if (record.status == tr("维护中")) {
+            setFeedback(tr("维护中的电桩请在报障维修页面处理，不能直接修改设备状态。"));
+            return;
+        }
         bool accepted = false;
         const QString choice = QInputDialog::getItem(this, tr("设置设备状态"),
             tr("仅支持的目标状态："), {tr("故障"), tr("离线")}, 0, false, &accepted);
@@ -984,7 +994,7 @@ void ChargerManagementPage::handleDetailResponse(const QJsonObject& response)
     record.code = item.value(QStringLiteral("code")).toString(); record.station = item.value(QStringLiteral("stationName")).toString();
     record.type = item.value(QStringLiteral("type")).toString() == QStringLiteral("FAST") ? tr("直流桩") : tr("交流桩");
     record.power = tr("%1 kW").arg(item.value(QStringLiteral("powerWatts")).toInt() / 1000);
-    record.status = state == QStringLiteral("AVAILABLE") ? tr("可用") : state == QStringLiteral("RESERVED") ? tr("已预约") : state == QStringLiteral("CHARGING") ? tr("充电中") : state == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
+    record.status = item.value(QStringLiteral("maintenance")).toBool() ? tr("维护中") : state == QStringLiteral("AVAILABLE") ? tr("可用") : state == QStringLiteral("RESERVED") ? tr("已预约") : state == QStringLiteral("CHARGING") ? tr("充电中") : state == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
     const int seconds = item.value(QStringLiteral("totalChargeSeconds")).toInt(); record.totalSessions = item.value(QStringLiteral("totalChargeCount")).toInt();
     record.totalDuration = tr("%1h %2m").arg(seconds / 3600).arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'));
     record.lastHeartbeat = formatBeijingDateTime(item.value(QStringLiteral("updatedAt")).toString());
@@ -1016,7 +1026,7 @@ void ChargerManagementPage::handleListResponse(const QJsonObject& response)
         if (previousVersions.value(id) != item.value(QStringLiteral("updatedAt")).toString() || code != QStringLiteral("CHARGING"))
             runtimeSnapshots_.remove(id);
         activeExceptions_.insert(item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("activeException")).toObject());
-        const QString state = code == QStringLiteral("AVAILABLE") ? tr("可用") : code == QStringLiteral("RESERVED") ? tr("已预约") : code == QStringLiteral("CHARGING") ? tr("充电中") : code == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
+        const QString state = item.value(QStringLiteral("maintenance")).toBool() ? tr("维护中") : code == QStringLiteral("AVAILABLE") ? tr("可用") : code == QStringLiteral("RESERVED") ? tr("已预约") : code == QStringLiteral("CHARGING") ? tr("充电中") : code == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
         const int seconds = item.value(QStringLiteral("totalChargeSeconds")).toInt();
         records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("stationName")).toString(),
             item.value(QStringLiteral("type")).toString() == QStringLiteral("FAST") ? tr("直流桩") : tr("交流桩"),

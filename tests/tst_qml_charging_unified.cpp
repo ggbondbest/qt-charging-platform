@@ -49,11 +49,18 @@ public:
     QStringList tracking;
     int stops = 0;
     int releases = 0;
+    int statusFetches = 0;
+    QString startedReservation;
+    QString targetType;
+    double targetValue = 0;
     Q_INVOKABLE void startTracking(const QString& id) { tracking << id; }
     Q_INVOKABLE void stopTracking() { ++releases; }
     Q_INVOKABLE void stopCharging() { ++stops; }
     Q_INVOKABLE bool isStarting() const { return false; }
     Q_INVOKABLE void startCharging(const QString&) {}
+    Q_INVOKABLE void fetchStatusNow() { ++statusFetches; }
+    Q_INVOKABLE void startChargingWithTarget(const QString& id, const QString& type, double value)
+    { startedReservation = id; targetType = type; targetValue = value; }
 signals:
     void startCompleted(const QVariantMap& status);
     void statusLoaded(const QVariantMap& status);
@@ -176,6 +183,70 @@ private slots:
         QVERIFY(!f.page->findChild<QObject*>("viewChargingRunButton"));
     }
 
+    void targetDialogConfirmsIntegerBudgetBeforeStart()
+    {
+        Fixture f;
+        QVERIFY(f.page);
+        QSignalSpy warnings(&f.engine, &QQmlEngine::warnings);
+        QVERIFY(QMetaObject::invokeMethod(f.page.get(), "startReservation", Q_ARG(QVariant, "123")));
+        QVERIFY(!f.page->property("startPending").toBool());
+        auto* dialog = f.page->findChild<QObject*>("chargingTargetDialog");
+        QVERIFY(dialog);
+        QVERIFY(dialog->property("visible").toBool());
+        QCOMPARE(dialog->property("normalized").toDouble(), 2000.0);
+        auto* confirm = dialog->findChild<QObject*>("confirmChargingTargetButton");
+        QVERIFY(confirm);
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QCOMPARE(f.charging.startedReservation, QStringLiteral("123"));
+        QCOMPARE(f.charging.targetType, QStringLiteral("AMOUNT"));
+        QCOMPARE(f.charging.targetValue, 2000.0);
+        QVERIFY(f.page->property("startPending").toBool());
+        QVERIFY2(warnings.isEmpty(), "Target dialog emitted a binding warning");
+    }
+
+    void autoStopListRefreshDoesNotLoseSettlement()
+    {
+        Fixture f;
+        QVERIFY(f.page);
+        f.active();
+        auto live = order();
+        live.insert("target", QVariantMap{{"type", "AMOUNT"}, {"value", 2000},
+                    {"completedValue", 152}, {"remainingValue", 1848}, {"progressPercent", 7.6}});
+        emit f.charging.statusLoaded(live);
+        auto* progress = f.page->findChild<QQuickItem*>("chargingTargetProgress");
+        QVERIFY(progress && progress->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(f.page.get(), "refreshAll"));
+        f.orders.respond({});
+        QCOMPARE(f.charging.statusFetches, 1);
+        QCOMPARE(f.charging.releases, 0);
+        QSignalSpy routes(&f.app, &AppFake::navigateRequested);
+        auto finished = order("17", "waiting_payment");
+        finished.insert("stopReason", "TARGET_AMOUNT");
+        emit f.charging.statusLoaded(finished);
+        QCOMPARE(routes.size(), 1);
+        QCOMPARE(routes.at(0).at(0).toString(), QStringLiteral("settlement"));
+        QCOMPARE(f.charging.releases, 1);
+    }
+
+    void targetDialogFitsSmallLargeFontWindow()
+    {
+        Fixture f("ChargingHomePage.qml", {320, 540});
+        QVERIFY(f.page);
+        f.appearance->setProperty("scaleName", "extraLarge");
+        QSignalSpy warnings(&f.engine, &QQmlEngine::warnings);
+        QVERIFY(QMetaObject::invokeMethod(f.page.get(), "startReservation", Q_ARG(QVariant, "123")));
+        QTest::qWait(100);
+        auto* dialog = f.page->findChild<QObject*>("chargingTargetDialog");
+        QVERIFY(dialog && dialog->property("visible").toBool());
+        QVERIFY(dialog->property("height").toReal() <= 516);
+        QVERIFY2(warnings.isEmpty(), "Small target dialog emitted a binding warning");
+        const QString out = qEnvironmentVariable("CHARGING_UI_CAPTURE_DIR");
+        if (!out.isEmpty()) {
+            QDir().mkpath(out);
+            QVERIFY(f.window.grabWindow().save(out + "/charging-target-dialog-small.png"));
+        }
+    }
+
     void cancellationIsConfirmedAndPendingBlocksStart()
     {
         Fixture f;
@@ -217,6 +288,10 @@ private slots:
         f.appearance->setProperty("theme", theme);
         f.appearance->setProperty("scaleName", scale);
         f.active();
+        auto live = order();
+        live.insert("target", QVariantMap{{"type", "AMOUNT"}, {"value", 2000},
+                    {"completedValue", 152}, {"remainingValue", 1848}, {"progressPercent", 7.6}});
+        emit f.charging.statusLoaded(live);
         QVERIFY(QTest::qWaitForWindowExposed(&f.window));
         QTest::qWait(100);
         auto* hero = f.page->findChild<QQuickItem*>("uiChargingHero");

@@ -19,6 +19,7 @@
 #include <QDate>
 #include <QTime>
 #include <QTimer>
+#include <cmath>
 
 namespace charging::qml {
 namespace {
@@ -51,6 +52,8 @@ QVariantMap statusToMap(const charging::client::ChargingStatus& status)
     m.insert(QStringLiteral("chargerCode"), status.chargerCode);
     m.insert(QStringLiteral("powerWatts"), status.powerWatts);
     m.insert(QStringLiteral("powerKnown"), status.powerKnown);
+    m.insert(QStringLiteral("target"), status.order.target.toVariantMap());
+    m.insert(QStringLiteral("stopReason"), status.order.stopReason);
     return m;
 }
 
@@ -105,6 +108,12 @@ QString notificationTypeWord(
         return QStringLiteral("charging_stopped");
     case charging::client::services::favorites::NotificationType::OrderPaid:
         return QStringLiteral("order_paid");
+    case charging::client::services::favorites::NotificationType::QueueCalled:
+        return QStringLiteral("queue_called");
+    case charging::client::services::favorites::NotificationType::QueueExpired:
+        return QStringLiteral("queue_expired");
+    case charging::client::services::favorites::NotificationType::RepairUpdated:
+        return QStringLiteral("repair_updated");
     }
     return QStringLiteral("reservation_success_notice");
 }
@@ -166,7 +175,9 @@ QVariantMap chargerToMap(const charging::model::Charger& charger)
         {QStringLiteral("code"), charger.code},
         {QStringLiteral("type"), chargerTypeWord(charger.type)},
         {QStringLiteral("powerWatts"), charger.powerWatts},
-        {QStringLiteral("status"), chargerStatusWord(charger.status)},
+        {QStringLiteral("status"), charger.maintenance ? QStringLiteral("maintenance") : chargerStatusWord(charger.status)},
+        {QStringLiteral("maintenance"), charger.maintenance},
+        {QStringLiteral("displayStatus"), charger.maintenance ? QStringLiteral("维护中") : QString()},
         {QStringLiteral("totalChargeCount"), charger.totalChargeCount},
         {QStringLiteral("totalChargeSeconds"), charger.totalChargeSeconds},
     };
@@ -285,6 +296,8 @@ QVariantMap orderToMap(const charging::model::Order& order,
         {QStringLiteral("stoppedAt"), when(order.stoppedAtUtc)},
         {QStringLiteral("stationName"), stationName},
         {QStringLiteral("chargerCode"), chargerCode},
+        {QStringLiteral("target"), order.target.toVariantMap()},
+        {QStringLiteral("stopReason"), order.stopReason},
     };
 }
 
@@ -391,6 +404,17 @@ void ChargingBridge::stopTracking() { svc_->stopTracking(); }
 void ChargingBridge::fetchStatusNow() { svc_->fetchStatusNow(); }
 void ChargingBridge::stopCharging() { svc_->stopCharging(); }
 void ChargingBridge::startCharging(const QVariant& reservationId) { svc_->startCharging(reservationId.toLongLong()); }
+void ChargingBridge::startChargingWithTarget(const QVariant& reservationId, const QString& type,
+                                             double value)
+{
+    if (!std::isfinite(value) || value <= 0 || std::floor(value) != value
+        || value > charging::model::kMaximumJsonSafeInteger) {
+        emit operationFailed(QStringLiteral("START_CHARGING"), QStringLiteral("INVALID_ENVELOPE"),
+                             QStringLiteral("请输入有效的充电目标"));
+        return;
+    }
+    svc_->startChargingWithTarget(reservationId.toLongLong(), type, static_cast<qint64>(value));
+}
 bool ChargingBridge::isStarting() const { return svc_->isStarting(); }
 void ChargingBridge::payOrder(const QVariant& orderId) { svc_->payOrder(orderId.toLongLong()); }
 

@@ -152,7 +152,20 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 
 ## 5. Event envelope
 
-`EVENT` 已在公共 enum 中预留，用于后续服务端推送充电进度或电桩状态。v1 首版不发送 Event，也尚未冻结 Event 字段；任何成员不得自行定义并上线。需要时必须先更新本文档、公共 codec 和测试。
+新增排队/维修/目标充电扩展使用 `EVENT`。登录后显式请求 `WORKFLOW_SUBSCRIBE {}`，成功后同一连接可收到下列事件。未订阅的旧客户端不会收到事件；重新登录会清除订阅，需要重新订阅。
+
+```json
+{
+  "protocolVersion": 1,
+  "kind": "EVENT",
+  "type": "WORKFLOW_CHANGED",
+  "data": {"revision": "9", "observedAt": "2026-09-09T08:30:00.000Z"}
+}
+```
+
+事件沿用同一长度帧，不携带 `requestId/success/error`，不是请求的响应。必填字段为版本、`kind=EVENT`、1–64 字符的 `type` 与 object 类型 `data`；使用独立 Event codec 验证。`revision` 仅为本次服务器运行的递增失效编号，不可作为全局数据库版本。
+
+服务器每秒合并广播状态失效提示，不广播用户、队列或报障正文。客户端收到后经原鉴权接口刷新本人数据；临时订阅失败会重试，同时每 10 秒补刷，避免漏事件导致页面一直停留旧状态。队列叫号和维修进度另写入本人通知记录，可在重新登录后查询。
 
 ## 6. v1 动作注册表
 
@@ -166,7 +179,7 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 | `GET_RESERVATIONS` | 查询本人预约 | 用户 | `status`、`page`、`pageSize` |
 | `RESERVE_CHARGER` | 预约空闲电桩 | 用户 | `chargerId` |
 | `CANCEL_RESERVATION` | 取消本人有效预约 | 用户 | `reservationId` |
-| `START_CHARGING` | 从有效预约开始充电 | 用户 | `reservationId` |
+| `START_CHARGING` | 从有效预约开始充电 | 用户 | `reservationId`，可选 `target` |
 | `GET_CHARGING_STATUS` | 获取实时充电快照 | 用户 | `orderId` |
 | `STOP_CHARGING` | 停止本人充电订单 | 用户 | `orderId` |
 | `PAY_ORDER` | 支付待结算订单 | 用户 | `orderId` |
@@ -175,6 +188,15 @@ Client 建议用 `QUuid::createUuid().toString(QUuid::WithoutBraces)` 生成 req
 | `RECHARGE` | 钱包模拟充值 | 用户 | `amountCents`、`transactionNo` |
 | `GET_RECHARGE_RECORDS` | 查询本人充值记录 | 用户 | 分页参数 |
 | `GET_ORDERS` | 查询本人订单 | 用户 | 状态、分页参数 |
+| `WORKFLOW_SUBSCRIBE` | 订阅状态变化提示 | 用户 | `{}` |
+| `QUEUE_JOIN` | 加入具体电桩的 FIFO 队列 | 用户 | `chargerId`、`operationId` |
+| `QUEUE_GET_MINE` | 本人有效或最近一条排队状态 | 用户 | `{}` |
+| `QUEUE_LEAVE` / `QUEUE_CONFIRM` | 退出 / 确认叫号并创建预约 | 用户 | 队列 `id`、`operationId` |
+| `REPAIR_SUBMIT` | 提交电桩报障 | 用户 | `chargerId`、`problemType`、`description`、`operationId` |
+| `REPAIR_GET_MINE` | 本人报障分页 | 用户 | `page`、`pageSize` |
+| `REPAIR_GET` | 本人报障详情和时间轴 | 用户 | 报障 `id` |
+
+完整业务规则和管理端局部网关接口见 [排队、报障与目标充电](../development/queue-repair-targets.md)。
 
 ### 6.2 管理端
 
@@ -289,6 +311,10 @@ Charger     RESERVED -> CHARGING
 ```
 
 对同一预约重复开始返回 `INVALID_STATE_TRANSITION`。
+
+可选目标示例：`{"reservationId":"1","target":{"type":"AMOUNT","value":2000}}`，表示最多 20 元。`AMOUNT/ENERGY/DURATION` 分别使用整数分、Wh、秒；`value` 必须为正的 JSON 安全整数。不传 `target` 保持旧手动模式；显式空对象、null 或客户端伪造的进度字段均拒绝。
+
+目标与启动同一事务存储。服务器独立达到阈值后停止并结算，即使客户端断开也执行；金额是预算上限，必要时按整 Wh 提前停止，绝不超额。`order.target` 附 `type/value/completedValue/remainingValue/progressPercent/reached`，`order.stopReason` 保存 `MANUAL/TARGET_AMOUNT/TARGET_ENERGY/TARGET_DURATION`。未设置目标的旧订单无 `target`，尚未停止或历史订单允许无 `stopReason`。
 
 ### 8.4 `GET_CHARGING_STATUS`
 

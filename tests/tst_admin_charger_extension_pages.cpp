@@ -57,6 +57,28 @@ class AdminChargerExtensionPagesTest final : public QObject
         QCOMPARE(gateway.adminId(), adminId);
     }
 private slots:
+    void maintenanceStatusDisablesLegacyWrites()
+    {
+        ServerRuntime runtime;
+        AdminRequestGateway gateway(&runtime);
+        authenticate(runtime, gateway);
+        ChargerManagementPage page;
+        page.setAdminGateway(&gateway);
+        auto maintained = charger("1", "OFFLINE", charging::server::event());
+        maintained.insert("maintenance", true);
+        maintained.insert("displayStatus", QStringLiteral("维护中"));
+        page.handleListResponse(success({{"items", QJsonArray{maintained}}, {"total", 1}}));
+        page.showChargerDetails(0, false);
+        QCOMPARE(page.detailStatusLabel_->text(), QStringLiteral("维护中"));
+        QVERIFY(!page.restartButton_->isEnabled());
+        QVERIFY(!page.editButton_->isEnabled());
+        QVERIFY(!page.clearAlertButton_->isEnabled());
+        QVERIFY(page.refreshStatusButton_->isEnabled());
+        page.detailExpectedServerId_ = "1";
+        page.handleDetailResponse(success({{"item", maintained}}));
+        QCOMPARE(page.detailStatusLabel_->text(), QStringLiteral("维护中"));
+        QVERIFY(!page.restartButton_->isEnabled());
+    }
     void manualRefreshRetriesInitiallyFailedOptions_data()
     {
         QTest::addColumn<bool>("detailRefresh");

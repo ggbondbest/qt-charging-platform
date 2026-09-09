@@ -4,6 +4,9 @@
 #include "charging_repository.h"
 #include "charging_service.h"
 #include "database_connection.h"
+#include "user_api_repository.h"
+#include "user_api_service.h"
+#include "charging/common/model/model_json.h"
 
 #include <QJsonArray>
 #include <QSqlQuery>
@@ -48,6 +51,41 @@ class AdminChargerExtensionsTest final : public QObject
         return query.exec(text) && query.next() ? query.value(0).toLongLong() : -1;
     }
 private slots:
+    void maintenanceDtoAndLegacyActionsCannotReleaseAcceptedRepair()
+    {
+        QVERIFY(ok(setState("1", "FAULT", "fault-before-repair")));
+        const auto event = charger().value("activeException").toObject();
+        QVERIFY(!event.isEmpty());
+        QVERIFY(sql("INSERT INTO repair_reports(user_id,charger_id,problem_type,description,status,created_at,updated_at) "
+                    "VALUES(1,1,'CONNECTOR','锁扣松动','ACCEPTED','2026-09-09T10:00:00.000Z','2026-09-09T10:00:00.000Z')"));
+        QVERIFY(sql("UPDATE chargers SET status='OFFLINE' WHERE id=1"));
+        const auto current = charger();
+        QVERIFY(current.value("maintenance").toBool());
+        QCOMPARE(current.value("displayStatus").toString(), QStringLiteral("维护中"));
+        QCOMPARE(code(call("charger.restart", {{"id", "1"}, {"operationId", "bypass-restart"},
+                                               {"expectedUpdatedAt", current.value("updatedAt")}})), QString("RESOURCE_BUSY"));
+        QCOMPARE(code(setState("1", "FAULT", "bypass-status")), QString("RESOURCE_BUSY"));
+        QCOMPARE(code(call("charger_exceptions.recover", recovery(event, "bypass-recover"))), QString("RESOURCE_BUSY"));
+        QCOMPARE(scalar("SELECT COUNT(*) FROM chargers WHERE id=1 AND status='OFFLINE'"), 1LL);
+        QCOMPARE(scalar("SELECT COUNT(*) FROM charger_exceptions WHERE id=" + event.value("id").toString() + " AND status='ACTIVE'"), 1LL);
+        UserApiRepository userRepository(db_.database());
+        UserApiService userService(&userRepository);
+        const auto response = userService.handle("GET_CHARGERS", {{"stationId", "1"}}, 1);
+        QVERIFY(response.success);
+        const auto chargers = response.data.value("chargers").toArray();
+        QVERIFY(!chargers.isEmpty());
+        const auto first = chargers.first().toObject();
+        QVERIFY(first.value("maintenance").isBool());
+        QVERIFY(first.value("maintenance").toBool());
+        charging::model::Charger parsed;
+        QVERIFY(charging::model::fromJson(first, &parsed));
+        QVERIFY(parsed.maintenance);
+        auto legacy = first; legacy.remove("maintenance");
+        QVERIFY(charging::model::fromJson(legacy, &parsed));
+        QVERIFY(!parsed.maintenance);
+        legacy.insert("maintenance", 1);
+        QVERIFY(!charging::model::fromJson(legacy, &parsed));
+    }
     void init()
     {
         QString error;

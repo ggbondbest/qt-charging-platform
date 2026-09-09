@@ -147,6 +147,11 @@ Item {
     function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
 
     Connections {
+        target: App && App.workflowService ? App.workflowService : null
+        function onChanged() { if (page.visible && !page.loading) page.refresh() }
+    }
+
+    Connections {
         target: stationQueryService
         function onQueryStarted() { page.loading = true; page.failed = false }
         function onQuerySucceeded(stations) {

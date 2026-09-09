@@ -1,4 +1,7 @@
 add_library(charging_server_repositories STATIC
+    queue_repository.cpp queue_repository.h
+    repair_repository.cpp repair_repository.h
+    charging_target_repository.cpp charging_target_repository.h
     admin_charger_extensions.cpp
     admin_charger_extensions.h
     admin_order_billing.cpp

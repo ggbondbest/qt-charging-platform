@@ -88,6 +88,7 @@ Item {
                         { k: "桩编号", v: page.order.chargerCode || "—" },
                         { k: "电量", v: ((page.order.energyWh || 0) / 1000).toFixed(2) + " kWh" },
                         { k: "时长", v: page.dur(page.order.durationSeconds) },
+                        { k: "停止原因", v: ({"TARGET_AMOUNT": "按预算自动结束", "TARGET_ENERGY": "达到电量目标", "TARGET_DURATION": "达到时长目标", "MANUAL": "用户主动结束"})[page.order.stopReason] || "—" },
                         { k: "单价", v: "¥ " + money(page.order.unitPriceCentsPerKwh) + " /kWh" },
                         { k: "账户余额", v: "¥ " + (App && App.currentUser ? money(App.currentUser.balanceCents) : "0.00") },
                     ] : []

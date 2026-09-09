@@ -1,4 +1,6 @@
 add_library(charging_server_services STATIC
+    queue_service.cpp queue_service.h
+    repair_service.cpp repair_service.h
     admin_service.cpp
     admin_service.h
     billing_service.cpp

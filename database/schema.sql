@@ -155,6 +155,8 @@ CREATE TABLE IF NOT EXISTS orders (
     started_at TEXT,
     stopped_at TEXT,
     paid_at TEXT,
+    stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN
+        ('TARGET_AMOUNT', 'TARGET_ENERGY', 'TARGET_DURATION', 'MANUAL')),
     telemetry_captured_at TEXT,
     telemetry_power_watts INTEGER CHECK (telemetry_power_watts IS NULL OR
         (typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0)),
@@ -250,7 +252,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('CHARGING_STOPPED', 'ORDER_PAID',
-        'RESERVATION_EXPIRY_REMINDER')),
+        'RESERVATION_EXPIRY_REMINDER', 'QUEUE_CALLED', 'QUEUE_EXPIRED', 'REPAIR_UPDATED')),
     title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 64),
     body TEXT NOT NULL CHECK (length(trim(body)) BETWEEN 1 AND 512),
     created_at TEXT NOT NULL
@@ -258,6 +260,74 @@ CREATE TABLE IF NOT EXISTS notifications (
     read_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id)
         ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS queue_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    charger_id INTEGER NOT NULL REFERENCES chargers(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL DEFAULT 'WAITING' CHECK (status IN ('WAITING','CALLED','CONFIRMED','LEFT','EXPIRED')),
+    entered_at TEXT NOT NULL,
+    called_at TEXT,
+    call_expires_at TEXT,
+    ended_at TEXT,
+    reservation_id INTEGER REFERENCES reservations(id) ON DELETE RESTRICT,
+    updated_at TEXT NOT NULL,
+    join_operation_id TEXT NOT NULL CHECK (length(join_operation_id) BETWEEN 1 AND 64),
+    confirm_operation_id TEXT,
+    leave_operation_id TEXT,
+    UNIQUE(user_id, join_operation_id),
+    UNIQUE(user_id, confirm_operation_id),
+    UNIQUE(user_id, leave_operation_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_queue_active_user ON queue_entries(user_id)
+    WHERE status IN ('WAITING','CALLED');
+CREATE UNIQUE INDEX IF NOT EXISTS ux_queue_called_charger ON queue_entries(charger_id)
+    WHERE status = 'CALLED';
+CREATE INDEX IF NOT EXISTS idx_queue_fifo ON queue_entries(charger_id,status,entered_at,id);
+
+CREATE TABLE IF NOT EXISTS repair_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    charger_id INTEGER NOT NULL REFERENCES chargers(id) ON DELETE RESTRICT,
+    problem_type TEXT NOT NULL CHECK (problem_type IN ('CONNECTION','SCREEN','CONNECTOR','CHARGING','OTHER')),
+    description TEXT NOT NULL CHECK (length(trim(description)) BETWEEN 1 AND 200),
+    status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED','ACCEPTED','PROCESSING','RESOLVED')),
+    processing_note TEXT NOT NULL DEFAULT '' CHECK (length(processing_note) <= 200),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+CREATE TABLE IF NOT EXISTS repair_timeline (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id INTEGER NOT NULL REFERENCES repair_reports(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK (status IN ('SUBMITTED','ACCEPTED','PROCESSING','RESOLVED')),
+    note TEXT NOT NULL CHECK (length(note) <= 200),
+    admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS repair_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_type TEXT NOT NULL CHECK (actor_type IN ('USER','ADMIN')),
+    actor_id INTEGER NOT NULL,
+    operation_id TEXT NOT NULL CHECK (length(operation_id) BETWEEN 1 AND 64),
+    action TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(actor_type,actor_id,operation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_repair_user_created ON repair_reports(user_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS idx_repair_charger_status ON repair_reports(charger_id,status);
+CREATE INDEX IF NOT EXISTS idx_repair_status_updated ON repair_reports(status,updated_at);
+CREATE INDEX IF NOT EXISTS idx_repair_timeline_report ON repair_timeline(report_id,id);
+
+CREATE TABLE IF NOT EXISTS order_charge_targets (
+    order_id INTEGER PRIMARY KEY REFERENCES orders(id) ON DELETE RESTRICT,
+    target_type TEXT NOT NULL CHECK (target_type IN ('AMOUNT','ENERGY','DURATION')),
+    target_value INTEGER NOT NULL CHECK (typeof(target_value) = 'integer'
+        AND target_value BETWEEN 1 AND 9007199254740991),
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS coupons (
@@ -398,6 +468,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_active_charger
 -- v4 adds optional legacy station contact columns, persisted simulated meter
 -- samples, independent exception events and explicit order tariff snapshots.
 -- DatabaseConnection atomically adds missing columns on supported v1-v3 files.
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 COMMIT;

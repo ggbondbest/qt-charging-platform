@@ -66,6 +66,11 @@ int ChargingServer::clientCount() const
     return clients_.size();
 }
 
+void ChargingServer::broadcastWorkflowChanged(const QJsonObject& data)
+{
+    for (auto* session : findChildren<ClientSession*>()) session->sendWorkflowChanged(data);
+}
+
 void ChargingServer::handleNewConnections()
 {
     while (tcpServer_.hasPendingConnections()) {

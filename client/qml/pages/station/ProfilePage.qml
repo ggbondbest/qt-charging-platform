@@ -242,6 +242,8 @@ Item {
             Repeater {
                 model: [
                     { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
+                    { obj: "openQueueButton", row: "◷　我的排队", route: "queue" },
+                    { obj: "openFaultReportsButton", row: "⚒　我的报障", route: "fault_reports" },
                     // 2026-09-08 成员2 新增消息通知行（fe325d3）与成员3 四入口行合并：
                     // 月报/签到积分为成员3 新页，优惠券接成员2 CouponPage。
                     { obj: "openNotificationsButton", row: "🔔　消息通知", route: "notifications" },

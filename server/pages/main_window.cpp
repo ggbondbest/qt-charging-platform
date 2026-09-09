@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "workflow_management_page.h"
 
 #include "admin_login_page.h"
 #include "admin_request_gateway.h"
@@ -310,7 +311,7 @@ QWidget* MainWindow::createManagementPage()
 
     const QList<QString> navigationTitles = {tr("运营概览"), tr("电桩管理"),
                                              tr("电站管理"), tr("用户管理"), tr("订单管理"),
-                                             tr("充值记录"), tr("操作日志")};
+                                             tr("充值记录"), tr("操作日志"), tr("排队与维修")};
     auto* navigationGroup = new QButtonGroup(managementPage);
     navigationGroup->setExclusive(true);
     const int navigationCount = navigationTitles.size();
@@ -402,6 +403,8 @@ QWidget* MainWindow::createManagementPage()
     operationLogPage_->setAdminGateway(adminGateway_);
     operationLogScrollArea->setContentWidget(operationLogPage_);
     pageStackedWidget_->addWidget(operationLogScrollArea);
+    workflowPage_ = new WorkflowManagementPage(adminGateway_, pageStackedWidget_);
+    pageStackedWidget_->addWidget(workflowPage_);
     contentLayout->addWidget(pageStackedWidget_, 1);
 
     const QList<QString> navigationDescriptions = {
@@ -412,6 +415,7 @@ QWidget* MainWindow::createManagementPage()
         tr("筛选订单，查看关键计量与状态信息"),
         tr("查询用户余额变更与充值渠道处理状态"),
         tr("查询服务端记录的安全审计元数据"),
+        tr("查看各站队列与叫号，核实报障并跟踪模拟维修"),
     };
     const auto showPage = [this, navigationGroup, navigationTitles, navigationDescriptions](int index) {
         Q_ASSERT(index >= 0 && index < navigationTitles.size());
@@ -478,6 +482,7 @@ void MainWindow::refreshActivePage()
     case 4: orderManagementPage_->refreshData(); break;
     case 5: rechargeRecordsPage_->refreshData(); break;
     case 6: operationLogPage_->refreshData(); break;
+    case 7: workflowPage_->refreshData(); break;
     default: break;
     }
 }

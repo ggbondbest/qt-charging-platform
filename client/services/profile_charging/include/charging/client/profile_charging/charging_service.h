@@ -58,6 +58,7 @@ public:
     // （TODO(contract)：SCAN_START 形状待定）；只有 mock 通道接受 0，仅演示用。
     // On success the service begins tracking the new order immediately.
     void startCharging(qint64 reservationId);
+    void startChargingWithTarget(qint64 reservationId, const QString& type, qint64 value);
     bool isStarting() const;
     void payOrder(qint64 orderId); // PAY_ORDER (server re-validates balance)
     bool isPaying() const;
@@ -70,6 +71,7 @@ signals:
     void operationFailed(const QString& type, const charging::protocol::ProtocolError& error);
 
 private:
+    void sendStart(qint64 reservationId, const QJsonObject& target);
     void handlePollTick();
     // Parses a GET_CHARGING_STATUS / STOP_CHARGING success envelope
     // (§8.4/8.5): { order: {...}, currentPowerWatts: N, stationName?,

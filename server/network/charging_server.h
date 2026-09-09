@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QJsonObject>
 #include <QSet>
 #include <QString>
 #include <QTcpServer>
@@ -29,6 +30,7 @@ public:
     quint16 serverPort() const;
     QString errorString() const;
     int clientCount() const;
+    void broadcastWorkflowChanged(const QJsonObject& data);
 
 signals:
     void listening(quint16 port);
