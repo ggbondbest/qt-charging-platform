@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 会员等级页（2026-09-09 经验等级批）：从「我的」页点等级进入。
 // 三段式：当前等级 hero（条+经验）→ 等级阶梯与权益 → 升级记录。
@@ -78,12 +79,23 @@ Item {
                         anchors.left: parent.left; anchors.top: parent.top
                         anchors.right: parent.right
                         spacing: 3
-                        Text {
-                            objectName: "uiLevelHeroTier"
-                            text: page.prog ? (page.prog.tierGlyph + " " + page.prog.tierName
-                                               + " · Lv." + page.prog.level) : ""
-                            font.pixelSize: P.Style.fontHero; font.weight: Font.ExtraBold
-                            color: "white"
+                        // 档名行：白色奖牌线稿承托档位渐变（tierGlyph emoji 已退役，
+                        // 图形与文字不再双重表意）。
+                        Row {
+                            spacing: P.Style.spaceSm
+                            Image {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.round(26 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source("medal", "#FFFFFF")
+                            }
+                            Text {
+                                objectName: "uiLevelHeroTier"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.prog ? (page.prog.tierName + " · Lv." + page.prog.level) : ""
+                                font.pixelSize: P.Style.fontHero; font.weight: Font.ExtraBold
+                                color: "white"
+                            }
                         }
                         Text {
                             objectName: "uiLevelHeroXp"
@@ -148,9 +160,11 @@ Item {
                             anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                             width: 42; height: 42; radius: 21
                             color: page.tierColor(modelData.level)
-                            Text {
+                            Image {
                                 anchors.centerIn: parent
-                                text: modelData.glyph; font.pixelSize: 19
+                                width: Math.round(22 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source("medal", "#FFFFFF")
                             }
                         }
                         Column {
@@ -214,9 +228,11 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 16; anchors.rightMargin: 16
                         spacing: P.Style.spaceMd
-                        Text {
+                        Image {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.glyph; font.pixelSize: 18
+                            width: Math.round(22 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("medal", page.tierColor(modelData.level))
                         }
                         Column {
                             anchors.verticalCenter: parent.verticalCenter
@@ -232,9 +248,11 @@ Item {
                                 font.pixelSize: P.Style.fontSm; color: P.Style.faint
                             }
                         }
-                        Text {
+                        Image {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "🎁"; font.pixelSize: 16
+                            width: Math.round(20 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("gift", P.Style.warning)
                         }
                     }
                 }
@@ -244,7 +262,7 @@ Item {
                 width: parent.width
                 height: 150
                 visible: !!page.prog && page.prog.gifts.length === 0
-                glyph: "🎁"
+                glyph: "gift"
                 title: "还没有升级记录"
                 description: "去「每日任务」攒经验，跨过档位门槛即自动发放礼包。"
                 actionText: ""
@@ -265,7 +283,7 @@ Item {
                 width: parent.width
                 height: 180
                 visible: !page.prog
-                glyph: "🏅"
+                glyph: "medal"
                 title: "等级系统未就绪"
                 description: "登录后即可在这里查看会员等级与权益。"
                 actionText: ""

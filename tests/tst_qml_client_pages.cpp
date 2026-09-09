@@ -1763,8 +1763,10 @@ private slots:
         QVERIFY(page);
         auto* heroTier = page->findChild<QQuickItem*>("uiLevelHeroTier");
         QVERIFY(heroTier);
-        const QString expectedHero = prog->tierGlyph() + QStringLiteral(" ")
-            + prog->tierName() + QStringLiteral(" · Lv.") + QString::number(prog->level());
+        // 2026-09-09 emoji→glyph 批：奖牌图形由 Image 行首承担，
+        // 文字行不再拼 tierGlyph（图形与文字单表意）。
+        const QString expectedHero = prog->tierName()
+            + QStringLiteral(" · Lv.") + QString::number(prog->level());
         QCOMPARE(heroTier->property("text").toString(), expectedHero);
         QVERIFY(prog->level() >= 2);                   // 上一用例已推到白银+
         const QVariantList tiers = prog->tierTable();

@@ -113,7 +113,7 @@ Item {
             }
             requestedPeriod = ""
             listScroll.setRefreshing(false)
-            if (App) App.showToast("月报加载失败：" + message, "danger")
+            if (App) App.showToast("充电报告加载失败：" + message, "danger")
         }
     }
     Component.onCompleted: load()

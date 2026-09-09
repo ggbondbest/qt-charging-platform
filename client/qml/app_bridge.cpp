@@ -121,7 +121,7 @@ void QmlApp::createSession(const charging::model::User& user)
     progressService_ = new charging::client::ProgressService(user.phone, session_);
     connect(progressService_, &charging::client::ProgressService::levelUp, this,
             [this](int, const QString& tier, qint64 giftPoints) {
-        emit toastRequested(tr("🎉 恭喜升级到 %1！礼包 +%2 积分已记入等级账目")
+        emit toastRequested(tr("恭喜升级到 %1！礼包 +%2 积分已记入等级账目")
                             .arg(tier).arg(giftPoints), "success");
     });
     reservationService_->setUserId(user.id);

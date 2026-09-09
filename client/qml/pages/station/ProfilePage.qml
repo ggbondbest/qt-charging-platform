@@ -10,7 +10,7 @@ import "../../platform/Glyphs.js" as Glyphs
 //   2) wallet float card: 余额 | 充值 | 充值记录 三列同卡（1×40 divider）
 //   3) 双格入口：我的订单（待支付角标）/ 我的预约
 //   4) 「账号与服务」分组：整齐方块宫格（4 列）——2026-09-09 按用户参考稿
-//      由 52px 长行改宫格，收藏/通知/月报/券/积分/评价/设置七格，
+//      由 52px 长行改宫格，收藏/通知/报告/券/积分/任务/等级/评价/设置九格，
 //      通知/优惠券/积分角标走桥真实计数（无数据即不显示，不放假数值）
 //   5) 退出登录 = 白卡红字 logout variant（不是 danger 红底）
 // 结构由成员3 于 2026-09-07 按 widgets 原版重建（成员2 文件，PR 报备）。
@@ -90,6 +90,13 @@ Item {
     // 透传；裸引擎/无 App 场景取 null，等级块整体隐藏（页面对测试上下文健壮）。
     readonly property var progress: (App && App.progressService) ? App.progressService : null
 
+    // 档位主题色：青铜/白银/黄金/铂金/黑金（与 LevelPage.tierColor 逐字同表——
+    // 两页各自页面内字面量，改档色须同批，LevelPage 头注已互指）。
+    function tierColor(lv) {
+        const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
+        return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
+    }
+
     // 待支付角标数据（widgets ordersCell waitingBadge_ 同款）
     Connections {
         target: orderService
@@ -115,6 +122,9 @@ Item {
             page.checkingIn = false
             page.pointsTotal = points
             page.checkedToday = true              // 成功与重放都进入"已签"态
+            // 经验等级挂点（经验批原钉 PointsPage 回执，该面已随纯流水化删除——
+            // 签到入口收口在本页胶囊与任务页，两处同报；当日幂等在服务内）。
+            if (page.progress) page.progress.reportEvent("checkin")
             if (App) App.showToast(
                 (alreadyCheckedIn || gained <= 0) ? "今天已经签过啦"
                                                   : "签到成功 +" + gained + " 积分",
@@ -207,63 +217,8 @@ Item {
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
                             font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
                         }
-                        // —— 经验等级（2026-09-09 需求批）：上=等级徽章（可点进
-                        // 会员等级页），中=进度条，下=当前/所需经验。hero 渐变上
-                        // 用半透明白底承托，金色填充与顶栏星星同谱。 ——
-                        Rectangle {
-                            objectName: "uiLevelBadgeButton"
-                            visible: page.progress !== null
-                            width: levelBadgeText.implicitWidth + 16
-                            height: levelBadgeText.implicitHeight + 8
-                            radius: P.Style.radiusPill
-                            color: "#2EFFFFFF"
-                            border.width: 1; border.color: "#59FFFFFF"
-                            Text {
-                                id: levelBadgeText
-                                anchors.centerIn: parent
-                                text: (page.progress ? page.progress.tierGlyph : "")
-                                      + " Lv." + (page.progress ? page.progress.level : 1)
-                                      + " " + (page.progress ? page.progress.tierName : "") + " ›"
-                                font.pixelSize: P.Style.fontXs; font.weight: Font.DemiBold
-                                color: P.Style.surface
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { if (App) App.navigate("level") }
-                            }
-                        }
-                        Rectangle {
-                            objectName: "uiLevelBar"
-                            visible: page.progress !== null
-                            width: parent.width; height: 6; radius: 3
-                            color: "#40FFFFFF"
-                            Rectangle {
-                                objectName: "uiLevelBarFill"
-                                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                                height: parent.height; radius: parent.radius
-                                width: parent.width * (page.progress ? page.progress.progress : 0)
-                                color: P.Style.starGold
-                                Behavior on width {
-                                    enabled: P.Style.motionEnabled
-                                    NumberAnimation { duration: P.Style.durValue }
-                                }
-                            }
-                        }
-                        Text {
-                            objectName: "uiLevelXpLabel"
-                            visible: page.progress !== null
-                            width: parent.width; elide: Text.ElideRight
-                            text: page.progress
-                                  ? (page.progress.xpToNext > 0
-                                     ? "当前 " + page.progress.xpIntoLevel + "/"
-                                       + page.progress.xpSpan + " XP · 距"
-                                       + page.progress.nextTierName + "还需 "
-                                       + page.progress.xpToNext + " XP"
-                                     : "当前累计 " + page.progress.xp + " XP · 已是最高等级")
-                                  : ""
-                            font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
-                        }
+                        // 经验等级三件套已于 2026-09-09 迁出 hero（见下方
+                        // "①.5 经验等级卡"：名片卡与钱包卡之间）。
                         Row {
                             spacing: P.Style.spaceXs
                             Text {
@@ -312,6 +267,95 @@ Item {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: page.checkInNow()
+                        }
+                    }
+                }
+            }
+
+            // ---------- ①.5 经验等级卡（2026-09-09 需求批二版：由 hero 迁入，
+            // 用户指定放名片卡与钱包卡之间）。整卡点击进会员等级页——objectName
+            // 沿用 uiLevelBadgeButton/uiLevelBar/uiLevelBarFill/uiLevelXpLabel
+            // （station 端到端测试钉的是名字与行为，不是位置）。奖牌图形走
+            // glyph 染色管线（medal 母版 × 档位色），替代原 emoji 徽章文本。 ----------
+            Rectangle {
+                objectName: "uiLevelBadgeButton"
+                visible: page.progress !== null
+                width: col.contentW
+                height: levelCardCol.implicitHeight + 2 * P.Style.spaceMd
+                radius: P.Style.radiusLg
+                color: P.Style.surface
+                border.width: 1
+                border.color: P.Style.line
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (App) App.navigate("level") }
+                }
+                Column {
+                    id: levelCardCol
+                    anchors.left: parent.left; anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: P.Style.spaceMd
+                    anchors.rightMargin: P.Style.spaceMd
+                    spacing: P.Style.spaceSm
+                    Row {
+                        width: parent.width
+                        spacing: P.Style.spaceMd
+                        Rectangle {
+                            id: levelMedalHub
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.round(44 * P.Style.fontScaleFactor)
+                            height: width; radius: width / 2
+                            color: P.Style.ghost
+                            Image {
+                                anchors.centerIn: parent
+                                width: Math.round(26 * P.Style.fontScaleFactor)
+                                height: width
+                                source: page.glyphSource("medal",
+                                    page.tierColor(page.progress ? page.progress.level : 1))
+                            }
+                        }
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - levelMedalHub.width - parent.spacing
+                            spacing: 3
+                            Text {
+                                objectName: "uiLevelTierLine"
+                                width: parent.width; elide: Text.ElideRight
+                                text: "Lv." + (page.progress ? page.progress.level : 1)
+                                      + " " + (page.progress ? page.progress.tierName : "") + " ›"
+                                font.pixelSize: P.Style.fontMd; font.weight: Font.DemiBold
+                                color: P.Style.ink
+                            }
+                            Text {
+                                objectName: "uiLevelXpLabel"
+                                width: parent.width; elide: Text.ElideRight
+                                text: page.progress
+                                      ? (page.progress.xpToNext > 0
+                                         ? "当前 " + page.progress.xpIntoLevel + "/"
+                                           + page.progress.xpSpan + " XP · 距"
+                                           + page.progress.nextTierName + "还需 "
+                                           + page.progress.xpToNext + " XP"
+                                         : "当前累计 " + page.progress.xp + " XP · 已是最高等级")
+                                      : ""
+                                font.pixelSize: P.Style.fontXs; color: P.Style.muted
+                            }
+                        }
+                    }
+                    Rectangle {
+                        objectName: "uiLevelBar"
+                        width: parent.width; height: 6; radius: 3
+                        color: P.Style.ghost
+                        Rectangle {
+                            objectName: "uiLevelBarFill"
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            height: parent.height; radius: parent.radius
+                            width: parent.width * (page.progress ? page.progress.progress : 0)
+                            color: page.tierColor(page.progress ? page.progress.level : 1)
+                            Behavior on width {
+                                enabled: P.Style.motionEnabled
+                                NumberAnimation { duration: P.Style.durValue }
+                            }
                         }
                     }
                 }
@@ -460,9 +504,9 @@ Item {
                         { obj: "openPointsButton",  glyph: "coin", title: "积分",
                           route: "points",      badge: "points" },
                         // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
-                        { obj: "openTasksButton",   glyph: "🗓️", title: "每日任务",
+                        { obj: "openTasksButton",   glyph: "calendar-check", title: "每日任务",
                           route: "tasks",      badge: "" },
-                        { obj: "openLevelButton",   glyph: "🏅", title: "会员等级",
+                        { obj: "openLevelButton",   glyph: "medal", title: "会员等级",
                           route: "level",      badge: "" },
                         { obj: "openRatingsButton", glyph: "star", title: "我的评价",
                           route: "ratings",     badge: "" },

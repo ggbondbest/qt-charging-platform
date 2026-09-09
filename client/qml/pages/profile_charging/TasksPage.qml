@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 每日任务页（2026-09-09 经验等级批）：任务清单 + 当日完成态 + 全勤进度。
 // 数据全在 ProgressService（App.progressService）：QSettings 本地持久化、
@@ -17,6 +18,19 @@ Item {
     readonly property var prog: (typeof App !== "undefined" && App && App.progressService)
                                 ? App.progressService : null
     property bool checkingIn: false
+
+    // 经验域图形单表意（2026-09-09 emoji→glyph 批）：服务层 tasks[].glyph 仍存
+    // emoji（分账口径不动），页面按 id 自映射母版名，染色随完成态。
+    function taskGlyph(id) {
+        const m = { checkin: "calendar-check", search: "search", detail: "eye",
+                    route: "compass", stats: "chart-bar" }
+        return m[id] || "check"
+    }
+    // 档位主题色（与 ProfilePage.tierColor / LevelPage.tierColor 同表三处互指）。
+    function tierColor(lv) {
+        const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
+        return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
+    }
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
@@ -105,12 +119,28 @@ Item {
                     Column {
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                         spacing: 4
-                        Text {
-                            objectName: "uiTasksLevelLine"
-                            text: page.prog ? (page.prog.tierGlyph + " Lv." + page.prog.level
-                                               + " " + page.prog.tierName) : ""
-                            font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
-                            color: P.Style.surface
+                        // 等级行：档位色圆托 + 白色奖牌线稿 + 文字（emoji tierGlyph 已退役）。
+                        Row {
+                            spacing: P.Style.spaceXs
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.round(24 * P.Style.fontScaleFactor)
+                                height: width; radius: width / 2
+                                color: page.tierColor(page.prog ? page.prog.level : 1)
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: Math.round(16 * P.Style.fontScaleFactor)
+                                    height: width
+                                    source: Glyphs.source("medal", "#FFFFFF")
+                                }
+                            }
+                            Text {
+                                objectName: "uiTasksLevelLine"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.prog ? ("Lv." + page.prog.level + " " + page.prog.tierName) : ""
+                                font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
+                                color: P.Style.surface
+                            }
                         }
                         Text {
                             objectName: "uiTasksXpLine"
@@ -152,9 +182,12 @@ Item {
                             anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                             width: 40; height: 40; radius: 20
                             color: modelData.done ? P.Style.brandSoft : P.Style.ghost
-                            Text {
+                            Image {
                                 anchors.centerIn: parent
-                                text: modelData.glyph; font.pixelSize: 17
+                                width: Math.round(20 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source(page.taskGlyph(modelData.id),
+                                    modelData.done ? P.Style.brandDeep : P.Style.ink)
                             }
                         }
                         Column {
@@ -167,8 +200,7 @@ Item {
                             Text {
                                 width: parent.width; elide: Text.ElideRight
                                 objectName: "uiTaskTitle"
-                                text: modelData.title
-                                    + (modelData.done ? " ✓" : "")
+                                text: modelData.title        // 完成态由描边/按钮/图色三重表达，"✓" 文本已退役
                                 font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold
                                 color: modelData.done ? P.Style.brandDeep : P.Style.ink
                             }
@@ -211,9 +243,12 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: 16; anchors.rightMargin: 16
                     spacing: P.Style.spaceMd
-                    Text {
+                    Image {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "🔥"; font.pixelSize: 18
+                        width: Math.round(20 * P.Style.fontScaleFactor)
+                        height: width
+                        source: Glyphs.source("flame",
+                            page.prog && page.prog.allTasksDone ? P.Style.warning : P.Style.muted)
                     }
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
@@ -251,7 +286,7 @@ Item {
                 width: parent.width
                 height: 180
                 visible: !page.prog
-                glyph: "🗓️"
+                glyph: "calendar-check"
                 title: "任务系统未就绪"
                 description: "登录后即可开始攒经验、升会员等级。"
                 actionText: ""
