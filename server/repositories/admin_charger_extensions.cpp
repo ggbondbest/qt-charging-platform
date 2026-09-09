@@ -263,6 +263,9 @@ QJsonObject AdminChargerExtensions::recover(const QSqlDatabase& db, qint64 admin
         event.value("recoveryAction") != p.value("recoveryAction"))
         throw AdminFailure("INVALID_STATE_TRANSITION");
     const QString chargerId = event.value("chargerId").toString();
+    if (count(db, QStringLiteral("SELECT COUNT(*) FROM repair_reports WHERE charger_id=? "
+                                 "AND status IN ('ACCEPTED','PROCESSING')"), {chargerId}))
+        throw AdminFailure("RESOURCE_BUSY");
     auto charger = execute(db, QStringLiteral("SELECT c.status,c.updated_at,s.status FROM chargers c "
                                               "JOIN stations s ON s.id=c.station_id WHERE c.id=?"), {chargerId});
     if (!charger.next()) throw AdminFailure("NOT_FOUND");

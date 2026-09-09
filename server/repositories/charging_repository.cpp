@@ -1,5 +1,6 @@
 #include "charging_repository.h"
 #include "admin_order_billing.h"
+#include "charging_target_repository.h"
 
 #include "charging/common/model/enums.h"
 #include "charging/common/model/models.h"
@@ -449,11 +450,13 @@ bool ChargingRepository::expireReservations(const QDateTime& nowUtc, QString* di
 ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 chargerId,
                                                      const QDateTime& reservedAtUtc,
                                                      const QDateTime& expiresAtUtc,
-                                                     const QString& orderNo) const
+                                                     const QString& orderNo, qint64 queueEntryId,
+                                                     const QString& queueOperationId) const
 {
     if (userId <= 0 || chargerId <= 0 || !validUtcInstant(reservedAtUtc) ||
         !validUtcInstant(expiresAtUtc) || expiresAtUtc <= reservedAtUtc || orderNo.isEmpty() ||
-        orderNo.size() > 40) {
+        orderNo.size() > 40 || queueEntryId < 0 ||
+        (queueEntryId > 0 && (queueOperationId.isEmpty() || queueOperationId.size() > 64))) {
         return failure(RepositoryError::InvalidInput);
     }
     if (!database_.isValid() || !database_.isOpen()) {
@@ -472,6 +475,36 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
 
     if (!userIsActive(database_, userId, &result.error, &result.diagnostic)) {
         return result;
+    }
+
+    // A called queue entry owns the provisional RESERVED slot. Its conversion
+    // to a reservation, order, pricing snapshot and CONFIRMED entry is atomic.
+    if (queueEntryId > 0) {
+        QSqlQuery called(database_);
+        called.prepare(QStringLiteral(
+            "SELECT status,call_expires_at,reservation_id,confirm_operation_id "
+            "FROM queue_entries WHERE id=? AND user_id=? AND charger_id=?"));
+        called.addBindValue(queueEntryId); called.addBindValue(userId); called.addBindValue(chargerId);
+        if (!called.exec()) return failure(RepositoryError::Database, called.lastError().text());
+        if (!called.next()) return failure(RepositoryError::NotFound);
+        if (called.value(0).toString() == "CONFIRMED" &&
+            called.value(3).toString() == queueOperationId) {
+            const qint64 previousReservation = called.value(2).toLongLong(); called.finish();
+            if (!loadWorkflowByReservation(database_, previousReservation, &result))
+                return failure(RepositoryError::Database, result.diagnostic);
+            result.idempotent = true; finishTransaction(&transaction, &result); return result;
+        }
+        if (called.value(0).toString() != "CALLED" ||
+            called.value(1).toString() <= toStorageUtc(reservedAtUtc))
+            return failure(RepositoryError::InvalidStateTransition);
+    } else {
+        QSqlQuery queued(database_);
+        queued.prepare(QStringLiteral(
+            "SELECT 1 FROM queue_entries WHERE status IN ('WAITING','CALLED') "
+            "AND (user_id=? OR charger_id=?) LIMIT 1"));
+        queued.addBindValue(userId); queued.addBindValue(chargerId);
+        if (!queued.exec()) return failure(RepositoryError::Database, queued.lastError().text());
+        if (queued.next()) return failure(RepositoryError::ChargerNotAvailable);
     }
 
     {
@@ -515,11 +548,22 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
             return failure(RepositoryError::Database,
                            QStringLiteral("The stored charger or station row is invalid"));
         }
-        if (result.charger.status != charging::model::ChargerStatus::Available ||
+        const auto requiredStatus = queueEntryId > 0 ? charging::model::ChargerStatus::Reserved
+                                                     : charging::model::ChargerStatus::Available;
+        if (result.charger.status != requiredStatus ||
             chargerQuery.value(10).toString() != QStringLiteral("ACTIVE")) {
             return failure(RepositoryError::ChargerNotAvailable);
         }
     }
+
+    QSqlQuery blocked(database_);
+    blocked.prepare(QStringLiteral(
+        "SELECT 1 FROM repair_reports WHERE charger_id=? AND status IN ('ACCEPTED','PROCESSING') "
+        "UNION ALL SELECT 1 FROM charger_exceptions WHERE charger_id=? "
+        "AND status IN ('ACTIVE','ACKNOWLEDGED','RECOVERING') LIMIT 1"));
+    blocked.addBindValue(chargerId); blocked.addBindValue(chargerId);
+    if (!blocked.exec()) return failure(RepositoryError::Database, blocked.lastError().text());
+    if (blocked.next()) return failure(RepositoryError::ChargerNotAvailable);
 
     const QString now = toStorageUtc(reservedAtUtc);
     QSqlQuery reservationInsert(database_);
@@ -570,12 +614,26 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
     if (!pricingInsert.exec())
         return failure(RepositoryError::Database, pricingInsert.lastError().text());
 
+    if (queueEntryId > 0) {
+        QSqlQuery confirm(database_);
+        confirm.prepare(QStringLiteral(
+            "UPDATE queue_entries SET status='CONFIRMED',reservation_id=?,confirm_operation_id=?,"
+            "ended_at=?,updated_at=? WHERE id=? AND user_id=? AND charger_id=? "
+            "AND status='CALLED' AND call_expires_at>?"));
+        confirm.addBindValue(reservationId); confirm.addBindValue(queueOperationId);
+        confirm.addBindValue(now); confirm.addBindValue(now); confirm.addBindValue(queueEntryId);
+        confirm.addBindValue(userId); confirm.addBindValue(chargerId); confirm.addBindValue(now);
+        if (!executeUpdate(&confirm, &result.diagnostic))
+            return failure(RepositoryError::Database, result.diagnostic);
+    }
+
     QSqlQuery chargerUpdate(database_);
     chargerUpdate.prepare(
         QStringLiteral("UPDATE chargers SET status = 'RESERVED', updated_at = :now "
-                       "WHERE id = :chargerId AND status = 'AVAILABLE'"));
+                       "WHERE id = :chargerId AND status = :previousStatus"));
     chargerUpdate.bindValue(QStringLiteral(":now"), now);
     chargerUpdate.bindValue(QStringLiteral(":chargerId"), chargerId);
+    chargerUpdate.bindValue(QStringLiteral(":previousStatus"), queueEntryId > 0 ? "RESERVED" : "AVAILABLE");
     if (!executeUpdate(&chargerUpdate, &result.diagnostic)) {
         return failure(RepositoryError::Database, result.diagnostic);
     }
@@ -670,9 +728,11 @@ ChargingRepository::cancelReservation(qint64 userId, qint64 reservationId,
 }
 
 ChargingRepositoryResult ChargingRepository::startCharging(qint64 userId, qint64 reservationId,
-                                                           const QDateTime& startedAtUtc) const
+                                                           const QDateTime& startedAtUtc,
+                                                           const QJsonObject& target) const
 {
-    if (userId <= 0 || reservationId <= 0 || !validUtcInstant(startedAtUtc)) {
+    if (userId <= 0 || reservationId <= 0 || !validUtcInstant(startedAtUtc) ||
+        !validateChargingTarget(target)) {
         return failure(RepositoryError::InvalidInput);
     }
     if (!database_.isValid() || !database_.isOpen()) {
@@ -700,6 +760,16 @@ ChargingRepositoryResult ChargingRepository::startCharging(qint64 userId, qint64
     if (!userIsActive(database_, userId, &result.error, &result.diagnostic)) {
         return result;
     }
+    if (!target.isEmpty() && result.order.status == charging::model::OrderStatus::Charging) {
+        QSqlQuery stored(database_);
+        stored.prepare("SELECT target_type,target_value FROM order_charge_targets WHERE order_id=?");
+        stored.addBindValue(result.order.id);
+        if (!stored.exec()) return failure(RepositoryError::Database, stored.lastError().text());
+        if (!stored.next() || stored.value(0).toString() != target.value("type").toString() ||
+            stored.value(1).toLongLong() != target.value("value").toVariant().toLongLong())
+            return failure(RepositoryError::InvalidStateTransition);
+        result.idempotent = true; finishTransaction(&transaction, &result); return result;
+    }
     if (result.reservation.status != charging::model::ReservationStatus::Active ||
         result.order.status != charging::model::OrderStatus::Reserved ||
         result.charger.status != charging::model::ChargerStatus::Reserved ||
@@ -707,6 +777,19 @@ ChargingRepositoryResult ChargingRepository::startCharging(qint64 userId, qint64
         result.reservation.expiresAtUtc <= startedAtUtc.toUTC()) {
         return failure(RepositoryError::InvalidStateTransition);
     }
+
+    QSqlQuery blocked(database_);
+    blocked.prepare(QStringLiteral(
+        "SELECT 1 FROM repair_reports WHERE charger_id=? AND status IN ('ACCEPTED','PROCESSING') "
+        "UNION ALL SELECT 1 FROM charger_exceptions WHERE charger_id=? "
+        "AND status IN ('ACTIVE','ACKNOWLEDGED','RECOVERING') "
+        "UNION ALL SELECT 1 FROM stations s JOIN chargers c ON c.station_id=s.id WHERE c.id=? AND s.status<>'ACTIVE' LIMIT 1"));
+    blocked.addBindValue(result.charger.id); blocked.addBindValue(result.charger.id);
+    blocked.addBindValue(result.charger.id);
+    if (!blocked.exec()) return failure(RepositoryError::Database, blocked.lastError().text());
+    if (blocked.next()) return failure(RepositoryError::ChargerNotAvailable);
+    if (target.value("type").toString() == "AMOUNT" && result.order.unitPriceCentsPerKwh == 0)
+        return failure(RepositoryError::InvalidInput);
 
     const QString now = toStorageUtc(startedAtUtc);
     QSqlQuery reservationUpdate(database_);
@@ -745,6 +828,10 @@ ChargingRepositoryResult ChargingRepository::startCharging(qint64 userId, qint64
     pricingInsert.addBindValue(now);
     if (!pricingInsert.exec())
         return failure(RepositoryError::Database, pricingInsert.lastError().text());
+
+    if (!insertChargingTargetInTransaction(database_, result.order.id, target, startedAtUtc,
+                                           &result.diagnostic))
+        return failure(RepositoryError::Database, result.diagnostic);
 
     QSqlQuery chargerUpdate(database_);
     chargerUpdate.prepare(
@@ -845,13 +932,15 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
                                                           const QDateTime& expectedStartedAtUtc,
                                                           const QDateTime& stoppedAtUtc,
                                                           qint64 durationSeconds, qint64 energyWh,
-                                                          qint64 amountCents) const
+                                                          qint64 amountCents, const QString& stopReason) const
 {
     const qint64 maximum = charging::model::kMaximumJsonSafeInteger;
     if (userId <= 0 || orderId <= 0 || !validUtcInstant(expectedStartedAtUtc) ||
         !validUtcInstant(stoppedAtUtc) || stoppedAtUtc < expectedStartedAtUtc ||
         durationSeconds < 0 || durationSeconds > maximum || energyWh < 0 || energyWh > maximum ||
-        amountCents < 0 || amountCents > maximum) {
+        amountCents < 0 || amountCents > maximum ||
+        (stopReason != "MANUAL" && stopReason != "TARGET_AMOUNT" &&
+         stopReason != "TARGET_ENERGY" && stopReason != "TARGET_DURATION")) {
         return failure(RepositoryError::InvalidInput);
     }
     if (!database_.isValid() || !database_.isOpen()) {
@@ -908,7 +997,7 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
     orderUpdate.prepare(QStringLiteral(
         "UPDATE orders SET status = 'WAITING_PAYMENT', duration_seconds = :duration, "
         "energy_wh = :energy, amount_cents = :amount, stopped_at = :now, updated_at = :now, "
-        "telemetry_captured_at = :now, telemetry_power_watts = :power "
+        "telemetry_captured_at = :now, telemetry_power_watts = :power, stop_reason = :stopReason "
         "WHERE id = :orderId AND user_id = :userId AND status = 'CHARGING' "
         "AND started_at = :startedAt"));
     orderUpdate.bindValue(QStringLiteral(":duration"), durationSeconds);
@@ -919,6 +1008,7 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
     orderUpdate.bindValue(QStringLiteral(":userId"), userId);
     orderUpdate.bindValue(QStringLiteral(":startedAt"), toStorageUtc(expectedStartedAtUtc));
     orderUpdate.bindValue(QStringLiteral(":power"), result.charger.powerWatts);
+    orderUpdate.bindValue(QStringLiteral(":stopReason"), stopReason);
     if (!executeUpdate(&orderUpdate, &result.diagnostic)) {
         return failure(RepositoryError::Database, result.diagnostic);
     }

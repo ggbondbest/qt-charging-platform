@@ -6,6 +6,8 @@
 
 namespace charging::server {
 class AdminRepository;
+class QueueService;
+class RepairService;
 
 // Worker-thread-only service. Tokens are local management capabilities and are
 // deliberately NOT routed through the public user TCP RequestDispatcher.
@@ -16,8 +18,12 @@ public:
     QJsonObject handle(const QString& action, const QJsonObject& data,
                        const QString& sessionToken = {}, const QString& channel = {});
     static QJsonObject failure(const QString& code);
+    void setWorkflowServices(QueueService* queue, RepairService* repair)
+    { queueService_ = queue; repairService_ = repair; }
 
 private:
+    QueueService* queueService_ = nullptr;
+    RepairService* repairService_ = nullptr;
     struct Session
     {
         qint64 adminId;

@@ -1,4 +1,6 @@
 #include "admin_service.h"
+#include "queue_service.h"
+#include "repair_service.h"
 
 #include "admin_repository.h"
 #include "admin_charger_extensions.h"
@@ -212,6 +214,11 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
             return success({});
         }
         session->touched = now;
+        if (action == QStringLiteral("queues.list"))
+            return queueService_ ? queueService_->adminRead(action, p) : failure(QStringLiteral("UNAVAILABLE"));
+        if (RepairService::handlesAdmin(action))
+            return repairService_ ? repairService_->adminHandle(action, p, session->adminId)
+                                  : failure(QStringLiteral("UNAVAILABLE"));
         if (action == QStringLiteral("dashboard.get")) {
             fields(p, {QStringLiteral("days")});
             if (p.contains(QStringLiteral("days")))

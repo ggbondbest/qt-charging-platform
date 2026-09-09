@@ -3,6 +3,7 @@
 #include "dashboard_repository.h"
 #include "admin_charger_extensions.h"
 #include "admin_order_billing.h"
+#include "charging_target_repository.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -516,6 +517,12 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
                                             : double(onlineChargers) / double(totalChargers) * 100.0);
         }
         if (entity == QStringLiteral("chargers")) {
+            const bool maintenance = scalar(database_, QStringLiteral(
+                "SELECT COUNT(*) FROM repair_reports WHERE charger_id=? AND status IN ('ACCEPTED','PROCESSING')"),
+                {value.value(QStringLiteral("id")).toString()}) > 0;
+            value.insert(QStringLiteral("maintenance"), maintenance);
+            value.insert(QStringLiteral("displayStatus"), maintenance ? QStringLiteral("维护中")
+                                                                        : value.value(QStringLiteral("status")).toString());
             value.insert(QStringLiteral("activeException"), AdminChargerExtensions::activeException(
                 database_, value.value(QStringLiteral("id")).toString()));
             const QString state = value.value(QStringLiteral("status")).toString();
@@ -524,6 +531,15 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
                          state == QStringLiteral("FAULT") || state == QStringLiteral("OFFLINE")
                              ? QJsonValue(state)
                              : QJsonValue(QJsonValue::Null));
+        }
+        if (entity == QStringLiteral("orders")) {
+            QJsonObject target;
+            QString stopReason;
+            if (!chargingTargetDto(database_, value.value(QStringLiteral("id")).toString().toLongLong(),
+                                   &target, &stopReason))
+                throw AdminFailure("DATABASE_ERROR");
+            value.insert(QStringLiteral("target"), target.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(target));
+            value.insert(QStringLiteral("stopReason"), stopReason.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(stopReason));
         }
         if (entity == QStringLiteral("orders") && p.contains(QStringLiteral("id"))) {
             QJsonObject billing;
@@ -760,6 +776,10 @@ QJsonObject AdminRepository::mutate(qint64 adminId, const QString& credentialSta
                             {id})))
                     throw AdminFailure("RESOURCE_BUSY");
                 if (entity == QStringLiteral("chargers")) {
+                    // Only the repair workflow may restore a maintenance hold.
+                    // Legacy status/restart controls must not bypass acceptance.
+                    if (current.value(QStringLiteral("maintenance")).toBool())
+                        throw AdminFailure("RESOURCE_BUSY");
                     const auto state = current.value(QStringLiteral("status")).toString();
                     if (state == QStringLiteral("CHARGING") ||
                         state == QStringLiteral("RESERVED") ||

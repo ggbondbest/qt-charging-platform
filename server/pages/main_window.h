@@ -20,6 +20,7 @@ class DashboardPage;
 class StationManagementPage;
 class UserManagementPage;
 class ActivityRecordsPage;
+class WorkflowManagementPage;
 
 class MainWindow final : public QMainWindow
 {
@@ -55,6 +56,7 @@ private:
     OrderManagementPage* orderManagementPage_ = nullptr;
     ActivityRecordsPage* rechargeRecordsPage_ = nullptr;
     ActivityRecordsPage* operationLogPage_ = nullptr;
+    WorkflowManagementPage* workflowPage_ = nullptr;
     QTimer autoRefreshTimer_;
     QFrame* sidebar_ = nullptr;
     QLabel* pageTitleLabel_ = nullptr;

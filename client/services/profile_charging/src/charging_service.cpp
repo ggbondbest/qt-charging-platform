@@ -162,6 +162,26 @@ void ChargingService::stopCharging()
 
 void ChargingService::startCharging(qint64 reservationId)
 {
+    sendStart(reservationId, {});
+}
+
+void ChargingService::startChargingWithTarget(qint64 reservationId, const QString& targetType,
+                                             qint64 targetValue)
+{
+    if ((targetType != QStringLiteral("AMOUNT") && targetType != QStringLiteral("ENERGY")
+         && targetType != QStringLiteral("DURATION")) || targetValue <= 0
+        || targetValue > charging::model::kMaximumJsonSafeInteger) {
+        emit operationFailed(QString::fromLatin1(charging::protocol::request_type::kStartCharging),
+                             makeLocalError(charging::protocol::error_code::kInvalidEnvelope,
+                                            QStringLiteral("请输入有效的充电目标")));
+        return;
+    }
+    sendStart(reservationId, {{QStringLiteral("type"), targetType},
+                              {QStringLiteral("value"), targetValue}});
+}
+
+void ChargingService::sendStart(qint64 reservationId, const QJsonObject& target)
+{
     const QString type = QString::fromLatin1(charging::protocol::request_type::kStartCharging);
     if (starting_ || reservationId < 0) {
         return; // Duplicate submission guard.
@@ -177,6 +197,7 @@ void ChargingService::startCharging(qint64 reservationId)
     // The server dispatcher reads reservationId for START_CHARGING; the id
     // travels as a decimal string like the other frozen request shapes.
     payload.insert(QStringLiteral("reservationId"), QString::number(reservationId));
+    if (!target.isEmpty()) payload.insert(QStringLiteral("target"), target);
 
     transport_->sendFor(this,
         type, payload,

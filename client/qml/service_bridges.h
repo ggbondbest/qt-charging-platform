@@ -109,6 +109,8 @@ public:
     Q_INVOKABLE void fetchStatusNow();
     Q_INVOKABLE void stopCharging();
     Q_INVOKABLE void startCharging(const QVariant& reservationId);
+    Q_INVOKABLE void startChargingWithTarget(const QVariant& reservationId,
+                                            const QString& type, double value);
     Q_INVOKABLE bool isStarting() const;
     Q_INVOKABLE void payOrder(const QVariant& orderId);
 

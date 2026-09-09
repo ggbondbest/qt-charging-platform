@@ -114,7 +114,7 @@ bool validateTableColumns(const QSqlDatabase& database, const QString& table,
             ? QStringList{QStringLiteral("city"), QStringLiteral("district"),
                           QStringLiteral("contact_name"), QStringLiteral("contact_phone")}
             : table == QStringLiteral("orders")
-                ? QStringList{QStringLiteral("telemetry_captured_at"), QStringLiteral("telemetry_power_watts")}
+                ? QStringList{QStringLiteral("telemetry_captured_at"), QStringLiteral("telemetry_power_watts"), QStringLiteral("stop_reason")}
                 : QStringList{};
         for (const auto& column : optional) actualColumns.removeAll(column);
     }
@@ -267,9 +267,9 @@ bool validateTableDefinition(const QSqlDatabase& database, const QString& table,
         *errorMessage = QStringLiteral("Database is missing required table %1").arg(table);
         return false;
     }
-    const QString definition = query.value(0).toString().simplified().toUpper();
+    const QString definition = normalizedSql(query.value(0).toString());
     for (const QString& fragment : requiredFragments) {
-        if (!definition.contains(fragment.simplified().toUpper())) {
+        if (!definition.contains(normalizedSql(fragment))) {
             *errorMessage = QStringLiteral("Database table %1 is missing a required constraint")
                                 .arg(table);
             return false;
@@ -348,7 +348,16 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("status"), QStringLiteral("occurred_at"), QStringLiteral("acknowledged_at"),
             QStringLiteral("recovered_at"), QStringLiteral("recoverable"), QStringLiteral("recovery_action"),
             QStringLiteral("recovered_by_admin_id"), QStringLiteral("recovery_command_id"),
-            QStringLiteral("recovery_message"), QStringLiteral("updated_at")}}
+            QStringLiteral("recovery_message"), QStringLiteral("updated_at")}},
+        {QStringLiteral("queue_entries"), {"id", "user_id", "charger_id", "status", "entered_at",
+            "called_at", "call_expires_at", "ended_at", "reservation_id", "updated_at",
+            "join_operation_id", "confirm_operation_id", "leave_operation_id"}},
+        {QStringLiteral("repair_reports"), {"id", "user_id", "charger_id", "problem_type", "description",
+            "status", "processing_note", "created_at", "updated_at", "resolved_at"}},
+        {QStringLiteral("repair_timeline"), {"id", "report_id", "status", "note", "admin_id", "created_at"}},
+        {QStringLiteral("repair_operations"), {"id", "actor_type", "actor_id", "operation_id", "action",
+            "payload_json", "result_json", "created_at"}},
+        {QStringLiteral("order_charge_targets"), {"order_id", "target_type", "target_value", "created_at"}}
     };
     for (const auto& table : tables) {
         if (!wanted(table.first)) {
@@ -359,7 +368,8 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             expected << QStringLiteral("city") << QStringLiteral("district")
                      << QStringLiteral("contact_name") << QStringLiteral("contact_phone");
         if (onlyTables == nullptr && table.first == QStringLiteral("orders"))
-            expected << QStringLiteral("telemetry_captured_at") << QStringLiteral("telemetry_power_watts");
+            expected << QStringLiteral("telemetry_captured_at") << QStringLiteral("telemetry_power_watts")
+                     << QStringLiteral("stop_reason");
         if (!validateTableColumns(database, table.first, expected, errorMessage, onlyTables != nullptr)) {
             return false;
         }
@@ -378,7 +388,7 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("transaction_no TEXT NOT NULL UNIQUE"),
             QStringLiteral("status IN ('SUCCESS', 'FAILED')")}},
         {QStringLiteral("notifications"), {
-            QStringLiteral("type IN ('CHARGING_STOPPED', 'ORDER_PAID', 'RESERVATION_EXPIRY_REMINDER')")}},
+            QStringLiteral("type IN ('CHARGING_STOPPED', 'ORDER_PAID', 'RESERVATION_EXPIRY_REMINDER', 'QUEUE_CALLED', 'QUEUE_EXPIRED', 'REPAIR_UPDATED')")}},
         {QStringLiteral("coupons"), {
             QStringLiteral("kind IN ('CASH', 'DISCOUNT')"),
             QStringLiteral("status IN ('AVAILABLE', 'USED', 'EXPIRED')")}},
@@ -400,7 +410,23 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("severity IN ('WARNING', 'CRITICAL')"),
             QStringLiteral("status IN ('ACTIVE', 'ACKNOWLEDGED', 'RECOVERING', 'RECOVERED')"),
             QStringLiteral("recoverable IN (0, 1)"),
-            QStringLiteral("recovery_action = 'SIMULATE_RESTORE'")}}
+            QStringLiteral("recovery_action = 'SIMULATE_RESTORE'")}},
+        {QStringLiteral("queue_entries"), {
+            "status IN ('WAITING','CALLED','CONFIRMED','LEFT','EXPIRED')",
+            "UNIQUE(user_id,join_operation_id)", "UNIQUE(user_id,confirm_operation_id)",
+            "UNIQUE(user_id,leave_operation_id)", "length(join_operation_id) BETWEEN 1 AND 64"}},
+        {QStringLiteral("repair_reports"), {
+            "problem_type IN ('CONNECTION','SCREEN','CONNECTOR','CHARGING','OTHER')",
+            "status IN ('SUBMITTED','ACCEPTED','PROCESSING','RESOLVED')",
+            "length(trim(description)) BETWEEN 1 AND 200", "length(processing_note) <= 200"}},
+        {QStringLiteral("repair_timeline"), {
+            "status IN ('SUBMITTED','ACCEPTED','PROCESSING','RESOLVED')", "length(note) <= 200"}},
+        {QStringLiteral("repair_operations"), {
+            "actor_type IN ('USER','ADMIN')", "UNIQUE(actor_type,actor_id,operation_id)",
+            "length(operation_id) BETWEEN 1 AND 64"}},
+        {QStringLiteral("order_charge_targets"), {
+            "order_id INTEGER PRIMARY KEY", "target_type IN ('AMOUNT','ENERGY','DURATION')",
+            "typeof(target_value) = 'integer'", "target_value BETWEEN 1 AND 9007199254740991"}}
     };
     for (const auto& table : tableConstraints) {
         if (!wanted(table.first)) {
@@ -410,6 +436,10 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             return false;
         }
     }
+
+    if (onlyTables == nullptr && !validateTableDefinition(database, "orders",
+            {"stop_reason IS NULL OR stop_reason IN ('TARGET_AMOUNT','TARGET_ENERGY','TARGET_DURATION','MANUAL')"},
+            errorMessage)) return false;
 
     const QList<QStringList> foreignKeys = {
         {QStringLiteral("chargers"), QStringLiteral("station_id"), QStringLiteral("stations")},
@@ -429,7 +459,12 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         {QStringLiteral("charger_ratings"), QStringLiteral("order_id"), QStringLiteral("orders")},
         {QStringLiteral("order_pricing_snapshots"), QStringLiteral("order_id"), QStringLiteral("orders")},
         {QStringLiteral("charger_exceptions"), QStringLiteral("charger_id"), QStringLiteral("chargers")},
-        {QStringLiteral("charger_exceptions"), QStringLiteral("recovered_by_admin_id"), QStringLiteral("admins")}
+        {QStringLiteral("charger_exceptions"), QStringLiteral("recovered_by_admin_id"), QStringLiteral("admins")},
+        {"queue_entries", "user_id", "users"}, {"queue_entries", "charger_id", "chargers"},
+        {"queue_entries", "reservation_id", "reservations"},
+        {"repair_reports", "user_id", "users"}, {"repair_reports", "charger_id", "chargers"},
+        {"repair_timeline", "report_id", "repair_reports"}, {"repair_timeline", "admin_id", "admins"},
+        {"order_charge_targets", "order_id", "orders"}
     };
     for (const QStringList& foreignKey : foreignKeys) {
         if (!wanted(foreignKey.at(0))) {
@@ -442,6 +477,13 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
     }
 
     QList<IndexDefinition> indexes = {
+        {"ux_queue_active_user", "queue_entries", {"user_id"}, true, "status IN ('WAITING','CALLED')"},
+        {"ux_queue_called_charger", "queue_entries", {"charger_id"}, true, "status = 'CALLED'"},
+        {"idx_queue_fifo", "queue_entries", {"charger_id", "status", "entered_at", "id"}, false, {}},
+        {"idx_repair_user_created", "repair_reports", {"user_id", "created_at", "id"}, false, {}},
+        {"idx_repair_charger_status", "repair_reports", {"charger_id", "status"}, false, {}},
+        {"idx_repair_status_updated", "repair_reports", {"status", "updated_at"}, false, {}},
+        {"idx_repair_timeline_report", "repair_timeline", {"report_id", "id"}, false, {}},
         {QStringLiteral("idx_charger_exceptions_charger_status_occurred"),
          QStringLiteral("charger_exceptions"),
          {QStringLiteral("charger_id"), QStringLiteral("status"), QStringLiteral("occurred_at"),
@@ -575,7 +617,7 @@ DatabaseMaintenanceResult copyAtomically(const QString& sourcePath, const QStrin
 
 // Shape gate for the migration path: the source must be a healthy platform
 // database already carrying the eight core tables (any supported legacy
-// user_version 1..3). Without this check, an unrelated or empty SQLite file
+// user_version 1..4). Without this check, an unrelated or empty SQLite file
 // would be "migrated" into a fresh empty schema and restored as if valid.
 // Index shape is intentionally not gated (the two index generations differ;
 // the post-migration strict validation covers it).
@@ -628,7 +670,7 @@ DatabaseMaintenanceResult validateMigratableRestoreSource(const QString& databas
                                      .arg(versionQuery.lastError().text()));
             } else if (result.ok) {
                 const int version = versionQuery.value(0).toInt();
-                if (version < 1 || version > 3) {
+                if (version < 1 || version > 4) {
                     result = failure(QStringLiteral("Unsupported database schema version"));
                 }
             }
@@ -734,7 +776,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::validate(const QString& databaseP
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 4)) {
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 5)) {
                 result = failure(QStringLiteral("Unsupported database schema version"));
             }
             if (result.ok) {
@@ -758,7 +800,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     }
 
     // Strict path: the backup already carries the current schema. Otherwise it
-    // may be an older supported version (user_version 1..3). Migrate a
+    // may be an older supported version (user_version 1..4). Migrate a
     // temporary copy by applying
     // schema.sql — the original backup file is never modified — and only then
     // validate and restore the migrated copy.

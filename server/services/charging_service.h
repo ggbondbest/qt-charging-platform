@@ -32,12 +32,16 @@ public:
 
     ChargingOperationResult reserve(qint64 userId, qint64 chargerId) const;
     ChargingOperationResult cancelReservation(qint64 userId, qint64 reservationId) const;
-    ChargingOperationResult startCharging(qint64 userId, qint64 reservationId) const;
+    ChargingOperationResult startCharging(qint64 userId, qint64 reservationId,
+                                           const QJsonObject& target = {}) const;
     ChargingOperationResult chargingStatus(qint64 userId, qint64 orderId) const;
     ChargingOperationResult stopCharging(qint64 userId, qint64 orderId) const;
+    // Called by the database-owning worker, independent of client polling.
+    bool advanceTargets(QString* diagnostic = nullptr) const;
 
 private:
     ChargingOperationResult fromRepository(const ChargingRepositoryResult& value) const;
+    ChargingOperationResult sampleCharging(qint64 userId, qint64 orderId, bool manualStop) const;
 
     ChargingRepository* chargingRepository_ = nullptr;
     BillingService* billingService_ = nullptr;

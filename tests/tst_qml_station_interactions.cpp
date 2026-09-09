@@ -50,7 +50,34 @@ bool realClick(QQuickWindow* window, QQuickItem* item)
     if (!window || !item || !item->isVisible() || !item->isEnabled()) return false;
     const auto center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
     if (!QRectF(0, 0, window->width(), window->height()).contains(center)) return false;
+    // A delegate can lie inside the window but outside its clipped Flickable,
+    // where the same mouse coordinate would hit the bottom navigation instead.
+    for (auto* ancestor = item->parentItem(); ancestor; ancestor = ancestor->parentItem()) {
+        if (ancestor->clip()
+            && !QRectF(0, 0, ancestor->width(), ancestor->height())
+                    .contains(ancestor->mapFromScene(center))) return false;
+    }
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center.toPoint());
+    return true;
+}
+
+bool scrollIntoView(QQuickItem* item)
+{
+    if (!item) return false;
+    for (auto* viewport = item->parentItem(); viewport; viewport = viewport->parentItem()) {
+        if (!viewport->property("contentY").isValid()
+            || !viewport->property("contentHeight").isValid()) continue;
+        // Derive scrolling from the actual delegate geometry: adding a profile
+        // card or service row must not leave a hard-coded scroll offset stale.
+        const auto center = item->mapToItem(viewport, QPointF(item->width() / 2, item->height() / 2));
+        const qreal origin = viewport->property("originY").toReal();
+        const qreal last = origin + qMax(qreal(0), viewport->property("contentHeight").toReal() - viewport->height());
+        const qreal desired = viewport->property("contentY").toReal() + center.y() - viewport->height() / 2;
+        if (!viewport->setProperty("contentY", qBound(origin, desired, last))) return false;
+        QTest::qWait(50);
+        const QRectF itemRect(item->mapToItem(viewport, QPointF()), QSizeF(item->width(), item->height()));
+        if (!QRectF(0, 0, viewport->width(), viewport->height()).contains(itemRect)) return false;
+    }
     return true;
 }
 } // namespace
@@ -216,7 +243,10 @@ private slots:
     {
         bootShell(QStringLiteral("profile"));
         QVERIFY(window_ != nullptr);
-        QVERIFY(realClick(window_, findItem(window_->contentItem(), QStringLiteral("openNotificationsButton"))));
+        auto* notifications = findItem(window_->contentItem(), QStringLiteral("openNotificationsButton"));
+        QVERIFY(notifications != nullptr);
+        QVERIFY(scrollIntoView(notifications));
+        QVERIFY(realClick(window_, notifications));
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
 

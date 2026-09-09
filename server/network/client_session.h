@@ -33,6 +33,7 @@ public:
 
     SessionRole role() const;
     qint64 authenticatedUserId() const;
+    void sendWorkflowChanged(const QJsonObject& data);
 
 private slots:
     void handleReadyRead();
@@ -48,6 +49,7 @@ private:
     charging::protocol::FrameDecoder decoder_;
     SessionRole role_ = SessionRole::Anonymous;
     qint64 authenticatedUserId_ = 0;
+    bool workflowSubscribed_ = false;
 };
 
 } // namespace charging::server

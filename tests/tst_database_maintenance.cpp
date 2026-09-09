@@ -321,7 +321,7 @@ void DatabaseMaintenanceTest::upgradesLegacyAdminIndexesWithoutLosingData()
     QSqlQuery verification(upgraded.database());
     QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
     QVERIFY(verification.next());
-    QCOMPARE(verification.value(0).toInt(), 4);
+    QCOMPARE(verification.value(0).toInt(), 5);
 
     QVERIFY(verification.exec(QStringLiteral(
         "SELECT COUNT(*) FROM users WHERE phone = '13900006666'")));
@@ -383,7 +383,7 @@ void DatabaseMaintenanceTest::restoresLegacyBackupThenMigratesOnFirstOpen()
     QSqlQuery verification(restored.database());
     QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
     QVERIFY(verification.next());
-    QCOMPARE(verification.value(0).toInt(), 4);
+    QCOMPARE(verification.value(0).toInt(), 5);
     QVERIFY(verification.exec(QStringLiteral(
         "SELECT COUNT(*) FROM users WHERE phone = '13900005555'")));
     QVERIFY(verification.next());
@@ -399,7 +399,7 @@ void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
     // A genuine pre-expansion v2 backup: the eight original tables with the
     // v2 index shapes and user_version = 2, as created before the five
     // user-domain tables shipped. Restore must migrate a temporary copy to
-    // version 4 while the original backup file stays untouched.
+    // version 5 while the original backup file stays untouched.
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString legacyPath = directory.filePath(QStringLiteral("preexpansion-v2.sqlite"));
@@ -412,7 +412,10 @@ void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
     QVERIFY(mutation.exec(QStringLiteral(
         "INSERT INTO users(phone, nickname) VALUES('13900007777', 'pre-expansion-user')")));
     // Children first so foreign keys cannot refuse the drop.
-    for (const QString& table : {QStringLiteral("charger_ratings"), QStringLiteral("user_checkins"),
+    for (const QString& table : {QStringLiteral("queue_entries"), QStringLiteral("repair_timeline"),
+                                 QStringLiteral("repair_reports"), QStringLiteral("repair_operations"),
+                                 QStringLiteral("order_charge_targets"),
+                                 QStringLiteral("charger_ratings"), QStringLiteral("user_checkins"),
                                  QStringLiteral("points_ledger"), QStringLiteral("coupons"),
                                  QStringLiteral("notifications"), QStringLiteral("charger_exceptions"),
                                  QStringLiteral("order_pricing_snapshots")}) {
@@ -423,7 +426,8 @@ void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
                            "ALTER TABLE stations DROP COLUMN contact_name",
                            "ALTER TABLE stations DROP COLUMN contact_phone",
                            "ALTER TABLE orders DROP COLUMN telemetry_captured_at",
-                           "ALTER TABLE orders DROP COLUMN telemetry_power_watts"})
+                           "ALTER TABLE orders DROP COLUMN telemetry_power_watts",
+                           "ALTER TABLE orders DROP COLUMN stop_reason"})
         QVERIFY2(mutation.exec(QString::fromLatin1(sql)), qPrintable(mutation.lastError().text()));
     QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 2")));
     seeded.close();
@@ -444,7 +448,7 @@ void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
         QSqlQuery verification(restored);
         QVERIFY(verification.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(verification.next());
-        QCOMPARE(verification.value(0).toInt(), 4);
+        QCOMPARE(verification.value(0).toInt(), 5);
         QVERIFY(verification.exec(QStringLiteral(
             "SELECT COUNT(*) FROM users WHERE phone = '13900007777'")));
         QVERIFY(verification.next());
@@ -527,7 +531,7 @@ void DatabaseMaintenanceTest::rejectsFutureSchemaVersionWithoutChangingIt()
     DatabaseConnection current;
     QVERIFY2(current.open(databasePath, true, &errorMessage), qPrintable(errorMessage));
     QSqlQuery mutation(current.database());
-    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 5")));
+    QVERIFY(mutation.exec(QStringLiteral("PRAGMA user_version = 6")));
     current.close();
 
     DatabaseConnection oldApplication;
@@ -542,7 +546,7 @@ void DatabaseMaintenanceTest::rejectsFutureSchemaVersionWithoutChangingIt()
         QSqlQuery versionQuery(verification);
         QVERIFY(versionQuery.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(versionQuery.next());
-        QCOMPARE(versionQuery.value(0).toInt(), 5);
+        QCOMPARE(versionQuery.value(0).toInt(), 6);
         verification.close();
     }
     QSqlDatabase::removeDatabase(connectionName);

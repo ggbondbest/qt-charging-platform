@@ -197,8 +197,8 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
                                           .arg(versionError));
         }
     }
-    // Supported legacy versions 1..3 are migrated in one atomic transaction.
-    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 4) {
+    // Supported legacy versions 1..4 are migrated in one atomic transaction.
+    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 5) {
         return fail(errorMessage, QStringLiteral("Unsupported database schema version: %1")
                                       .arg(schemaVersion));
     }
@@ -267,7 +267,10 @@ bool DatabaseConnection::initializeSchema(QString* errorMessage)
         {QStringLiteral("orders"), QStringLiteral("telemetry_captured_at"), QStringLiteral("TEXT")},
         {QStringLiteral("orders"), QStringLiteral("telemetry_power_watts"),
          QStringLiteral("INTEGER CHECK (telemetry_power_watts IS NULL OR "
-                        "(typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0))")}
+                        "(typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0))")},
+        {QStringLiteral("orders"), QStringLiteral("stop_reason"),
+         QStringLiteral("TEXT CHECK (stop_reason IS NULL OR stop_reason IN "
+                        "('TARGET_AMOUNT','TARGET_ENERGY','TARGET_DURATION','MANUAL'))")}
     };
     for (const auto& column : columns) {
         if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(column.at(0))))
@@ -279,6 +282,47 @@ bool DatabaseConnection::initializeSchema(QString* errorMessage)
         if (!found && !query.exec(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
                                      .arg(column.at(0), column.at(1), column.at(2))))
             return rollback(query.lastError().text());
+    }
+    // SQLite cannot ALTER an existing CHECK. Rebuild only the notifications
+    // table inside this same transaction; retain IDs, read state, sequence,
+    // and every existing index/trigger. No other table references its IDs.
+    if (!query.exec(QStringLiteral("SELECT sql FROM sqlite_master WHERE type='table' AND name='notifications'")) || !query.next())
+        return rollback(query.lastError().text());
+    const bool legacyNotifications = !query.value(0).toString().contains(QStringLiteral("QUEUE_CALLED"));
+    query.finish();
+    if (legacyNotifications) {
+        QStringList dependentSql;
+        if (!query.exec(QStringLiteral("SELECT sql FROM sqlite_master WHERE tbl_name='notifications' "
+                                       "AND type IN ('index','trigger') AND sql IS NOT NULL")))
+            return rollback(query.lastError().text());
+        while (query.next()) dependentSql << query.value(0).toString();
+        query.finish();
+        if (!query.exec(QStringLiteral("SELECT seq FROM sqlite_sequence WHERE name='notifications'")))
+            return rollback(query.lastError().text());
+        const qint64 oldSequence = query.next() ? query.value(0).toLongLong() : 0;
+        query.finish();
+        QFile schema(QStringLiteral(":/database/schema.sql"));
+        if (!schema.open(QIODevice::ReadOnly | QIODevice::Text))
+            return rollback(QStringLiteral("Unable to read notification migration schema"));
+        QString create;
+        for (const auto& statement : splitSqlStatements(QString::fromUtf8(schema.readAll()))) {
+            if (normalizedSql(statement).startsWith(QStringLiteral("createtableifnotexistsnotifications("))) {
+                create = statement;
+                create.replace(QStringLiteral("IF NOT EXISTS notifications"), QStringLiteral("notifications_v5_upgrade"));
+                break;
+            }
+        }
+        if (create.isEmpty() || !query.exec(create) ||
+            !query.exec(QStringLiteral("INSERT INTO notifications_v5_upgrade(id,user_id,type,title,body,created_at,read_at) "
+                                       "SELECT id,user_id,type,title,body,created_at,read_at FROM notifications")) ||
+            !query.exec(QStringLiteral("DROP TABLE notifications")) ||
+            !query.exec(QStringLiteral("ALTER TABLE notifications_v5_upgrade RENAME TO notifications")))
+            return rollback(QStringLiteral("Unable to migrate notification types"));
+        query.prepare(QStringLiteral("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='notifications'"));
+        query.addBindValue(oldSequence);
+        if (!query.exec()) return rollback(query.lastError().text());
+        for (const auto& sql : dependentSql)
+            if (!query.exec(sql)) return rollback(query.lastError().text());
     }
     if (!migrateManagedIndexes(errorMessage))
         return rollback(errorMessage ? *errorMessage : QStringLiteral("Index migration failed"));
@@ -336,7 +380,7 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
     QSqlQuery migrationQuery(database_);
     if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS "
                                             "idx_chargers_status_updated_at")) ||
-        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 4"))) {
+        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 5"))) {
         return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
                                      .arg(migrationQuery.lastError().text()));
     }

@@ -102,6 +102,7 @@ void ClientSession::handlePayload(const QByteArray& payload)
     if (request.type == QString::fromLatin1(charging::protocol::request_type::kUserLogin)) {
         authenticatedUserId_ = 0;
         role_ = SessionRole::Anonymous;
+        workflowSubscribed_ = false;
     }
     qint64 userId = authenticatedUserId_;
     charging::protocol::ResponseEnvelope response;
@@ -133,7 +134,23 @@ void ClientSession::handlePayload(const QByteArray& payload)
         authenticatedUserId_ = userId;
         role_ = SessionRole::User;
     }
+    if (response.success && request.type == QStringLiteral("WORKFLOW_SUBSCRIBE")
+        && role_ == SessionRole::User) workflowSubscribed_ = true;
     sendResponse(response);
+}
+
+void ClientSession::sendWorkflowChanged(const QJsonObject& data)
+{
+    if (!socket_ || !workflowSubscribed_ || role_ != SessionRole::User) return;
+    // Coalesced invalidations contain no account data; a slow peer must not
+    // build an unbounded output queue. The next invalidation repairs its view.
+    if (socket_->bytesToWrite() > charging::protocol::kMaxPayloadBytes) return;
+    charging::protocol::EventEnvelope event;
+    event.type = QStringLiteral("WORKFLOW_CHANGED");
+    event.data = data;
+    QByteArray frame;
+    if (charging::protocol::encodeFrame(charging::protocol::serializePayload(event), &frame))
+        socket_->write(frame);
 }
 
 void ClientSession::sendResponse(const charging::protocol::ResponseEnvelope& response)

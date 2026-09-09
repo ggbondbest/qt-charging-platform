@@ -1,4 +1,5 @@
 #include "app_bridge.h"
+#include "workflow_bridge.h"
 #include "service_bridges.h"
 #include "map_bridge.h"
 #include "charging/client/profile_charging/charging_service.h"
@@ -138,6 +139,12 @@ void QmlApp::createSession(const charging::model::User& user)
     // 通知服务端通道（2026-09-08 横闯，PR 置顶报备项）：与券同源 transport；
     // 充电结束/支付成功通知由服务端（mock 镜像）落库供此拉取。
     notificationService_->setTransport(transport_);
+    workflowBridge_ = new WorkflowBridge(transport_, connection_, !mockMode_ && user.id > 0, session_);
+    connect(workflowBridge_, &WorkflowBridge::changed, notificationService_,
+            &charging::client::services::favorites::NotificationService::refresh);
+    connect(workflowBridge_, &WorkflowBridge::callAvailable, this, [this, generation](const QVariantMap&) {
+        if (generation == generation_) emit toastRequested(tr("轮到您了，请在 60 秒内确认叫号"), QStringLiteral("success"));
+    });
     favoritesService_->setCurrentUser(user.id > 0 ? QString::number(user.id) : QString());
     stationQueryService_ = new charging::client::services::station::StationQueryService(session_);
     if (!mockMode_) {
@@ -187,6 +194,7 @@ void QmlApp::createSession(const charging::model::User& user)
 }
 
 QObject* QmlApp::walletService() const { return walletBridge_; }
+QObject* QmlApp::workflowService() const { return workflowBridge_; }
 QObject* QmlApp::orderService() const { return orderBridge_; }
 QObject* QmlApp::chargingService() const { return chargingBridge_; }
 QObject* QmlApp::reservationService() const { return reservationBridge_; }

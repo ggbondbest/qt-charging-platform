@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QJsonObject>
+#include <QJsonDocument>
 #include <QList>
 #include <QtTest>
 
@@ -15,7 +16,34 @@ private slots:
     void decoderHandlesFragmentedAndCoalescedFrames();
     void decoderRejectsInvalidLengths();
     void parserRejectsInvalidEnvelope();
+    void workflowEventsHaveIndependentValidatedEnvelopes();
 };
+
+void ProtocolTest::workflowEventsHaveIndependentValidatedEnvelopes()
+{
+    using namespace charging::protocol;
+    EventEnvelope event;
+    event.type = QStringLiteral("WORKFLOW_CHANGED");
+    event.data = {{QStringLiteral("revision"), QStringLiteral("9")}};
+    const auto payload = serializePayload(event);
+    EventEnvelope parsed;
+    ProtocolError error;
+    QVERIFY(parseEventPayload(payload, &parsed, &error));
+    QCOMPARE(parsed.type, event.type);
+    QCOMPARE(parsed.data, event.data);
+    ResponseEnvelope response;
+    QVERIFY(!parseResponsePayload(payload, &response, &error));
+    const QJsonObject source = QJsonDocument::fromJson(payload).object();
+    for (const auto& pair : {qMakePair(QStringLiteral("protocolVersion"), QJsonValue(2)),
+                             qMakePair(QStringLiteral("kind"), QJsonValue(QStringLiteral("RESPONSE"))),
+                             qMakePair(QStringLiteral("type"), QJsonValue(QString())),
+                             qMakePair(QStringLiteral("data"), QJsonValue(QJsonValue::Null))}) {
+        QJsonObject invalid = source; invalid.insert(pair.first, pair.second);
+        QVERIFY(!parseEventPayload(QJsonDocument(invalid).toJson(), &parsed, &error));
+        QVERIFY(!error.isEmpty());
+        QCOMPARE(parsed.data, event.data); // Rejected payload must not replace last valid state.
+    }
+}
 
 void ProtocolTest::requestAndResponsesRoundTrip()
 {
