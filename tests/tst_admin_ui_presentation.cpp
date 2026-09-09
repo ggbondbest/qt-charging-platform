@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -192,7 +193,8 @@ private slots:
             QVERIFY(actionButton != nullptr);
             bool opened = false;
             bool fieldsFit = true;
-            bool lightText = true;
+            QStringList paletteFailures;
+            int visibleSpinEditors = 0;
             QTimer::singleShot(0, &window, [&] {
                 auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
                 if (dialog == nullptr) return;
@@ -203,8 +205,24 @@ private slots:
                     if (!edit->isVisible()) continue;
                     fieldsFit = fieldsFit && dialog->rect().contains(
                         QRect(edit->mapTo(dialog, QPoint()), edit->size()));
-                    const QColor text = edit->palette().color(QPalette::Text);
-                    lightText = lightText && text.lightness() < 160;
+                    if (qobject_cast<QSpinBox*>(edit->parentWidget()) != nullptr) {
+                        ++visibleSpinEditors;
+                    }
+                    for (const auto group : {QPalette::Active, QPalette::Inactive,
+                                             QPalette::Disabled}) {
+                        const QColor text = edit->palette().color(group, QPalette::Text);
+                        const QColor base = edit->palette().color(group, QPalette::Base);
+                        if (text.lightness() >= 160 || base.red() <= 220
+                            || base.green() <= 220 || base.blue() <= 220) {
+                            paletteFailures.append(QStringLiteral("%1: %2/%3, parent=%4/%5, "
+                                                                   "group=%6, Text=%7, Base=%8")
+                                .arg(action, QString::fromLatin1(edit->metaObject()->className()),
+                                     edit->objectName(),
+                                     QString::fromLatin1(edit->parentWidget()->metaObject()->className()),
+                                     edit->parentWidget()->objectName())
+                                .arg(static_cast<int>(group)).arg(text.name(), base.name()));
+                        }
+                    }
                 }
                 auto* buttons = dialog->findChild<QDialogButtonBox*>();
                 fieldsFit = fieldsFit && buttons != nullptr;
@@ -220,7 +238,8 @@ private slots:
             actionButton->click();
             QVERIFY(opened);
             QVERIFY(fieldsFit);
-            QVERIFY(lightText);
+            QCOMPARE(visibleSpinEditors, action == QStringLiteral("新增电站") ? 2 : 0);
+            QVERIFY2(paletteFailures.isEmpty(), qPrintable(paletteFailures.join(QLatin1Char('\n'))));
         }
         for (auto* button : window.findChildren<QPushButton*>()) {
             if (button->text() == QStringLiteral("用户管理")) {

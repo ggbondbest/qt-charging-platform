@@ -302,6 +302,8 @@ private slots:
         QTest::addColumn<QSize>("size");
         QTest::newRow("standard") << QSize(420, 740);
         QTest::newRow("compact") << QSize(360, 520);
+        QTest::newRow("tall") << QSize(420, 1000);
+        QTest::newRow("wide") << QSize(960, 880);
     }
 
     void hiddenStackPagesCannotRequestOrCancelSuccessorsRoute()
@@ -405,8 +407,36 @@ private slots:
         if (!screenshotDir.isEmpty()) {
             auto shot = page->grabToImage();
             QTRY_VERIFY(!shot->image().isNull());
-            QVERIFY(shot->saveToFile(screenshotDir + QStringLiteral("/navigation-%1.png").arg(size.width())));
+            QVERIFY(shot->saveToFile(screenshotDir + QStringLiteral("/navigation-%1x%2.png")
+                                    .arg(size.width()).arg(size.height())));
         }
+
+        // A wrapped failure message, empty directions and a viewport resize
+        // change every input to vertical sizing. These transitions must not
+        // reintroduce Qt 6.2's height binding loop or hide the return button.
+        map.steps.clear();
+        map.error = QStringLiteral("路线请求暂时失败，请检查网络连接后重新规划。")
+            .repeated(5);
+        emit map.changed();
+        window.resize(360, 480);
+        QTest::qWait(50);
+        QCOMPARE(steps->property("count").toInt(), 0);
+        QVERIFY(mapCard->height() >= 250);
+        QVERIFY(mapCard->mapToItem(page.get(), QPointF()).y()
+                >= caption->mapToItem(page.get(), QPointF(0, caption->height())).y());
+        QVERIFY(steps->mapToItem(page.get(), QPointF()).y()
+                >= mapCard->mapToItem(page.get(), QPointF(0, mapCard->height())).y());
+        QVERIFY(back->mapToItem(page.get(), QPointF()).y()
+                >= steps->mapToItem(page.get(), QPointF(0, steps->height())).y());
+        auto* scroll = page->findChild<QQuickItem*>(QStringLiteral("navigationScroll"));
+        QVERIFY(scroll);
+        const qreal contentHeight = scroll->property("contentHeight").toReal();
+        QVERIFY(contentHeight > scroll->height());
+        QVERIFY(scroll->setProperty("contentY", contentHeight - scroll->height()));
+        const qreal backBottom = back->mapToItem(scroll, QPointF(0, back->height())).y();
+        QVERIFY(backBottom <= scroll->height());
+        QVERIFY(back->mapToItem(scroll, QPointF()).y() >= 0);
+        QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join(QLatin1Char('\n'))));
     }
 };
 

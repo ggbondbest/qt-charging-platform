@@ -535,9 +535,9 @@ void StationManagementPage::showStationDialog(int recordIndex)
     dialog.setMinimumWidth(520);
     dialog.setStyleSheet(QStringLiteral(
         "QDialog { background:#ffffff; color:#1d2c46; font-size:14px; }"
-        "QLineEdit, QComboBox { background:#ffffff; color:#1d2c46; border:1px solid #d0d7de; border-radius:9px;"
+        "QLineEdit, QComboBox, QSpinBox { background:#ffffff; color:#1d2c46; border:1px solid #d0d7de; border-radius:9px;"
         " min-height:40px; padding:0 12px; font-size:14px; }"
-        "QLineEdit:focus, QComboBox:focus { border:2px solid #2878d4; }"
+        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border:2px solid #2878d4; }"
         "QPushButton { background:#ffffff; color:#2878f0; border:1px solid #d0d7de; border-radius:8px; min-height:38px;"
         " padding:0 14px; font-size:15px; }"
         "QPushButton#primaryButton { background:#2878d4; border:none; color:#ffffff; min-height:42px; font-weight:600; }"));
@@ -557,6 +557,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
     auto* contactLineEdit = new QLineEdit(&dialog);
     auto* phoneLineEdit = new QLineEdit(&dialog);
     auto* chargerCountSpinBox = new QSpinBox(&dialog);
+    chargerCountSpinBox->setObjectName(QStringLiteral("stationChargerCountSpinBox"));
     chargerCountSpinBox->setRange(1, 100);
     chargerCountSpinBox->setValue(4);
     auto* chargerTypeComboBox = new QComboBox(&dialog);
@@ -564,6 +565,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
     chargerTypeComboBox->addItem(tr("慢充"), QStringLiteral("SLOW"));
     configureManagementComboBox(chargerTypeComboBox);
     auto* chargerPowerSpinBox = new QSpinBox(&dialog);
+    chargerPowerSpinBox->setObjectName(QStringLiteral("stationChargerPowerSpinBox"));
     codeLineEdit->setObjectName(QStringLiteral("stationCodeLineEdit"));
     nameLineEdit->setObjectName(QStringLiteral("stationNameLineEdit"));
     addressLineEdit->setObjectName(QStringLiteral("stationAddressLineEdit"));
@@ -647,6 +649,19 @@ void StationManagementPage::showStationDialog(int recordIndex)
     buttons->button(QDialogButtonBox::Ok)->setObjectName(QStringLiteral("primaryButton"));
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     layout->addWidget(buttons);
+    // A styled dialog does not guarantee palette inheritance for its children.
+    // In particular Qt 6.2's QSpinBox owns a separate qt_spinbox_lineedit which
+    // can otherwise keep the application's dark-theme white text. Set both
+    // the compound input and its editor explicitly, in every palette group.
+    for (auto* spinBox : dialog.findChildren<QSpinBox*>()) {
+        applyManagementLightPalette(spinBox);
+    }
+    for (auto* comboBox : dialog.findChildren<QComboBox*>()) {
+        applyManagementLightPalette(comboBox);
+    }
+    for (auto* edit : dialog.findChildren<QLineEdit*>()) {
+        applyManagementLightPalette(edit);
+    }
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, &dialog,
             [this, &dialog, codeLineEdit, nameLineEdit, districtLineEdit, addressLineEdit,

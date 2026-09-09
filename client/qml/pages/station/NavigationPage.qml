@@ -155,21 +155,24 @@ Item {
         anchors.fill: parent
         clip: true
         contentWidth: width
-        contentHeight: content.height + 2 * P.Style.spaceLg
+        contentHeight: content.implicitHeight + 2 * P.Style.spaceLg
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { }
 
         // Compact windows scroll instead of compressing/overlapping the map,
         // route steps and buttons. Extra height belongs to the real map.
-        ColumnLayout {
+        // Keep the vertical flow independent of its own implicit height. Qt
+        // 6.2 layouts can loop when a layout sizes itself from implicitHeight
+        // while redistributing the remaining height to a fillHeight child.
+        Column {
             id: content
             x: P.Style.spaceLg; y: P.Style.spaceLg
             width: scroll.width - 2 * P.Style.spaceLg
-            height: Math.max(implicitHeight, scroll.height - 2 * P.Style.spaceLg)
             spacing: P.Style.spaceMd
 
             ColumnLayout {
-                Layout.fillWidth: true
+                id: titleSection
+                width: parent.width
                 spacing: 4
                 Text { text: "路线导航"; font.pixelSize: P.Style.fontXs; color: P.Style.muted }
                 Text {
@@ -181,12 +184,13 @@ Item {
                 }
             }
             Rectangle {
-                Layout.fillWidth: true
+                id: originCard
+                width: parent.width
                 implicitHeight: originForm.implicitHeight + 20
                 color: P.Style.surface; radius: P.Style.radiusMd; border.color: P.Style.line
                 ColumnLayout {
                     id: originForm
-                    anchors.fill: parent; anchors.margins: 10
+                    x: 10; y: 10; width: parent.width - 20
                     spacing: 8
                     RowLayout {
                         Layout.fillWidth: true
@@ -230,7 +234,8 @@ Item {
                 }
             }
             RowLayout {
-                Layout.fillWidth: true
+                id: routeActions
+                width: parent.width
                 spacing: P.Style.spaceSm
                 P.ActionButton {
                     objectName: "drivingRouteButton"
@@ -258,8 +263,9 @@ Item {
                 }
             }
             Text {
+                id: routeCaption
                 objectName: "navigationCaptionLabel"
-                Layout.fillWidth: true
+                width: parent.width
                 text: page.localError.length ? page.localError
                       : mapBridge.error.length ? mapBridge.error
                       : page.webError.length ? page.webError
@@ -277,8 +283,14 @@ Item {
             }
             Rectangle {
                 objectName: "navigationMapCard"
-                Layout.fillWidth: true; Layout.fillHeight: true
-                Layout.minimumHeight: 200; Layout.preferredHeight: 250
+                width: parent.width
+                // Only the viewport and non-map siblings determine map size;
+                // compact windows scroll, taller windows enlarge the map.
+                height: Math.max(250, scroll.height - 2 * P.Style.spaceLg
+                                 - titleSection.height - originCard.height
+                                 - routeActions.height - routeCaption.height
+                                 - instructionsCard.height - backButton.height
+                                 - 6 * content.spacing)
                 color: P.Style.surface; radius: P.Style.radiusMd; border.color: P.Style.line
                 clip: true
                 Loader {
@@ -346,12 +358,13 @@ Item {
                 }
             }
             Rectangle {
-                Layout.fillWidth: true
+                id: instructionsCard
+                width: parent.width
                 implicitHeight: stepContent.implicitHeight + 20
                 color: P.Style.surface; radius: P.Style.radiusMd; border.color: P.Style.line
                 ColumnLayout {
                     id: stepContent
-                    anchors.fill: parent; anchors.margins: 10
+                    x: 10; y: 10; width: parent.width - 20
                     spacing: 8
                     Text {
                         text: "路线指引"; font.pixelSize: P.Style.fontMd
@@ -397,8 +410,9 @@ Item {
                 }
             }
             P.ActionButton {
+                id: backButton
                 objectName: "navigationBackButton"
-                Layout.fillWidth: true
+                width: parent.width
                 variant: "secondary"; text: "返回电站"
                 onClicked: App.back()
             }
