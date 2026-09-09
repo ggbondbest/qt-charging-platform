@@ -289,100 +289,11 @@ Item {
                 }
             }
 
-            // ---------- ①.5 经验等级卡（2026-09-09 需求批二版：由 hero 迁入，
-            // 用户指定放名片卡与钱包卡之间）。整卡点击进会员等级页——objectName
-            // 沿用 uiLevelBadgeButton/uiLevelBar/uiLevelBarFill/uiLevelXpLabel
-            // （station 端到端测试钉的是名字与行为，不是位置）。奖牌图形走
-            // glyph 染色管线（medal 母版 × 档位色），替代原 emoji 徽章文本。 ----------
-            Rectangle {
-                objectName: "uiLevelBadgeButton"
-                visible: page.progress !== null
-                width: col.contentW
-                height: levelCardCol.implicitHeight + 2 * P.Style.spaceMd
-                radius: P.Style.radiusLg
-                color: P.Style.surface
-                border.width: 1
-                border.color: P.Style.line
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: { if (App) App.navigate("level") }
-                }
-                Column {
-                    id: levelCardCol
-                    anchors.left: parent.left; anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: P.Style.spaceMd
-                    anchors.rightMargin: P.Style.spaceMd
-                    spacing: P.Style.spaceSm
-                    Row {
-                        width: parent.width
-                        spacing: P.Style.spaceMd
-                        Rectangle {
-                            id: levelMedalHub
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Math.round(44 * P.Style.fontScaleFactor)
-                            height: width; radius: width / 2
-                            color: P.Style.ghost
-                            Image {
-                                anchors.centerIn: parent
-                                width: Math.round(26 * P.Style.fontScaleFactor)
-                                height: width
-                                source: page.glyphSource("medal",
-                                    page.tierColor(page.progress ? page.progress.level : 1))
-                            }
-                        }
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - levelMedalHub.width - parent.spacing
-                            spacing: 3
-                            Text {
-                                objectName: "uiLevelTierLine"
-                                width: parent.width; elide: Text.ElideRight
-                                text: "Lv." + (page.progress ? page.progress.level : 1)
-                                      + " " + (page.progress ? page.progress.tierName : "") + " ›"
-                                font.pixelSize: P.Style.fontMd; font.weight: Font.DemiBold
-                                color: P.Style.ink
-                            }
-                            Text {
-                                objectName: "uiLevelXpLabel"
-                                width: parent.width; elide: Text.ElideRight
-                                text: page.progress
-                                      ? (page.progress.xpToNext > 0
-                                         ? "当前 " + page.progress.xpIntoLevel + "/"
-                                           + page.progress.xpSpan + " XP · 距"
-                                           + page.progress.nextTierName + "还需 "
-                                           + page.progress.xpToNext + " XP"
-                                         : "当前累计 " + page.progress.xp + " XP · 已是最高等级")
-                                      : ""
-                                font.pixelSize: P.Style.fontXs; color: P.Style.muted
-                            }
-                        }
-                    }
-                    Rectangle {
-                        objectName: "uiLevelBar"
-                        width: parent.width; height: 6; radius: 3
-                        color: P.Style.ghost
-                        Rectangle {
-                            objectName: "uiLevelBarFill"
-                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                            height: parent.height; radius: parent.radius
-                            width: parent.width * (page.progress ? page.progress.progress : 0)
-                            color: page.tierColor(page.progress ? page.progress.level : 1)
-                            Behavior on width {
-                                enabled: P.Style.motionEnabled
-                                NumberAnimation { duration: P.Style.durValue }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ---------- ①.5 会员等级卡（会员中心批，参考"白金会员"卡形态） ----------
+            // ---------- ①.5 会员等级卡（会员中心批，参考"白金会员"卡形态；
+            // 2026-09-09 合并批：本经验等级批白卡与之重复，退役让位——锚点
+            // uiLevelBadgeButton/uiLevelBar/uiLevelXpLabel 由橙卡沿用不破） ----------
             // 昵称框与余额框之间的独立大卡：档位名+星级 → 成长值条 → 经验行
             // → 当前档权益；点卡任意处进会员中心页（等级+每日任务+礼包记录）。
-            // 锚点沿用经验等级批：uiLevelBar/uiLevelXpLabel/uiLevelBadgeButton
-            // （右侧"会员中心›"入口），回归钉不破。
             Rectangle {
                 objectName: "uiLevelCard"
                 visible: page.progress !== null
