@@ -1001,7 +1001,7 @@ private slots:
         auto* page = createPage(engine, QStringLiteral("ProfilePage.qml"), &holder,
                                 QStringLiteral("station"));
         QVERIFY(page);
-        QCOMPARE(fake.fetchCalls, 1);   // 进页补拉积分角标 fetchPoints(1,1)
+        QCOMPARE(fake.fetchCalls, 1);   // 进页补拉积分角标+签到态推导 fetchPoints(1,20)
 
         QMetaObject::invokeMethod(page, "checkInNow");
         QCOMPARE(fake.checkInCalls, 1);
@@ -1023,6 +1023,51 @@ private slots:
 
         QMetaObject::invokeMethod(page, "checkInNow");   // 已签拦路：只 toast 不发请求
         QCOMPARE(fake.checkInCalls, 2);
+    }
+
+    // 用户反馈回归（2026-09-09）：页面被 Tab 切换销毁重建后 checkedToday 属性
+    // 丢失——胶囊"已签到"复亮还能点。修=进页流水推导：首页里存在今日（UTC）
+    // "每日签到"行即恢复已签态。负例：今日"消费返积分"行、昨日签到行都不算。
+    void profileCheckedTodayRestoredFromLedger()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("couponService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("notificationService"), nullptr);
+
+        const QString today =
+            QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd"));
+        const QString yesterday = QDateTime::currentDateTimeUtc().addDays(-1)
+                                      .toString(QStringLiteral("yyyy-MM-dd"));
+        auto ledgerRow = [](const QString& reason, const QString& day) {
+            return QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                               {QStringLiteral("amount"), 10},
+                               {QStringLiteral("reason"), reason},
+                               {QStringLiteral("createdAtUtc"),
+                                day + QStringLiteral("T03:00:00.000Z")}};
+        };
+
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ProfilePage.qml"), &holder,
+                                QStringLiteral("station"));
+        QVERIFY(page);
+        QVERIFY(!page->property("checkedToday").toBool());   // 重建即失忆（病灶起点）
+
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("消费返积分"), today)}, 1);
+        QVERIFY(!page->property("checkedToday").toBool());   // 返点行不是签到证据
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("每日签到"), yesterday)}, 2);
+        QVERIFY(!page->property("checkedToday").toBool());   // 昨天的签不算今天
+
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("每日签到"), today),
+                             ledgerRow(QStringLiteral("注册礼包"), yesterday)}, 3);
+        QVERIFY(page->property("checkedToday").toBool());    // 今日签到行 → 恢复已签
+        QMetaObject::invokeMethod(page, "checkInNow");       // 恢复后照样拦请求
+        QCOMPARE(fake.checkInCalls, 0);
     }
 
     // 签到桥 × 真 mock 通道端到端：种子礼包 50 → 签到 +10 → 流水两行新在前。

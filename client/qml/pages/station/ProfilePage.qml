@@ -34,12 +34,29 @@ Item {
     property int couponTotal: 0
     property int notifTotal: 0
     property int pointsTotal: -1
-    // 今日已签镜像（PointsPage todayCheckedIn 同款：成功与重放都进已签态）
+    // 今日已签镜像（PointsPage todayCheckedIn 同款：成功与重放都进已签态）。
+    // 页面会被 Tab 切换销毁重建——重建后属性丢失，由进页流水推导恢复
+    // （refreshCheckedToday，用户反馈 2026-09-09：切走再回来胶囊复亮可点）。
     property bool checkedToday: false
     // 在途守卫（PointsPage checkingIn 同款）：服务端日粒度幂等只保分数的
     // 底线，不保连点——回执落地前胶囊必须自己挡住重复 checkIn（审查反馈 2026-09-09）。
     property bool checkingIn: false
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
+    // 从流水推导"今天已签"：存在今日（UTC）"每日签到"行即已签。账本跨页面
+    // 重建持久，是签到态唯一可恢复的数据源；单向置真（本地已签不因分页查
+    // 不到而回亮）。day 口径与 checkInCompleted 的 UTC "yyyy-MM-dd" 一致，
+    // 两通道流水 createdAtUtc 均为 ISO UTC 串，前 10 字符直接可比。
+    function refreshCheckedToday(entries) {
+        if (page.checkedToday) return
+        const today = new Date().toISOString().slice(0, 10)
+        for (const row of entries || []) {
+            if (row.reason === "每日签到"
+                && String(row.createdAtUtc || "").slice(0, 10) === today) {
+                page.checkedToday = true
+                return
+            }
+        }
+    }
     function maskPhone(p) {
         const s = String(p || "")
         return s.length === 11 ? s.slice(0, 3) + "****" + s.slice(7) : (s || "--")
@@ -87,7 +104,10 @@ Item {
     }
     Connections {
         target: pointsService
-        function onPointsLoaded(points, entries, total) { page.pointsTotal = points }
+        function onPointsLoaded(points, entries, total) {
+            page.pointsTotal = points
+            page.refreshCheckedToday(entries)
+        }
         function onCheckInCompleted(day, points, gained, alreadyCheckedIn) {
             page.checkingIn = false
             page.pointsTotal = points
@@ -107,7 +127,8 @@ Item {
         try { orderService.fetchStatusCounts() } catch (e) {}
         try { page.couponTotal = couponService.couponCount() } catch (e) {}
         try { page.notifTotal = notificationService.notifications().length } catch (e) {}
-        try { pointsService.fetchPoints(1, 1) } catch (e) {}   // 只为回填积分数，流水不进本页
+        // 拉首页流水：回填积分角标 + 推导今日已签（refreshCheckedToday）。
+        try { pointsService.fetchPoints(1, 20) } catch (e) {}
     }
 
     Flickable {
