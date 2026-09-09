@@ -462,7 +462,9 @@ void StationManagementPage::showStationDetails(int recordIndex, bool requestDeta
                                          .arg(record.address, QString::number(record.latitude, 'f', 6),
                                               QString::number(record.longitude, 'f', 6), formatPriceCents(record.priceCentsPerKwh),
                                               formatBeijingDateTime(record.expectedUpdatedAt)));
-        detailContactLabel_->setText(tr("负责人及营业时间：契约未提供"));
+        const auto display = [](const QString& value) { return value.isEmpty() ? QStringLiteral("—") : value; };
+        detailContactLabel_->setText(tr("城市　%1\n区域　%2\n负责人　%3\n联系电话　%4")
+            .arg(display(record.city), display(record.district), display(record.contactName), display(record.contactPhone)));
         detailConfigurationLabel_->setText(tr("电桩总数　%1 台\n可用电桩　%2 台\n在线电桩　%3 台\n在线率　%4\n在线包含故障桩，不代表可用。")
             .arg(record.chargerCount)
             .arg(record.availableChargerCount >= 0 ? QString::number(record.availableChargerCount) : tr("—"))
@@ -493,7 +495,7 @@ void StationManagementPage::showStationDetails(int recordIndex, bool requestDeta
 void StationManagementPage::updateDetailActions()
 {
     const bool hasSelection = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size();
-    editButton_->setEnabled(hasSelection);
+    editButton_->setEnabled(hasSelection && (!realMode_ || records_.at(selectedRecordIndex_).contactDetailsLoaded));
     toggleStatusButton_->setEnabled(hasSelection);
     viewChargersButton_->setEnabled(hasSelection && realMode_);
     viewChargersButton_->setToolTip(realMode_ ? tr("打开该电站的实时电桩状态列表")
@@ -547,7 +549,9 @@ void StationManagementPage::showStationDialog(int recordIndex)
     auto* codeLineEdit = new QLineEdit(&dialog);
     auto* nameLineEdit = new QLineEdit(&dialog);
     auto* cityComboBox = new QComboBox(&dialog);
-    cityComboBox->addItems({tr("杭州市"), tr("宁波市")});
+    cityComboBox->setObjectName(QStringLiteral("stationCityComboBox"));
+    cityComboBox->setEditable(true);
+    cityComboBox->addItems({tr("大连市"), tr("沈阳市"), tr("北京市"), tr("上海市"), tr("深圳市"), tr("杭州市"), tr("宁波市")});
     configureManagementComboBox(cityComboBox);
     auto* districtLineEdit = new QLineEdit(&dialog);
     auto* addressLineEdit = new QLineEdit(&dialog);
@@ -556,6 +560,17 @@ void StationManagementPage::showStationDialog(int recordIndex)
     auto* priceLineEdit = new QLineEdit(&dialog);
     auto* contactLineEdit = new QLineEdit(&dialog);
     auto* phoneLineEdit = new QLineEdit(&dialog);
+    districtLineEdit->setObjectName(QStringLiteral("stationDistrictLineEdit"));
+    contactLineEdit->setObjectName(QStringLiteral("stationContactNameLineEdit"));
+    phoneLineEdit->setObjectName(QStringLiteral("stationContactPhoneLineEdit"));
+    districtLineEdit->setPlaceholderText(tr("区域，例如高新区"));
+    contactLineEdit->setPlaceholderText(tr("负责人"));
+    phoneLineEdit->setPlaceholderText(tr("11 位大陆手机号"));
+    nameLineEdit->setMaxLength(64);
+    districtLineEdit->setMaxLength(64);
+    contactLineEdit->setMaxLength(64);
+    phoneLineEdit->setMaxLength(11);
+    cityComboBox->lineEdit()->setMaxLength(64);
     auto* chargerCountSpinBox = new QSpinBox(&dialog);
     chargerCountSpinBox->setObjectName(QStringLiteral("stationChargerCountSpinBox"));
     chargerCountSpinBox->setRange(1, 100);
@@ -588,16 +603,6 @@ void StationManagementPage::showStationDialog(int recordIndex)
         priceLineEdit->setText(formatPriceCents(record.priceCentsPerKwh));
         contactLineEdit->setText(record.contactName);
         phoneLineEdit->setText(record.contactPhone);
-        if (realMode_) {
-            cityComboBox->setEnabled(false);
-            districtLineEdit->setEnabled(false);
-            contactLineEdit->setEnabled(false);
-            phoneLineEdit->setEnabled(false);
-            cityComboBox->setToolTip(tr("当前契约不支持此字段"));
-            districtLineEdit->setToolTip(tr("当前契约不支持此字段"));
-            contactLineEdit->setToolTip(tr("当前契约不支持此字段"));
-            phoneLineEdit->setToolTip(tr("当前契约不支持此字段"));
-        }
     } else {
         codeLineEdit->setPlaceholderText(tr("例如 STN000337"));
         nameLineEdit->setPlaceholderText(tr("例如 西湖文体中心充电站"));
@@ -607,25 +612,21 @@ void StationManagementPage::showStationDialog(int recordIndex)
     }
     formLayout->addRow(tr("电站编号 *"), codeLineEdit);
     formLayout->addRow(tr("电站名称 *"), nameLineEdit);
-    if (!realMode_) {
-        formLayout->addRow(tr("城市 *"), cityComboBox);
-        formLayout->addRow(tr("区域 *"), districtLineEdit);
-    } else {
-        // Do not offer apparently required fields which the real contract
-        // does not save. This also keeps the delivered form within 720px.
-        cityComboBox->hide();
-        districtLineEdit->hide();
-        contactLineEdit->hide();
-        phoneLineEdit->hide();
-    }
+    // Pair related fields so the complete persisted form still fits a laptop.
+    const auto pairFields = [&dialog](QWidget* first, QWidget* second) {
+        auto* group = new QWidget(&dialog);
+        auto* row = new QHBoxLayout(group);
+        row->setContentsMargins(0, 0, 0, 0);
+        row->addWidget(first, 1); row->addWidget(second, 1);
+        return group;
+    };
+    formLayout->addRow(tr("城市 / 区域 *"), pairFields(cityComboBox, districtLineEdit));
     formLayout->addRow(tr("详细地址 *"), addressLineEdit);
-    formLayout->addRow(tr("纬度 *（-90 ～ 90）"), latitudeLineEdit);
-    formLayout->addRow(tr("经度 *（-180 ～ 180）"), longitudeLineEdit);
+    latitudeLineEdit->setToolTip(tr("纬度：-90 ～ 90"));
+    longitudeLineEdit->setToolTip(tr("经度：-180 ～ 180"));
+    formLayout->addRow(tr("纬度 / 经度 *"), pairFields(latitudeLineEdit, longitudeLineEdit));
     formLayout->addRow(tr("电价 *（元 / kWh）"), priceLineEdit);
-    if (!realMode_) {
-        formLayout->addRow(tr("负责人 *"), contactLineEdit);
-        formLayout->addRow(tr("联系电话 *"), phoneLineEdit);
-    }
+    formLayout->addRow(tr("负责人 / 手机 *"), pairFields(contactLineEdit, phoneLineEdit));
     if (!isEditing) {
         formLayout->addRow(tr("初始电桩数量 *"), chargerCountSpinBox);
         formLayout->addRow(tr("初始电桩类型 *"), chargerTypeComboBox);
@@ -638,7 +639,7 @@ void StationManagementPage::showStationDialog(int recordIndex)
     layout->addLayout(formLayout);
     if (realMode_) {
         auto* hint = createTextLabel(isEditing
-                                         ? tr("保存名称、地址、经纬度和电价；电站编号不可更改。")
+                                         ? tr("保存联系信息、地址、经纬度和电价；旧数据缺失项请补全，电站编号不可更改。")
                                          : tr("确认后将同时创建电站与初始电桩；请填写真实的站点坐标。"),
                                      QStringLiteral("color:#718098; font-size:13px;"), &dialog);
         hint->setWordWrap(true);
@@ -664,19 +665,24 @@ void StationManagementPage::showStationDialog(int recordIndex)
     }
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, &dialog,
-            [this, &dialog, codeLineEdit, nameLineEdit, districtLineEdit, addressLineEdit,
+            [&dialog, codeLineEdit, nameLineEdit, cityComboBox, districtLineEdit, addressLineEdit,
              latitudeLineEdit, longitudeLineEdit, priceLineEdit, contactLineEdit, phoneLineEdit]() {
         if (codeLineEdit->text().trimmed().isEmpty() || nameLineEdit->text().trimmed().isEmpty()
             || addressLineEdit->text().trimmed().isEmpty()
-            || (!realMode_ && (districtLineEdit->text().trimmed().isEmpty()
-                                || contactLineEdit->text().trimmed().isEmpty()
-                                || phoneLineEdit->text().trimmed().isEmpty()))) {
+            || cityComboBox->currentText().trimmed().isEmpty()
+            || districtLineEdit->text().trimmed().isEmpty()
+            || contactLineEdit->text().trimmed().isEmpty()
+            || phoneLineEdit->text().trimmed().isEmpty()) {
             QMessageBox::warning(&dialog, QObject::tr("请补全信息"), QObject::tr("所有带 * 的字段均为必填项。"));
             return;
         }
         double latitude = 0.0;
         double longitude = 0.0;
         qint64 priceCents = 0;
+        if (!QRegularExpression(QStringLiteral("^1[3-9][0-9]{9}$")).match(phoneLineEdit->text().trimmed()).hasMatch()) {
+            QMessageBox::warning(&dialog, QObject::tr("手机号格式不正确"), QObject::tr("请输入 11 位大陆手机号，不含空格或区号。"));
+            return;
+        }
         if (!parseCoordinate(latitudeLineEdit->text(), -90.0, 90.0, &latitude)
             || !parseCoordinate(longitudeLineEdit->text(), -180.0, 180.0, &longitude)
             || !parsePriceCents(priceLineEdit->text(), &priceCents)) {
@@ -711,6 +717,10 @@ void StationManagementPage::showStationDialog(int recordIndex)
                 {{QStringLiteral("operationId"), operationId}, {QStringLiteral("id"), editingRecord.serverId},
                  {QStringLiteral("expectedUpdatedAt"), editingRecord.expectedUpdatedAt},
                  {QStringLiteral("name"), nameLineEdit->text().trimmed()},
+                 {QStringLiteral("city"), cityComboBox->currentText().trimmed()},
+                 {QStringLiteral("district"), districtLineEdit->text().trimmed()},
+                 {QStringLiteral("contactName"), contactLineEdit->text().trimmed()},
+                 {QStringLiteral("contactPhone"), phoneLineEdit->text().trimmed()},
                  {QStringLiteral("address"), addressLineEdit->text().trimmed()},
                  {QStringLiteral("latitude"), latitude}, {QStringLiteral("longitude"), longitude},
                  {QStringLiteral("priceCentsPerKwh"), priceCents}}, this, QStringLiteral("station-write"));
@@ -727,6 +737,10 @@ void StationManagementPage::showStationDialog(int recordIndex)
         writeRequestId_ = gateway_->request(QStringLiteral("station.create"),
             {{QStringLiteral("operationId"), operationId}, {QStringLiteral("code"), stationCode},
              {QStringLiteral("name"), nameLineEdit->text().trimmed()},
+             {QStringLiteral("city"), cityComboBox->currentText().trimmed()},
+             {QStringLiteral("district"), districtLineEdit->text().trimmed()},
+             {QStringLiteral("contactName"), contactLineEdit->text().trimmed()},
+             {QStringLiteral("contactPhone"), phoneLineEdit->text().trimmed()},
              {QStringLiteral("address"), addressLineEdit->text().trimmed()},
              {QStringLiteral("latitude"), latitude}, {QStringLiteral("longitude"), longitude},
              {QStringLiteral("priceCentsPerKwh"), priceCents}, {QStringLiteral("chargers"), chargers}},
@@ -841,7 +855,7 @@ void StationManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    statusComboBox_->removeItem(2); // "空闲" is not a station-status contract value.
+    statusComboBox_->setItemText(2, tr("无占用（全部桩）"));
     setManagementMetricCardsUnavailable(this, tr("当前契约未提供电站页汇总指标"));
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
@@ -858,7 +872,7 @@ void StationManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 
 QString StationManagementPage::statusCode(const QString& display) const
 {
-    if (display == tr("运营中") || display == tr("空闲")) return QStringLiteral("ACTIVE");
+    if (display == tr("运营中")) return QStringLiteral("ACTIVE");
     if (display == tr("已停用")) return QStringLiteral("INACTIVE");
     return {};
 }
@@ -874,6 +888,7 @@ void StationManagementPage::requestList()
     }
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("idDesc")}};
     const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    if (statusComboBox_->currentIndex() == 2) query.insert(QStringLiteral("idleOnly"), true);
     if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
     listRequestId_ = gateway_->request(QStringLiteral("stations.list"), query, this, QStringLiteral("station-list"));
     query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
@@ -891,6 +906,11 @@ void StationManagementPage::handleDetailResponse(const QJsonObject& response)
         || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
         || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
     auto& record = records_[selectedRecordIndex_];
+    record.city = item.value(QStringLiteral("city")).toString();
+    record.district = item.value(QStringLiteral("district")).toString();
+    record.contactName = item.value(QStringLiteral("contactName")).toString();
+    record.contactPhone = item.value(QStringLiteral("contactPhone")).toString();
+    record.contactDetailsLoaded = true;
     record.code = item.value(QStringLiteral("code")).toString(); record.name = item.value(QStringLiteral("name")).toString();
     record.address = item.value(QStringLiteral("address")).toString(); record.latitude = item.value(QStringLiteral("latitude")).toDouble();
     record.longitude = item.value(QStringLiteral("longitude")).toDouble(); record.priceCentsPerKwh = item.value(QStringLiteral("priceCentsPerKwh")).toInteger();
@@ -914,10 +934,10 @@ void StationManagementPage::handleListResponse(const QJsonObject& response)
     hasRealSnapshot_ = true;
     for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
         const auto item = value.toObject(); const bool active = item.value(QStringLiteral("status")).toString() == QStringLiteral("ACTIVE");
-        records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("name")).toString(), tr("—"), tr("—"),
+        records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("name")).toString(), item.value(QStringLiteral("city")).toString(), item.value(QStringLiteral("district")).toString(),
             item.value(QStringLiteral("address")).toString(), item.value(QStringLiteral("latitude")).toDouble(), item.value(QStringLiteral("longitude")).toDouble(),
             item.value(QStringLiteral("priceCentsPerKwh")).toInteger(), active ? tr("运营中") : tr("已停用"), item.value(QStringLiteral("totalChargers")).toInt(), 0, 0, 0, 0,
-            tr("契约未提供"), tr("—"), item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString(),
+            item.value(QStringLiteral("contactName")).toString(), item.value(QStringLiteral("contactPhone")).toString(), item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString(),
             item.value(QStringLiteral("availableChargers")).toInt(-1),
             item.value(QStringLiteral("onlineChargerCount")).toInt(-1),
             item.value(QStringLiteral("onlineRatePercent")).toDouble(-1)});
@@ -927,7 +947,7 @@ void StationManagementPage::handleListResponse(const QJsonObject& response)
         if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
     }
     rebuildTable();
-    if (selectedRecordIndex_ >= 0) showStationDetails(selectedRecordIndex_, false);
+    if (selectedRecordIndex_ >= 0) showStationDetails(selectedRecordIndex_, true);
     setManagementMetricCardValue(this, 0, tr("%1 座").arg(totalRecords_),
                                  tr("服务端分页总数（当前筛选）"));
     setFeedback(totalRecords_ ? tr("已加载 %1 座电站（服务端分页）").arg(totalRecords_) : tr("当前没有电站数据"));

@@ -414,6 +414,26 @@ void ChargingTcpIntegrationTest::sameConnectionCompletesAuthenticatedWorkflow()
     QCOMPARE(adminOrder.value(QStringLiteral("status")).toString(), QStringLiteral("COMPLETED"));
     QCOMPARE(adminOrder.value(QStringLiteral("amountCents")).toInt(), 120);
     QCOMPARE(adminOrder.value(QStringLiteral("phone")).toString(), QStringLiteral("138****0101"));
+    QCOMPARE(adminOrder.value(QStringLiteral("billingAvailability")).toString(), QStringLiteral("AVAILABLE"));
+    QVERIFY(adminOrder.contains(QStringLiteral("estimated")));
+    QVERIFY(!adminOrder.value(QStringLiteral("estimated")).toBool());
+    const auto fee = adminOrder.value(QStringLiteral("feeBreakdown")).toObject();
+    QCOMPARE(fee.value(QStringLiteral("energyFeeCents")).toInt(), 120);
+    QCOMPARE(fee.value(QStringLiteral("payableCents")).toInt(), 120);
+    QCOMPARE(fee.value(QStringLiteral("paidCents")).toInt(), 120);
+    QCOMPARE(fee.value(QStringLiteral("currency")).toString(), QStringLiteral("CNY"));
+    for (const auto* field : {"serviceFeeCents", "parkingFeeCents", "discountCents"})
+        QCOMPARE(fee.value(QLatin1String(field)).toInt(-1), 0);
+    const auto pricing = adminOrder.value(QStringLiteral("pricingSnapshot")).toObject();
+    QCOMPARE(pricing.value(QStringLiteral("version")).toString(), QStringLiteral("energy-only-v1"));
+    const auto segments = pricing.value(QStringLiteral("segments")).toArray();
+    QCOMPARE(segments.size(), 1);
+    const auto segment = segments.first().toObject();
+    QCOMPARE(segment.value(QStringLiteral("energyWh")).toInt(), 1000);
+    QCOMPARE(segment.value(QStringLiteral("unitPriceCentsPerKwh")).toInt(), 120);
+    QCOMPARE(segment.value(QStringLiteral("amountCents")).toInt(), 120);
+    QCOMPARE(segment.value(QStringLiteral("startAt")), adminOrder.value(QStringLiteral("startedAt")));
+    QCOMPARE(segment.value(QStringLiteral("endAt")), adminOrder.value(QStringLiteral("stoppedAt")));
 
     const auto adminUser = fixture.adminRead(
         QStringLiteral("users"), {{QStringLiteral("id"), QString::number(fixture.userId())}})
@@ -434,7 +454,10 @@ void ChargingTcpIntegrationTest::sameConnectionCompletesAuthenticatedWorkflow()
         QStringLiteral("orders"), {{QStringLiteral("userId"), QString::number(fixture.userId())},
                                     {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}});
     QCOMPARE(adminOrders.value(QStringLiteral("total")).toInt(), 1);
-    QCOMPARE(adminOrders.value(QStringLiteral("items")).toArray().first().toObject(), adminOrder);
+    auto legacyDetailFields = adminOrder;
+    for (const auto* field : {"billingAvailability", "estimated", "feeBreakdown", "pricingSnapshot"})
+        legacyDetailFields.remove(QLatin1String(field));
+    QCOMPARE(adminOrders.value(QStringLiteral("items")).toArray().first().toObject(), legacyDetailFields);
 
     // The sixth workflow route, cancellation, is exercised after the first order
     // reaches COMPLETED and therefore no longer blocks a new reservation.

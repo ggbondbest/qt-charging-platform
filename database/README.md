@@ -1,5 +1,31 @@
 # 五市实训示范数据
 
+## Schema v4：管理扩展与旧数据
+
+普通服务端启动自动将受支持的 v1/v2/v3 数据库升级到 v4，无需删除数据库或重新执行种子。
+新建表、补充列、索引刷新和版本号提交在同一个 `BEGIN IMMEDIATE` 事务中，任一步失败整体回滚。
+建议升级前用管理端数据库备份功能保留备份；旧版备份恢复到临时副本后完成同样迁移。
+
+| 数据 | 类型 / 约束 | 旧数据处理 |
+| --- | --- | --- |
+| stations.city/district/contact_name | 可空 TEXT；非空时去空白后 1–64 字 | NULL；不从地址猜测负责人或区域 |
+| stations.contact_phone | 可空 TEXT；11 位大陆手机号，第二位 3–9 | NULL；列表脱敏，详情按权限控制 |
+| orders.telemetry_captured_at | 可空 UTC ISO-8601 毫秒 Z | NULL；不得用 updated_at 补齐 |
+| orders.telemetry_power_watts | 可空正整数 W | NULL；由服务端模拟计量采样落库 |
+| order_pricing_snapshots | order_id 主键/外键；version、非负整数分/kWh、captured_at 必填 | 不为已有充电中/已结算订单补造快照 |
+| charger_exceptions | 独立事件 ID；发生/确认/恢复时间；版本 updated_at；恢复动作追踪 | 空表；不把旧电桩 FAULT/OFFLINE 的更新时间冒充事件时间 |
+
+新预约订单创建时固化 `energy-only-v1` 费率，未启动的旧预约在启动时固化其预约订单已有费率。
+这个策略只计电费；服务费、停车费和优惠都是 0，不代表实现了尚未确认的额外收费/优惠规则。
+电费按整数 Wh × 固定分/kWh 后除以 1000、半分向上取整；后续站点调价不修改历史。
+`orders.get` 无快照时 `feeBreakdown`、`pricingSnapshot` 为 null，`billingAvailability=UNAVAILABLE`。
+充电中 `estimated=true`，明细使用最后一次已持久化模拟计量样本；停止后固定最终数值。
+模拟计量不代表实际硬件遥测；未接硬件心跳时 `lastHeartbeatAt=null`，管理查询本身不伪造心跳或推进样本时间。
+
+异常事件 `code` 仅 `SIMULATED_FAULT/SIMULATED_OFFLINE`，`severity` 仅 `WARNING/CRITICAL`；
+`status` 为 `ACTIVE/ACKNOWLEDGED/RECOVERING/RECOVERED`；摘要及恢复说明最长 256 字。
+首版恢复动作仅 `SIMULATE_RESTORE`，与真实充电桩硬件恢复命令严格区分。
+
 `city_demo_seed.sql` 提供大连、沈阳、北京、上海、深圳各 5 座电站，每站 3 根桩（2 快充、1 慢充），总计 **25 站、75 桩**。
 
 这些是实训用的**模拟运营数据**，不是经核实的商业电站目录。名称明确标为“示范”；坐标只表示所在城市/片区的大概位置，用来演示城市地图、选站、选桩、预约和导航。不得把它们当作真实可用的充电资源或现场导航目的地。

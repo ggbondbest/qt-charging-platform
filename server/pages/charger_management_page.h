@@ -6,6 +6,7 @@
 #include <QVector>
 #include <QWidget>
 #include <QJsonObject>
+#include <QHash>
 
 class QComboBox;
 class QLabel;
@@ -25,7 +26,7 @@ public:
     explicit ChargerManagementPage(QWidget* parent = nullptr);
 
     void setAdminGateway(class AdminRequestGateway* gateway);
-    void refreshData() { if (realMode_) requestList(); }
+    void refreshData() { if (realMode_) { requestStationOptions(true); requestList(); } }
 
     void showExceptionRecords();
     void showExceptionRecord(const QString& chargerCode);
@@ -43,6 +44,7 @@ private slots:
     void showNextPage();
 
 private:
+    friend class AdminChargerExtensionPagesTest;
     using ChargerRecord = admin_mock::ChargerRecord;
 
     void createMockRecords();
@@ -54,14 +56,19 @@ private:
     void setFeedback(const QString& text);
     bool recordMatchesFilters(const ChargerRecord& record) const;
     void requestList();
-    void requestStationOptions();
+    void requestStationOptions(bool onlyRetryFailed = false);
     void requestStationById(const QString& stationId);
     void handleListResponse(const QJsonObject& response);
-    void handleStationOptionsResponse(const QJsonObject& response);
     void handleStationLookupResponse(const QJsonObject& response);
     void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
     void handleWriteResponse(const QJsonObject& response);
+    void handleRuntimeResponse(const QJsonObject& response);
+    void renderRuntime();
+    void submitWrite(const QString& action, const QJsonObject& parameters);
+    void retryPendingWrite();
+    void sendPendingWrite();
+    void showWriteStatus();
     QString statusCode(const QString& display) const;
 
     QVector<ChargerRecord> records_;
@@ -74,12 +81,21 @@ private:
     QString listRequestId_;
     QString summaryRequestId_;
     QString writeRequestId_;
+    QString pendingWriteAction_;
+    QJsonObject pendingWriteParameters_;
+    QString pendingWriteAdminId_;
+    bool writeInFlight_ = false;
+    bool writeOutcomeUnknown_ = false;
     QString detailRequestId_;
     QString detailExpectedServerId_;
+    QString runtimeRequestId_;
+    QString runtimeExpectedServerId_;
+    QHash<QString, QJsonObject> activeExceptions_;
+    QHash<QString, QJsonObject> runtimeSnapshots_;
     // This is only used while station options are loading.  The combo box is
     // the sole source of the actual list filter, so it cannot be overridden.
     QString pendingStationFilterId_;
-    QString stationOptionsRequestId_;
+    class AdminOptionLoader* stationOptions_ = nullptr;
     QString stationLookupRequestId_;
     class AdminRequestGateway* gateway_ = nullptr;
 
@@ -105,6 +121,8 @@ private:
     QPushButton* clearAlertButton_ = nullptr;
     QPushButton* editButton_ = nullptr;
     QPushButton* addButton_ = nullptr;
+    QPushButton* retryWriteButton_ = nullptr;
+    QLabel* writeStatusLabel_ = nullptr;
 };
 
 } // namespace charging::server

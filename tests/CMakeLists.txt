@@ -1,3 +1,19 @@
+foreach(extension IN ITEMS admin_extension_queries admin_charger_extensions admin_billing_snapshot)
+    add_executable(test_${extension} tst_${extension}.cpp)
+    target_link_libraries(test_${extension} PRIVATE ChargingPlatform::ServerServices
+        ChargingPlatform::DatabaseResources Qt6::Test Qt6::Sql)
+    add_test(NAME ${extension} COMMAND test_${extension})
+    set_tests_properties(${extension} PROPERTIES TIMEOUT 60)
+endforeach()
+
+foreach(extension IN ITEMS admin_extension_pages admin_charger_extension_pages)
+    add_executable(test_${extension} tst_${extension}.cpp)
+    target_link_libraries(test_${extension} PRIVATE ChargingPlatform::ServerPages
+        ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test Qt6::Sql)
+    add_test(NAME ${extension} COMMAND test_${extension})
+    set_tests_properties(${extension} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+endforeach()
+
 add_executable(test_city_demo_seed tst_city_demo_seed.cpp)
 target_link_libraries(test_city_demo_seed PRIVATE ChargingPlatform::ServerCore
     ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test)

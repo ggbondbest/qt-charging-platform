@@ -54,6 +54,8 @@ private:
     void handleListResponse(const QJsonObject& response);
     void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
+    void requestMetadata();
+    void handleActionsResponse(const QJsonObject& response);
 
     ActivityRecordsMode mode_;
     QVector<Record> records_;
@@ -67,10 +69,13 @@ private:
     QString summaryRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
+    QString actionsRequestId_;
+    class AdminOptionLoader* adminOptions_ = nullptr;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
     QComboBox* categoryComboBox_ = nullptr;
+    QComboBox* adminComboBox_ = nullptr;
     QComboBox* statusComboBox_ = nullptr;
     QComboBox* dateRangeComboBox_ = nullptr;
     QTableWidget* tableWidget_ = nullptr;
