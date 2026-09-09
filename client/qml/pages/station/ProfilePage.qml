@@ -4,12 +4,18 @@ import "../../platform" as P
 
 // QML twin of widgets ProfilePage (objectName "profilePage").
 // Skeleton mirrors pages/profile_charging/src/profile_page.cpp buildUi():
-//   1) 150px edge-to-edge gradient hero (64px avatar / nickname+phone / hint)
+//   1) 150px edge-to-edge gradient hero（64px avatar / nickname+打码手机号 /
+//      "编辑资料 ›"行内 / 右侧签到胶囊）
 //   2) wallet float card: 余额 | 充值 | 充值记录 三列同卡（1×40 divider）
 //   3) 双格入口：我的订单（待支付角标）/ 我的预约
-//   4) 「账号与服务」分组：收藏 / 设置 52px 行
+//   4) 「账号与服务」分组：整齐方块宫格（4 列）——2026-09-09 按用户参考稿
+//      由 52px 长行改宫格，收藏/通知/月报/券/积分/评价/设置七格，
+//      通知/优惠券/积分角标走桥真实计数（无数据即不显示，不放假数值）
 //   5) 退出登录 = 白卡红字 logout variant（不是 danger 红底）
 // 结构由成员3 于 2026-09-07 按 widgets 原版重建（成员2 文件，PR 报备）。
+// 2026-09-09 布局改版（成员2 文件，PR 报备沿承）：签到胶囊并入 hero 右侧
+// （点击直调 pointsService.checkIn()，日粒度幂等由服务端裁决，页面只做镜像），
+// 手机号打码（参考稿 187****6904 口径），"编辑资料 ›"下移到手机号行内。
 Item {
     id: page
     objectName: "profilePage"
@@ -22,7 +28,43 @@ Item {
 
     property var user: (App && App.currentUser) ? App.currentUser : null
     property int waitingCount: 0
+    // 宫格角标数据面（service_bridges.h）：券有 couponCount() 即时读数；
+    // 通知桥无计数接口 → notifications().length 真实条数；积分桥无缓存属性
+    // → 进页 fetchPoints 等 pointsLoaded 回填（-1 = 未知，角标不显示）。
+    property int couponTotal: 0
+    property int notifTotal: 0
+    property int pointsTotal: -1
+    // 今日已签镜像（PointsPage todayCheckedIn 同款：成功与重放都进已签态）
+    property bool checkedToday: false
+    // 在途守卫（PointsPage checkingIn 同款）：服务端日粒度幂等只保分数的
+    // 底线，不保连点——回执落地前胶囊必须自己挡住重复 checkIn（审查反馈 2026-09-09）。
+    property bool checkingIn: false
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
+    function maskPhone(p) {
+        const s = String(p || "")
+        return s.length === 11 ? s.slice(0, 3) + "****" + s.slice(7) : (s || "--")
+    }
+    // 签到入口（PointsPage checkInNow 同款：测试与 onClicked 走同一代码路径）。
+    // 在途/已签双闸挡住连点——服务端日粒度幂等只保分数不反悔，不保多发请求
+    // 多弹 toast（审查反馈 2026-09-09）。
+    function checkInNow() {
+        if (page.checkedToday) {
+            if (App) App.showToast("今天已经签过啦", "info")
+            return
+        }
+        if (page.checkingIn) return
+        try {
+            if (pointsService.isBusy()) {   // 服务级单飞：GET_POINTS 在途时也挡下
+                if (App) App.showToast("积分请求还在路上，稍等一下", "info")
+                return
+            }
+            page.checkingIn = true
+            pointsService.checkIn()
+        } catch (e) {
+            page.checkingIn = false
+            if (App) App.showToast("签到桥未就绪", "warning")
+        }
+    }
 
     // 经验等级引擎（2026-09-09）：客户端本地成长系统，经 App.progressService
     // 透传；裸引擎/无 App 场景取 null，等级块整体隐藏（页面对测试上下文健壮）。
@@ -35,7 +77,38 @@ Item {
             page.waitingCount = waitingPaymentCount
         }
     }
-    Component.onCompleted: { try { orderService.fetchStatusCounts() } catch (e) {} }
+    Connections {
+        target: couponService
+        function onCouponsChanged() { try { page.couponTotal = couponService.couponCount() } catch (e) {} }
+    }
+    Connections {
+        target: notificationService
+        function onNotificationsChanged() { try { page.notifTotal = notificationService.notifications().length } catch (e) {} }
+    }
+    Connections {
+        target: pointsService
+        function onPointsLoaded(points, entries, total) { page.pointsTotal = points }
+        function onCheckInCompleted(day, points, gained, alreadyCheckedIn) {
+            page.checkingIn = false
+            page.pointsTotal = points
+            page.checkedToday = true              // 成功与重放都进入"已签"态
+            if (App) App.showToast(
+                (alreadyCheckedIn || gained <= 0) ? "今天已经签过啦"
+                                                  : "签到成功 +" + gained + " 积分",
+                (alreadyCheckedIn || gained <= 0) ? "info" : "success")
+        }
+        function onOperationFailed(type, code, message) {
+            if (type !== "CHECK_IN") return       // GET_POINTS 静默失败：积分角标不亮即可
+            page.checkingIn = false
+            if (App) App.showToast("签到失败：" + message, "danger")
+        }
+    }
+    Component.onCompleted: {
+        try { orderService.fetchStatusCounts() } catch (e) {}
+        try { page.couponTotal = couponService.couponCount() } catch (e) {}
+        try { page.notifTotal = notificationService.notifications().length } catch (e) {}
+        try { pointsService.fetchPoints(1, 1) } catch (e) {}   // 只为回填积分数，流水不进本页
+    }
 
     Flickable {
         anchors.fill: parent
@@ -102,7 +175,7 @@ Item {
                         anchors.left: avatarHub.right
                         anchors.leftMargin: 14
                         anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 64 - 90 - 14
+                        width: parent.width - 64 - 110 - 14 - 14   // 让位右侧签到胶囊
                         spacing: 4
                         Text {
                             objectName: "nicknameLabel"
@@ -167,18 +240,52 @@ Item {
                                   : ""
                             font.pixelSize: P.Style.fontXs; color: P.Style.heroPhone
                         }
-                        Text {
-                            objectName: "heroPhoneLabel"
-                            text: page.user ? (page.user.phone || "--") : "点这里登录"
-                            font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
+                        Row {
+                            spacing: P.Style.spaceXs
+                            Text {
+                                objectName: "heroPhoneLabel"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.user ? maskPhone(page.user.phone) : "点这里登录"
+                                font.pixelSize: P.Style.fontSm; color: P.Style.heroPhone
+                            }
+                            Text {
+                                objectName: "profileEditHint"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "编辑资料 ›"; font.pixelSize: P.Style.fontSm
+                                font.weight: Font.DemiBold; color: P.Style.heroPhone
+                            }
                         }
                     }
-                    Text {
-                        objectName: "profileEditHint"
+                    // ---------- 签到胶囊（参考稿"¥ 签到"位：名片卡右侧） ----------
+                    // 整卡 MouseArea 先于本节点声明，点击被胶囊吞掉不会误入编辑页。
+                    Rectangle {
+                        objectName: "heroCheckInPill"
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "编辑资料 ›"; font.pixelSize: P.Style.fontSm
-                        font.weight: Font.DemiBold; color: P.Style.heroPhone
+                        width: checkInPillRow.implicitWidth + 24
+                        height: Math.round(34 * P.Style.fontScaleFactor)
+                        radius: P.Style.radiusPill
+                        color: page.checkedToday ? "#59FFFFFF" : P.Style.surface
+                        opacity: page.checkingIn ? 0.7 : 1.0   // 在途压暗作视觉回执
+                        Behavior on color { ColorAnimation { duration: P.Style.durValue } }
+                        Behavior on opacity { NumberAnimation { duration: P.Style.durValue } }
+                        Row {
+                            id: checkInPillRow
+                            anchors.centerIn: parent
+                            spacing: 5
+                            Text { anchors.verticalCenter: parent.verticalCenter
+                                text: "🪙"; font.pixelSize: Math.round(14 * P.Style.fontScaleFactor) }
+                            Text { anchors.verticalCenter: parent.verticalCenter
+                                text: page.checkedToday ? "已签到"
+                                    : page.checkingIn ? "签到中…" : "签到"
+                                font.pixelSize: P.Style.fontSm; font.bold: true
+                                color: page.checkedToday ? P.Style.heroPhone : P.Style.brandDeep }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: page.checkInNow()
+                        }
                     }
                 }
             }
@@ -294,49 +401,73 @@ Item {
                 }
             }
 
-            // ---------- ④ 账号与服务（52px 行） ----------
+            // ---------- ④ 账号与服务（整齐方块宫格，4 列） ----------
             Text {
                 objectName: "sectionTitleAccount"
                 text: "账号与服务"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
-            Repeater {
-                model: [
-                    { obj: "openFavoritesButton", row: "⭐　收藏",   route: "favorites" },
-                    // 2026-09-08 成员2 新增消息通知行（fe325d3）与成员3 四入口行合并：
-                    // 月报/签到积分为成员3 新页，优惠券接成员2 CouponPage。
-                    { obj: "openNotificationsButton", row: "🔔　消息通知", route: "notifications" },
-                    { obj: "openStatsButton",     row: "📊　充电月报", route: "stats" },
-                    { obj: "openCouponButton",    row: "🎫　优惠券",  route: "coupon" },
-                    { obj: "openPointsButton",    row: "🪙　签到积分", route: "points" },
-                    // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
-                    { obj: "openTasksButton",     row: "🗓️　每日任务", route: "tasks" },
-                    { obj: "openLevelButton",     row: "🏅　会员等级", route: "level" },
-                    { obj: "openRatingsButton",   row: "⭐　我的评价", route: "ratings" },
-                    { obj: "openSettingsButton",  row: "⚙️　设置", route: "settings" }
-                ]
-                delegate: Rectangle {
-                    objectName: modelData.obj
-                    width: col.contentW
-                    height: 52
-                    radius: P.Style.radiusLg
-                    color: P.Style.surface
-                    border.width: 1
-                    border.color: P.Style.line
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                        onClicked: { if (App) App.navigate(modelData.route) } }
-                    Item {
-                        anchors.fill: parent
-                        anchors.leftMargin: P.Style.spaceLg; anchors.rightMargin: P.Style.spaceLg
-                        Text {
-                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.row
-                            font.pixelSize: P.Style.fontMd; color: P.Style.ink
+            Grid {
+                objectName: "accountGrid"
+                width: col.contentW
+                columns: 4
+                columnSpacing: P.Style.spaceSm
+                rowSpacing: P.Style.spaceSm
+                Repeater {
+                    model: [
+                        { obj: "openFavoritesButton",     glyph: "⭐", title: "收藏",
+                          route: "favorites",    badge: "" },
+                        // 2026-09-08 成员2 新增消息通知（fe325d3）与成员3 四入口合并；
+                        // 2026-09-09 长行改宫格，路由与 objectName 逐格不变。
+                        { obj: "openNotificationsButton", glyph: "🔔", title: "消息通知",
+                          route: "notifications", badge: "notif" },
+                        { obj: "openStatsButton",   glyph: "📊", title: "充电月报",
+                          route: "stats",       badge: "" },
+                        { obj: "openCouponButton",  glyph: "🎫", title: "优惠券",
+                          route: "coupon",      badge: "coupon" },
+                        { obj: "openPointsButton",  glyph: "🪙", title: "签到积分",
+                          route: "points",      badge: "points" },
+                        // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
+                        { obj: "openTasksButton",   glyph: "🗓️", title: "每日任务",
+                          route: "tasks",      badge: "" },
+                        { obj: "openLevelButton",   glyph: "🏅", title: "会员等级",
+                          route: "level",      badge: "" },
+                        { obj: "openRatingsButton", glyph: "⭐", title: "我的评价",
+                          route: "ratings",     badge: "" },
+                        { obj: "openSettingsButton", glyph: "⚙️", title: "设置",
+                          route: "settings",    badge: "" }
+                    ]
+                    delegate: Rectangle {
+                        objectName: modelData.obj
+                        width: (col.contentW - 3 * P.Style.spaceSm) / 4
+                        height: Math.round(86 * P.Style.fontScaleFactor)
+                        radius: P.Style.radiusLg
+                        color: P.Style.surface
+                        border.width: 1
+                        border.color: P.Style.line
+                        // 角标读数（真实数据才显示：pointsTotal<0=未回填不亮）
+                        readonly property int badgeCount:
+                            modelData.badge === "coupon" ? page.couponTotal :
+                            modelData.badge === "notif"  ? page.notifTotal :
+                            modelData.badge === "points" ? Math.max(page.pointsTotal, 0) : 0
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            onClicked: { if (App) App.navigate(modelData.route) } }
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: P.Style.spaceXs
+                            Text { anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.glyph
+                                font.pixelSize: Math.round(22 * P.Style.fontScaleFactor) }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.title
+                                font.pixelSize: P.Style.fontSm; color: P.Style.ink }
                         }
-                        Text {
-                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                            text: "›"; font.pixelSize: P.Style.fontLg2
-                            color: "#C3CBD6"   // QSS cellChevron
+                        P.StatusTag {
+                            anchors.right: parent.right; anchors.top: parent.top
+                            anchors.rightMargin: 3; anchors.topMargin: 3
+                            visible: badgeCount > 0
+                            tone: "warning"
+                            text: badgeCount > 99 ? "99+" : String(badgeCount)
                         }
                     }
                 }
@@ -365,9 +496,13 @@ Item {
         }
     }
 
-    // 登录态翻转时重取 currentUser（绑定已跟 App.currentUser，这里兜壳重推）
+    // 登录态翻转时重取 currentUser（绑定已跟 App.currentUser，这里兜壳重推）；
+    // 登出顺手清"今日已签"镜像——换账号后签到态不可跨账号复用。
     Connections {
         target: App
-        function onLoginStateChanged() { page.user = (App && App.currentUser) ? App.currentUser : null }
+        function onLoginStateChanged() {
+            page.user = (App && App.currentUser) ? App.currentUser : null
+            if (!(App && App.loggedIn)) page.checkedToday = false
+        }
     }
 }

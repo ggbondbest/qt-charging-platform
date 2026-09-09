@@ -349,11 +349,12 @@ private slots:
         window_ = nullptr;
     }
 
-    QQuickItem* createPage(QQmlEngine& engine, const QString& fileName, QObject* holder)
+    QQuickItem* createPage(QQmlEngine& engine, const QString& fileName, QObject* holder,
+                           const QString& subdir = QStringLiteral("profile_charging"))
     {
         QQmlComponent component(&engine);
         component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
-                                              + QStringLiteral("/pages/profile_charging/")
+                                              + QStringLiteral("/pages/") + subdir + QStringLiteral("/")
                                               + fileName));
         if (component.isError())
             qWarning().noquote() << component.errorString();
@@ -979,6 +980,51 @@ private slots:
         QCOMPARE(fake.checkInCalls, 1);
         fake.emitFailure(QStringLiteral("GET_POINTS"));
         QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // ProfilePage hero 签到胶囊 × 桥替身：连点守卫——在途至多一笔 checkIn，
+    // 失败回执解锁可重发，成功回执进已签态后再点只 toast 不发请求。
+    //（服务端日粒度幂等只保"分数不重发"，不保"不连发请求/不连弹 toast"，
+    //  审查反馈 2026-09-09：幂等是底线不是首闸。）
+    void profileCheckInPillGuardsRepeatedTaps()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        // 本页其余桥面与本用例无关：空指针注入，调用全落页内 try/catch。
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("couponService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("notificationService"), nullptr);
+
+        QObject holder; // 最后声明最先析构：页面死在宿主之前（createPage 时序约定）
+        auto* page = createPage(engine, QStringLiteral("ProfilePage.qml"), &holder,
+                                QStringLiteral("station"));
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);   // 进页补拉积分角标 fetchPoints(1,1)
+
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+        QVERIFY(page->property("checkingIn").toBool());
+        QMetaObject::invokeMethod(page, "checkInNow");   // 在途吞连点
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+
+        fake.emitFailure(QStringLiteral("CHECK_IN"));    // 失败解锁、不误进已签态
+        QVERIFY(!page->property("checkingIn").toBool());
+        QVERIFY(!page->property("checkedToday").toBool());
+
+        QMetaObject::invokeMethod(page, "checkInNow");   // 解锁后可重发
+        QCOMPARE(fake.checkInCalls, 2);
+        fake.emitCheckIn(QStringLiteral("2026-09-09"), 60, 10, false);
+        QVERIFY(page->property("checkedToday").toBool());
+        QCOMPARE(page->property("pointsTotal").toInt(), 60);
+        QVERIFY(!page->property("checkingIn").toBool());
+
+        QMetaObject::invokeMethod(page, "checkInNow");   // 已签拦路：只 toast 不发请求
+        QCOMPARE(fake.checkInCalls, 2);
     }
 
     // 签到桥 × 真 mock 通道端到端：种子礼包 50 → 签到 +10 → 流水两行新在前。
