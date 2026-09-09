@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls as Controls // Overlay is not exported by Basic in Qt 6.2.
 import QtQuick.Layouts
 import "../../platform" as P
 
@@ -415,7 +416,7 @@ Item {
     Popup {
         id: stationPopup
         objectName: "mapStationPopup"
-        parent: Overlay.overlay
+        parent: Controls.Overlay.overlay
         width: Math.min(390, parent ? parent.width - 32 : 390)
         x: parent ? (parent.width - width) / 2 : 0
         y: parent ? Math.max(12, (parent.height - height) / 2) : 0

@@ -6,6 +6,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQmlError>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSettings>
@@ -60,10 +61,17 @@ class QmlStationInteractionsTest final : public QObject
     QQmlEngine* engine_ = nullptr;
     QmlApp* app_ = nullptr;
     QTemporaryDir preferences_;
+    QStringList qmlWarnings_;
 
     void bootShell(const QString& view = QStringLiteral("station"), int width = 420)
     {
+        qmlWarnings_.clear();
         engine_ = new QQmlEngine;
+        // A page can still render and accept clicks after a binding fails.
+        // Treat engine warnings as failures, just like the packaged UI smoke.
+        connect(engine_, &QQmlEngine::warnings, this, [this](const QList<QQmlError>& warnings) {
+            for (const auto& warning : warnings) qmlWarnings_.append(warning.toString());
+        });
         app_ = new QmlApp(QStringLiteral("127.0.0.1"), 9527, true);
         qobject_cast<MapBridge*>(app_->mapBridge())->setBrowsingCity(QStringLiteral("深圳市"));
         app_->login(QStringLiteral("13800138000"));
@@ -168,6 +176,7 @@ private slots:
         delete window_; window_ = nullptr;
         delete engine_; engine_ = nullptr;
         delete app_; app_ = nullptr;
+        QVERIFY2(qmlWarnings_.isEmpty(), qPrintable(qmlWarnings_.join(QLatin1Char('\n'))));
     }
 
     void bellOpensNotificationPage()
@@ -243,9 +252,17 @@ private slots:
         }
     }
 
+    void mapSelectionRejectsUnknownIdAndOpensMatchingStation_data()
+    {
+        QTest::addColumn<int>("windowWidth");
+        QTest::newRow("standard") << 420;
+        QTest::newRow("narrow") << 360;
+    }
+
     void mapSelectionRejectsUnknownIdAndOpensMatchingStation()
     {
-        bootShell();
+        QFETCH(int, windowWidth);
+        bootShell(QStringLiteral("station"), windowWidth);
         QVERIFY(window_ != nullptr);
         auto* page = findItem(window_->contentItem(), QStringLiteral("stationHomePage"));
         QVERIFY(page != nullptr);
@@ -258,6 +275,15 @@ private slots:
         const QString id = records.first().toMap().value(QStringLiteral("id")).toString();
         QVERIFY(QMetaObject::invokeMethod(page, "selectMapStation", Q_ARG(QVariant, id)));
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("mapStationReserveButton")) != nullptr);
+        auto* popup = page->findChild<QObject*>(QStringLiteral("mapStationPopup"));
+        QVERIFY(popup != nullptr);
+        auto* overlay = popup->property("parent").value<QQuickItem*>();
+        QVERIFY(overlay != nullptr);
+        QVERIFY(overlay != page);
+        QCOMPARE(overlay->window(), window_);
+        QCOMPARE(overlay->width(), qreal(window_->width()));
+        QCOMPARE(overlay->height(), qreal(window_->height()));
+        QTRY_VERIFY(popup->property("opened").toBool());
         QCOMPARE(plainVariant(page->property("selectedStation")).toMap().value(QStringLiteral("stationId")).toString(), id);
         auto* reserve = findItem(window_->contentItem(), QStringLiteral("mapStationReserveButton"));
         QTest::qWait(150);
