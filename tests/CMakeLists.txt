@@ -574,9 +574,17 @@ set_tests_properties(qml_platform_controls PROPERTIES
 
 add_executable(test_qml_client_pages tst_qml_client_pages.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/glyph_provider.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
 )
+# 页面 emoji→glyph 替换后，Image 源需要母版资源与 provider 双在位（createPage
+# 注册 GlyphProvider；母版与 charging_client 的 qrc 同源）。FILES 用绝对路径：
+# qt_add_resources 把相对 FILES 解析到当前源目录（tests/）而非 BASE。
+file(GLOB charging_glyph_assets ${CMAKE_SOURCE_DIR}/client/qml/assets/glyphs/*.png)
+qt_add_resources(test_qml_client_pages "charging_glyph_assets"
+    PREFIX "/charging" BASE "${CMAKE_SOURCE_DIR}/client/qml"
+    FILES ${charging_glyph_assets})
 target_include_directories(test_qml_client_pages PRIVATE
     ${CMAKE_SOURCE_DIR}/client/qml
 )
@@ -610,10 +618,16 @@ set_tests_properties(qml_client_pages PROPERTIES
 # 与 qml_client_pages 同门（CHARGING_HAS_QML）；真鼠标事件穿完整命中栈。
 add_executable(test_qml_station_interactions tst_qml_station_interactions.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/glyph_provider.cpp
     ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
     # 2026-09-08 merge：上游 app_bridge 构造引用 MapBridge，随同列入源。
     ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
 )
+# glyph 染色面（image://glyphs）需要母版资源与 provider 双在位，同源注释见
+# test_qml_client_pages。
+qt_add_resources(test_qml_station_interactions "charging_glyph_assets_station"
+    PREFIX "/charging" BASE "${CMAKE_SOURCE_DIR}/client/qml"
+    FILES ${charging_glyph_assets})
 target_include_directories(test_qml_station_interactions PRIVATE
     ${CMAKE_SOURCE_DIR}/client/qml
 )

@@ -13,6 +13,8 @@ add_executable(charging_client
     main.cpp
     app_bridge.cpp
     app_bridge.h
+    glyph_provider.cpp
+    glyph_provider.h
     service_bridges.cpp
     service_bridges.h
     map_bridge.cpp
@@ -28,7 +30,7 @@ set_target_properties(charging_client PROPERTIES
 # Embed the complete tree, including singleton qmldir and JavaScript helpers.
 file(GLOB_RECURSE charging_qml_resources CONFIGURE_DEPENDS
     RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
-    "*.qml" "*.js" "qmldir")
+    "*.qml" "*.js" "*.png" "qmldir")
 qt_add_resources(charging_client "charging_qml_resources"
     PREFIX "/charging" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${charging_qml_resources})

@@ -20,6 +20,7 @@
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "app_bridge.h"
+#include "glyph_provider.h"
 
 int main(int argc, char* argv[])
 {
@@ -95,6 +96,8 @@ int main(int argc, char* argv[])
     }
 
     QQmlEngine engine;
+    // 单色 glyph 染色（image://glyphs/<name>/<hex>）：emoji 图标替换的运行时面。
+    engine.addImageProvider(QStringLiteral("glyphs"), new charging::qml::GlyphProvider);
     // Keep screenshot/deep-link flags while accepting standard endpoint flags.
     QString host = qEnvironmentVariable("CHARGING_SERVER_HOST", "127.0.0.1");
     int port = qEnvironmentVariableIntValue("CHARGING_SERVER_PORT");

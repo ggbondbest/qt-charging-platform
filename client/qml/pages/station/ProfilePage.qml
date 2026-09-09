@@ -42,6 +42,11 @@ Item {
     // 底线，不保连点——回执落地前胶囊必须自己挡住重复 checkIn（审查反馈 2026-09-09）。
     property bool checkingIn: false
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
+    // image://glyphs URL（glyph_provider.cpp）：主题 token 的 hex 原样透传给
+    // provider 染色（QColor 接受 rrggbb / aarrggbb），暗/亮主题自动换色。
+    function glyphSource(name, colorValue) {
+        return "image://glyphs/" + name + "/" + String(colorValue).replace("#", "")
+    }
     // 从流水推导"今天已签"：存在今日（UTC）"每日签到"行即已签。账本跨页面
     // 重建持久，是签到态唯一可恢复的数据源；单向置真（本地已签不因分页查
     // 不到而回亮）。day 口径与 checkInCompleted 的 UTC "yyyy-MM-dd" 一致，
@@ -294,8 +299,11 @@ Item {
                             id: checkInPillRow
                             anchors.centerIn: parent
                             spacing: 5
-                            Text { anchors.verticalCenter: parent.verticalCenter
-                                text: "🪙"; font.pixelSize: Math.round(14 * P.Style.fontScaleFactor) }
+                            Image { anchors.verticalCenter: parent.verticalCenter
+                                width: Math.round(14 * P.Style.fontScaleFactor)
+                                height: width
+                                source: page.glyphSource("coin",
+                                    page.checkedToday ? P.Style.heroPhone : P.Style.brandDeep) }
                             Text { anchors.verticalCenter: parent.verticalCenter
                                 text: page.checkedToday ? "已签到"
                                     : page.checkingIn ? "签到中…" : "签到"
@@ -346,8 +354,8 @@ Item {
                         y: (parent.height - height) / 2; color: P.Style.line }
                     Repeater {
                         model: [
-                            { obj: "openRechargeButton", glyph: "💳", caption: "充值",     route: "recharge" },
-                            { obj: "openWalletButton",   glyph: "🧾", caption: "充值记录", route: "wallet" }
+                            { obj: "openRechargeButton", glyph: "credit-card", caption: "充值",     route: "recharge" },
+                            { obj: "openWalletButton",   glyph: "receipt", caption: "充值记录", route: "wallet" }
                         ]
                         delegate: Item {
                             objectName: modelData.obj
@@ -357,8 +365,10 @@ Item {
                             Column {
                                 anchors.centerIn: parent
                                 spacing: 4
-                                Text { anchors.horizontalCenter: parent.horizontalCenter
-                                    text: modelData.glyph; font.pixelSize: 18 }
+                                Image { anchors.horizontalCenter: parent.horizontalCenter
+                                    width: Math.round(18 * P.Style.fontScaleFactor)
+                                    height: width
+                                    source: page.glyphSource(modelData.glyph, P.Style.muted) }
                                 Text { anchors.horizontalCenter: parent.horizontalCenter
                                     text: modelData.caption; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                             }
@@ -374,9 +384,9 @@ Item {
                 spacing: P.Style.spaceSm
                 Repeater {
                     model: [
-                        { obj: "openOrdersButton",       glyph: "📋", title: "我的订单",
+                        { obj: "openOrdersButton",       glyph: "clipboard", title: "我的订单",
                           caption: "全部充电订单", route: "order",           badge: true },
-                        { obj: "openReservationsButton", glyph: "📒", title: "我的预约",
+                        { obj: "openReservationsButton", glyph: "calendar-event", title: "我的预约",
                           caption: "时段预约记录", route: "reservation_module", badge: false }
                     ]
                     delegate: Rectangle {
@@ -392,10 +402,12 @@ Item {
                         Item {
                             anchors.fill: parent
                             anchors.margins: 16
-                            Text {
+                            Image {
                                 id: cellIcon
                                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.glyph; font.pixelSize: 22
+                                width: Math.round(22 * P.Style.fontScaleFactor)
+                                height: width
+                                source: page.glyphSource(modelData.glyph, P.Style.brandDeep)
                             }
                             Column {
                                 anchors.left: cellIcon.right; anchors.leftMargin: P.Style.spaceSm
@@ -436,26 +448,27 @@ Item {
                 rowSpacing: P.Style.spaceSm
                 Repeater {
                     model: [
-                        { obj: "openFavoritesButton",     glyph: "⭐", title: "收藏",
+                        { obj: "openFavoritesButton",     glyph: "star", title: "收藏",
                           route: "favorites",    badge: "" },
                         // 2026-09-08 成员2 新增消息通知（fe325d3）与成员3 四入口合并；
-                        // 2026-09-09 长行改宫格，路由与 objectName 逐格不变。
-                        { obj: "openNotificationsButton", glyph: "🔔", title: "消息通知",
+                        // 2026-09-09 长行改宫格，路由与 objectName 逐格不变；
+                        // 同日 emoji→Tabler glyph 名（染色 provider，见 glyph_provider.h）。
+                        { obj: "openNotificationsButton", glyph: "bell", title: "消息通知",
                           route: "notifications", badge: "notif" },
-                        { obj: "openStatsButton",   glyph: "📊", title: "充电月报",
+                        { obj: "openStatsButton",   glyph: "chart-bar", title: "充电月报",
                           route: "stats",       badge: "" },
-                        { obj: "openCouponButton",  glyph: "🎫", title: "优惠券",
+                        { obj: "openCouponButton",  glyph: "ticket", title: "优惠券",
                           route: "coupon",      badge: "coupon" },
-                        { obj: "openPointsButton",  glyph: "🪙", title: "积分",
+                        { obj: "openPointsButton",  glyph: "coin", title: "积分",
                           route: "points",      badge: "points" },
                         // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
                         { obj: "openTasksButton",   glyph: "🗓️", title: "每日任务",
                           route: "tasks",      badge: "" },
                         { obj: "openLevelButton",   glyph: "🏅", title: "会员等级",
                           route: "level",      badge: "" },
-                        { obj: "openRatingsButton", glyph: "⭐", title: "我的评价",
+                        { obj: "openRatingsButton", glyph: "star", title: "我的评价",
                           route: "ratings",     badge: "" },
-                        { obj: "openSettingsButton", glyph: "⚙️", title: "设置",
+                        { obj: "openSettingsButton", glyph: "settings", title: "设置",
                           route: "settings",    badge: "" }
                     ]
                     delegate: Rectangle {
@@ -476,9 +489,10 @@ Item {
                         Column {
                             anchors.centerIn: parent
                             spacing: P.Style.spaceXs
-                            Text { anchors.horizontalCenter: parent.horizontalCenter
-                                text: modelData.glyph
-                                font.pixelSize: Math.round(22 * P.Style.fontScaleFactor) }
+                            Image { anchors.horizontalCenter: parent.horizontalCenter
+                                width: Math.round(22 * P.Style.fontScaleFactor)
+                                height: width
+                                source: page.glyphSource(modelData.glyph, P.Style.ink) }
                             Text { anchors.horizontalCenter: parent.horizontalCenter
                                 text: modelData.title
                                 font.pixelSize: P.Style.fontSm; color: P.Style.ink }

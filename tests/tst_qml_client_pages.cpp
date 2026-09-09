@@ -23,6 +23,7 @@
 #include "services/station/station_query_service.h"
 
 #include "app_bridge.h"
+#include "glyph_provider.h"
 #include "service_bridges.h"
 
 using charging::qml::ChargingBridge;
@@ -352,6 +353,14 @@ private slots:
     QQuickItem* createPage(QQmlEngine& engine, const QString& fileName, QObject* holder,
                            const QString& subdir = QStringLiteral("profile_charging"))
     {
+        // glyph 染色 provider 与 main.cpp 同名注册（emoji→Image 的页面缺它会
+        // 报 transfer 告警）；engine property 做幂等，同 engine 二次 createPage
+        // 不重复注册（addImageProvider 重名既有告警又泄漏）。
+        if (!engine.property("__glyphsProvider").isValid()) {
+            engine.addImageProvider(QStringLiteral("glyphs"),
+                                    new charging::qml::GlyphProvider);
+            engine.setProperty("__glyphsProvider", true);
+        }
         QQmlComponent component(&engine);
         component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
                                               + QStringLiteral("/pages/") + subdir + QStringLiteral("/")

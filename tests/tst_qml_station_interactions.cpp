@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 
 #include "app_bridge.h"
+#include "glyph_provider.h"
 #include "map_bridge.h"
 #include "service_bridges.h"
 #include "charging/client/profile_charging/progress_service.h"
@@ -68,6 +69,10 @@ class QmlStationInteractionsTest final : public QObject
     {
         qmlWarnings_.clear();
         engine_ = new QQmlEngine;
+        // ProfilePage 的 image://glyphs 图标与 main.cpp 同名注册（本套件把引擎
+        // 告警当失败，缺 provider 会报 Invalid image provider）。
+        engine_->addImageProvider(QStringLiteral("glyphs"),
+                                  new charging::qml::GlyphProvider);
         // A page can still render and accept clicks after a binding fails.
         // Treat engine warnings as failures, just like the packaged UI smoke.
         connect(engine_, &QQmlEngine::warnings, this, [this](const QList<QQmlError>& warnings) {
