@@ -261,8 +261,13 @@ private slots:
         QVERIFY(subscriber.exchange("WORKFLOW_SUBSCRIBE").success);
         const auto reserved = owner.exchange("RESERVE_CHARGER", {{"chargerId", "1"}});
         QVERIFY(reserved.success);
-        const auto reservationId = reserved.data["reservation"].toObject()["id"];
-        QVERIFY(!owner.exchange("START_CHARGING", {{"reservationId", reservationId}, {"target", QJsonObject{}}}).success);
+        // Own the ID: operator[] on a temporary QJsonObject returns a dangling
+        // QJsonValueRef once the statement ends (including on Qt 6.2.4).
+        const QString reservationId = reserved.data.value("reservation").toObject().value("id").toString();
+        QVERIFY(!reservationId.isEmpty());
+        const auto invalidTarget = owner.exchange("START_CHARGING", {{"reservationId", reservationId}, {"target", QJsonObject{}}});
+        QVERIFY(!invalidTarget.success);
+        QCOMPARE(invalidTarget.error.code, QStringLiteral("INVALID_ARGUMENT"));
         const auto started = owner.exchange("START_CHARGING", {{"reservationId", reservationId},
             {"target", QJsonObject{{"type", "AMOUNT"}, {"value", 1}}}});
         QVERIFY2(started.success, qPrintable(started.error.message));
