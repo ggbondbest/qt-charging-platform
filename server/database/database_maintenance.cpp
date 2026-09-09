@@ -97,7 +97,8 @@ bool rejectExistingSidecars(const QString& databasePath, QString* errorMessage)
 }
 
 bool validateTableColumns(const QSqlDatabase& database, const QString& table,
-                          const QStringList& expectedColumns, QString* errorMessage)
+                          const QStringList& expectedColumns, QString* errorMessage,
+                          bool allowLegacyExtensions = false)
 {
     QSqlQuery query(database);
     if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(table))) {
@@ -108,7 +109,21 @@ bool validateTableColumns(const QSqlDatabase& database, const QString& table,
     while (query.next()) {
         actualColumns.append(query.value(1).toString());
     }
-    if (actualColumns != expectedColumns) {
+    if (allowLegacyExtensions) {
+        const QStringList optional = table == QStringLiteral("stations")
+            ? QStringList{QStringLiteral("city"), QStringLiteral("district"),
+                          QStringLiteral("contact_name"), QStringLiteral("contact_phone")}
+            : table == QStringLiteral("orders")
+                ? QStringList{QStringLiteral("telemetry_captured_at"), QStringLiteral("telemetry_power_watts")}
+                : QStringList{};
+        for (const auto& column : optional) actualColumns.removeAll(column);
+    }
+    // ALTER TABLE appends columns, whereas fresh CREATE may group them by
+    // meaning. Column order is not a schema contract; the exact set is.
+    QStringList expected = expectedColumns;
+    actualColumns.sort();
+    expected.sort();
+    if (actualColumns != expected) {
         *errorMessage = QStringLiteral("Database table %1 does not match the supported schema")
                             .arg(table);
         return false;
@@ -324,13 +339,28 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
             QStringLiteral("created_at")}},
         {QStringLiteral("charger_ratings"), {QStringLiteral("id"), QStringLiteral("user_id"),
             QStringLiteral("charger_id"), QStringLiteral("order_id"), QStringLiteral("rating"),
-            QStringLiteral("comment"), QStringLiteral("created_at")}}
+            QStringLiteral("comment"), QStringLiteral("created_at")}},
+        {QStringLiteral("order_pricing_snapshots"), {QStringLiteral("order_id"),
+            QStringLiteral("version"), QStringLiteral("unit_price_cents_per_kwh"),
+            QStringLiteral("captured_at")}},
+        {QStringLiteral("charger_exceptions"), {QStringLiteral("id"), QStringLiteral("charger_id"),
+            QStringLiteral("code"), QStringLiteral("severity"), QStringLiteral("safe_summary"),
+            QStringLiteral("status"), QStringLiteral("occurred_at"), QStringLiteral("acknowledged_at"),
+            QStringLiteral("recovered_at"), QStringLiteral("recoverable"), QStringLiteral("recovery_action"),
+            QStringLiteral("recovered_by_admin_id"), QStringLiteral("recovery_command_id"),
+            QStringLiteral("recovery_message"), QStringLiteral("updated_at")}}
     };
     for (const auto& table : tables) {
         if (!wanted(table.first)) {
             continue;
         }
-        if (!validateTableColumns(database, table.first, table.second, errorMessage)) {
+        QStringList expected = table.second;
+        if (onlyTables == nullptr && table.first == QStringLiteral("stations"))
+            expected << QStringLiteral("city") << QStringLiteral("district")
+                     << QStringLiteral("contact_name") << QStringLiteral("contact_phone");
+        if (onlyTables == nullptr && table.first == QStringLiteral("orders"))
+            expected << QStringLiteral("telemetry_captured_at") << QStringLiteral("telemetry_power_watts");
+        if (!validateTableColumns(database, table.first, expected, errorMessage, onlyTables != nullptr)) {
             return false;
         }
     }
@@ -360,7 +390,17 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         {QStringLiteral("charger_ratings"), {
             QStringLiteral("order_id INTEGER NOT NULL UNIQUE"),
             QStringLiteral("rating BETWEEN 1 AND 5"),
-            QStringLiteral("length(comment) <= 140")}}
+            QStringLiteral("length(comment) <= 140")}},
+        {QStringLiteral("order_pricing_snapshots"), {
+            QStringLiteral("order_id INTEGER PRIMARY KEY"),
+            QStringLiteral("version = 'energy-only-v1'"),
+            QStringLiteral("unit_price_cents_per_kwh BETWEEN 0 AND 9007199254740991")}},
+        {QStringLiteral("charger_exceptions"), {
+            QStringLiteral("code IN ('SIMULATED_FAULT', 'SIMULATED_OFFLINE')"),
+            QStringLiteral("severity IN ('WARNING', 'CRITICAL')"),
+            QStringLiteral("status IN ('ACTIVE', 'ACKNOWLEDGED', 'RECOVERING', 'RECOVERED')"),
+            QStringLiteral("recoverable IN (0, 1)"),
+            QStringLiteral("recovery_action = 'SIMULATE_RESTORE'")}}
     };
     for (const auto& table : tableConstraints) {
         if (!wanted(table.first)) {
@@ -386,7 +426,10 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
         {QStringLiteral("user_checkins"), QStringLiteral("user_id"), QStringLiteral("users")},
         {QStringLiteral("charger_ratings"), QStringLiteral("user_id"), QStringLiteral("users")},
         {QStringLiteral("charger_ratings"), QStringLiteral("charger_id"), QStringLiteral("chargers")},
-        {QStringLiteral("charger_ratings"), QStringLiteral("order_id"), QStringLiteral("orders")}
+        {QStringLiteral("charger_ratings"), QStringLiteral("order_id"), QStringLiteral("orders")},
+        {QStringLiteral("order_pricing_snapshots"), QStringLiteral("order_id"), QStringLiteral("orders")},
+        {QStringLiteral("charger_exceptions"), QStringLiteral("charger_id"), QStringLiteral("chargers")},
+        {QStringLiteral("charger_exceptions"), QStringLiteral("recovered_by_admin_id"), QStringLiteral("admins")}
     };
     for (const QStringList& foreignKey : foreignKeys) {
         if (!wanted(foreignKey.at(0))) {
@@ -399,6 +442,12 @@ bool validatePlatformSchema(const QSqlDatabase& database, QString* errorMessage,
     }
 
     QList<IndexDefinition> indexes = {
+        {QStringLiteral("idx_charger_exceptions_charger_status_occurred"),
+         QStringLiteral("charger_exceptions"),
+         {QStringLiteral("charger_id"), QStringLiteral("status"), QStringLiteral("occurred_at"),
+          QStringLiteral("id")}, false, {}},
+        {QStringLiteral("idx_charger_exceptions_occurred"), QStringLiteral("charger_exceptions"),
+         {QStringLiteral("occurred_at"), QStringLiteral("id")}, false, {}},
         {QStringLiteral("idx_stations_status"), QStringLiteral("stations"),
          {QStringLiteral("status")}, false, {}},
         {QStringLiteral("idx_chargers_station_status"), QStringLiteral("chargers"),
@@ -526,7 +575,7 @@ DatabaseMaintenanceResult copyAtomically(const QString& sourcePath, const QStrin
 
 // Shape gate for the migration path: the source must be a healthy platform
 // database already carrying the eight core tables (any supported legacy
-// user_version 1..2). Without this check, an unrelated or empty SQLite file
+// user_version 1..3). Without this check, an unrelated or empty SQLite file
 // would be "migrated" into a fresh empty schema and restored as if valid.
 // Index shape is intentionally not gated (the two index generations differ;
 // the post-migration strict validation covers it).
@@ -579,7 +628,7 @@ DatabaseMaintenanceResult validateMigratableRestoreSource(const QString& databas
                                      .arg(versionQuery.lastError().text()));
             } else if (result.ok) {
                 const int version = versionQuery.value(0).toInt();
-                if (version < 1 || version > 2) {
+                if (version < 1 || version > 3) {
                     result = failure(QStringLiteral("Unsupported database schema version"));
                 }
             }
@@ -685,7 +734,7 @@ DatabaseMaintenanceResult DatabaseMaintenance::validate(const QString& databaseP
             QSqlQuery versionQuery(database);
             if (result.ok &&
                 (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
-                 !versionQuery.next() || versionQuery.value(0).toInt() != 3)) {
+                 !versionQuery.next() || versionQuery.value(0).toInt() != 4)) {
                 result = failure(QStringLiteral("Unsupported database schema version"));
             }
             if (result.ok) {
@@ -709,8 +758,8 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     }
 
     // Strict path: the backup already carries the current schema. Otherwise it
-    // may be an older supported version (user_version 1 or 2, before the
-    // user-domain tables existed). Migrate a temporary copy by applying
+    // may be an older supported version (user_version 1..3). Migrate a
+    // temporary copy by applying
     // schema.sql — the original backup file is never modified — and only then
     // validate and restore the migrated copy.
     QString sourcePath = QFileInfo(backupPath).absoluteFilePath();

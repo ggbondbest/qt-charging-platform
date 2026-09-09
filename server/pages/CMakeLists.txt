@@ -1,6 +1,8 @@
 find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED COMPONENTS Charts)
 
 add_library(charging_server_pages STATIC
+    admin_option_loader.cpp
+    admin_option_loader.h
     admin_mock_data.cpp
     admin_mock_data.h
     activity_records_page.cpp

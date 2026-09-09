@@ -1,4 +1,5 @@
 #include "charging_repository.h"
+#include "admin_order_billing.h"
 
 #include "charging/common/model/enums.h"
 #include "charging/common/model/models.h"
@@ -17,7 +18,9 @@ namespace {
 
 const QString kOrderColumns =
     QStringLiteral("id, order_no, user_id, charger_id, reservation_id, status, "
-                   "unit_price_cents_per_kwh, energy_wh, duration_seconds, amount_cents, "
+                   "COALESCE((SELECT p.unit_price_cents_per_kwh FROM order_pricing_snapshots p "
+                   "WHERE p.order_id = orders.id), unit_price_cents_per_kwh), "
+                   "energy_wh, duration_seconds, amount_cents, "
                    "created_at, started_at, stopped_at, paid_at, updated_at");
 const QString kReservationColumns =
     QStringLiteral("id, user_id, charger_id, status, reserved_at, expires_at, ended_at");
@@ -557,6 +560,16 @@ ChargingRepositoryResult ChargingRepository::reserve(qint64 userId, qint64 charg
         return failure(RepositoryError::Database, orderInsert.lastError().text());
     }
 
+    QSqlQuery pricingInsert(database_);
+    pricingInsert.prepare(QStringLiteral(
+        "INSERT INTO order_pricing_snapshots(order_id, version, unit_price_cents_per_kwh, captured_at) "
+        "VALUES (?, 'energy-only-v1', ?, ?)"));
+    pricingInsert.addBindValue(orderInsert.lastInsertId());
+    pricingInsert.addBindValue(unitPrice);
+    pricingInsert.addBindValue(now);
+    if (!pricingInsert.exec())
+        return failure(RepositoryError::Database, pricingInsert.lastError().text());
+
     QSqlQuery chargerUpdate(database_);
     chargerUpdate.prepare(
         QStringLiteral("UPDATE chargers SET status = 'RESERVED', updated_at = :now "
@@ -709,14 +722,29 @@ ChargingRepositoryResult ChargingRepository::startCharging(qint64 userId, qint64
 
     QSqlQuery orderUpdate(database_);
     orderUpdate.prepare(QStringLiteral(
-        "UPDATE orders SET status = 'CHARGING', started_at = :now, updated_at = :now "
+        "UPDATE orders SET status = 'CHARGING', started_at = :now, updated_at = :now, "
+        "telemetry_captured_at = :now, telemetry_power_watts = :power "
         "WHERE reservation_id = :reservationId AND user_id = :userId AND status = 'RESERVED'"));
     orderUpdate.bindValue(QStringLiteral(":now"), now);
     orderUpdate.bindValue(QStringLiteral(":reservationId"), reservationId);
     orderUpdate.bindValue(QStringLiteral(":userId"), userId);
+    orderUpdate.bindValue(QStringLiteral(":power"), result.charger.powerWatts);
     if (!executeUpdate(&orderUpdate, &result.diagnostic)) {
         return failure(RepositoryError::Database, result.diagnostic);
     }
+
+    // Legacy reservations can acquire a policy when they actually start.
+    // Already charging/settled historical orders are never backfilled.
+    QSqlQuery pricingInsert(database_);
+    pricingInsert.prepare(QStringLiteral(
+        "INSERT OR IGNORE INTO order_pricing_snapshots "
+        "(order_id, version, unit_price_cents_per_kwh, captured_at) "
+        "VALUES (?, 'energy-only-v1', ?, ?)"));
+    pricingInsert.addBindValue(result.order.id);
+    pricingInsert.addBindValue(result.order.unitPriceCentsPerKwh);
+    pricingInsert.addBindValue(now);
+    if (!pricingInsert.exec())
+        return failure(RepositoryError::Database, pricingInsert.lastError().text());
 
     QSqlQuery chargerUpdate(database_);
     chargerUpdate.prepare(
@@ -765,6 +793,52 @@ ChargingRepositoryResult ChargingRepository::chargingStatus(qint64 userId, qint6
     }
     finishTransaction(&transaction, &result);
     return result;
+}
+
+bool ChargingRepository::recordTelemetry(qint64 userId, qint64 orderId,
+                                         const QDateTime& capturedAtUtc, int powerWatts,
+                                         qint64 durationSeconds, qint64 energyWh,
+                                         qint64 amountCents, QString* diagnostic) const
+{
+    if (diagnostic) diagnostic->clear();
+    if (userId <= 0 || orderId <= 0 || !validUtcInstant(capturedAtUtc) || powerWatts <= 0 ||
+        !repository_detail::inSafeRange(durationSeconds) ||
+        !repository_detail::inSafeRange(energyWh) || !repository_detail::inSafeRange(amountCents))
+        return false;
+    QSqlQuery tariff(database_);
+    tariff.prepare(QStringLiteral(
+        "SELECT COALESCE(p.unit_price_cents_per_kwh, o.unit_price_cents_per_kwh) "
+        "FROM orders o LEFT JOIN order_pricing_snapshots p ON p.order_id = o.id "
+        "WHERE o.id = ? AND o.user_id = ?"));
+    tariff.addBindValue(orderId);
+    tariff.addBindValue(userId);
+    qint64 expectedAmount = 0;
+    if (!tariff.exec() || !tariff.next() ||
+        !calculateEnergyFeeCents(energyWh, tariff.value(0).toLongLong(), &expectedAmount) ||
+        expectedAmount != amountCents) {
+        if (diagnostic) *diagnostic = QStringLiteral("Invalid meter billing amount");
+        return false;
+    }
+    tariff.finish();
+    QSqlQuery update(database_);
+    update.prepare(QStringLiteral(
+        "UPDATE orders SET energy_wh = :energy, duration_seconds = :duration, amount_cents = :amount, "
+        "telemetry_captured_at = :now, telemetry_power_watts = :power "
+        "WHERE id = :id AND user_id = :userId AND status = 'CHARGING' AND started_at <= :now "
+        "AND (telemetry_captured_at IS NULL OR telemetry_captured_at <= :now) "
+        "AND duration_seconds <= :duration AND energy_wh <= :energy"));
+    update.bindValue(QStringLiteral(":energy"), energyWh);
+    update.bindValue(QStringLiteral(":duration"), durationSeconds);
+    update.bindValue(QStringLiteral(":amount"), amountCents);
+    update.bindValue(QStringLiteral(":now"), toStorageUtc(capturedAtUtc));
+    update.bindValue(QStringLiteral(":power"), powerWatts);
+    update.bindValue(QStringLiteral(":id"), orderId);
+    update.bindValue(QStringLiteral(":userId"), userId);
+    if (!update.exec() || update.numRowsAffected() != 1) {
+        if (diagnostic) *diagnostic = QStringLiteral("Charging sample was not applicable");
+        return false;
+    }
+    return true;
 }
 
 ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 orderId,
@@ -816,11 +890,25 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
         return failure(RepositoryError::ArithmeticOverflow);
     }
 
+    qint64 expectedAmount = 0;
+    if (!calculateEnergyFeeCents(energyWh, result.order.unitPriceCentsPerKwh, &expectedAmount) ||
+        expectedAmount != amountCents || durationSeconds < result.order.durationSeconds ||
+        energyWh < result.order.energyWh)
+        return failure(RepositoryError::InvalidInput);
     const QString now = toStorageUtc(stoppedAtUtc);
+    QSqlQuery lastSample(database_);
+    lastSample.prepare(QStringLiteral("SELECT telemetry_captured_at FROM orders WHERE id = ?"));
+    lastSample.addBindValue(orderId);
+    if (!lastSample.exec() || !lastSample.next())
+        return failure(RepositoryError::Database, lastSample.lastError().text());
+    if (!lastSample.value(0).isNull() && lastSample.value(0).toString() > now)
+        return failure(RepositoryError::InvalidStateTransition);
+    lastSample.finish();
     QSqlQuery orderUpdate(database_);
     orderUpdate.prepare(QStringLiteral(
         "UPDATE orders SET status = 'WAITING_PAYMENT', duration_seconds = :duration, "
-        "energy_wh = :energy, amount_cents = :amount, stopped_at = :now, updated_at = :now "
+        "energy_wh = :energy, amount_cents = :amount, stopped_at = :now, updated_at = :now, "
+        "telemetry_captured_at = :now, telemetry_power_watts = :power "
         "WHERE id = :orderId AND user_id = :userId AND status = 'CHARGING' "
         "AND started_at = :startedAt"));
     orderUpdate.bindValue(QStringLiteral(":duration"), durationSeconds);
@@ -830,6 +918,7 @@ ChargingRepositoryResult ChargingRepository::stopCharging(qint64 userId, qint64 
     orderUpdate.bindValue(QStringLiteral(":orderId"), orderId);
     orderUpdate.bindValue(QStringLiteral(":userId"), userId);
     orderUpdate.bindValue(QStringLiteral(":startedAt"), toStorageUtc(expectedStartedAtUtc));
+    orderUpdate.bindValue(QStringLiteral(":power"), result.charger.powerWatts);
     if (!executeUpdate(&orderUpdate, &result.diagnostic)) {
         return failure(RepositoryError::Database, result.diagnostic);
     }

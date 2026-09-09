@@ -74,6 +74,9 @@ private slots:
             const bool hasFields = set("stationCodeLineEdit", QStringLiteral("STA-UI-RELEASE-001"))
                 && set("stationNameLineEdit", QStringLiteral("管理端参数回归站"))
                 && set("stationAddressLineEdit", QStringLiteral("测试路 1 号"))
+                && set("stationDistrictLineEdit", QStringLiteral("高新区"))
+                && set("stationContactNameLineEdit", QStringLiteral("负责人"))
+                && set("stationContactPhoneLineEdit", QStringLiteral("13800138000"))
                 && set("stationLatitudeLineEdit", QStringLiteral("30.274100"))
                 && set("stationLongitudeLineEdit", QStringLiteral("120.155100"))
                 && set("stationPriceLineEdit", QStringLiteral("1.28"));
@@ -136,6 +139,9 @@ private slots:
                                                  return button->text() == QObject::tr("编辑电站");
                                              });
         QVERIFY(editButton != pageButtons.cend());
+        // Editing needs the authorized, unmasked stations.get snapshot, which
+        // arrives asynchronously after the list selection.
+        QTRY_VERIFY((*editButton)->isEnabled());
 
         const QString injectedCode = QStringLiteral("STA-REFRESH-NEW-001");
         const QString editedName = QStringLiteral("延迟刷新后仍应编辑原电站");
@@ -143,7 +149,7 @@ private slots:
         QString injectedRequestId;
         const auto responseConnection = connect(
             &gateway, &AdminRequestGateway::finished, &page,
-            [&gateway, &page, &injectedCreated, &injectedRequestId](const QString& id,
+            [&page, &injectedCreated, &injectedRequestId](const QString& id,
                                                                       const QJsonObject& response) {
                 if (id != injectedRequestId) return;
                 injectedCreated = response.value(QStringLiteral("success")).toBool();
@@ -154,6 +160,10 @@ private slots:
             if (dialog == nullptr) return;
             auto* nameEdit = dialog->findChild<QLineEdit*>(QStringLiteral("stationNameLineEdit"));
             if (nameEdit != nullptr) nameEdit->setText(editedName);
+            if (auto* edit = dialog->findChild<QLineEdit*>(QStringLiteral("stationDistrictLineEdit"))) edit->setText(QStringLiteral("高新区"));
+            if (auto* edit = dialog->findChild<QLineEdit*>(QStringLiteral("stationContactNameLineEdit"))) edit->setText(QStringLiteral("负责人"));
+            if (auto* edit = dialog->findChild<QLineEdit*>(QStringLiteral("stationContactPhoneLineEdit"))) edit->setText(QStringLiteral("13800138000"));
+            if (auto* city = dialog->findChild<QComboBox*>(QStringLiteral("stationCityComboBox"))) city->setCurrentText(QStringLiteral("大连市"));
         });
         // MainWindow's ten-second timer calls this same refreshData() entry
         // point.  Create a newer station after that boundary so id-desc sorting
@@ -168,6 +178,10 @@ private slots:
                 {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
                  {QStringLiteral("code"), injectedCode}, {QStringLiteral("name"), QStringLiteral("刷新重排站")},
                  {QStringLiteral("address"), QStringLiteral("测试路 2 号")},
+                 {QStringLiteral("city"), QStringLiteral("大连市")},
+                 {QStringLiteral("district"), QStringLiteral("高新区")},
+                 {QStringLiteral("contactName"), QStringLiteral("刷新回归负责人")},
+                 {QStringLiteral("contactPhone"), QStringLiteral("13800138000")},
                  {QStringLiteral("latitude"), 30.0}, {QStringLiteral("longitude"), 120.0},
                  {QStringLiteral("priceCentsPerKwh"), 100}, {QStringLiteral("chargers"), chargers}},
                 this, QStringLiteral("admin-refresh-reorder"));
@@ -305,7 +319,8 @@ private slots:
         auto* stationFilter = page.findChild<QComboBox*>(QStringLiteral("chargerStationFilterComboBox"));
         auto* table = page.findChild<QTableWidget*>(QStringLiteral("chargerManagementTable"));
         QVERIFY(stationFilter != nullptr && table != nullptr);
-        QTRY_COMPARE(stationFilter->count(), 101); // "所属电站" plus the first 100 stations.
+        QTRY_COMPARE(stationFilter->count(), 52); // All + 50 options + explicit next-page action.
+        QVERIFY(stationFilter->findData(QStringLiteral("__load_more__")) >= 0);
         const QString lastStationIdText = QString::number(lastStationId);
         QCOMPARE(stationFilter->findData(lastStationIdText), -1);
 

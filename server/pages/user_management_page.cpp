@@ -591,14 +591,14 @@ void UserManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
     registrationComboBox_->setCurrentIndex(0);
-    registrationComboBox_->setEnabled(false);
-    registrationComboBox_->setToolTip(tr("当前管理员契约不支持按注册时间筛选"));
+    registrationComboBox_->setEnabled(true);
+    registrationComboBox_->setToolTip(tr("按北京时间日历日筛选注册时间"));
     minimumBalanceLineEdit_->clear();
-    minimumBalanceLineEdit_->setEnabled(false);
-    minimumBalanceLineEdit_->setToolTip(tr("当前管理员契约不支持按余额区间筛选"));
+    minimumBalanceLineEdit_->setEnabled(true);
+    minimumBalanceLineEdit_->setToolTip(tr("余额下限（元，包含边界）"));
     maximumBalanceLineEdit_->clear();
-    maximumBalanceLineEdit_->setEnabled(false);
-    maximumBalanceLineEdit_->setToolTip(tr("当前管理员契约不支持按余额区间筛选"));
+    maximumBalanceLineEdit_->setEnabled(true);
+    maximumBalanceLineEdit_->setToolTip(tr("余额上限（元，包含边界）"));
     setManagementMetricCardsUnavailable(this, tr("当前契约未提供用户页汇总指标"));
     riskButton_->setVisible(false);
     riskTagLabel_->setVisible(false);
@@ -646,9 +646,9 @@ void UserManagementPage::requestList()
         setFeedback(tr("余额区间无效：请输入非负金额，且最小值不能大于最大值"), true);
         return;
     }
-    if (!realMode_ && !minimumText.isEmpty()) query.insert(QStringLiteral("minBalanceCents"), minimumBalanceCents);
-    if (!realMode_ && !maximumText.isEmpty()) query.insert(QStringLiteral("maxBalanceCents"), maximumBalanceCents);
-    if (!realMode_ && registrationComboBox_->currentIndex() > 0) {
+    if (!minimumText.isEmpty()) query.insert(QStringLiteral("minBalanceCents"), minimumBalanceCents);
+    if (!maximumText.isEmpty()) query.insert(QStringLiteral("maxBalanceCents"), maximumBalanceCents);
+    if (registrationComboBox_->currentIndex() > 0) {
         const QTimeZone zone("Asia/Shanghai");
         const QDate today = QDateTime::currentDateTimeUtc().toTimeZone(zone).date();
         const auto boundary = [&zone](const QDate& date) {

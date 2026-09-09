@@ -245,14 +245,19 @@ void ChargingWorkflowTest::completesWorkflowAndPersistsEachState()
     QCOMPARE(live.order.durationSeconds, 250);
     QCOMPARE(live.order.energyWh, 500);
     QCOMPARE(live.order.amountCents, 60);
-    // Live metering is a derived snapshot. It must not finalize the database row.
+    // v4 persists the latest simulated sample for admin monitoring, without
+    // finalizing the order or marking its estimated amount as paid.
     QCOMPARE(fixture.integer(QStringLiteral("SELECT duration_seconds FROM orders WHERE id = %1")
                                  .arg(started.order.id)),
-             0);
+             250);
     QCOMPARE(
         fixture.integer(
             QStringLiteral("SELECT amount_cents FROM orders WHERE id = %1").arg(started.order.id)),
-        0);
+        60);
+    QCOMPARE(fixture.text(QStringLiteral("SELECT status FROM orders WHERE id = %1")
+                              .arg(started.order.id)), QStringLiteral("CHARGING"));
+    QCOMPARE(fixture.integer(QStringLiteral("SELECT stopped_at IS NULL AND paid_at IS NULL "
+                                           "FROM orders WHERE id = %1").arg(started.order.id)), 1);
 
     fixture.advance(250);
     const charging::server::ChargingOperationResult stopped =

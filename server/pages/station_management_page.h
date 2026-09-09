@@ -60,6 +60,7 @@ private:
         int availableChargerCount = -1;
         int onlineChargerCount = -1;
         double onlineRatePercent = -1.0;
+        bool contactDetailsLoaded = false;
     };
 
     void createMockRecords();

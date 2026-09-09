@@ -1,4 +1,5 @@
 #include "activity_records_page.h"
+#include "admin_option_loader.h"
 
 #include "admin_request_gateway.h"
 #include "management_page_widgets.h"
@@ -109,14 +110,21 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     keywordLineEdit_ = new QLineEdit(toolbar);
     keywordLineEdit_->setMinimumWidth(210);
     keywordLineEdit_->setPlaceholderText(isRecharge ? tr("⌕  搜索充值单号、用户或手机号")
-                                                     : tr("⌕  搜索操作编号、对象或管理员"));
+                                                     : tr("⌕  搜索动作或操作对象"));
     dateRangeComboBox_ = new QComboBox(toolbar);
     if (isRecharge) {
         statusComboBox_ = new QComboBox(toolbar);
-        statusComboBox_->addItems({tr("充值状态"), tr("成功"), tr("处理中"), tr("失败")});
+        statusComboBox_->addItem(tr("充值状态"), QString());
+        statusComboBox_->addItem(tr("成功"), QStringLiteral("SUCCESS"));
+        statusComboBox_->addItem(tr("失败"), QStringLiteral("FAILED"));
     } else {
         categoryComboBox_ = new QComboBox(toolbar);
         categoryComboBox_->addItems({tr("操作类型"), tr("冻结用户"), tr("解冻用户"), tr("新增电站"), tr("设备处置")});
+        categoryComboBox_->setObjectName(QStringLiteral("operationActionComboBox"));
+        adminComboBox_ = new QComboBox(toolbar);
+        adminComboBox_->setObjectName(QStringLiteral("operationAdminComboBox"));
+        adminComboBox_->addItem(tr("全部管理员"), QString());
+        adminComboBox_->setVisible(false);
     }
     dateRangeComboBox_->addItems({tr("全部时间"), tr("今日"), tr("近 7 天"), tr("本月")});
     QList<QComboBox*> filterComboBoxes{dateRangeComboBox_};
@@ -124,6 +132,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
         filterComboBoxes.prepend(statusComboBox_);
     } else {
         filterComboBoxes.prepend(categoryComboBox_);
+        filterComboBoxes.prepend(adminComboBox_);
     }
     for (auto* comboBox : filterComboBoxes) {
         comboBox->setMinimumWidth(122);
@@ -142,6 +151,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     if (!isRecharge) {
         toolbarLayout->addWidget(categoryComboBox_);
+        toolbarLayout->addWidget(adminComboBox_);
     }
     if (isRecharge) {
         toolbarLayout->addWidget(statusComboBox_);
@@ -319,6 +329,7 @@ void ActivityRecordsPage::resetFilters()
     keywordLineEdit_->clear();
     if (mode_ != ActivityRecordsMode::Recharge) {
         categoryComboBox_->setCurrentIndex(0);
+        if (adminComboBox_) adminComboBox_->setCurrentIndex(0);
     }
     if (mode_ == ActivityRecordsMode::Recharge) {
         statusComboBox_->setCurrentIndex(0);
@@ -460,7 +471,7 @@ void ActivityRecordsPage::showNextPage()
 
 void ActivityRecordsPage::manualRefresh()
 {
-    if (realMode_) { requestList(); return; }
+    if (realMode_) { requestMetadata(); requestList(); return; }
     rebuildTable();
     setFeedback(tr("已于 2025-06-01 10:30:00 刷新本地 Mock 数据；真实记录需等待 Service 返回。"));
 }
@@ -477,7 +488,11 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
     if (mode_ != ActivityRecordsMode::Recharge) {
-        categoryComboBox_->setEnabled(false); categoryComboBox_->setToolTip(tr("当前操作类型下拉项不是契约枚举；请使用关键字查询"));
+        categoryComboBox_->clear(); categoryComboBox_->addItem(tr("全部操作类型"), QString());
+        categoryComboBox_->setEnabled(true);
+        adminComboBox_->setVisible(true);
+        adminOptions_ = new AdminOptionLoader(gateway_, adminComboBox_, QStringLiteral("admins.options"),
+            tr("全部管理员"), QStringLiteral("operation-admin-options"), this);
     }
     setManagementMetricCardsUnavailable(
         this, tr("当前契约未提供%1页汇总指标")
@@ -486,12 +501,41 @@ void ActivityRecordsPage::setAdminGateway(AdminRequestGateway* gateway)
         if (id == listRequestId_) handleListResponse(response);
         else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
+        else if (id == actionsRequestId_) handleActionsResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (!authenticated) { hasRealSnapshot_ = false; }
-        else requestList();
+        else { requestMetadata(); requestList(); }
     });
+    requestMetadata();
     requestList();
+}
+
+void ActivityRecordsPage::requestMetadata()
+{
+    if (mode_ == ActivityRecordsMode::Recharge || !gateway_ || !gateway_->isAuthenticated()) return;
+    actionsRequestId_ = gateway_->request(QStringLiteral("operation_logs.actions"), {}, this, QStringLiteral("operation-actions"));
+    if (adminOptions_) adminOptions_->reload();
+}
+
+void ActivityRecordsPage::handleActionsResponse(const QJsonObject& response)
+{
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        // Keep the last confirmed actions. This independent status must not
+        // disappear when a concurrent list refresh succeeds.
+        categoryComboBox_->setToolTip(tr("操作类型加载失败，请点击刷新重试；已有选项保持不变。"));
+        return;
+    }
+    categoryComboBox_->setToolTip(QString());
+    const QString previous = categoryComboBox_->currentData().toString();
+    categoryComboBox_->clear(); categoryComboBox_->addItem(tr("全部操作类型"), QString());
+    for (const auto& value : response.value(QStringLiteral("data")).toObject().value(QStringLiteral("items")).toArray()) {
+        const auto item = value.toObject();
+        categoryComboBox_->addItem(item.value(QStringLiteral("valueLabel")).toString(), item.value(QStringLiteral("action")).toString());
+        categoryComboBox_->setItemData(categoryComboBox_->count() - 1, item.value(QStringLiteral("category")).toString(), Qt::UserRole + 1);
+    }
+    const int index = categoryComboBox_->findData(previous);
+    categoryComboBox_->setCurrentIndex(index < 0 ? 0 : index);
 }
 
 void ActivityRecordsPage::requestList()
@@ -506,8 +550,14 @@ void ActivityRecordsPage::requestList()
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize},
                       {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
     const auto keyword = keywordLineEdit_->text().trimmed(); if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
-    if (recharge && statusComboBox_->currentIndex() == 1) query.insert(QStringLiteral("status"), QStringLiteral("SUCCESS"));
-    if (recharge && statusComboBox_->currentIndex() == 3) query.insert(QStringLiteral("status"), QStringLiteral("FAILED"));
+    if (recharge && !statusComboBox_->currentData().toString().isEmpty())
+        query.insert(QStringLiteral("status"), statusComboBox_->currentData().toString());
+    if (!recharge) {
+        if (!categoryComboBox_->currentData().toString().isEmpty())
+            query.insert(QStringLiteral("action"), categoryComboBox_->currentData().toString());
+        if (!adminComboBox_->currentData().toString().isEmpty())
+            query.insert(QStringLiteral("adminId"), adminComboBox_->currentData().toString());
+    }
     if (dateRangeComboBox_->currentIndex() > 0) {
         const auto now = QDateTime::currentDateTime().toTimeZone(QTimeZone("Asia/Shanghai")); QDate from = now.date();
         if (dateRangeComboBox_->currentIndex() == 2) from = from.addDays(-6);
