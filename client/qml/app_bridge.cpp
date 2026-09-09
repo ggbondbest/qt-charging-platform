@@ -8,6 +8,7 @@
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/point_service.h"
+#include "charging/client/profile_charging/progress_service.h"
 #include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
 #include "charging/common/model/model_json.h"
@@ -115,6 +116,14 @@ void QmlApp::createSession(const charging::model::User& user)
     reservationService_ = new charging::client::services::reservation::ReservationService(session_);
     settingsService_ = new charging::client::services::settings::SettingsService(session_);
     mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
+    // 经验等级引擎（2026-09-09）：按登录手机号分组持久化，随 session_ 生灭；
+    // 升级庆祝走 toastRequested（与其余提示同一出口）。
+    progressService_ = new charging::client::ProgressService(user.phone, session_);
+    connect(progressService_, &charging::client::ProgressService::levelUp, this,
+            [this](int, const QString& tier, qint64 giftPoints) {
+        emit toastRequested(tr("🎉 恭喜升级到 %1！礼包 +%2 积分已记入等级账目")
+                            .arg(tier).arg(giftPoints), "success");
+    });
     reservationService_->setUserId(user.id);
     // 2026-09-08 业务变更：预约不再强制车辆（QML 侧删闸同步）。撤 settings 注入
     // = finishMockSubmit 的 0车拒绝/每车唯一两道自然失效，名额闸回退"至多 1 条
@@ -191,6 +200,7 @@ QObject* QmlApp::statsService() const { return statsBridge_; }
 QObject* QmlApp::couponService() const { return couponBridge_; }
 QObject* QmlApp::pointsService() const { return pointBridge_; }
 QObject* QmlApp::ratingsService() const { return ratingBridge_; }
+QObject* QmlApp::progressService() const { return progressService_; }
 QObject* QmlApp::authService() const { return const_cast<QmlApp*>(this); }
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
 
@@ -239,6 +249,20 @@ void QmlApp::navigate(const QString& route, const QVariant& arg)
     }
     if (route == QStringLiteral("reservation_confirm")) {
         checkBeforeReservation(arg.toMap()); return;
+    }
+    // 每日任务 XP 事件（2026-09-09）：navigate 是全页面导航唯一漏斗（底栏/
+    // 行卡/顶栏搜索都经此），四个浏览型任务在漏斗处上报，服务当日幂等，
+    // 重复进出只记一次；搜索任务以 station 深链带非空关键词参数为判据。
+    if (progressService_) {
+        if (route == QStringLiteral("station_detail"))
+            progressService_->reportEvent(QStringLiteral("detail"));
+        else if (route == QStringLiteral("navigation"))
+            progressService_->reportEvent(QStringLiteral("route"));
+        else if (route == QStringLiteral("stats"))
+            progressService_->reportEvent(QStringLiteral("stats"));
+        else if (route == QStringLiteral("station") && arg.canConvert<QString>()
+                 && !arg.toString().isEmpty())
+            progressService_->reportEvent(QStringLiteral("search"));
     }
     emit navigateRequested(route, arg);
 }

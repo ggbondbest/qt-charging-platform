@@ -62,6 +62,10 @@ Item {
             checkingIn = false
             page.points = points
             page.todayCheckedIn = true          // 成功与重放都进入"已签"态
+            // 经验等级批（2026-09-09）：签到真实积分入账后，同步上报每日任务
+            // 事件（当日幂等）；裸引擎/无等级桥场景静默跳过。
+            if (typeof App !== "undefined" && App && App.progressService)
+                App.progressService.reportEvent("checkin")
             if (alreadyCheckedIn || gained <= 0) {
                 if (App) App.showToast("今天已经签过啦", "info")
             } else {

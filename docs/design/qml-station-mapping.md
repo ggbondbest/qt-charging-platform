@@ -131,6 +131,15 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **文字裁切族**：Text 默认 NoWrap——homeDemoCaption/detailChargerSummaryLabel/moduleDemoCaption/orderModuleCaption×2 补 width+WordWrap；找站筛选栏套横向 Flickable（"⛏ 筛选"钮原被裁半截，与返回钮同类缺陷）。
 - 冒烟：11 路由 offscreen rc=0 日志门零告警（截图成批同尺寸=克隆 Shell 补丁被仓库版覆盖丢过，重跑 setup-smoke.sh 复原——QML 热加载、翻位表/arg 注入/自动登录三补丁必须在位）；密码流转断言 10/10（StationState.js node 直验）；qmllint 9 页零 Error；截图 12=登录页密码行形态（仅冒烟克隆临时强制 visible 拍摄，仓库绑定未动）。
 
+## 经验等级批（2026-09-09，用户指令："我的页面昵称下加等级进度条（上等级下经验、可点击进详情）+ 与设置并列的每日任务，完成加经验"——无 widgets 对账源的新增功能）
+
+- **ProgressService**（`client/services/profile_charging/src/progress_service.cpp`，纯客户端 C++ QObject，QSettings 组 `progress/<phone>` 持久化，零服务端交互）：五档累计 XP 门槛 青铜0/白银60/黄金150/铂金350/黑金700（🥉🥈💎👑，礼包 0/100/150/200/300 + 权益文案）；每日任务 签到30/搜索20/详情20/路线20/月报20 + 全勤30，**当日幂等**（done 表 taskId→日期，跨日自然重置，QSettings 键 `task_<id>` 不含 '/'——含 '/' 会被读成子组致 childKeys 不可见）；`setTodayForTesting` 日期缝供多日推进单测。
+- **XP 事件漏斗=单点 `QmlApp::navigate()`**：station_detail→detail、navigation→route、stats→stats、station+非空关键词→search（顶栏搜索经 `App.navigate("station", keyword)` 天然入漏斗）；reservation_confirm 早退不进漏斗；签到由 TasksPage/PointsPage 在真实 `pointsService.checkIn()` 回执后 `reportEvent("checkin")`。
+- **双账本诚实口径**：服务端 points_ledger 仅 CHECK_IN(+10/日)/RECHARGE 两路写入，`UserApiAction` 无 grant 动作、CouponService 只读 → 签到任务给**真积分+经验双份**，其余任务经验与升级礼包"积分"记在等级体系自己的账目（`ProgressService.gifts`），TasksPage/LevelPage 页脚均如实标注分账。若要礼包真入账需新增服务端 wire 动作（TODO(contract)，二期）。
+- **暴露面**：`QmlApp.progressService` Q_PROPERTY（NOTIFY servicesChanged，与会话级桥同形态随登录重建）；页面 `App.progressService` + null 守卫，main.cpp/context 零新增；升级 toast 在 app_bridge 的 levelUp connect 里发。
+- **UI 三处**：ProfilePage hero 昵称下 徽章「🥉 Lv.1 青铜会员 ›」/进度条（starGold 填充+Behavior 动画）/经验行「当前 X/SPAN XP · 距 NEXT 还需 N」，点徽章→level；行列表与设置并列新增「🗓️ 每日任务 / 🏅 会员等级」；**TasksPage.qml**（"tasksPage"，route "tasks"：等级 hero 卡+五任务卡+签到直发钮+全勤行+分账脚注）；**LevelPage.qml**（"levelPage"，route "level"：档位色 hero+五档阶梯权益 StatusTag（已达成/当前/未解锁）+升级礼包记录+分账脚注）。
+- **测试**：新增 `tst_progress_service.cpp` 10 例（QTemporaryDir 隔离域；起点/当日幂等/未知事件/全勤只发一次/多日升档礼包逐档/跨日重置/落盘续读/手机号互不串）；client_pages +2（任务页×真引擎签到→经验→升级 toast 全链，**用例开头 remove("progress") 清零**——PointsPage 用例经新签到钩子合法写入会污染基线；等级页×引擎状态镜像，断言全取动态值）；station_interactions +1 真壳端到端（等级条渲染/点徽章进页/tasks 路由/stats 漏斗+幂等）。Shell.qml migrated/pageSource 各 +2 路由。
+
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
@@ -154,6 +163,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - [x] 修正批 `55ef843`：onClickFunction、Row polish 环、IntValidator 溢出、hhmm 分钟位、余额卡隐高、null-record 绑定、QQuickPopup 作用域、详情头卡 arg 即出、桥缺位显式降级
 - [x] 审计轮修正批：登录/退出在 mock（authService=nullptr）下兜底 `App.login()/logout()`（不再卡遮罩）；收藏页投影补 voltageBands 组；导航页存 `route.steps`（真实转向指引 + >15 段截断文案）；地图 hit-test 与 onPaint 界域同构（markers∪route、NaN 坐标天然跳）；卡内 anchors.fill 告警 9 处清理（ClickableCard/P.Card 同款：内容 default-property 进内部 Column，卡内锚点被忽略且逐实例告警）——ClickableCard 5 处（profile×2 实爆 + favorites/station/completed×3 潜伏）+ P.Card 4 处（notification delegate×1 + 订单页三栏卡×3，均桥落地/记录到达即爆）；改 Column 契约内 width 绑定、卡高交内容自然高，10 路由复跑零告警零报错
 - [x] 二轮修复批（98c9b6b→e4fd0b9）：二级密码倒转到登录环节/四页 Flickable/顶栏搜索·铃铛·返回钮修复/三页演示数据通道/订单页 polish 环/NoWrap 裁字族——11 路由 rc=0 零告警 + 密码断言 10/10 + qmllint 零 Error，详见 §二轮修复批
+- [x] **经验等级批（2026-09-09）**：ctest 53/53（含新 progress_service 10 例）；qmllint 新改页面零告警；三页 offscreen 截图（我的页 hero 等级三件套/任务页五卡+全勤/等级页阶梯）；Wayland 真机换新二进制运行中
 - [x] **变基轮（rebase 至 develop `0fcc44d` 后复测）**：成员3 服务桥（`3db8931`）与路由翻位（`0f65111`）已在基底落地 → station/reservation_module 直渲**真数据**（上条"桥未就绪"降级态自然退位，演示通道 catch 不再触发）；订单三栏=成员3 塌陷修正（colW+自然高）外套本分支整页 Flickable；排序 chip `selected` 机制与"综合=2/空闲=0/距离=1"编号以 develop 为准并入。复跑 11 路由 offscreen rc=0 零报错、qmllint 零 Error；解冲突口径=样式/机制按成员3、widgets 对账锚点 objectName 按本分支（`detailPriceLabel/detailDistanceLabel/reservationOrderTabButton/uiProfileHeroButton` 等实名保留）
 
 ## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）
