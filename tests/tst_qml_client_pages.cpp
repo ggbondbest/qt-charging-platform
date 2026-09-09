@@ -20,6 +20,7 @@
 
 #include "charging/client/profile_charging/avatar_library.h"
 #include "charging/client/profile_charging/progress_service.h"
+#include "charging/common/protocol/user_api_contract.h"
 #include "services/station/station_query_service.h"
 
 #include "app_bridge.h"
@@ -1698,7 +1699,9 @@ private slots:
 
     // —— 经验等级/每日任务批（2026-09-09）——
     // 任务页 × 真等级引擎（本用例是隔离域内第一个写 XP 的用例）：
-    // 签到回执转经验、当日幂等、全勤奖励、跨档礼包与升级 toast 一条链钉死。
+    // 签到回执转经验、当日幂等、全勤奖励、跨档礼包一条链钉死。
+    // 2026-09-09 拍板批：升级 toast 不再 levelUp 瞬间预支"已记入等级账目"，
+    // 而是等 bridge 的 CREDIT_LEVEL_REWARD（mock 通道）回执后播"已到账"。
     void tasksPageConvertsCheckInToExperience()
     {
         { QSettings fresh; fresh.remove(QStringLiteral("progress")); }  // 前面 PointsPage 用例已记签到经验
@@ -1743,9 +1746,13 @@ private slots:
         QVERIFY(prog->allTasksDone());
         QCOMPARE(prog->level(), 2);
         QCOMPARE(prog->gifts().size(), 1);             // 白银礼包入账
-        QCOMPARE(prog->gifts().at(0).toMap().value("points").toLongLong(), qint64(100));
-        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 2000);   // 升级庆祝 toast
+        // 一致性镜像钉（契约文档 CREDIT_LEVEL_REWARD 节承诺）：客户端 kTiers
+        // 礼包额 == 服务端单点表 levelRewardPoints(2)，改动任一侧必撞此。
+        QCOMPARE(prog->gifts().at(0).toMap().value("points").toLongLong(),
+                 charging::protocol::user_api::levelRewardPoints(2));
+        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 4000);   // 入账回执后庆祝 toast
         QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("白银会员")));
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("已到账")));
     }
 
     // 等级页 × 同域状态续场：hero 文案与 tiers 属性一致、阶梯 5 档、
@@ -1776,6 +1783,53 @@ private slots:
             currentCount += row.toMap().value("state").toString() == QLatin1String("current") ? 1 : 0;
         QCOMPARE(currentCount, 1);
         QCOMPARE(prog->gifts().size(), prog->level() - 1);   // 每次跨档一份礼包
+    }
+
+    // 升级礼包真到账——mock 通道端到端（2026-09-09 用户拍板批）：升级 →
+    // bridge 自动发 CREDIT_LEVEL_REWARD（金额服务端单点表推导）→ 积分页
+    //（真桥非替身）见"等级礼包"流水与总分（种子注册礼包 50 + 礼包 100）。
+    // 再登一次触发登录对账全量重放：服务端幂等（integration 钉）+ toast 静默
+    //（levelRewardCredited 无挂起上下文即不重播庆祝）。
+    void levelGiftArrivesInLedgerThroughMock()
+    {
+        { QSettings fresh; fresh.remove(QStringLiteral("progress")); }
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QCOMPARE(prog->xp(), qint64(0));                     // 隔离域内首写，基线确定
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        prog->reportEvent(QStringLiteral("search"));
+        prog->reportEvent(QStringLiteral("route"));
+        prog->reportEvent(QStringLiteral("stats"));          // 60 XP 恰达白银门槛
+        QCOMPARE(prog->level(), 2);
+        // 先等庆祝回执=礼包已落 mock 账本（消除与页内首拉的竞态）。
+        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 4000);
+        QObject* bridge = app.pointsService();
+        auto* pointBridge = qobject_cast<charging::qml::PointBridge*>(bridge);
+        QVERIFY(pointBridge);
+        QSignalSpy loaded(pointBridge, &charging::qml::PointBridge::pointsLoaded);
+
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), bridge);
+        QObject holder;                                       // 最后声明 → 最先析构
+        auto* page = createPage(engine, QStringLiteral("PointsPage.qml"), &holder);
+        QVERIFY(page);
+        auto* model = page->findChild<QObject*>("uiPointsModel");
+        QVERIFY(model);
+        QTRY_COMPARE_WITH_TIMEOUT(model->property("count").toInt(), 2, 4000);
+        QTRY_COMPARE_WITH_TIMEOUT(page->property("points").toInt(), 150, 4000);
+        // 桥信号面取证（无窗口 delegate 不实例化）：新→旧首行=礼包行，
+        // 金额与词映射和服务端单点表对拍。
+        QCOMPARE(loaded.size(), 1);
+        const QVariantList entries = loaded.at(0).at(1).toList();
+        QCOMPARE(entries.size(), 2);
+        const QVariantMap giftRow = entries.first().toMap();
+        QCOMPARE(giftRow.value(QStringLiteral("reason")).toString(),
+                 QStringLiteral("等级礼包"));
+        QCOMPARE(giftRow.value(QStringLiteral("amount")).toLongLong(),
+                 charging::protocol::user_api::levelRewardPoints(2));
     }
 };
 

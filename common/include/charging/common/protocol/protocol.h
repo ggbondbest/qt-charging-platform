@@ -35,6 +35,9 @@ inline constexpr char kGetNotifications[] = "GET_NOTIFICATIONS";
 // Session 定身份），GET_POINTS 分页读积分流水。
 inline constexpr char kCheckIn[] = "CHECK_IN";
 inline constexpr char kGetPoints[] = "GET_POINTS";
+// 2026-09-09 需求批（冻结只新增）：升级礼包入账。CREDIT_LEVEL_REWARD 写型带参
+// （level 2..5，服务端按单点表推导礼包积分，不信任客户端传额；同档重放幂等）。
+inline constexpr char kCreditLevelReward[] = "CREDIT_LEVEL_REWARD";
 // 批次E（2026-09-08）：电桩评价。SUBMIT_CHARGER_RATING 写评价（一单一评幂等），
 // GET_MY_RATINGS 分页读本人评价流水。
 inline constexpr char kSubmitChargerRating[] = "SUBMIT_CHARGER_RATING";

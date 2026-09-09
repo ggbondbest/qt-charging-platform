@@ -62,6 +62,9 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     // GET_MY_RATINGS 加入分页族。
     const bool submitRating = type == QLatin1String(kSubmitChargerRating);
     const bool myRatings = type == QLatin1String(kGetMyRatings);
+    // 2026-09-09 需求批：CREDIT_LEVEL_REWARD 写型带参（level 2..5，金额服务端
+    // 按 levelRewardPoints() 单点推导，客户端不传额）。
+    const bool creditLevel = type == QLatin1String(kCreditLevelReward);
     const auto fail = [error](const char* code, const QString& field) {
         if (error != nullptr) {
             *error = {};
@@ -73,7 +76,7 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
     };
     if (!(stations || chargers || reservations || orders || records || profile || update
           || recharge || stats || coupons || notices || checkIn || points
-          || submitRating || myRatings)) {
+          || submitRating || myRatings || creditLevel)) {
         return fail(error_code::kUnknownRequestType, QStringLiteral("type"));
     }
 
@@ -216,6 +219,15 @@ bool normalizeRequestData(const QString& type, const QJsonObject& data,
             return fail(error_code::kInvalidArgument, commentKey);
         }
         result.insert(commentKey, value.toString().trimmed());
+    }
+    if (creditLevel) {
+        // 只带已达档位；金额在服务端由 levelRewardPoints(level) 推导（防客户端
+        // 自报金额刷积分），同档重放的幂等在仓储侧以流水行去重把关。
+        const QString levelKey = QStringLiteral("level");
+        if (!integerInRange(data.value(levelKey), kMinimumLevel, kMaximumLevel)) {
+            return fail(error_code::kInvalidArgument, levelKey);
+        }
+        result.insert(levelKey, data.value(levelKey));
     }
     if (normalized != nullptr) {
         *normalized = result;

@@ -14,6 +14,10 @@ QString getPointsType()
 {
     return QString::fromLatin1(charging::protocol::request_type::kGetPoints);
 }
+QString creditLevelRewardType()
+{
+    return QString::fromLatin1(charging::protocol::request_type::kCreditLevelReward);
+}
 } // namespace
 
 PointService::PointService(IRequestTransport* transport, QObject* parent)
@@ -69,6 +73,28 @@ void PointService::checkIn()
                              static_cast<qint64>(data.value(QStringLiteral("points")).toDouble()),
                              static_cast<qint64>(data.value(QStringLiteral("gained")).toDouble()),
                              data.value(QStringLiteral("alreadyCheckedIn")).toBool());
+                     });
+}
+
+void PointService::creditLevelReward(int level)
+{
+    if (transport_ == nullptr) {
+        return;
+    }
+    // 刻意不查 busy_（见头注）：升级入账与流水刷新并发安全，服务端流水去重幂等。
+    const QString type = creditLevelRewardType();
+    transport_->sendFor(this, type, {{QStringLiteral("level"), level}},
+                     [this, type, level](bool ok, const QJsonObject& data,
+                                  const charging::protocol::ProtocolError& error) {
+                         if (!ok) {
+                             emit operationFailed(type, error);
+                             return;
+                         }
+                         emit levelRewardCredited(
+                             level,
+                             static_cast<qint64>(data.value(QStringLiteral("points")).toDouble()),
+                             static_cast<qint64>(data.value(QStringLiteral("gained")).toDouble()),
+                             data.value(QStringLiteral("alreadyCredited")).toBool());
                      });
 }
 

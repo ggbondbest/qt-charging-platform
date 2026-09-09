@@ -5,7 +5,8 @@ import "../../platform/Glyphs.js" as Glyphs
 
 // 每日任务页（2026-09-09 经验等级批）：任务清单 + 当日完成态 + 全勤进度。
 // 数据全在 ProgressService（App.progressService）：QSettings 本地持久化、
-// 日粒度幂等（服务端积分账本零改动，签到动作仍走 pointsService 真实入账）。
+// 日粒度幂等（经验记账纯本地；签到积分仍走 pointsService 真实入账，升级礼包
+// 由 bridge 收 levelUp 后发 CREDIT_LEVEL_REWARD 入账——2026-09-09 拍板批）。
 // 裸引擎/无桥场景 prog 为 null：渲染空态提示，页面不炸（成员3 页测试口径）。
 Item {
     id: page
@@ -20,7 +21,7 @@ Item {
     property bool checkingIn: false
 
     // 经验域图形单表意（2026-09-09 emoji→glyph 批）：服务层 tasks[].glyph 仍存
-    // emoji（分账口径不动），页面按 id 自映射母版名，染色随完成态。
+    // emoji（导出形状不动），页面按 id 自映射母版名，染色随完成态。
     function taskGlyph(id) {
         const m = { checkin: "calendar-check", search: "search", detail: "eye",
                     route: "compass", stats: "chart-bar" }
@@ -271,12 +272,12 @@ Item {
                 }
             }
 
-            // ---- 口径说明（诚实标注两套账本）----
+            // ---- 口径说明（经验本地、积分入账）----
             Text {
                 objectName: "uiTasksFootnote"
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: "经验与等级为客户端成长体系；签到积分以「签到积分」页的服务端账本为准。"
+                text: "经验与等级为客户端成长体系；签到积分与升级礼包积分入账服务端，见「积分」页流水。"
                 font.pixelSize: P.Style.fontXs; color: P.Style.faint
             }
 

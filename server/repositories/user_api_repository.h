@@ -13,9 +13,12 @@ namespace charging::server {
 // GetPoints 读积分流水 + SUM 总分。
 // 批次E（2026-09-08）：SubmitRating 写评价（order_id UNIQUE 即幂等锁，一单一评），
 // GetMyRatings 分页读本人评价流水（联查桩号/站名）。
+// 2026-09-09 需求批：CreditLevelReward 升级礼包入账（金额服务端单点推导，
+// (user_id,'LEVEL_GIFT',amount) 流水行去重幂等——各档金额互不相同天然可辨）。
 enum class UserApiAction { Stations, Chargers, Reservations, Profile, UpdateProfile,
                            Recharge, RechargeRecords, Orders, Stats, Coupons, Notifications,
-                           CheckIn, GetPoints, SubmitRating, GetMyRatings };
+                           CheckIn, GetPoints, SubmitRating, GetMyRatings,
+                           CreditLevelReward };
 enum class UserApiError { None, Database, Unauthorized, Frozen, NotFound, Invalid,
                           Conflict, RechargeFailed, TooManyRows };
 struct UserApiQuery {
@@ -38,6 +41,9 @@ struct UserApiQuery {
     qint64 orderId = 0;
     int rating = 0;               // 1..5
     QString comment;              // 可空串（已 trim、≤140，normalize 保证）
+    // 2026-09-09 需求批：CREDIT_LEVEL_REWARD 入参（2..5，normalize 已把关；
+    // 礼包金额由此档在 levelRewardPoints() 单点推导，入参不含金额）。
+    int level = 0;
     QDateTime nowUtc;
 };
 struct UserApiResult {
@@ -54,6 +60,9 @@ struct UserApiResult {
     bool alreadyCheckedIn = false;
     // 批次E（2026-09-08）评价：SubmitRating 幂等重放标记（rows[0]=落库评价行）。
     bool alreadyRated = false;
+    // 2026-09-09 需求批：CreditLevelReward 同档重放标记（重发 gained=0，不算错误，
+    // CHECK_IN 同款语义）；points=当前总分（SUM 单一事实源）。
+    bool alreadyCredited = false;
 };
 
 class UserApiRepository final {

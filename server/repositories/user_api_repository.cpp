@@ -178,6 +178,31 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
         q.finish();
         return finish();
     }
+    if (in.action == UserApiAction::CreditLevelReward) {
+        // 2026-09-09 需求批：升级礼包真入账（用户拍板推翻"分账"设计）。金额由
+        // levelRewardPoints(level) 服务端单点推导（normalize 已把关 level 2..5，
+        // 表外档位兜底 Invalid）；不信任客户端传额。幂等无新表——(user_id,
+        // 'LEVEL_GIFT', amount) 流水行去重：四档金额 100/150/200/300 互不相同，
+        // 天然可辨同档重放（客户端重试/双端竞发不算错误，gained=0 同款 CHECK_IN
+        // 语义）。INSERT ... SELECT WHERE NOT EXISTS 单语句完成"查+插"，无竞态窗口。
+        const qint64 gift = charging::protocol::user_api::levelRewardPoints(in.level);
+        if (gift <= 0) return failure(UserApiError::Invalid);
+        if (!run(q, "INSERT INTO points_ledger (user_id, amount, reason, created_at) "
+                    "SELECT :uid,:amount,'LEVEL_GIFT',:now "
+                    "WHERE NOT EXISTS (SELECT 1 FROM points_ledger "
+                    "WHERE user_id=:uid AND reason='LEVEL_GIFT' AND amount=:amount)",
+                 {{"uid", in.userId}, {"amount", gift}, {"now", now}})) return {};
+        if (q.numRowsAffected() == 0) {
+            result.alreadyCredited = true;
+        }
+        q.finish();
+        if (!run(q, "SELECT COALESCE(SUM(amount), 0) AS points FROM points_ledger "
+                    "WHERE user_id=:uid", {{"uid", in.userId}}) || !q.next()) return {};
+        result.points = q.value(0).toLongLong();
+        result.pointsGained = result.alreadyCredited ? 0 : gift;
+        q.finish();
+        return finish();
+    }
     if (in.action == UserApiAction::GetPoints) {
         // 批次C：流水分页（新→旧）+ 总分单查合一（同 COUNT 顺路 SUM，一条 SQL）。
         if (!run(q, "SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS points "

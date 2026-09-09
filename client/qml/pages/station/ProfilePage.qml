@@ -10,7 +10,8 @@ import "../../platform/Glyphs.js" as Glyphs
 //   2) wallet float card: 余额 | 充值 | 充值记录 三列同卡（1×40 divider）
 //   3) 双格入口：我的订单（待支付角标）/ 我的预约
 //   4) 「账号与服务」分组：整齐方块宫格（4 列）——2026-09-09 按用户参考稿
-//      由 52px 长行改宫格，收藏/通知/报告/券/积分/任务/等级/评价/设置九格，
+//      由 52px 长行改宫格，收藏/通知/报告/券/积分/任务/评价/设置八格
+//      （2026-09-09 需求批："会员等级"格退役——等级入口由经验卡整卡点击承担）
 //      通知/优惠券/积分角标走桥真实计数（无数据即不显示，不放假数值）
 //   5) 退出登录 = 白卡红字 logout variant（不是 danger 红底）
 // 结构由成员3 于 2026-09-07 按 widgets 原版重建（成员2 文件，PR 报备）。
@@ -503,11 +504,10 @@ Item {
                           route: "coupon",      badge: "coupon" },
                         { obj: "openPointsButton",  glyph: "coin", title: "积分",
                           route: "points",      badge: "points" },
-                        // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
+                        // 经验等级/每日任务（2026-09-09 需求批）：任务做经验；等级入口
+                        // 在经验卡（"会员等级"格同日退役，避免双入口）。
                         { obj: "openTasksButton",   glyph: "calendar-check", title: "每日任务",
                           route: "tasks",      badge: "" },
-                        { obj: "openLevelButton",   glyph: "medal", title: "会员等级",
-                          route: "level",      badge: "" },
                         { obj: "openRatingsButton", glyph: "star", title: "我的评价",
                           route: "ratings",     badge: "" },
                         { obj: "openSettingsButton", glyph: "settings", title: "设置",

@@ -3,10 +3,11 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 import "../../platform/Glyphs.js" as Glyphs
 
-// 会员等级页（2026-09-09 经验等级批）：从「我的」页点等级进入。
+// 会员等级页（2026-09-09 经验等级批）：从「我的」页经验卡整卡点击进入。
 // 三段式：当前等级 hero（条+经验）→ 等级阶梯与权益 → 升级记录。
-// 数据全在 ProgressService（App.progressService）；升级礼包积分是等级体系
-// 自己的账目（本页「升级记录」），与服务端积分账本分账并在页脚如实标注。
+// 数据全在 ProgressService（App.progressService）；升级礼包积分 2026-09-09
+// 拍板改真入账（推翻原"分账"设计）：bridge 发 CREDIT_LEVEL_REWARD 落服务端
+// points_ledger，「积分」页流水可见"等级礼包"行；本页「升级记录」为展示镜像。
 Item {
     id: page
     objectName: "levelPage"
@@ -268,12 +269,12 @@ Item {
                 actionText: ""
             }
 
-            // ---- 分账说明（诚实口径）----
+            // ---- 到账口径说明（诚实标注）----
             Text {
                 objectName: "uiLevelFootnote"
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: "等级礼包积分记录在等级体系账目（本页）；签到所得积分以服务端「签到积分」页账本为准，两者分账互不影响。"
+                text: "升级礼包积分已并入服务端积分账本（「积分」页流水可见「等级礼包」行）；经验与档位为客户端成长体系。"
                 font.pixelSize: P.Style.fontXs; color: P.Style.faint
             }
 

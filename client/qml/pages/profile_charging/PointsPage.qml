@@ -155,6 +155,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 3
                         Text {
+                            objectName: "uiPointsLedgerReason"
                             width: parent.width; elide: Text.ElideRight
                             text: model.reason || "积分"
                             font.pixelSize: P.Style.fontLg2; font.weight: Font.DemiBold

@@ -20,6 +20,7 @@ private slots:
     void invalidRequests();
     void boundariesAndNormalization();
     void settlementRewardPointsRule();
+    void levelRewardPointsRule();
     void unsupportedAction();
 };
 
@@ -34,6 +35,25 @@ void UserApiContractTest::settlementRewardPointsRule()
     QCOMPARE(settlementRewardPoints(549), 5);
     QCOMPARE(settlementRewardPoints(5000), 50);
     QCOMPARE(settlementRewardPoints(-100), 0);
+}
+
+// 升级礼包单点表（2026-09-09 需求批）：表外档位一律 0（normalize 已挡 2..5，
+// 这里是兜底防线——repo 侧 gift<=0 直接 Invalid）。四档金额互不相同是
+// (user_id,'LEVEL_GIFT',amount) 流水去重幂等成立的前提，一并钉住。
+// 与客户端经验引擎 kTiers 的一致性钉在 tst_qml_client_pages（跨层镜像）。
+void UserApiContractTest::levelRewardPointsRule()
+{
+    QCOMPARE(levelRewardPoints(0), 0);
+    QCOMPARE(levelRewardPoints(1), 0);        // 青铜初始档无礼包
+    QCOMPARE(levelRewardPoints(2), 100);      // 白银
+    QCOMPARE(levelRewardPoints(3), 150);      // 黄金
+    QCOMPARE(levelRewardPoints(4), 200);      // 铂金
+    QCOMPARE(levelRewardPoints(5), 300);      // 黑金
+    QCOMPARE(levelRewardPoints(6), 0);
+    QCOMPARE(levelRewardPoints(-3), 0);
+    const QSet<qint64> distinct{levelRewardPoints(2), levelRewardPoints(3),
+                                levelRewardPoints(4), levelRewardPoints(5)};
+    QCOMPARE(distinct.size(), 4);             // 幂等键可辨性
 }
 
 template <typename Model>
@@ -61,7 +81,7 @@ void UserApiContractTest::documentedExamples()
         request_type::kGetUserInfo, request_type::kUpdateUserInfo, request_type::kRecharge,
         request_type::kGetRechargeRecords, request_type::kGetOrders, request_type::kGetUserStats,
         request_type::kGetCoupons, request_type::kGetNotifications,
-        request_type::kCheckIn, request_type::kGetPoints,
+        request_type::kCheckIn, request_type::kGetPoints, request_type::kCreditLevelReward,
         request_type::kSubmitChargerRating, request_type::kGetMyRatings};
     QSet<QString> seen;
     for (const QJsonValue& value : doc.array()) {
@@ -192,6 +212,15 @@ void UserApiContractTest::documentedExamples()
             QVERIFY(!item.value("reason").toString().isEmpty());
             QVERIFY(item.value("createdAtUtc").isString());
             QVERIFY(!item.contains("userId"));
+        } else if (type == QLatin1String(request_type::kCreditLevelReward)) {
+            // 写型响应（2026-09-09 需求批）：{points, gained, alreadyCredited}；
+            // 请求只带 level（金额服务端推导），示例=首次入账白银档。
+            QCOMPARE(input.value("level").toInt(), 2);
+            QVERIFY(output.value("points").isDouble());
+            QCOMPARE(output.value("gained").toDouble(),
+                     static_cast<double>(levelRewardPoints(2)));   // 与服务端单点对拍
+            QVERIFY(output.value("alreadyCredited").isBool());
+            QVERIFY(!output.value("alreadyCredited").toBool());
         } else if (type == QLatin1String(request_type::kSubmitChargerRating)) {
             // 写型响应：rating 行 = 服务端回读行（重放=首评原值），alreadyRated 旗标。
             const QJsonObject row = output.value("rating").toObject();
@@ -319,6 +348,17 @@ void UserApiContractTest::invalidRequests_data()
         << QJsonObject{{"orderId", "7"}, {"rating", 5}, {"comment", QString(141, QLatin1Char('x'))}};
     QTest::newRow("myratings-page-size-limit") << QString(request_type::kGetMyRatings)
         << QJsonObject{{"pageSize", 101}};
+    // 2026-09-09 需求批：CREDIT_LEVEL_REWARD 只带 level（金额非入参，客户端
+    // 自报无效），2..5 之外的整数、非整数与缺省全拒。
+    QTest::newRow("credit-level-missing") << QString(request_type::kCreditLevelReward)
+        << QJsonObject{};
+    for (const QJsonValue& level : {QJsonValue(0), QJsonValue(1), QJsonValue(6),
+                                    QJsonValue("2"), QJsonValue(2.5),
+                                    QJsonValue(QJsonValue::Null)}) {
+        const QByteArray tag = QJsonDocument(QJsonArray{level}).toJson(QJsonDocument::Compact);
+        QTest::newRow(("credit-level-" + tag).constData())
+            << QString(request_type::kCreditLevelReward) << QJsonObject{{"level", level}};
+    }
     QTest::newRow("empty-update") << QString(request_type::kUpdateUserInfo) << QJsonObject{};
     QTest::newRow("protected-update") << QString(request_type::kUpdateUserInfo)
         << QJsonObject{{"balanceCents", 100}};
@@ -410,6 +450,13 @@ void UserApiContractTest::boundariesAndNormalization()
     QVERIFY(normalizeRequestData(request_type::kSubmitChargerRating,   // 提交前 trim
         {{"orderId", "7"}, {"rating", 4}, {"comment", "  很快  "}}, &output));
     QCOMPARE(output.value("comment").toString(), QStringLiteral("很快"));
+    // 2026-09-09 需求批：level 全域合法；客户端妄图自报金额也照例丢弃
+    // （金额非入参，服务端 levelRewardPoints() 单点推导）。
+    for (const int level : {kMinimumLevel, 3, 4, kMaximumLevel}) {
+        QVERIFY(normalizeRequestData(request_type::kCreditLevelReward,
+            {{"level", level}, {"amount", 999999}}, &output));
+        QCOMPARE(output, QJsonObject({{"level", level}}));
+    }
 }
 
 void UserApiContractTest::unsupportedAction()
