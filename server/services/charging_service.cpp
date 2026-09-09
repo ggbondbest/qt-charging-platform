@@ -120,6 +120,14 @@ ChargingOperationResult ChargingService::chargingStatus(qint64 userId, qint64 or
         result.error = billing.error;
         return result;
     }
+    QString diagnostic;
+    if (!chargingRepository_->recordTelemetry(userId, orderId, now, result.charger.powerWatts,
+                                              billing.durationSeconds, billing.energyWh,
+                                              billing.amountCents, &diagnostic)) {
+        result.success = false;
+        result.error = mapRepositoryError(RepositoryError::Database, diagnostic);
+        return result;
+    }
     result.order.durationSeconds = billing.durationSeconds;
     result.order.energyWh = billing.energyWh;
     result.order.amountCents = billing.amountCents;

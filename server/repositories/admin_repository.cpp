@@ -1,6 +1,8 @@
 #include "admin_repository.h"
 
 #include "dashboard_repository.h"
+#include "admin_charger_extensions.h"
+#include "admin_order_billing.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -35,7 +37,11 @@ QJsonObject row(const QSqlQuery& q)
     const auto record = q.record();
     for (int i = 0; i < record.count(); ++i) {
         const QString name = record.fieldName(i);
-        if (name == QStringLiteral("id") || name.endsWith(QStringLiteral("Id")))
+        // SQLite's typed NULL text QVariant otherwise becomes an empty JSON
+        // string on some Qt versions. Preserve unknown legacy data as null.
+        if (q.value(i).isNull())
+            result.insert(name, QJsonValue(QJsonValue::Null));
+        else if (name == QStringLiteral("id") || name.endsWith(QStringLiteral("Id")))
             result.insert(name,
                           q.value(i).isNull() ? QJsonValue() : QJsonValue(q.value(i).toString()));
         else if (name == QStringLiteral("phone")) {
@@ -67,6 +73,66 @@ QString literalLikePattern(QString value)
     value.replace(QLatin1Char('%'), QStringLiteral("!%"));
     value.replace(QLatin1Char('_'), QStringLiteral("!_"));
     return QLatin1Char('%') + value + QLatin1Char('%');
+}
+QJsonObject actionMetadata()
+{
+    // Fixed public vocabulary, not arbitrary action text extracted from audit
+    // payloads. Historical actions remain filterable by their exact action.
+    QJsonArray items;
+    const auto append = [&items](const QString& action, const QString& label, const QString& category) {
+        items.append(QJsonObject{{QStringLiteral("action"), action},
+                                  {QStringLiteral("valueLabel"), label},
+                                  {QStringLiteral("category"), category}});
+    };
+    append(QStringLiteral("station.create"), QStringLiteral("新增电站"), QStringLiteral("STATION"));
+    append(QStringLiteral("station.edit"), QStringLiteral("编辑电站"), QStringLiteral("STATION"));
+    append(QStringLiteral("station.status"), QStringLiteral("电站启停"), QStringLiteral("STATION"));
+    append(QStringLiteral("user.status"), QStringLiteral("冻结或解冻用户"), QStringLiteral("USER"));
+    append(QStringLiteral("charger.status"), QStringLiteral("电桩状态变更"), QStringLiteral("CHARGER"));
+    append(QStringLiteral("charger.restart"), QStringLiteral("电桩模拟重启"), QStringLiteral("CHARGER"));
+    append(QStringLiteral("charger_exceptions.recover"), QStringLiteral("异常模拟恢复"), QStringLiteral("EXCEPTION"));
+    return {{QStringLiteral("items"), items}};
+}
+QJsonObject optionRows(const QSqlDatabase& db, const QString& action, const QJsonObject& p)
+{
+    QString select, from, search;
+    if (action == QStringLiteral("stations.options")) {
+        select = QStringLiteral("s.id,s.code,s.name");
+        from = QStringLiteral("stations s");
+        search = QStringLiteral("s.code LIKE ? ESCAPE '!' OR s.name LIKE ? ESCAPE '!'");
+    } else if (action == QStringLiteral("chargers.options")) {
+        select = QStringLiteral("s.id,s.code,s.code AS name,s.station_id AS stationId,t.name AS stationName");
+        from = QStringLiteral("chargers s JOIN stations t ON t.id=s.station_id");
+        search = QStringLiteral("s.code LIKE ? ESCAPE '!' OR t.name LIKE ? ESCAPE '!'");
+    } else if (action == QStringLiteral("admins.options")) {
+        select = QStringLiteral("s.id,s.username AS code,s.display_name AS name");
+        from = QStringLiteral("admins s");
+        search = QStringLiteral("s.username LIKE ? ESCAPE '!' OR s.display_name LIKE ? ESCAPE '!'");
+    } else {
+        throw AdminFailure("INVALID_ARGUMENT");
+    }
+    QString where = QStringLiteral(" WHERE 1=1");
+    QVariantList bindings;
+    if (p.contains(QStringLiteral("stationId"))) {
+        where += QStringLiteral(" AND s.station_id=?");
+        bindings << p.value(QStringLiteral("stationId")).toString();
+    }
+    if (!p.value(QStringLiteral("keyword")).toString().isEmpty()) {
+        where += QStringLiteral(" AND (") + search + QLatin1Char(')');
+        const QString pattern = literalLikePattern(p.value(QStringLiteral("keyword")).toString());
+        bindings << pattern << pattern;
+    }
+    const qint64 total = scalar(db, QStringLiteral("SELECT COUNT(*) FROM ") + from + where, bindings);
+    const int page = p.value(QStringLiteral("page")).toInt(1);
+    const int pageSize = p.value(QStringLiteral("pageSize")).toInt(20);
+    bindings << pageSize << (page - 1) * pageSize;
+    auto query = execute(db, QStringLiteral("SELECT ") + select + QStringLiteral(" FROM ") + from +
+                        where + QStringLiteral(" ORDER BY s.id ASC LIMIT ? OFFSET ?"), bindings);
+    QJsonArray items;
+    while (query.next())
+        items.append(row(query));
+    return {{QStringLiteral("items"), items}, {QStringLiteral("total"), total},
+            {QStringLiteral("page"), page}, {QStringLiteral("pageSize"), pageSize}};
 }
 } // namespace
 
@@ -101,7 +167,13 @@ QJsonObject AdminRepository::read(const QString& entity, const QJsonObject& p) c
 {
     execute(database_, QStringLiteral("BEGIN"));
     try {
-        const auto result = readRows(entity, p);
+        const auto result = AdminChargerExtensions::handlesRead(entity)
+                                ? AdminChargerExtensions::read(database_, entity, p)
+                                : entity == QStringLiteral("operation_logs.actions")
+                                      ? actionMetadata()
+                                      : entity.endsWith(QStringLiteral(".options"))
+                                            ? optionRows(database_, entity, p)
+                                            : readRows(entity, p);
         execute(database_, QStringLiteral("COMMIT"));
         return result;
     } catch (...) {
@@ -132,7 +204,8 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     QString select, from, search, statusColumn;
     if (entity == QStringLiteral("stations")) {
         select = QStringLiteral(
-            "s.id,s.code,s.name,s.address,s.latitude,s.longitude,s.price_cents_per_kwh AS "
+            "s.id,s.code,s.name,s.address,s.city,s.district,s.contact_name AS contactName,"
+            "s.contact_phone AS contactPhone,s.latitude,s.longitude,s.price_cents_per_kwh AS "
             "priceCentsPerKwh,s.status,s.updated_at AS updatedAt,(SELECT COUNT(*) FROM chargers "
             "WHERE station_id=s.id) AS totalChargers,(SELECT COUNT(*) FROM chargers WHERE "
             "station_id=s.id AND status='AVAILABLE') AS availableChargers,(SELECT COUNT(*) "
@@ -210,6 +283,38 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         where += QStringLiteral(" AND ") + statusColumn + QStringLiteral("=?");
         bindings << p.value(QStringLiteral("status")).toString();
     }
+    if (entity == QStringLiteral("stations")) {
+        if (p.value(QStringLiteral("idleOnly")).toBool())
+            where += QStringLiteral(" AND NOT EXISTS (SELECT 1 FROM chargers busy WHERE "
+                                    "busy.station_id=s.id AND busy.status IN ('RESERVED','CHARGING'))");
+        for (const auto& field : {QStringLiteral("city"), QStringLiteral("district")}) {
+            if (p.contains(field)) {
+                where += QStringLiteral(" AND s.") + field + QStringLiteral("=?");
+                bindings << p.value(field).toString();
+            }
+        }
+    }
+    if (entity == QStringLiteral("chargers")) {
+        const QList<QPair<QString, QString>> filters{
+            {QStringLiteral("powerWatts"), QStringLiteral("=")},
+            {QStringLiteral("minPowerWatts"), QStringLiteral(">=")},
+            {QStringLiteral("maxPowerWatts"), QStringLiteral("<=")}};
+        for (const auto& filter : filters) {
+            if (p.contains(filter.first)) {
+                where += QStringLiteral(" AND s.power_watts") + filter.second + QLatin1Char('?');
+                bindings << p.value(filter.first).toVariant();
+            }
+        }
+    }
+    if (entity == QStringLiteral("users")) {
+        for (const auto& filter : {qMakePair(QStringLiteral("minBalanceCents"), QStringLiteral(">=")),
+                                   qMakePair(QStringLiteral("maxBalanceCents"), QStringLiteral("<="))}) {
+            if (p.contains(filter.first)) {
+                where += QStringLiteral(" AND s.balance_cents") + filter.second + QLatin1Char('?');
+                bindings << p.value(filter.first).toVariant();
+            }
+        }
+    }
     if (entity == QStringLiteral("chargers") && p.contains(QStringLiteral("stationId"))) {
         where += QStringLiteral(" AND s.station_id=?");
         bindings << p.value(QStringLiteral("stationId")).toString();
@@ -219,8 +324,22 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
         bindings << p.value(QStringLiteral("type")).toString();
     }
     if (entity == QStringLiteral("chargers") && p.value(QStringLiteral("abnormalOnly")).toBool())
-        where += QStringLiteral(" AND s.status IN ('FAULT','OFFLINE')");
+        where += QStringLiteral(" AND (s.status IN ('FAULT','OFFLINE') OR EXISTS "
+                                "(SELECT 1 FROM charger_exceptions e WHERE e.charger_id=s.id "
+                                "AND e.status IN ('ACTIVE','ACKNOWLEDGED','RECOVERING')))");
     if (entity == QStringLiteral("orders")) {
+        if (p.contains(QStringLiteral("orderNo"))) {
+            where += QStringLiteral(" AND s.order_no=?");
+            bindings << p.value(QStringLiteral("orderNo")).toString();
+        }
+        if (p.contains(QStringLiteral("userKeyword"))) {
+            where += QStringLiteral(" AND u.nickname LIKE ? ESCAPE '!'");
+            bindings << literalLikePattern(p.value(QStringLiteral("userKeyword")).toString());
+        }
+        if (p.contains(QStringLiteral("phone"))) {
+            where += QStringLiteral(" AND u.phone=?");
+            bindings << p.value(QStringLiteral("phone")).toString();
+        }
         if (p.contains(QStringLiteral("stationId"))) {
             where += QStringLiteral(" AND c.station_id=?");
             bindings << p.value(QStringLiteral("stationId")).toString();
@@ -230,7 +349,7 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
             bindings << p.value(QStringLiteral("chargerId")).toString();
         }
     }
-    if (entity == QStringLiteral("orders") || entity == QStringLiteral("recharges") ||
+    if (entity == QStringLiteral("orders") || entity == QStringLiteral("users") || entity == QStringLiteral("recharges") ||
         entity == QStringLiteral("operation_logs")) {
         if (p.contains(QStringLiteral("createdAtFrom"))) {
             where += QStringLiteral(" AND s.created_at>=?");
@@ -374,6 +493,13 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
     while (q.next()) {
         auto value = row(q);
         if (entity == QStringLiteral("stations")) {
+            // Contact information may be absent on legacy rows. Full phone is
+            // exposed only by authenticated station detail, never list/options.
+            if (!p.contains(QStringLiteral("id")) && !value.value(QStringLiteral("contactPhone")).isNull()) {
+                const auto phone = value.value(QStringLiteral("contactPhone")).toString();
+                value.insert(QStringLiteral("contactPhone"), phone.size() == 11
+                    ? phone.left(3) + QStringLiteral("****") + phone.right(4) : QStringLiteral("***"));
+            }
             // Connectivity and availability are different concepts: a faulted
             // charger is still online. Share the global summary's non-OFFLINE
             // definition and compute both list/detail percentages here.
@@ -390,12 +516,27 @@ QJsonObject AdminRepository::readRows(const QString& entity, const QJsonObject& 
                                             : double(onlineChargers) / double(totalChargers) * 100.0);
         }
         if (entity == QStringLiteral("chargers")) {
+            value.insert(QStringLiteral("activeException"), AdminChargerExtensions::activeException(
+                database_, value.value(QStringLiteral("id")).toString()));
             const QString state = value.value(QStringLiteral("status")).toString();
             // State classification, NOT a hardware fault diagnosis or event time.
             value.insert(QStringLiteral("exceptionType"),
                          state == QStringLiteral("FAULT") || state == QStringLiteral("OFFLINE")
                              ? QJsonValue(state)
                              : QJsonValue(QJsonValue::Null));
+        }
+        if (entity == QStringLiteral("orders") && p.contains(QStringLiteral("id"))) {
+            QJsonObject billing;
+            if (!orderBillingDto(database_, value.value(QStringLiteral("id")).toString().toLongLong(), &billing))
+                throw AdminFailure("DATABASE_ERROR");
+            for (auto it = billing.constBegin(); it != billing.constEnd(); ++it)
+                value.insert(it.key(), it.value());
+        }
+        if (entity == QStringLiteral("recharges")) {
+            const auto transaction = value.value(QStringLiteral("transactionNo")).toString();
+            value.insert(QStringLiteral("transactionNo"), transaction.size() > 8
+                ? transaction.left(4) + QStringLiteral("****") + transaction.right(4)
+                : QStringLiteral("****"));
         }
         items.append(value);
     }
@@ -520,18 +661,25 @@ QJsonObject AdminRepository::mutate(qint64 adminId, const QString& credentialSta
         QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
         QString id = p.value(QStringLiteral("id")).toString();
         QJsonObject result;
-        if (action == QStringLiteral("station.create")) {
+        if (action == QStringLiteral("charger_exceptions.recover")) {
+            result = AdminChargerExtensions::recover(database_, adminId, p, now);
+        } else if (action == QStringLiteral("station.create")) {
             auto q =
                 execute(database_,
                         QStringLiteral("INSERT INTO "
                                        "stations(code,name,address,latitude,longitude,price_cents_"
-                                       "per_kwh,status,updated_at) VALUES(?,?,?,?,?,?,'ACTIVE',?)"),
+                                       "per_kwh,city,district,contact_name,contact_phone,status,updated_at) "
+                                       "VALUES(?,?,?,?,?,?,?,?,?,?,'ACTIVE',?)"),
                         {p.value(QStringLiteral("code")).toString(),
                          p.value(QStringLiteral("name")).toString(),
                          p.value(QStringLiteral("address")).toString(),
                          p.value(QStringLiteral("latitude")).toDouble(),
                          p.value(QStringLiteral("longitude")).toDouble(),
-                         p.value(QStringLiteral("priceCentsPerKwh")).toVariant(), now});
+                         p.value(QStringLiteral("priceCentsPerKwh")).toVariant(),
+                         p.value(QStringLiteral("city")).toVariant(),
+                         p.value(QStringLiteral("district")).toVariant(),
+                         p.value(QStringLiteral("contactName")).toVariant(),
+                         p.value(QStringLiteral("contactPhone")).toVariant(), now});
             id = q.lastInsertId().toString();
             const auto chargers = p.value(QStringLiteral("chargers")).toArray();
             for (const auto& value : chargers) {
@@ -569,6 +717,17 @@ QJsonObject AdminRepository::mutate(qint64 adminId, const QString& credentialSta
                           p.value(QStringLiteral("latitude")).toDouble(),
                           p.value(QStringLiteral("longitude")).toDouble(),
                           p.value(QStringLiteral("priceCentsPerKwh")).toVariant()};
+                const QList<QPair<QString, QString>> contacts{
+                    {QStringLiteral("city"), QStringLiteral("city")},
+                    {QStringLiteral("district"), QStringLiteral("district")},
+                    {QStringLiteral("contactName"), QStringLiteral("contact_name")},
+                    {QStringLiteral("contactPhone"), QStringLiteral("contact_phone")}};
+                for (const auto& contact : contacts) {
+                    if (p.contains(contact.first)) {
+                        update += QLatin1Char(',') + contact.second + QStringLiteral("=?");
+                        values << p.value(contact.first).toString();
+                    }
+                }
             } else {
                 QString target = p.value(QStringLiteral("status")).toString();
                 if (action == QStringLiteral("charger.restart"))
@@ -613,6 +772,11 @@ QJsonObject AdminRepository::mutate(qint64 adminId, const QString& credentialSta
                                               "charger_id=? AND status='ACTIVE'"),
                                {id}))
                         throw AdminFailure("RESOURCE_BUSY");
+                    // Restart is a state simulation, not an exception recovery
+                    // command. It must not make an unresolved fault reservable.
+                    if (action == QStringLiteral("charger.restart") &&
+                        current.value(QStringLiteral("activeException")).isObject())
+                        throw AdminFailure("INVALID_STATE_TRANSITION");
                     if (target == QStringLiteral("AVAILABLE") &&
                         !scalar(database_,
                                 QStringLiteral(
@@ -631,6 +795,12 @@ QJsonObject AdminRepository::mutate(qint64 adminId, const QString& credentialSta
                         values);
             if (updated.numRowsAffected() != 1)
                 throw AdminFailure("CONFLICT");
+            if (entity == QStringLiteral("chargers"))
+                AdminChargerExtensions::recordStatusChange(
+                    database_, id, current.value(QStringLiteral("status")).toString(),
+                    action == QStringLiteral("charger.restart") ? QStringLiteral("AVAILABLE")
+                                                                  : p.value(QStringLiteral("status")).toString(),
+                    now);
             result = readRows(entity, {{QStringLiteral("id"), id}});
             if (action == QStringLiteral("charger.restart"))
                 result.insert(QStringLiteral("simulated"), true);

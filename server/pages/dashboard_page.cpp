@@ -411,7 +411,7 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
         &exceptionListButton, this);
     auto* exceptionLayout = qobject_cast<QVBoxLayout*>(exceptionCard->layout());
     auto* exceptionTable = createDashboardTable(
-        {tr("电桩编号"), tr("所属电站"), tr("异常类型"), tr("记录更新时间"), tr("操作")}, exceptionCard);
+        {tr("电桩编号"), tr("所属电站"), tr("活动异常"), tr("异常发生时间"), tr("操作")}, exceptionCard);
     exceptionTable->horizontalHeader()->setStretchLastSection(false);
     exceptionTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     exceptionTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
@@ -575,9 +575,11 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     const auto abnormalItems = abnormalities.value("items").toArray();
     for (const auto& value : abnormalItems) {
         const auto item = value.toObject(); const int row = exceptionTable_->rowCount();
-        const auto exception = item.value("exceptionType").toString() == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
+        const auto event = item.value(QStringLiteral("activeException")).toObject();
+        const auto exception = event.isEmpty() ? tr("—（无事件记录）")
+            : tr("#%1 %2").arg(event.value(QStringLiteral("id")).toString(), event.value(QStringLiteral("safeSummary")).toString());
         setRow(exceptionTable_, row, {item.value("code").toString(), item.value("stationName").toString(),
-               exception, formatBeijingDateTime(item.value("updatedAt").toString()), tr("请至电桩管理处理")});
+               exception, formatBeijingDateTime(event.value(QStringLiteral("occurredAt")).toString()), tr("请至电桩管理处理")});
     }
     if (abnormalItems.isEmpty()) {
         setEmptyRow(exceptionTable_, tr("当前没有异常电桩（服务端实时数据）"));

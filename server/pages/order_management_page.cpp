@@ -1,4 +1,5 @@
 #include "order_management_page.h"
+#include "admin_option_loader.h"
 
 #include "admin_request_gateway.h"
 #include "management_page_widgets.h"
@@ -418,6 +419,7 @@ void OrderManagementPage::showLatestOrders()
     chargerComboBox_->setCurrentIndex(0);
     statusComboBox_->setCurrentIndex(0);
     dateRangeComboBox_->setCurrentIndex(0);
+    if (realMode_ && chargerOptions_) chargerOptions_->reload({}, false);
     applyFilters();
     if (!realMode_) setFeedback(tr("正在显示演示日最新的 %1 笔本地 Mock 订单").arg(filteredRecordIndexes_.size()));
 }
@@ -463,13 +465,19 @@ void OrderManagementPage::resetFilters()
     chargerComboBox_->setCurrentIndex(0);
     statusComboBox_->setCurrentIndex(0);
     dateRangeComboBox_->setCurrentIndex(0);
+    if (realMode_) {
+        // Reset the option loaders as well as the visible combo boxes: their
+        // search text and stationId are independent server-query state.
+        if (stationOptions_) stationOptions_->reload({}, false);
+        if (chargerOptions_) chargerOptions_->reload({}, false);
+    }
     applyFilters();
     if (!realMode_) setFeedback(tr("已重置筛选条件，显示全部本地 Mock 订单"));
 }
 
 void OrderManagementPage::refreshOrderList()
 {
-    if (realMode_) { requestList(); return; }
+    if (realMode_) { requestFilterOptions(); requestList(); return; }
     rebuildTable();
     setFeedback(tr("已于 2025-06-01 10:30:00 刷新本地 Mock 订单；真实结果需等待 Service 返回。"));
 }
@@ -568,7 +576,7 @@ void OrderManagementPage::showOrderDetails(int recordIndex, bool requestDetails)
     if (realMode_) {
         chargingInfoLabel_->setText(tr("电站名称　%1\n电桩编号　%2\n创建时间　%3\n时长　%4\n电量　%5 kWh\n开始/结束时间、SOC：契约按订单实际字段返回，当前列表未展示")
                                         .arg(record.station, record.charger, record.startAt, record.duration, formatKwh(record.energyWh)));
-        feeInfoLabel_->setText(tr("订单金额　¥ %1\n电价快照、费用拆分：当前 DTO 不提供拆分字段").arg(formatCents(totalCents)));
+        feeInfoLabel_->setText(tr("订单金额　¥ %1\n费用明细　—（请刷新详情）").arg(formatCents(totalCents)));
         paymentInfoLabel_->setText(tr("支付信息：契约未提供"));
         refreshButton_->setEnabled(true);
         return;
@@ -659,26 +667,37 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
         if (id == listRequestId_) handleListResponse(response);
         else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
-        else if (id == stationOptionsRequestId_) handleStationOptionsResponse(response);
-        else if (id == chargerOptionsRequestId_) handleChargerOptionsResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
         if (!authenticated) { hasRealSnapshot_ = false; }
         else { requestFilterOptions(); requestList(); }
     });
-    setManagementMetricCardsUnavailable(this, tr("当前契约未提供订单页汇总指标"));
+    stationOptions_ = new AdminOptionLoader(gateway_, stationComboBox_, QStringLiteral("stations.options"),
+        tr("全部电站"), QStringLiteral("order-station-options"), this);
+    chargerOptions_ = new AdminOptionLoader(gateway_, chargerComboBox_, QStringLiteral("chargers.options"),
+        tr("全部电桩"), QStringLiteral("order-charger-options"), this);
+    connect(stationComboBox_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
+        if (stationComboBox_->itemData(index).toString() == QStringLiteral("__load_more__")) return;
+        QJsonObject filter;
+        const QString id = stationComboBox_->currentData().toString();
+        if (!id.isEmpty()) filter.insert(QStringLiteral("stationId"), id);
+        chargerOptions_->reload(filter, false);
+    });
+    orderNumberLineEdit_->setPlaceholderText(tr("完整订单号（精确）"));
+    userLineEdit_->setPlaceholderText(tr("用户昵称（包含）"));
+    phoneLineEdit_->setPlaceholderText(tr("完整手机号（精确）"));
+    setManagementMetricCardsUnavailable(this, tr("正在加载订单页汇总指标"));
     if (gateway_->isAuthenticated()) { requestFilterOptions(); requestList(); }
 }
 
 void OrderManagementPage::requestFilterOptions()
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
-    stationOptionsRequestId_ = gateway_->request(QStringLiteral("stations.list"),
-        {{QStringLiteral("page"), 1}, {QStringLiteral("pageSize"), 100}, {QStringLiteral("sort"), QStringLiteral("idAsc")}},
-        this, QStringLiteral("order-station-options"));
-    chargerOptionsRequestId_ = gateway_->request(QStringLiteral("chargers.list"),
-        {{QStringLiteral("page"), 1}, {QStringLiteral("pageSize"), 100}, {QStringLiteral("sort"), QStringLiteral("idAsc")}},
-        this, QStringLiteral("order-charger-options"));
+    if (stationOptions_) stationOptions_->reload();
+    QJsonObject filter;
+    const QString stationId = stationComboBox_->currentData().toString();
+    if (!stationId.isEmpty()) filter.insert(QStringLiteral("stationId"), stationId);
+    if (chargerOptions_) chargerOptions_->reload(filter);
 }
 
 void OrderManagementPage::requestList()
@@ -690,10 +709,13 @@ void OrderManagementPage::requestList()
         totalRecords_ = 0; detailRequestId_.clear(); detailExpectedServerId_.clear(); rebuildTable();
     }
     QJsonObject query{{QStringLiteral("page"), currentPage_ + 1}, {QStringLiteral("pageSize"), kPageSize}, {QStringLiteral("sort"), QStringLiteral("createdAtDesc")}};
-    const QString keyword = !orderNumberLineEdit_->text().trimmed().isEmpty() ? orderNumberLineEdit_->text().trimmed()
-                          : !userLineEdit_->text().trimmed().isEmpty() ? userLineEdit_->text().trimmed()
-                                                                        : phoneLineEdit_->text().trimmed();
-    if (!keyword.isEmpty()) query.insert(QStringLiteral("keyword"), keyword);
+    const auto addText = [&query](const QString& key, const QLineEdit* edit) {
+        const QString value = edit->text().trimmed();
+        if (!value.isEmpty()) query.insert(key, value);
+    };
+    addText(QStringLiteral("orderNo"), orderNumberLineEdit_);
+    addText(QStringLiteral("userKeyword"), userLineEdit_);
+    addText(QStringLiteral("phone"), phoneLineEdit_);
     if (!stationComboBox_->currentData().toString().isEmpty()) query.insert(QStringLiteral("stationId"), stationComboBox_->currentData().toString());
     if (!chargerComboBox_->currentData().toString().isEmpty()) query.insert(QStringLiteral("chargerId"), chargerComboBox_->currentData().toString());
     const QString statusText = statusComboBox_->currentText();
@@ -712,34 +734,6 @@ void OrderManagementPage::requestList()
     listRequestId_ = gateway_->request(QStringLiteral("orders.list"), query, this, QStringLiteral("order-list"));
     query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
     summaryRequestId_ = gateway_->request(QStringLiteral("orders.summary"), query, this, QStringLiteral("order-summary"));
-}
-
-void OrderManagementPage::handleStationOptionsResponse(const QJsonObject& response)
-{
-    if (!response.value(QStringLiteral("success")).toBool()) return;
-    const QString selected = stationComboBox_->currentData().toString();
-    stationComboBox_->clear();
-    stationComboBox_->addItem(tr("全部电站"), QString());
-    for (const auto& value : response.value(QStringLiteral("data")).toObject().value(QStringLiteral("items")).toArray()) {
-        const auto item = value.toObject();
-        stationComboBox_->addItem(item.value(QStringLiteral("name")).toString(), item.value(QStringLiteral("id")).toString());
-    }
-    const int index = stationComboBox_->findData(selected);
-    stationComboBox_->setCurrentIndex(index >= 0 ? index : 0);
-}
-
-void OrderManagementPage::handleChargerOptionsResponse(const QJsonObject& response)
-{
-    if (!response.value(QStringLiteral("success")).toBool()) return;
-    const QString selected = chargerComboBox_->currentData().toString();
-    chargerComboBox_->clear();
-    chargerComboBox_->addItem(tr("全部电桩"), QString());
-    for (const auto& value : response.value(QStringLiteral("data")).toObject().value(QStringLiteral("items")).toArray()) {
-        const auto item = value.toObject();
-        chargerComboBox_->addItem(item.value(QStringLiteral("code")).toString() + tr("（%1）").arg(item.value(QStringLiteral("stationName")).toString()), item.value(QStringLiteral("id")).toString());
-    }
-    const int index = chargerComboBox_->findData(selected);
-    chargerComboBox_->setCurrentIndex(index >= 0 ? index : 0);
 }
 
 void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
@@ -763,9 +757,19 @@ void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
                                            formatBeijingDateTime(item.value(QStringLiteral("startedAt")).toString()),
                                            formatBeijingDateTime(item.value(QStringLiteral("stoppedAt")).toString()),
                                            record.duration, formatKwh(record.energyWh)));
-    feeInfoLabel_->setText(tr("电价快照　¥ %1 / kWh\n订单金额　¥ %2")
-                                 .arg(formatCents(item.value(QStringLiteral("unitPriceCentsPerKwh")).toInteger()),
-                                      formatCents(record.chargeFeeCents)));
+    const auto fees = item.value(QStringLiteral("feeBreakdown")).toObject();
+    const auto pricing = item.value(QStringLiteral("pricingSnapshot")).toObject();
+    if (item.value(QStringLiteral("billingAvailability")).toString() != QStringLiteral("AVAILABLE") || fees.isEmpty()) {
+        feeInfoLabel_->setText(tr("费用明细　—\n费率快照　—\n旧订单无可核验快照，不反推费用组成。"));
+    } else {
+        const auto money = [&fees](const QString& key) { return formatCents(fees.value(key).toInteger()); };
+        feeInfoLabel_->setText(tr("费用明细%1\n电费　¥ %2\n服务费　¥ %3\n停车费　¥ %4\n优惠　¥ %5\n应付　¥ %6\n已付　¥ %7\n币种　%8\n费率版本　%9")
+            .arg(item.value(QStringLiteral("estimated")).toBool() ? tr("（充电中暂估）") : QString(),
+                 money(QStringLiteral("energyFeeCents")), money(QStringLiteral("serviceFeeCents")),
+                 money(QStringLiteral("parkingFeeCents")), money(QStringLiteral("discountCents")),
+                 money(QStringLiteral("payableCents")), money(QStringLiteral("paidCents")),
+                 fees.value(QStringLiteral("currency")).toString(), pricing.value(QStringLiteral("version")).toVariant().toString()));
+    }
     paymentInfoLabel_->setText(tr("支付时间　%1\n订单状态　%2")
                                      .arg(formatBeijingDateTime(item.value(QStringLiteral("paidAt")).toString()), orderStatusText(record.status)));
 }
@@ -792,7 +796,7 @@ void OrderManagementPage::handleListResponse(const QJsonObject& response)
         if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
     }
     rebuildTable();
-    if (selectedRecordIndex_ >= 0) showOrderDetails(selectedRecordIndex_, false);
+    if (selectedRecordIndex_ >= 0) showOrderDetails(selectedRecordIndex_, true);
     setFeedback(totalRecords_ ? tr("已加载 %1 笔订单（服务端分页）").arg(totalRecords_) : tr("当前没有订单数据"));
 }
 

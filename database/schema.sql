@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS stations (
     code TEXT NOT NULL UNIQUE CHECK (length(trim(code)) BETWEEN 1 AND 32),
     name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 64),
     address TEXT NOT NULL CHECK (length(trim(address)) BETWEEN 1 AND 255),
+    -- Legacy rows remain NULL: unknown contact information is never invented.
+    city TEXT CHECK (city IS NULL OR length(trim(city)) BETWEEN 1 AND 64),
+    district TEXT CHECK (district IS NULL OR length(trim(district)) BETWEEN 1 AND 64),
+    contact_name TEXT CHECK (contact_name IS NULL OR length(trim(contact_name)) BETWEEN 1 AND 64),
+    contact_phone TEXT CHECK (contact_phone IS NULL OR
+        (length(contact_phone) = 11 AND contact_phone GLOB '1[3-9]*'
+         AND contact_phone NOT GLOB '*[^0-9]*')),
     latitude REAL NOT NULL CHECK (latitude BETWEEN -90.0 AND 90.0),
     longitude REAL NOT NULL CHECK (longitude BETWEEN -180.0 AND 180.0),
     price_cents_per_kwh INTEGER NOT NULL
@@ -148,6 +155,9 @@ CREATE TABLE IF NOT EXISTS orders (
     started_at TEXT,
     stopped_at TEXT,
     paid_at TEXT,
+    telemetry_captured_at TEXT,
+    telemetry_power_watts INTEGER CHECK (telemetry_power_watts IS NULL OR
+        (typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0)),
     updated_at TEXT NOT NULL
         DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     CHECK (status NOT IN ('CHARGING', 'WAITING_PAYMENT', 'COMPLETED') OR started_at IS NOT NULL),
@@ -161,6 +171,45 @@ CREATE TABLE IF NOT EXISTS orders (
         REFERENCES reservations(id, user_id, charger_id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
+
+-- One immutable tariff policy per new order. No backfill for historic orders:
+-- their amount alone cannot prove a breakdown or which policy was applied.
+CREATE TABLE IF NOT EXISTS order_pricing_snapshots (
+    order_id INTEGER PRIMARY KEY,
+    version TEXT NOT NULL CHECK (version = 'energy-only-v1'),
+    unit_price_cents_per_kwh INTEGER NOT NULL CHECK (
+        typeof(unit_price_cents_per_kwh) = 'integer'
+        AND unit_price_cents_per_kwh BETWEEN 0 AND 9007199254740991),
+    captured_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS charger_exceptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    charger_id INTEGER NOT NULL,
+    code TEXT NOT NULL CHECK (code IN ('SIMULATED_FAULT', 'SIMULATED_OFFLINE')),
+    severity TEXT NOT NULL CHECK (severity IN ('WARNING', 'CRITICAL')),
+    safe_summary TEXT NOT NULL CHECK (length(safe_summary) BETWEEN 1 AND 256),
+    status TEXT NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('ACTIVE', 'ACKNOWLEDGED', 'RECOVERING', 'RECOVERED')),
+    occurred_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    recovered_at TEXT,
+    recoverable INTEGER NOT NULL DEFAULT 1 CHECK (recoverable IN (0, 1)),
+    recovery_action TEXT NOT NULL DEFAULT 'SIMULATE_RESTORE'
+        CHECK (recovery_action = 'SIMULATE_RESTORE'),
+    recovered_by_admin_id INTEGER,
+    recovery_command_id TEXT,
+    recovery_message TEXT CHECK (recovery_message IS NULL OR length(recovery_message) <= 256),
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (charger_id) REFERENCES chargers(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (recovered_by_admin_id) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_charger_exceptions_charger_status_occurred
+    ON charger_exceptions(charger_id, status, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_charger_exceptions_occurred
+    ON charger_exceptions(occurred_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS recharge_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -346,9 +395,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_active_charger
     ON orders(charger_id)
     WHERE status IN ('RESERVED', 'CHARGING');
 
--- 版本 3：在版本 2（管理查询索引刷新）之上新增用户域五表
--- notifications/coupons/points_ledger/user_checkins/charger_ratings；
--- 旧 v1/v2 备份经 restore 迁移（应用本脚本补齐缺表缺索引）后升到 3。
-PRAGMA user_version = 3;
+-- v4 adds optional legacy station contact columns, persisted simulated meter
+-- samples, independent exception events and explicit order tariff snapshots.
+-- DatabaseConnection atomically adds missing columns on supported v1-v3 files.
+PRAGMA user_version = 4;
 
 COMMIT;
