@@ -16,6 +16,7 @@
 #include "app_bridge.h"
 #include "map_bridge.h"
 #include "service_bridges.h"
+#include "charging/client/profile_charging/progress_service.h"
 
 using charging::qml::QmlApp;
 using charging::qml::MapBridge;
@@ -357,6 +358,46 @@ private slots:
         QCOMPARE(navigated.last().at(0).toString(), QStringLiteral("charging"));
         QVERIFY(!toast.isEmpty());
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
+    }
+
+    // 经验等级批（2026-09-09）真壳端到端：「我的」页 hero 里等级徽章/进度条/
+    // 经验行渲染，点徽章进等级页，「每日任务」路由进任务页；App.navigate
+    // 漏斗把浏览型任务（月报）自动折算成经验且当日幂等。
+    void profileLevelBarTasksPageAndXpFunnel()
+    {
+        bootShell(QStringLiteral("profile"));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app_->progressService());
+        QVERIFY(prog);
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("uiLevelBar")) != nullptr);
+        auto* xpLabel = findItem(window_->contentItem(), QStringLiteral("uiLevelXpLabel"));
+        QVERIFY(xpLabel != nullptr);
+        QVERIFY(!xpLabel->property("text").toString().isEmpty());
+
+        QVERIFY(realClick(window_, findItem(window_->contentItem(), QStringLiteral("uiLevelBadgeButton"))));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("levelPage")) != nullptr);
+
+        app_->navigate(QStringLiteral("profile"));    // tab 重进（clear+replace 同款）
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("profilePage")) != nullptr);
+        app_->navigate(QStringLiteral("tasks"));
+        QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("tasksPage")) != nullptr);
+        QVERIFY(findItem(window_->contentItem(), QStringLiteral("uiTasksTitle")) != nullptr);
+
+        // stats 任务只会被 navigate 漏斗点亮（本二进制无其它用例进月报页）。
+        auto taskDone = [prog](const QString& id) {
+            const QVariantList rows = prog->tasks();
+            for (const QVariant& row : rows)
+                if (row.toMap().value(QStringLiteral("id")).toString() == id)
+                    return row.toMap().value(QStringLiteral("done")).toBool();
+            return true;
+        };
+        QVERIFY(!taskDone(QStringLiteral("stats")));
+        const qint64 before = prog->xp();
+        app_->navigate(QStringLiteral("stats"));
+        QCOMPARE(prog->xp(), before + 20);
+        QVERIFY(taskDone(QStringLiteral("stats")));
+        app_->navigate(QStringLiteral("profile"));    // 同事件再进：幂等不加经验
+        app_->navigate(QStringLiteral("stats"));
+        QCOMPARE(prog->xp(), before + 20);
     }
 };
 
