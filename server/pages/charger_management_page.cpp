@@ -1,4 +1,5 @@
 #include "charger_management_page.h"
+#include "admin_option_loader.h"
 
 #include "admin_request_gateway.h"
 #include "dashboard_visual_widgets.h"
@@ -176,7 +177,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
         {tr("电桩编号"), tr("所属电站"), tr("类型"), tr("功率"), tr("状态"),
-         tr("异常分类（状态）"), tr("累计次数"), tr("累计时长"), tr("记录更新时间"), tr("操作")});
+         tr("活动异常事件"), tr("累计次数"), tr("累计时长"), tr("记录更新时间"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -257,7 +258,19 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     detailRuntimeInfoLabel_ = createTextLabel(QString(),
                                               QStringLiteral("color:#65738a; font-size:13px;"), detailCard);
     detailRuntimeInfoLabel_->setWordWrap(true);
+    detailRuntimeInfoLabel_->setObjectName(QStringLiteral("chargerRuntimeInfo"));
     detailLayout->addWidget(detailRuntimeInfoLabel_);
+    writeStatusLabel_ = createTextLabel(QString(), QStringLiteral("color:#65738a; font-size:12px;"), detailCard);
+    writeStatusLabel_->setObjectName(QStringLiteral("chargerWriteStatus"));
+    writeStatusLabel_->setWordWrap(true);
+    writeStatusLabel_->setTextFormat(Qt::PlainText);
+    writeStatusLabel_->hide();
+    detailLayout->addWidget(writeStatusLabel_);
+    retryWriteButton_ = new QPushButton(tr("按原操作编号核对 / 重试"), detailCard);
+    retryWriteButton_->setObjectName(QStringLiteral("chargerRetryWriteButton"));
+    retryWriteButton_->hide();
+    detailLayout->addWidget(retryWriteButton_);
+    connect(retryWriteButton_, &QPushButton::clicked, this, &ChargerManagementPage::retryPendingWrite);
     detailLayout->addStretch();
     restartButton_ = new QPushButton(tr("远程重启"), detailCard);
     restartButton_->setObjectName(QStringLiteral("primaryButton"));
@@ -501,6 +514,9 @@ void ChargerManagementPage::showChargerDetails(int recordIndex, bool requestDeta
         detailExpectedServerId_ = record.serverId;
         detailRequestId_ = gateway_->request(QStringLiteral("chargers.get"), {{QStringLiteral("id"), record.serverId}}, this,
                                              QStringLiteral("charger-detail"));
+        runtimeExpectedServerId_ = record.serverId;
+        runtimeRequestId_ = gateway_->request(QStringLiteral("chargers.runtime.get"), {{QStringLiteral("id"), record.serverId}},
+                                              this, QStringLiteral("charger-runtime"));
     }
     detailCodeLabel_->setText(record.code);
     detailStatusLabel_->setText(record.status);
@@ -509,10 +525,7 @@ void ChargerManagementPage::showChargerDetails(int recordIndex, bool requestDeta
     if (realMode_) {
         detailBasicInfoLabel_->setText(tr("电桩类型　%1\n额定功率　%2\n服务端 ID　%3")
                                            .arg(record.type, record.power, record.serverId));
-        detailRuntimeInfoLabel_->setText(tr("累计次数　%1 次\n累计时长　%2\n当前状态　%3\n异常分类　%4\n记录更新时间　%5")
-                                             .arg(QString::number(record.totalSessions), record.totalDuration, record.status,
-                                                  record.alertType.isEmpty() ? tr("无（契约不记录诊断事件）") : record.alertType,
-                                                  record.lastHeartbeat));
+        renderRuntime();
         updateDetailActions();
         return;
     }
@@ -541,23 +554,29 @@ void ChargerManagementPage::updateDetailActions()
 {
     const bool hasSelection = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size();
     const QString status = hasSelection ? records_.at(selectedRecordIndex_).status : QString();
-    const bool canRestart = hasSelection && status != tr("充电中") && status != tr("已预约");
+    const auto exception = hasSelection ? activeExceptions_.value(records_.at(selectedRecordIndex_).serverId) : QJsonObject();
+    const bool writeAllowed = !realMode_ || (gateway_ && gateway_->isAuthenticated() && pendingWriteAction_.isEmpty());
+    const bool canRestart = writeAllowed && hasSelection && status != tr("充电中") && status != tr("已预约")
+        && (!realMode_ || exception.isEmpty());
     restartButton_->setEnabled(canRestart);
     restartButton_->setToolTip(canRestart ? (realMode_ ? tr("受控状态模拟；不会向真实硬件发送命令") : tr("仅更新本地 Mock 状态"))
                                           : tr("充电中或已预约的电桩不可远程重启"));
     refreshStatusButton_->setEnabled(hasSelection);
-    const bool canClearAlert = hasSelection && (status == tr("故障") || status == tr("离线"));
-    clearAlertButton_->setEnabled(!realMode_ && canClearAlert);
-    clearAlertButton_->setToolTip(realMode_ ? tr("当前契约不支持“解除告警”；可使用受控重启恢复为可用") : (canClearAlert ? tr("仅解除本地 Mock 告警")
+    const bool canClearAlert = writeAllowed && hasSelection && (status == tr("故障") || status == tr("离线"));
+    clearAlertButton_->setEnabled(realMode_ ? canClearAlert && exception.value(QStringLiteral("recoverable")).toBool()
+        && (exception.value(QStringLiteral("status")).toString() == QStringLiteral("ACTIVE")
+            || exception.value(QStringLiteral("status")).toString() == QStringLiteral("ACKNOWLEDGED")) : canClearAlert);
+    clearAlertButton_->setToolTip(realMode_ ? tr("按活动异常 ID 和版本提交受控模拟恢复；不是硬件命令") : (canClearAlert ? tr("仅解除本地 Mock 告警")
                                                 : tr("当前电桩没有可解除的告警")));
     if (realMode_) {
         editButton_->setText(tr("设置设备状态"));
-        editButton_->setEnabled(hasSelection && status != tr("充电中") && status != tr("已预约"));
+        editButton_->setEnabled(writeAllowed && hasSelection && status != tr("充电中") && status != tr("已预约"));
         editButton_->setToolTip(tr("仅可标记为故障或离线；服务端会校验占用状态与当前版本"));
     } else {
         editButton_->setText(tr("编辑"));
         editButton_->setEnabled(hasSelection);
     }
+    showWriteStatus();
 }
 
 void ChargerManagementPage::showAddChargerDialog()
@@ -572,7 +591,7 @@ void ChargerManagementPage::showAddChargerDialog()
 void ChargerManagementPage::showEditChargerDialog()
 {
     if (realMode_) {
-        if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) return;
+        if (!pendingWriteAction_.isEmpty() || selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) return;
         // QInputDialog enters a nested event loop, so a timed refresh may
         // rebuild records_ before the operator confirms a target state.
         const ChargerRecord record = records_.at(selectedRecordIndex_);
@@ -584,12 +603,10 @@ void ChargerManagementPage::showEditChargerDialog()
             setFeedback(tr("管理员会话已失效，请重新登录后再提交。"));
             return;
         }
-        writeRequestId_ = gateway_->request(QStringLiteral("charger.status"),
+        submitWrite(QStringLiteral("charger.status"),
             {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
              {QStringLiteral("id"), record.serverId}, {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt},
-             {QStringLiteral("status"), choice == tr("故障") ? QStringLiteral("FAULT") : QStringLiteral("OFFLINE")}}, this,
-            QStringLiteral("charger-write"));
-        setFeedback(tr("正在提交电桩状态更新…"));
+             {QStringLiteral("status"), choice == tr("故障") ? QStringLiteral("FAULT") : QStringLiteral("OFFLINE")}});
         return;
     }
     if (selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()) {
@@ -720,7 +737,7 @@ void ChargerManagementPage::showChargerDialog(int recordIndex)
 
 void ChargerManagementPage::refreshSelectedStatus()
 {
-    if (realMode_) { requestList(); return; }
+    if (realMode_) { requestStationOptions(); requestList(); return; }
     if (selectedRecordIndex_ < 0) {
         return;
     }
@@ -751,12 +768,10 @@ void ChargerManagementPage::restartSelectedCharger()
             setFeedback(tr("管理员会话已失效，请重新登录后再提交。"));
             return;
         }
-        writeRequestId_ = gateway_->request(QStringLiteral("charger.restart"),
+        submitWrite(QStringLiteral("charger.restart"),
             {{QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
              {QStringLiteral("id"), record.serverId},
-             {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt}}, this,
-            QStringLiteral("charger-write"));
-        setFeedback(tr("正在提交受控模拟重启…"));
+             {QStringLiteral("expectedUpdatedAt"), record.expectedUpdatedAt}});
         return;
     }
     auto& currentRecord = records_[recordIndex];
@@ -771,11 +786,23 @@ void ChargerManagementPage::restartSelectedCharger()
 
 void ChargerManagementPage::clearSelectedAlert()
 {
-    if (realMode_) return;
-    if (selectedRecordIndex_ < 0 || !clearAlertButton_->isEnabled()) {
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size() || !clearAlertButton_->isEnabled()) {
         return;
     }
     ChargerRecord& record = records_[selectedRecordIndex_];
+    if (realMode_) {
+        const auto exception = activeExceptions_.value(record.serverId);
+        if (!gateway_ || !gateway_->isAuthenticated() || exception.isEmpty()) return;
+        if (QMessageBox::question(this, tr("确认异常恢复"),
+            tr("对异常 #%1 执行受控模拟恢复？只处理本条异常；若仍有其他活动异常，电桩不会被释放。结果以服务端确认为准，此操作不发送硬件命令。")
+                .arg(exception.value(QStringLiteral("id")).toString())) != QMessageBox::Yes) return;
+        submitWrite(QStringLiteral("charger_exceptions.recover"),
+            {{QStringLiteral("id"), exception.value(QStringLiteral("id"))},
+             {QStringLiteral("operationId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+             {QStringLiteral("expectedUpdatedAt"), exception.value(QStringLiteral("updatedAt"))},
+             {QStringLiteral("recoveryAction"), exception.value(QStringLiteral("recoveryAction"))}});
+        return;
+    }
     const auto choice = QMessageBox::question(
         this, tr("确认解除告警"),
         tr("确认解除 %1 的告警并恢复为可用状态吗？该操作仅更新本地 Mock 状态。").arg(record.code));
@@ -825,25 +852,37 @@ void ChargerManagementPage::setAdminGateway(AdminRequestGateway* gateway)
     gateway_ = gateway;
     realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    powerComboBox_->setEnabled(false);
-    powerComboBox_->setToolTip(tr("当前管理员契约不支持按功率筛选"));
+    powerComboBox_->setEnabled(true);
+    powerComboBox_->setToolTip(tr("按额定功率精确筛选，列表与汇总使用同一条件"));
     addButton_->setEnabled(false);
     addButton_->setToolTip(tr("当前管理员契约不支持单独新增电桩"));
     clearAlertButton_->setEnabled(false);
-    clearAlertButton_->setToolTip(tr("当前契约不支持“解除告警”；可使用受控重启恢复为可用"));
+    restartButton_->setText(tr("受控模拟重启"));
+    clearAlertButton_->setText(tr("恢复当前异常（模拟）"));
+    clearAlertButton_->setToolTip(tr("选择可恢复的活动异常后可提交受控模拟恢复"));
     setManagementMetricCardsUnavailable(this, tr("当前契约未提供电桩页汇总指标"));
     connect(gateway_, &AdminRequestGateway::finished, this, [this](const QString& id, const QJsonObject& response) {
         if (id == listRequestId_) handleListResponse(response);
         else if (id == summaryRequestId_) handleSummaryResponse(response);
         else if (id == writeRequestId_) handleWriteResponse(response);
         else if (id == detailRequestId_) handleDetailResponse(response);
-        else if (id == stationOptionsRequestId_) handleStationOptionsResponse(response);
+        else if (id == runtimeRequestId_) handleRuntimeResponse(response);
         else if (id == stationLookupRequestId_) handleStationLookupResponse(response);
     });
     connect(gateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
-        if (!authenticated) { hasRealSnapshot_ = false; }
+        if (!authenticated) {
+            hasRealSnapshot_ = false;
+            if (!pendingWriteAction_.isEmpty()) {
+                writeInFlight_ = false;
+                writeOutcomeUnknown_ = true;
+                writeRequestId_.clear();
+            }
+        }
         else { requestStationOptions(); requestList(); }
+        updateDetailActions();
     });
+    stationOptions_ = new AdminOptionLoader(gateway_, stationComboBox_, QStringLiteral("stations.options"),
+        tr("所属电站"), QStringLiteral("charger-station-options"), this);
     requestStationOptions();
     requestList();
 }
@@ -877,21 +916,20 @@ void ChargerManagementPage::requestList()
     else if (const auto status = statusCode(statusComboBox_->currentText()); !status.isEmpty()) query.insert(QStringLiteral("status"), status);
     if (typeComboBox_->currentIndex() > 0) query.insert(QStringLiteral("type"), typeComboBox_->currentIndex() == 1 ? QStringLiteral("FAST") : QStringLiteral("SLOW"));
     const QList<int> powers{0, 7000, 60000, 120000, 180000};
-    if (!realMode_ && powerComboBox_->currentIndex() > 0)
+    if (powerComboBox_->currentIndex() > 0)
         query.insert(QStringLiteral("powerWatts"), powers.at(powerComboBox_->currentIndex()));
     listRequestId_ = gateway_->request(QStringLiteral("chargers.list"), query, this, QStringLiteral("charger-list"));
     query.remove(QStringLiteral("page")); query.remove(QStringLiteral("pageSize")); query.remove(QStringLiteral("sort"));
     summaryRequestId_ = gateway_->request(QStringLiteral("chargers.summary"), query, this, QStringLiteral("charger-summary"));
 }
 
-void ChargerManagementPage::requestStationOptions()
+void ChargerManagementPage::requestStationOptions(bool onlyRetryFailed)
 {
     if (!gateway_ || !gateway_->isAuthenticated()) return;
-    stationOptionsRequestId_ = gateway_->request(
-        QStringLiteral("stations.list"),
-        {{QStringLiteral("page"), 1}, {QStringLiteral("pageSize"), 100},
-         {QStringLiteral("sort"), QStringLiteral("idAsc")}},
-        this, QStringLiteral("charger-station-options"));
+    if (stationOptions_) {
+        if (onlyRetryFailed) stationOptions_->retryIfFailed();
+        else stationOptions_->reload();
+    }
 }
 
 void ChargerManagementPage::requestStationById(const QString& stationId)
@@ -900,32 +938,6 @@ void ChargerManagementPage::requestStationById(const QString& stationId)
     stationLookupRequestId_ = gateway_->request(
         QStringLiteral("stations.get"), {{QStringLiteral("id"), stationId}}, this,
         QStringLiteral("charger-station-lookup"));
-}
-
-void ChargerManagementPage::handleStationOptionsResponse(const QJsonObject& response)
-{
-    if (!response.value(QStringLiteral("success")).toBool()) return;
-    const QString selectedId = stationComboBox_->currentData().toString();
-    const QString selectedName = stationComboBox_->currentText();
-    stationComboBox_->clear();
-    stationComboBox_->addItem(tr("所属电站"), QString());
-    for (const auto& value : response.value(QStringLiteral("data")).toObject()
-                                 .value(QStringLiteral("items")).toArray()) {
-        const auto station = value.toObject();
-        stationComboBox_->addItem(station.value(QStringLiteral("name")).toString(),
-                                  station.value(QStringLiteral("id")).toString());
-    }
-    const int index = stationComboBox_->findData(selectedId);
-    if (index >= 0) {
-        stationComboBox_->setCurrentIndex(index);
-    } else if (!selectedId.isEmpty()) {
-        // Preserve a successfully looked-up station that is outside the first
-        // options page when the ordinary options refresh arrives afterwards.
-        stationComboBox_->addItem(selectedName, selectedId);
-        stationComboBox_->setCurrentIndex(stationComboBox_->count() - 1);
-    } else {
-        stationComboBox_->setCurrentIndex(0);
-    }
 }
 
 void ChargerManagementPage::handleStationLookupResponse(const QJsonObject& response)
@@ -965,6 +977,9 @@ void ChargerManagementPage::handleDetailResponse(const QJsonObject& response)
         || item.value(QStringLiteral("id")).toString() != detailExpectedServerId_
         || records_.at(selectedRecordIndex_).serverId != detailExpectedServerId_) return;
     auto& record = records_[selectedRecordIndex_];
+    if (record.expectedUpdatedAt != item.value(QStringLiteral("updatedAt")).toString())
+        runtimeSnapshots_.remove(record.serverId);
+    activeExceptions_.insert(record.serverId, item.value(QStringLiteral("activeException")).toObject());
     const QString state = item.value(QStringLiteral("status")).toString();
     record.code = item.value(QStringLiteral("code")).toString(); record.station = item.value(QStringLiteral("stationName")).toString();
     record.type = item.value(QStringLiteral("type")).toString() == QStringLiteral("FAST") ? tr("直流桩") : tr("交流桩");
@@ -972,7 +987,11 @@ void ChargerManagementPage::handleDetailResponse(const QJsonObject& response)
     record.status = state == QStringLiteral("AVAILABLE") ? tr("可用") : state == QStringLiteral("RESERVED") ? tr("已预约") : state == QStringLiteral("CHARGING") ? tr("充电中") : state == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
     const int seconds = item.value(QStringLiteral("totalChargeSeconds")).toInt(); record.totalSessions = item.value(QStringLiteral("totalChargeCount")).toInt();
     record.totalDuration = tr("%1h %2m").arg(seconds / 3600).arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'));
-    record.lastHeartbeat = formatBeijingDateTime(item.value(QStringLiteral("updatedAt")).toString()); record.alertType = item.value(QStringLiteral("exceptionType")).toString(); record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
+    record.lastHeartbeat = formatBeijingDateTime(item.value(QStringLiteral("updatedAt")).toString());
+    const auto event = item.value(QStringLiteral("activeException")).toObject();
+    record.alertType = event.value(QStringLiteral("safeSummary")).toString();
+    record.alertOccurredAt = formatBeijingDateTime(event.value(QStringLiteral("occurredAt")).toString());
+    record.expectedUpdatedAt = item.value(QStringLiteral("updatedAt")).toString();
     showChargerDetails(selectedRecordIndex_, false);
 }
 
@@ -986,17 +1005,26 @@ void ChargerManagementPage::handleListResponse(const QJsonObject& response)
         ? records_.at(selectedRecordIndex_).serverId : QString();
     const auto data = response.value(QStringLiteral("data")).toObject();
     hasRealSnapshot_ = true;
+    QHash<QString, QString> previousVersions;
+    for (const auto& record : records_) previousVersions.insert(record.serverId, record.expectedUpdatedAt);
     records_.clear(); filteredRecordIndexes_.clear(); totalRecords_ = data.value(QStringLiteral("total")).toInt();
+    activeExceptions_.clear();
     selectedRecordIndex_ = -1;
     for (const auto& value : data.value(QStringLiteral("items")).toArray()) {
         const auto item = value.toObject(); const QString code = item.value(QStringLiteral("status")).toString();
+        const QString id = item.value(QStringLiteral("id")).toString();
+        if (previousVersions.value(id) != item.value(QStringLiteral("updatedAt")).toString() || code != QStringLiteral("CHARGING"))
+            runtimeSnapshots_.remove(id);
+        activeExceptions_.insert(item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("activeException")).toObject());
         const QString state = code == QStringLiteral("AVAILABLE") ? tr("可用") : code == QStringLiteral("RESERVED") ? tr("已预约") : code == QStringLiteral("CHARGING") ? tr("充电中") : code == QStringLiteral("FAULT") ? tr("故障") : tr("离线");
         const int seconds = item.value(QStringLiteral("totalChargeSeconds")).toInt();
         records_.append({item.value(QStringLiteral("code")).toString(), item.value(QStringLiteral("stationName")).toString(),
             item.value(QStringLiteral("type")).toString() == QStringLiteral("FAST") ? tr("直流桩") : tr("交流桩"),
             tr("%1 kW").arg(item.value(QStringLiteral("powerWatts")).toInt() / 1000), state, 0,
             item.value(QStringLiteral("totalChargeCount")).toInt(), tr("%1h %2m").arg(seconds / 3600).arg((seconds / 60) % 60, 2, 10, QLatin1Char('0')),
-            formatBeijingDateTime(item.value(QStringLiteral("updatedAt")).toString()), state == tr("故障") || state == tr("离线") ? state : QString(), QString(),
+            formatBeijingDateTime(item.value(QStringLiteral("updatedAt")).toString()),
+            item.value(QStringLiteral("activeException")).toObject().value(QStringLiteral("safeSummary")).toString(),
+            formatBeijingDateTime(item.value(QStringLiteral("activeException")).toObject().value(QStringLiteral("occurredAt")).toString()),
             item.value(QStringLiteral("id")).toString(), item.value(QStringLiteral("updatedAt")).toString()});
         filteredRecordIndexes_.append(records_.size() - 1);
     }
@@ -1004,7 +1032,7 @@ void ChargerManagementPage::handleListResponse(const QJsonObject& response)
         if (records_.at(index).serverId == selectedServerId) { selectedRecordIndex_ = index; break; }
     }
     rebuildTable();
-    if (selectedRecordIndex_ >= 0) showChargerDetails(selectedRecordIndex_, false);
+    if (selectedRecordIndex_ >= 0) showChargerDetails(selectedRecordIndex_, true);
     setManagementMetricCardValue(this, 0, tr("%1 台").arg(totalRecords_),
                                  tr("服务端分页总数（当前筛选）"));
     setFeedback(totalRecords_ ? tr("已加载 %1 台电桩（服务端分页）").arg(totalRecords_) : tr("当前没有电桩数据"));
@@ -1026,13 +1054,148 @@ void ChargerManagementPage::handleSummaryResponse(const QJsonObject& response)
 
 void ChargerManagementPage::handleWriteResponse(const QJsonObject& response)
 {
+    if (pendingWriteAction_.isEmpty()) return;
+    writeRequestId_.clear();
+    writeInFlight_ = false;
     if (!response.value(QStringLiteral("success")).toBool()) {
-        setFeedback(tr("操作未完成：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()));
+        const auto error = response.value(QStringLiteral("error")).toObject();
+        const auto code = error.value(QStringLiteral("code")).toString();
+        // A timeout/disconnect cannot prove the transaction failed. Keep the
+        // exact immutable command until its original administrator replays it.
+        if (code == QStringLiteral("TIMEOUT") || code == QStringLiteral("UNAVAILABLE")) {
+            writeOutcomeUnknown_ = true;
+            setFeedback(tr("操作结果未知；请按原操作编号核对，不要重新发起其他操作。"));
+        } else {
+            pendingWriteAction_.clear();
+            pendingWriteParameters_ = {};
+            pendingWriteAdminId_.clear();
+            writeOutcomeUnknown_ = false;
+            writeStatusLabel_->setText(tr("服务端拒绝操作：%1").arg(error.value(QStringLiteral("message")).toString()));
+            writeStatusLabel_->show();
+            setFeedback(writeStatusLabel_->text());
+            if (code == QStringLiteral("CONFLICT") || code == QStringLiteral("RESOURCE_BUSY") ||
+                code == QStringLiteral("INVALID_STATE_TRANSITION")) requestList();
+        }
+        updateDetailActions();
         return;
     }
-    setFeedback(tr("操作已完成，正在刷新服务数据…"));
+    const auto data = response.value(QStringLiteral("data")).toObject();
+    pendingWriteAction_.clear();
+    pendingWriteParameters_ = {};
+    pendingWriteAdminId_.clear();
+    writeOutcomeUnknown_ = false;
+    const QString recoveryMessage = data.value(QStringLiteral("item")).toObject()
+                                        .value(QStringLiteral("recoveryMessage")).toString();
+    writeStatusLabel_->setText(!recoveryMessage.isEmpty() ? recoveryMessage
+        : data.contains(QStringLiteral("commandId"))
+            ? tr("服务端已处理本条异常（受控模拟）；请刷新核对其他活动异常。")
+            : tr("服务端确认操作完成（受控模拟），未发送硬件命令。"));
+    writeStatusLabel_->show();
+    setFeedback(writeStatusLabel_->text());
+    updateDetailActions();
     requestStationOptions();
     requestList();
+}
+
+void ChargerManagementPage::submitWrite(const QString& action, const QJsonObject& parameters)
+{
+    if (!pendingWriteAction_.isEmpty()) {
+        setFeedback(tr("上一条操作尚未确认，请先按原操作编号核对。"));
+        return;
+    }
+    if (!gateway_ || !gateway_->isAuthenticated()) {
+        setFeedback(tr("管理员会话已失效，请重新登录。"));
+        return;
+    }
+    pendingWriteAction_ = action;
+    pendingWriteParameters_ = parameters;
+    pendingWriteAdminId_ = gateway_->adminId();
+    writeOutcomeUnknown_ = false;
+    sendPendingWrite();
+}
+
+void ChargerManagementPage::retryPendingWrite()
+{
+    if (!writeOutcomeUnknown_ || writeInFlight_ || pendingWriteAction_.isEmpty()) return;
+    sendPendingWrite();
+}
+
+void ChargerManagementPage::sendPendingWrite()
+{
+    if (!gateway_ || !gateway_->isAuthenticated() || writeInFlight_ || pendingWriteAction_.isEmpty() ||
+        gateway_->adminId().isEmpty() || gateway_->adminId() != pendingWriteAdminId_) {
+        showWriteStatus();
+        return;
+    }
+    writeInFlight_ = true;
+    writeRequestId_ = gateway_->request(pendingWriteAction_, pendingWriteParameters_, this,
+                                         QStringLiteral("charger-write"));
+    if (writeRequestId_.isEmpty()) {
+        writeInFlight_ = false;
+        // A full gateway queue did not submit this attempt. If it was a
+        // replay, however, the earlier attempt can still have committed.
+        writeOutcomeUnknown_ = true;
+    }
+    updateDetailActions();
+    setFeedback(writeInFlight_ ? tr("操作已提交，等待服务端确认…")
+                               : tr("暂时无法提交；请按原操作编号重试。"));
+}
+
+void ChargerManagementPage::showWriteStatus()
+{
+    const bool pending = !pendingWriteAction_.isEmpty();
+    const bool sameAdmin = gateway_ && gateway_->isAuthenticated() &&
+                           !pendingWriteAdminId_.isEmpty() && gateway_->adminId() == pendingWriteAdminId_;
+    retryWriteButton_->setVisible(pending && writeOutcomeUnknown_);
+    retryWriteButton_->setEnabled(pending && writeOutcomeUnknown_ && !writeInFlight_ && sameAdmin);
+    if (!pending) return; // Keep the latest explicit write result visible across list refreshes.
+    const QString identity = tr("操作 %1\n目标 %2 / %3\n发起管理员 #%4")
+        .arg(pendingWriteParameters_.value(QStringLiteral("operationId")).toString(), pendingWriteAction_,
+             pendingWriteParameters_.value(QStringLiteral("id")).toString(), pendingWriteAdminId_);
+    writeStatusLabel_->setText((writeInFlight_ ? tr("等待服务端确认；刷新不会取消此操作。\n")
+                                             : tr("操作结果未知，请核对原操作。\n")) + identity +
+        (!sameAdmin ? tr("\n请由原管理员重新登录后核对；其他管理员不能重放此命令。") : QString()));
+    writeStatusLabel_->show();
+}
+
+void ChargerManagementPage::handleRuntimeResponse(const QJsonObject& response)
+{
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()
+        || records_.at(selectedRecordIndex_).serverId != runtimeExpectedServerId_) return;
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        setFeedback(tr("实时监测刷新失败；保留上次采样，请核对采样时间。"));
+        return;
+    }
+    const auto item = response.value(QStringLiteral("data")).toObject().value(QStringLiteral("item")).toObject();
+    if (item.value(QStringLiteral("chargerId")).toString() != runtimeExpectedServerId_) return;
+    runtimeSnapshots_.insert(runtimeExpectedServerId_, item);
+    renderRuntime();
+}
+
+void ChargerManagementPage::renderRuntime()
+{
+    if (selectedRecordIndex_ < 0 || selectedRecordIndex_ >= records_.size()) return;
+    const auto& record = records_.at(selectedRecordIndex_);
+    const auto runtime = runtimeSnapshots_.value(record.serverId);
+    const auto exception = activeExceptions_.value(record.serverId);
+    const bool charging = record.status == tr("充电中") && runtime.value(QStringLiteral("status")).toString() == QStringLiteral("CHARGING");
+    const auto number = [&runtime, charging](const QString& key, double divisor, int digits) {
+        const auto value = runtime.value(key);
+        return charging && value.isDouble() ? QString::number(value.toDouble() / divisor, 'f', digits) : QStringLiteral("—");
+    };
+    const bool simulated = runtime.value(QStringLiteral("source")).toString() == QStringLiteral("SIMULATED_METER");
+    const QString header = simulated ? tr("服务端模拟采样（手动刷新，非硬件遥测）")
+                                     : tr("充电监测（手动刷新，数据来源待确认）");
+    const QString amountLabel = runtime.value(QStringLiteral("estimated")).toBool() ? tr("暂估金额") : tr("当前金额");
+    detailRuntimeInfoLabel_->setText(header + QLatin1Char('\n') +
+        tr("采样时间　%1\n当前功率　%2 kW\n本次电量　%3 kWh\n充电时长　%4 秒\n%5　¥ %6\n最后硬件心跳　%7\n\n活动异常　%8\n发生时间　%9\n异常状态　%10")
+        .arg(formatBeijingDateTime(charging ? runtime.value(QStringLiteral("capturedAt")).toString() : QString()),
+             number(QStringLiteral("currentPowerWatts"), 1000, 1), number(QStringLiteral("energyWh"), 1000, 3),
+             number(QStringLiteral("chargeSeconds"), 1, 0), amountLabel, number(QStringLiteral("currentAmountCents"), 100, 2),
+             formatBeijingDateTime(runtime.value(QStringLiteral("lastHeartbeatAt")).toString()),
+             exception.isEmpty() ? tr("—") : tr("#%1 %2").arg(exception.value(QStringLiteral("id")).toString(), exception.value(QStringLiteral("safeSummary")).toString()),
+             formatBeijingDateTime(exception.value(QStringLiteral("occurredAt")).toString()))
+        .arg(exception.value(QStringLiteral("status")).toString(tr("—"))));
 }
 
 } // namespace charging::server

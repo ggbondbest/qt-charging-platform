@@ -1,6 +1,7 @@
 #include "admin_service.h"
 
 #include "admin_repository.h"
+#include "admin_charger_extensions.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -71,6 +72,17 @@ void stationFields(const QJsonObject& p)
         require(v.isDouble() && std::isfinite(v.toDouble()) && std::abs(v.toDouble()) <= bound);
     }
     integer(p, QStringLiteral("priceCentsPerKwh"), 0, 9007199254740991.0);
+    // Legacy callers may omit contacts; a provided field is never ignored or
+    // cleared implicitly. Current forms submit all four contact fields.
+    for (const auto& key : {QStringLiteral("city"), QStringLiteral("district"),
+                            QStringLiteral("contactName")})
+        if (p.contains(key))
+            textField(p, key, 1, 64);
+    if (p.contains(QStringLiteral("contactPhone"))) {
+        textField(p, QStringLiteral("contactPhone"), 11, 11);
+        require(QRegularExpression(QStringLiteral("^1[3-9][0-9]{9}$"))
+                    .match(p.value(QStringLiteral("contactPhone")).toString()).hasMatch());
+    }
 }
 QJsonObject success(const QJsonObject& data)
 {
@@ -208,9 +220,35 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
             require(days == 7 || days == 30);
             return success(repository_->dashboard(days));
         }
+        if (AdminChargerExtensions::handlesRead(action)) {
+            AdminChargerExtensions::validateRead(action, p);
+            return success(repository_->read(action, p));
+        }
+        if (action == QStringLiteral("operation_logs.actions")) {
+            fields(p, {});
+            return success(repository_->read(action, p));
+        }
         const auto parts = action.split(QLatin1Char('.'));
         require(parts.size() == 2);
         const QString entity = parts.first(), operation = parts.last();
+        if (operation == QStringLiteral("options")) {
+            require(QStringList{QStringLiteral("stations"), QStringLiteral("chargers"),
+                                QStringLiteral("admins")}.contains(entity));
+            QStringList allowed{QStringLiteral("keyword"), QStringLiteral("page"),
+                                QStringLiteral("pageSize")};
+            if (entity == QStringLiteral("chargers"))
+                allowed << QStringLiteral("stationId");
+            fields(p, allowed);
+            if (p.contains(QStringLiteral("keyword")))
+                textField(p, QStringLiteral("keyword"), 0, 64);
+            if (p.contains(QStringLiteral("page")))
+                integer(p, QStringLiteral("page"), 1, 1000000);
+            if (p.contains(QStringLiteral("pageSize")))
+                integer(p, QStringLiteral("pageSize"), 1, 100);
+            if (p.contains(QStringLiteral("stationId")))
+                id(p, QStringLiteral("stationId"));
+            return success(repository_->read(action, p));
+        }
         if (operation == QStringLiteral("list") || operation == QStringLiteral("get") ||
             operation == QStringLiteral("summary")) {
             require(QStringList{QStringLiteral("stations"), QStringLiteral("chargers"),
@@ -231,10 +269,19 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                 }
                 if (entity == QStringLiteral("chargers"))
                     allowed << QStringLiteral("stationId") << QStringLiteral("type")
-                            << QStringLiteral("abnormalOnly");
+                            << QStringLiteral("abnormalOnly") << QStringLiteral("powerWatts")
+                            << QStringLiteral("minPowerWatts") << QStringLiteral("maxPowerWatts");
+                if (entity == QStringLiteral("stations"))
+                    allowed << QStringLiteral("idleOnly") << QStringLiteral("city")
+                            << QStringLiteral("district");
+                if (entity == QStringLiteral("users"))
+                    allowed << QStringLiteral("minBalanceCents") << QStringLiteral("maxBalanceCents");
                 if (entity == QStringLiteral("orders"))
-                    allowed << QStringLiteral("stationId") << QStringLiteral("chargerId");
+                    allowed << QStringLiteral("stationId") << QStringLiteral("chargerId")
+                            << QStringLiteral("orderNo") << QStringLiteral("userKeyword")
+                            << QStringLiteral("phone");
                 const bool timed = entity == QStringLiteral("orders") ||
+                                   entity == QStringLiteral("users") ||
                                    entity == QStringLiteral("recharges") ||
                                    entity == QStringLiteral("operation_logs");
                 if (timed)
@@ -255,7 +302,7 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     integer(p, QStringLiteral("pageSize"), 1, 100);
                 if (p.contains(QStringLiteral("sort"))) {
                     QStringList sorts{QStringLiteral("idAsc"), QStringLiteral("idDesc")};
-                    if (timed)
+                    if (timed && entity != QStringLiteral("users"))
                         sorts << QStringLiteral("createdAtDesc");
                     if (entity == QStringLiteral("chargers"))
                         sorts << QStringLiteral("updatedAtDesc");
@@ -263,6 +310,31 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                 }
                 if (p.contains(QStringLiteral("abnormalOnly")))
                     require(p.value(QStringLiteral("abnormalOnly")).isBool());
+                if (p.contains(QStringLiteral("idleOnly")))
+                    require(p.value(QStringLiteral("idleOnly")).isBool());
+                for (const auto& key : {QStringLiteral("city"), QStringLiteral("district"),
+                                        QStringLiteral("orderNo"), QStringLiteral("userKeyword")})
+                    if (p.contains(key))
+                        textField(p, key, 1, 64);
+                if (p.contains(QStringLiteral("phone"))) {
+                    textField(p, QStringLiteral("phone"), 11, 11);
+                    require(QRegularExpression(QStringLiteral("^1[3-9][0-9]{9}$"))
+                                .match(p.value(QStringLiteral("phone")).toString()).hasMatch());
+                }
+                for (const auto& key : {QStringLiteral("powerWatts"), QStringLiteral("minPowerWatts"),
+                                        QStringLiteral("maxPowerWatts")})
+                    if (p.contains(key))
+                        integer(p, key, 1, 1000000);
+                require(!p.contains(QStringLiteral("powerWatts")) ||
+                        (!p.contains(QStringLiteral("minPowerWatts")) &&
+                         !p.contains(QStringLiteral("maxPowerWatts"))));
+                for (const auto& key : {QStringLiteral("minBalanceCents"), QStringLiteral("maxBalanceCents")})
+                    if (p.contains(key))
+                        integer(p, key, 0, 9007199254740991.0);
+                for (const auto& range : {qMakePair(QStringLiteral("minPowerWatts"), QStringLiteral("maxPowerWatts")),
+                                          qMakePair(QStringLiteral("minBalanceCents"), QStringLiteral("maxBalanceCents"))})
+                    if (p.contains(range.first) && p.contains(range.second))
+                        require(p.value(range.first).toDouble() <= p.value(range.second).toDouble());
                 for (const auto& key :
                      {QStringLiteral("createdAtFrom"), QStringLiteral("createdAtTo")})
                     if (p.contains(key))
@@ -307,7 +379,8 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
         }
         require(QStringList{QStringLiteral("station.create"), QStringLiteral("station.edit"),
                             QStringLiteral("station.status"), QStringLiteral("user.status"),
-                            QStringLiteral("charger.status"), QStringLiteral("charger.restart")}
+                            QStringLiteral("charger.status"), QStringLiteral("charger.restart"),
+                            QStringLiteral("charger_exceptions.recover")}
                     .contains(action));
         textField(p, QStringLiteral("operationId"), 1, 64);
         require(QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]+$"))
@@ -323,7 +396,9 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
             action == QStringLiteral("station.edit")) {
             allowed << QStringLiteral("name") << QStringLiteral("address")
                     << QStringLiteral("latitude") << QStringLiteral("longitude")
-                    << QStringLiteral("priceCentsPerKwh");
+                    << QStringLiteral("priceCentsPerKwh") << QStringLiteral("city")
+                    << QStringLiteral("district") << QStringLiteral("contactName")
+                    << QStringLiteral("contactPhone");
             stationFields(p);
             if (action == QStringLiteral("station.create")) {
                 allowed << QStringLiteral("code") << QStringLiteral("chargers");
@@ -346,6 +421,9 @@ QJsonObject AdminService::handle(const QString& action, const QJsonObject& p, co
                     codes.insert(code);
                 }
             }
+        } else if (action == QStringLiteral("charger_exceptions.recover")) {
+            allowed << QStringLiteral("recoveryAction");
+            AdminChargerExtensions::validateRecover(p);
         } else if (action != QStringLiteral("charger.restart")) {
             allowed << QStringLiteral("status");
             if (entity == QStringLiteral("station"))

@@ -2,7 +2,8 @@
 
 放置数据库路径、连接生命周期、PRAGMA、Schema 初始化和迁移执行器。SQL 定义仍保留在
 仓库顶层 `database/`。当前 `DatabaseConnection` 已实现 QSQLITE 连接生命周期，并从 Qt
-资源逐条执行 Schema 和可选 Seed；后续版本迁移继续在本模块扩展。
+资源逐条执行 Schema 和可选 Seed。当前 Schema v4，受支持的 v1–v3 自动原位迁移；
+建表、补列、索引和版本号在同一事务提交，失败整体回滚。不重建或清空已有业务表。
 
 `applyCityDemoSeed()` 是显式的五市示范目录补齐入口，由 `ServerRuntime` 在
 `--demo-seed` 启动时调用；基础 `open(path, true)` 仍保留 3 站 / 7 桩最小夹具。

@@ -15,6 +15,7 @@ AdminRequestGateway::AdminRequestGateway(ServerRuntime* runtime, QObject* parent
     connect(runtime, &ServerRuntime::adminResponse, this, &AdminRequestGateway::receive);
     const auto stopped = [this] {
         token_.clear();
+        adminId_.clear();
         ++generation_;
         const auto ids = pending_.keys();
         for (const auto& id : ids) {
@@ -66,6 +67,7 @@ void AdminRequestGateway::invalidate()
 {
     revoke(token_);
     token_.clear();
+    adminId_.clear();
     ++generation_;
     const auto ids = pending_.keys();
     for (const auto& id : ids)
@@ -144,6 +146,7 @@ void AdminRequestGateway::receive(const QString& id, QJsonObject response)
     if (entry.action == QStringLiteral("auth.login") &&
         response.value(QStringLiteral("success")).toBool()) {
         token_ = newToken;
+        adminId_ = data.value(QStringLiteral("admin")).toObject().value(QStringLiteral("id")).toString();
         response.insert(QStringLiteral("data"), data);
         emit authenticationChanged(true);
     }

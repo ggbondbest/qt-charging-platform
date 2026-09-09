@@ -27,7 +27,9 @@ public:
     QSqlDatabase database() const;
 
 private:
-    bool executeResourceScript(const QString& resourcePath, QString* errorMessage);
+    bool executeResourceScript(const QString& resourcePath, QString* errorMessage,
+                               bool insideTransaction = false);
+    bool initializeSchema(QString* errorMessage);
     bool migrateManagedIndexes(QString* errorMessage);
 
     QString connectionName_;

@@ -1,4 +1,8 @@
 add_library(charging_server_repositories STATIC
+    admin_charger_extensions.cpp
+    admin_charger_extensions.h
+    admin_order_billing.cpp
+    admin_order_billing.h
     admin_repository.cpp
     admin_repository.h
     charger_repository.cpp

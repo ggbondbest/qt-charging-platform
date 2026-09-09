@@ -24,6 +24,7 @@ public:
     {
         return !token_.isEmpty();
     }
+    QString adminId() const { return adminId_; }
 signals:
     void finished(const QString& requestId, const QJsonObject& response);
     void authenticationChanged(bool authenticated);
@@ -45,6 +46,7 @@ private:
     QPointer<ServerRuntime> runtime_;
     QHash<QString, Pending> pending_;
     QString token_;
+    QString adminId_;
     QString requestPrefix_;
     quint64 generation_ = 0;
 };

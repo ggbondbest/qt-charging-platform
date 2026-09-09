@@ -339,9 +339,20 @@ private slots:
                                                 .toString();
                     QVERIFY2(previousId.toLongLong() < id.toLongLong(), qPrintable(entity));
                 }
-                QCOMPARE(item(call(entity + QStringLiteral(".get"),
-                                   {{QStringLiteral("id"), id}})),
-                         listItem);
+                auto detailItem = item(call(entity + QStringLiteral(".get"),
+                                            {{QStringLiteral("id"), id}}));
+                if (entity == QStringLiteral("orders")) {
+                    // Billing is a detail-only extension; preserve exact parity
+                    // of every existing list field, not just a selected subset.
+                    QCOMPARE(detailItem.value(QStringLiteral("billingAvailability")).toString(),
+                             QStringLiteral("UNAVAILABLE"));
+                    QVERIFY(detailItem.value(QStringLiteral("feeBreakdown")).isNull());
+                    QVERIFY(detailItem.value(QStringLiteral("pricingSnapshot")).isNull());
+                    for (const auto& key : {QStringLiteral("feeBreakdown"), QStringLiteral("pricingSnapshot"),
+                                            QStringLiteral("billingAvailability"), QStringLiteral("estimated")})
+                        detailItem.remove(key);
+                }
+                QCOMPARE(detailItem, listItem);
             }
         }
     }
@@ -648,6 +659,18 @@ private slots:
                                           "fault-1", "FAULT"));
         QVERIFY(ok(fault));
         restart = change(item(fault), "restart-ok", "");
+        restart.remove("status");
+        QCOMPARE(code(call("charger.restart", restart)), QString("INVALID_STATE_TRANSITION"));
+        const auto exception = item(fault).value("activeException").toObject();
+        QVERIFY(!exception.isEmpty());
+        const auto recovery = call("charger_exceptions.recover",
+                                  {{"id", exception.value("id")},
+                                   {"expectedUpdatedAt", exception.value("updatedAt")},
+                                   {"recoveryAction", exception.value("recoveryAction")},
+                                   {"operationId", "fault-recover-1"}});
+        QVERIFY(ok(recovery));
+        QCOMPARE(item(recovery).value("status").toString(), QString("RECOVERED"));
+        restart = change(item(call("chargers.get", {{"id", charger.value("id")}})), "restart-ok", "");
         restart.remove("status");
         const auto recovered = call("charger.restart", restart);
         QVERIFY(ok(recovered));

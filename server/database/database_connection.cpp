@@ -197,9 +197,8 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
                                           .arg(versionError));
         }
     }
-    // Supported on-disk versions: 1 and 2 (pre-user-domain tables, migrated in
-    // place below) and 3 (current). 0 means an empty file (treated as new).
-    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 3) {
+    // Supported legacy versions 1..3 are migrated in one atomic transaction.
+    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 4) {
         return fail(errorMessage, QStringLiteral("Unsupported database schema version: %1")
                                       .arg(schemaVersion));
     }
@@ -219,8 +218,7 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
     }
     databasePath_ = resolvedPath;
 
-    if (!executeResourceScript(QStringLiteral(":/database/schema.sql"), errorMessage) ||
-        !migrateManagedIndexes(errorMessage) ||
+    if (!initializeSchema(errorMessage) ||
         (loadDemoSeed &&
          !executeResourceScript(QStringLiteral(":/database/seed.sql"), errorMessage))) {
         close();
@@ -238,6 +236,57 @@ bool DatabaseConnection::applyCityDemoSeed(QString* errorMessage)
     return executeResourceScript(QStringLiteral(":/database/city_demo_seed.sql"), errorMessage);
 }
 
+bool DatabaseConnection::initializeSchema(QString* errorMessage)
+{
+    QSqlQuery query(database_);
+    for (const auto* pragma : {"PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL",
+                               "PRAGMA synchronous = NORMAL", "PRAGMA busy_timeout = 5000"}) {
+        if (!query.exec(QString::fromLatin1(pragma)))
+            return fail(errorMessage, query.lastError().text());
+    }
+    if (!query.exec(QStringLiteral("BEGIN IMMEDIATE")))
+        return fail(errorMessage, query.lastError().text());
+    const auto rollback = [this, errorMessage](const QString& error) {
+        QSqlQuery cleanup(database_);
+        cleanup.exec(QStringLiteral("ROLLBACK"));
+        return fail(errorMessage, error);
+    };
+    if (!executeResourceScript(QStringLiteral(":/database/schema.sql"), errorMessage, true))
+        return rollback(errorMessage ? *errorMessage : QStringLiteral("Schema migration failed"));
+
+    const QList<QStringList> columns = {
+        {QStringLiteral("stations"), QStringLiteral("city"),
+         QStringLiteral("TEXT CHECK (city IS NULL OR length(trim(city)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("district"),
+         QStringLiteral("TEXT CHECK (district IS NULL OR length(trim(district)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("contact_name"),
+         QStringLiteral("TEXT CHECK (contact_name IS NULL OR length(trim(contact_name)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("contact_phone"),
+         QStringLiteral("TEXT CHECK (contact_phone IS NULL OR (length(contact_phone) = 11 "
+                        "AND contact_phone GLOB '1[3-9]*' AND contact_phone NOT GLOB '*[^0-9]*'))")},
+        {QStringLiteral("orders"), QStringLiteral("telemetry_captured_at"), QStringLiteral("TEXT")},
+        {QStringLiteral("orders"), QStringLiteral("telemetry_power_watts"),
+         QStringLiteral("INTEGER CHECK (telemetry_power_watts IS NULL OR "
+                        "(typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0))")}
+    };
+    for (const auto& column : columns) {
+        if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(column.at(0))))
+            return rollback(query.lastError().text());
+        bool found = false;
+        while (query.next())
+            found = found || query.value(1).toString() == column.at(1);
+        query.finish();
+        if (!found && !query.exec(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
+                                     .arg(column.at(0), column.at(1), column.at(2))))
+            return rollback(query.lastError().text());
+    }
+    if (!migrateManagedIndexes(errorMessage))
+        return rollback(errorMessage ? *errorMessage : QStringLiteral("Index migration failed"));
+    if (!query.exec(QStringLiteral("COMMIT")))
+        return rollback(query.lastError().text());
+    return true;
+}
+
 bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
 {
     const QList<QPair<QString, QString>> managedIndexes = {
@@ -249,21 +298,9 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
                         "ON operation_logs(admin_id, created_at DESC, id DESC)")}
     };
 
-    // 2026-09-08 merge 批：上游 concurrentDatabaseConnections 用例暴露的真竞态在
-    // 这里——Qt transaction() 发 deferred BEGIN，本函数先读 sqlite_master 再
-    // DROP/CREATE 索引属"读→写锁升级"：并发两连接互撞时 SQLite 按防死锁规则
-    // 直接回 BUSY 且不触发 busy handler（timeout 也救不了）。显式 BEGIN
-    // IMMEDIATE 提前拿写锁，竞争落到 handler 排队；Qt 驱动只在自身
-    // transaction() 后才认 commit()/rollback()，故 COMMIT/ROLLBACK 也改直发。
-    QSqlQuery beginQuery(database_);
-    if (!beginQuery.exec(QStringLiteral("BEGIN IMMEDIATE"))) {
-        return fail(errorMessage, QStringLiteral("Unable to start database migration: %1")
-                                      .arg(beginQuery.lastError().text()));
-    }
-
-    const auto rollbackWithError = [this, errorMessage](const QString& message) {
-        QSqlQuery rollback(database_);
-        rollback.exec(QStringLiteral("ROLLBACK"));
+    // initializeSchema already holds BEGIN IMMEDIATE. Do not open a nested
+    // transaction or commit indexes separately from the column/schema upgrade.
+    const auto rollbackWithError = [errorMessage](const QString& message) {
         return fail(errorMessage, message);
     };
 
@@ -299,13 +336,8 @@ bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
     QSqlQuery migrationQuery(database_);
     if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS "
                                             "idx_chargers_status_updated_at")) ||
-        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 3"))) {
+        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 4"))) {
         return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
-                                     .arg(migrationQuery.lastError().text()));
-    }
-    // BEGIN IMMEDIATE 系手工直发，驱动的 commit() 不识别，COMMIT 同样直发。
-    if (!migrationQuery.exec(QStringLiteral("COMMIT"))) {
-        return rollbackWithError(QStringLiteral("Unable to commit database migration: %1")
                                      .arg(migrationQuery.lastError().text()));
     }
     return true;
@@ -339,7 +371,7 @@ QSqlDatabase DatabaseConnection::database() const
 }
 
 bool DatabaseConnection::executeResourceScript(const QString& resourcePath,
-                                               QString* errorMessage)
+                                               QString* errorMessage, bool insideTransaction)
 {
     QFile resource(resourcePath);
     if (!resource.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -350,6 +382,17 @@ bool DatabaseConnection::executeResourceScript(const QString& resourcePath,
     const QString script = QString::fromUtf8(resource.readAll());
     const QStringList statements = splitSqlStatements(script);
     for (const QString& statement : statements) {
+        // initializeSchema owns the transaction and connection PRAGMAs. Keep
+        // CREATE/INDEX/user_version changes in that same rollback boundary.
+        const QString normalized = normalizedSql(statement);
+        if (insideTransaction &&
+            (normalized == QStringLiteral("beginimmediate") ||
+             normalized == QStringLiteral("commit") ||
+             normalized.startsWith(QStringLiteral("pragmaforeign_keys=")) ||
+             normalized.startsWith(QStringLiteral("pragmajournal_mode=")) ||
+             normalized.startsWith(QStringLiteral("pragmasynchronous=")) ||
+             normalized.startsWith(QStringLiteral("pragmabusy_timeout="))))
+            continue;
         QSqlQuery query(database_);
         if (!query.exec(statement)) {
             const QString message = QStringLiteral("Database initialization failed: %1")

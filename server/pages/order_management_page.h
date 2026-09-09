@@ -51,8 +51,6 @@ private:
     void handleListResponse(const QJsonObject& response);
     void handleSummaryResponse(const QJsonObject& response);
     void handleDetailResponse(const QJsonObject& response);
-    void handleStationOptionsResponse(const QJsonObject& response);
-    void handleChargerOptionsResponse(const QJsonObject& response);
 
     QVector<OrderRecord> records_;
     QVector<int> filteredRecordIndexes_;
@@ -65,8 +63,8 @@ private:
     QString summaryRequestId_;
     QString detailRequestId_;
     QString detailExpectedServerId_;
-    QString stationOptionsRequestId_;
-    QString chargerOptionsRequestId_;
+    class AdminOptionLoader* stationOptions_ = nullptr;
+    class AdminOptionLoader* chargerOptions_ = nullptr;
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* orderNumberLineEdit_ = nullptr;

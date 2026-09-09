@@ -32,10 +32,16 @@ public:
                                            const QDateTime& startedAtUtc) const;
 
     // Applies reservation expiry before reading. A CHARGING order reports its
-    // persisted start time and charger power so the Service can calculate a
-    // real-time, non-persisted meter snapshot.
+    // persisted start time and charger power so the Service can calculate and
+    // record a simulated-meter sample through recordTelemetry().
     ChargingRepositoryResult chargingStatus(qint64 userId, qint64 orderId,
                                             const QDateTime& observedAtUtc) const;
+
+    // Persist an actual simulated-meter sample produced by ChargingService.
+    // Manual admin reads do not advance the sample/heartbeat timestamps.
+    bool recordTelemetry(qint64 userId, qint64 orderId, const QDateTime& capturedAtUtc,
+                         int powerWatts, qint64 durationSeconds, qint64 energyWh,
+                         qint64 amountCents, QString* diagnostic = nullptr) const;
 
     // expectedStartedAtUtc plus old-state WHERE clauses make the update safe
     // if two STOP requests race. A repeated STOP returns the stored result.
