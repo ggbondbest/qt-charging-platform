@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets ProfilePage (objectName "profilePage").
 // Skeleton mirrors pages/profile_charging/src/profile_page.cpp buildUi():
@@ -42,11 +43,8 @@ Item {
     // 底线，不保连点——回执落地前胶囊必须自己挡住重复 checkIn（审查反馈 2026-09-09）。
     property bool checkingIn: false
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
-    // image://glyphs URL（glyph_provider.cpp）：主题 token 的 hex 原样透传给
-    // provider 染色（QColor 接受 rrggbb / aarrggbb），暗/亮主题自动换色。
-    function glyphSource(name, colorValue) {
-        return "image://glyphs/" + name + "/" + String(colorValue).replace("#", "")
-    }
+    // image://glyphs URL 单点在 platform/Glyphs.js（provider 见 glyph_provider.cpp）。
+    function glyphSource(name, colorValue) { return Glyphs.source(name, colorValue) }
     // 从流水推导"今天已签"：存在今日（UTC）"每日签到"行即已签。账本跨页面
     // 重建持久，是签到态唯一可恢复的数据源；单向置真（本地已签不因分页查
     // 不到而回亮）。day 口径与 checkInCompleted 的 UTC "yyyy-MM-dd" 一致，

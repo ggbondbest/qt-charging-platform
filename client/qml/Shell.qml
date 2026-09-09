@@ -190,8 +190,10 @@ Window {
             // Login has no bottom navigation, including its reserved layout space.
             visible: !!(App && App.loggedIn && stack.currentItem
                         && stack.currentItem.route !== "login")
-            tabs: [{ id: "station", text: "🔍 找站" }, { id: "order", text: "📋 订单" },
-                   { id: "charging", text: "⚡ 充电" }, { id: "profile", text: "👤 我的" }]
+            tabs: [{ id: "station", icon: "search", label: "找站" },
+                   { id: "order", icon: "clipboard", label: "订单" },
+                   { id: "charging", icon: "bolt", label: "充电" },
+                   { id: "profile", icon: "user", label: "我的" }]
             currentTab: "station"
             // pushRoute now clears/replaces for tab targets — no manual pop loop.
             enabled: visible

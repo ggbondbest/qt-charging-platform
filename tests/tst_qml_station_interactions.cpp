@@ -33,15 +33,6 @@ QQuickItem* findItem(QQuickItem* root, const QString& name)
     }
     return nullptr;
 }
-QQuickItem* findText(QQuickItem* root, const QString& text)
-{
-    if (!root) return nullptr;
-    if (root->property("text").toString() == text) return root;
-    for (auto* child : root->childItems()) {
-        if (auto* found = findText(child, text)) return found;
-    }
-    return nullptr;
-}
 QVariant plainVariant(const QVariant& value)
 {
     return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
@@ -189,7 +180,10 @@ private slots:
     {
         bootShell();
         QVERIFY(window_ != nullptr);
-        auto* bell = findText(findItem(window_->contentItem(), QStringLiteral("topNavBar")), QStringLiteral("🔔"));
+        // 铃铛现为 image://glyphs 图标（TopNavBar），按 objectName 找而非 emoji 文本。
+        auto* bell = findItem(window_->contentItem(), QStringLiteral("topNavBell"));
+        QVERIFY(bell != nullptr);
+        QVERIFY(bell->property("source").toString().startsWith(QStringLiteral("image://glyphs/bell/")));
         QVERIFY(realClick(window_, bell));
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
