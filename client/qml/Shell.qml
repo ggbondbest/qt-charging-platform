@@ -28,10 +28,12 @@ Window {
                                      "reservation_module", "navigation",
                                      "favorites", "notifications", "settings",
                                      "stats", "coupon", "points", "ratings", "scan",
-                                     "tasks", "level"]
+                                     "queue", "fault_reports", "tasks", "level", "points_mall"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
         const t = {
+            "queue": "pages/station/QueuePage.qml",
+            "fault_reports": "pages/station/FaultReportsPage.qml",
             "station":   "pages/station/StationHomePage.qml",
             "order":     "pages/profile_charging/OrderListPage.qml",
             "charging":  "pages/profile_charging/ChargingHomePage.qml",
@@ -57,6 +59,7 @@ Window {
             "scan":                "pages/profile_charging/ScanPage.qml",
             "tasks":               "pages/profile_charging/TasksPage.qml",
             "level":               "pages/profile_charging/LevelPage.qml",
+            "points_mall":         "pages/profile_charging/PointsMallPage.qml",
         }
         if (!t[r]) return ""
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
@@ -148,11 +151,20 @@ Window {
             }
             onNotificationsRequested: { if (App) App.navigate("notifications") }
         }
+        P.ActionButton {
+            id: queueCallBanner
+            objectName: "queueCallBanner"
+            width: parent.width
+            visible: !!(App && App.loggedIn && App.workflowService && App.workflowService.queue.status === "CALLED")
+            height: visible ? 48 : 0
+            text: "轮到您了 · 点击确认叫号"
+            onClicked: App.navigate("queue")
+        }
         StackView {
             id: stack
             objectName: "pageStack"
             width: parent.width
-            height: parent.height - navBar.height - (tabBar.visible ? tabBar.height : 0)
+            height: parent.height - navBar.height - queueCallBanner.height - (tabBar.visible ? tabBar.height : 0)
             // Login gate mirrors HomeShell: unauthenticated → LoginPage first.
             // chargingArg (preview CLI --arg=JSON) 作深链路由参数透传。
             Component.onCompleted: pushRoute(App && App.loggedIn ? shell.route : "login",

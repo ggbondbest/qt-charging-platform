@@ -29,6 +29,7 @@ public:
     quint16 port() const;
 
 signals:
+    void eventReceived(const QString& type, const QJsonObject& data);
     void connectionStateChanged(bool connected);
     void responseReceived(const charging::protocol::ResponseEnvelope& response);
     void requestFailed(const QString& requestId, const QString& errorCode, const QString& message);

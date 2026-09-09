@@ -117,8 +117,11 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 
 - 请求：必填 `stationId: string ID`，`page?`、`pageSize?`。
 - 返回：`{chargers: Charger[], page, pageSize, total}`，`id ASC`。
+- `Charger.maintenance: bool` 表示存在已受理或处理中的维修；当前服务端始终返回该字段，
+  旧服务端不提供时客户端默认 `false`。为 `true` 时两端显示“维护中”，暂停新预约；
+  它不是新的设备状态枚举，底层 `status` 保留既有词表。
 - 必须验证站点存在且 `ACTIVE`，否则 `NOT_FOUND`；返回该站全部状态的桩供 UI 展示，
-  只有 `AVAILABLE` 可尝试预约，是否成功由预约事务决定。
+  只有 `AVAILABLE` 且不在维护中可尝试预约，是否成功由预约事务决定，已有排队也不能被绕过。
 
 ### GET_RESERVATIONS
 

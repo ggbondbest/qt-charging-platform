@@ -72,8 +72,13 @@ Item {
     }
     function start() {
         if (!hasActive || cancelBusy || starting || remainingSecs <= 0) return
+        targetDialog.reservationId = reservationId
+        targetDialog.open()
+    }
+    function confirmStart(id, targetType, targetValue) {
+        if (!hasActive || id !== reservationId || cancelBusy || starting || remainingSecs <= 0) return
         starting = true; cancelNote = ""
-        try { chargingService.startCharging(reservationId) }
+        try { chargingService.startChargingWithTarget(reservationId, targetType, targetValue) }
         catch (error) { starting = false; cancelNote = "启动失败，请刷新后重试" }
     }
     Connections {
@@ -176,6 +181,12 @@ Item {
                     text: page.cancelNote; color: P.Style.danger; font.pixelSize: P.Style.fontSm
                 }
             }
+        }
+    }
+    P.ChargingTargetDialog {
+        id: targetDialog
+        onConfirmed: function(reservationId, targetType, targetValue) {
+            page.confirmStart(reservationId, targetType, targetValue)
         }
     }
     Popup {

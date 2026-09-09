@@ -3,6 +3,7 @@
 #include "workflow_repository_types.h"
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QSqlDatabase>
 
 namespace charging::server {
@@ -17,6 +18,7 @@ class ChargingRepository final
 {
 public:
     explicit ChargingRepository(const QSqlDatabase& database);
+    QSqlDatabase database() const { return database_; }
 
     // Call on the database-owning worker at startup and periodically. Expired
     // reservations, their reserved orders and charger availability change in
@@ -25,11 +27,13 @@ public:
 
     ChargingRepositoryResult reserve(qint64 userId, qint64 chargerId,
                                      const QDateTime& reservedAtUtc, const QDateTime& expiresAtUtc,
-                                     const QString& orderNo) const;
+                                     const QString& orderNo, qint64 queueEntryId = 0,
+                                     const QString& queueOperationId = {}) const;
     ChargingRepositoryResult cancelReservation(qint64 userId, qint64 reservationId,
                                                const QDateTime& cancelledAtUtc) const;
     ChargingRepositoryResult startCharging(qint64 userId, qint64 reservationId,
-                                           const QDateTime& startedAtUtc) const;
+                                           const QDateTime& startedAtUtc,
+                                           const QJsonObject& target = {}) const;
 
     // Applies reservation expiry before reading. A CHARGING order reports its
     // persisted start time and charger power so the Service can calculate and
@@ -48,7 +52,8 @@ public:
     ChargingRepositoryResult stopCharging(qint64 userId, qint64 orderId,
                                           const QDateTime& expectedStartedAtUtc,
                                           const QDateTime& stoppedAtUtc, qint64 durationSeconds,
-                                          qint64 energyWh, qint64 amountCents) const;
+                                          qint64 energyWh, qint64 amountCents,
+                                          const QString& stopReason = QStringLiteral("MANUAL")) const;
 
 private:
     QSqlDatabase database_;

@@ -662,6 +662,14 @@ private slots:
         QSignalSpy failures(charging, &ChargingBridge::operationFailed);
         QSignalSpy toasts(&app, &QmlApp::toastRequested);
         QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QVERIFY(!page->property("startPending").toBool()); // Selecting a target does not start a request yet.
+        auto* targetDialog = page->findChild<QObject*>("chargingTargetDialog");
+        QVERIFY(targetDialog);
+        QTRY_VERIFY(targetDialog->property("visible").toBool());
+        QCOMPARE(targetDialog->property("normalized").toDouble(), 2000.0);
+        auto* confirm = targetDialog->findChild<QObject*>("confirmChargingTargetButton");
+        QVERIFY(confirm && confirm->property("enabled").toBool());
+        click(confirm);
         QVERIFY(page->property("startPending").toBool());
         QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
         QTRY_VERIFY(!page->property("startPending").toBool());
@@ -1783,6 +1791,51 @@ private slots:
             currentCount += row.toMap().value("state").toString() == QLatin1String("current") ? 1 : 0;
         QCOMPARE(currentCount, 1);
         QCOMPARE(prog->gifts().size(), prog->level() - 1);   // 每次跨档一份礼包
+        // 会员中心批：每日任务区块嵌进等级页（TaskSection 直子对象，非 delegate）。
+        QVERIFY(page->findChild<QQuickItem*>("uiTaskSection") != nullptr);
+    }
+
+    // 积分商城（会员中心批 2026-09-09）：真余额读取 + 分类过滤 + 本机演示兑换。
+    // 服务端契约无 REDEEM → 兑换只写本机记录模型；余额不足必须拒绝。断言全钉
+    // 页根公开状态（offscreen delegate 约定），records 模型是直子对象可 findChild。
+    void pointsMallPageFiltersCatalogAndRedeemsLocally()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("PointsMallPage.qml"), &holder);
+        QVERIFY(page);
+        QVERIFY(page->findChild<QQuickItem*>("uiMallTitle") != nullptr);
+        QCOMPARE(fake.fetchCalls, 1);                     // 进页即拉真积分余额
+        QCOMPARE(page->property("listCount").toInt(), 6);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("coupon")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("card")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("all")));
+        QCOMPARE(page->property("listCount").toInt(), 6);
+
+        auto* records = page->findChild<QObject*>("uiMallRecords");
+        QVERIFY(records != nullptr);
+        fake.emitPoints(150, {}, 0);                       // 余额 150
+        QCOMPARE(page->property("points").toInt(), 150);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("k2")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 2200 分 > 150 → 拒兑
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 200 分 > 150 → 仍拒
+        fake.emitPoints(500, {}, 0);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("nope")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 未知 id 静默拒绝
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 1);   // 演示兑换成功：本机记录 +1
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c2")));
+        QCOMPARE(toast.count(), 1);                        // 500 ≥ 500：兑换回执带 toast
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("演示")));
     }
 
     // 升级礼包真到账——mock 通道端到端（2026-09-09 用户拍板批）：升级 →

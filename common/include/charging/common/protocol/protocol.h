@@ -31,6 +31,14 @@ inline constexpr char kGetOrders[] = "GET_ORDERS";
 inline constexpr char kGetUserStats[] = "GET_USER_STATS";
 inline constexpr char kGetCoupons[] = "GET_COUPONS";
 inline constexpr char kGetNotifications[] = "GET_NOTIFICATIONS";
+inline constexpr char kWorkflowSubscribe[] = "WORKFLOW_SUBSCRIBE";
+inline constexpr char kQueueJoin[] = "QUEUE_JOIN";
+inline constexpr char kQueueGetMine[] = "QUEUE_GET_MINE";
+inline constexpr char kQueueLeave[] = "QUEUE_LEAVE";
+inline constexpr char kQueueConfirm[] = "QUEUE_CONFIRM";
+inline constexpr char kRepairSubmit[] = "REPAIR_SUBMIT";
+inline constexpr char kRepairGetMine[] = "REPAIR_GET_MINE";
+inline constexpr char kRepairGet[] = "REPAIR_GET";
 // 2026-09-08 批次C 签到/积分（冻结只新增）：CHECK_IN 写型无参（日粒度幂等，
 // Session 定身份），GET_POINTS 分页读积分流水。
 inline constexpr char kCheckIn[] = "CHECK_IN";
@@ -112,6 +120,16 @@ struct ResponseEnvelope
     QJsonObject data;
     ProtocolError error;
 };
+
+struct EventEnvelope
+{
+    int protocolVersion = kProtocolVersion;
+    MessageKind kind = MessageKind::Event;
+    QString type;
+    QJsonObject data;
+};
+QByteArray serializePayload(const EventEnvelope& event);
+bool parseEventPayload(const QByteArray& payload, EventEnvelope* outValue, ProtocolError* error = nullptr);
 
 QString toString(MessageKind kind);
 bool messageKindFromString(const QString& text, MessageKind* outValue);

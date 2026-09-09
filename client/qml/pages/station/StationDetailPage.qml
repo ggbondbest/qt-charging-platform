@@ -25,6 +25,10 @@ Item {
     property bool detailFailed: false
     property string failMessage: ""
     property var chargers: []
+    Connections {
+        target: App && App.workflowService ? App.workflowService : null
+        function onChanged() { if (page.visible && !page.detailLoading) page.fetch() }
+    }
 
     function money(c) { return (c / 100).toFixed(2) }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
@@ -245,7 +249,7 @@ Item {
                         P.StatusTag {
                             objectName: "chargerStatusTag"
                             tone: page.statusTone(modelData.status)
-                            text: page.statusText(modelData.status)
+                            text: modelData.maintenance ? "维护中" : page.statusText(modelData.status)
                         }
                     }
                     RowLayout {
@@ -266,6 +270,29 @@ Item {
                                      && !(App && App.checkingUnfinishedOrder)
                                      && String(modelData.status).toLowerCase() === "available"
                             onClicked: page.requestReserve(modelData)
+                        }
+                    }
+                    RowLayout {
+                        width: parent.width
+                        P.ActionButton {
+                            objectName: "detailQueueButton"
+                            Layout.fillWidth: true
+                            variant: "secondary"
+                            text: "加入排队"
+                            visible: page.availableCount() === 0
+                            enabled: page.isActive() && !page.detailLoading && !modelData.maintenance
+                                     && (String(modelData.status).toLowerCase() === "charging"
+                                         || String(modelData.status).toLowerCase() === "reserved")
+                            onClicked: App.navigate("queue", {chargerId: String(modelData.id),
+                                chargerCode: modelData.code, stationId: String(page.station.id), stationName: page.station.name})
+                        }
+                        P.ActionButton {
+                            objectName: "detailReportButton"
+                            Layout.fillWidth: true
+                            variant: "secondary"
+                            text: "报障"
+                            onClicked: App.navigate("fault_reports", {chargerId: String(modelData.id),
+                                chargerCode: modelData.code, stationName: page.station.name})
                         }
                     }
                 }

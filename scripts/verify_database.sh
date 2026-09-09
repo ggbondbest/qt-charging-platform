@@ -53,7 +53,8 @@ fi
 expected_tables="$(LC_ALL=C printf '%s\n' \
     admins chargers coupons notifications operation_logs orders points_ledger \
     recharge_records reservations stations user_checkins users charger_ratings \
-    charger_exceptions order_pricing_snapshots | sort)"
+    charger_exceptions order_pricing_snapshots queue_entries repair_reports repair_timeline \
+    repair_operations order_charge_targets | sort)"
 actual_tables="$(sqlite3 -batch -bail "${temporary_database}" \
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
 if [[ "${actual_tables}" != "${expected_tables}" ]]; then
@@ -64,8 +65,8 @@ fi
 table_count="$(printf '%s\n' "${actual_tables}" | wc -l)"
 
 schema_version="$(sqlite3 -batch -bail "${temporary_database}" 'PRAGMA user_version;')"
-if [[ "${schema_version}" -ne 4 ]]; then
-    printf 'Database verification failed: expected schema version 4, found %s.\n' \
+if [[ "${schema_version}" -ne 5 ]]; then
+    printf 'Database verification failed: expected schema version 5, found %s.\n' \
         "${schema_version}" >&2
     exit 1
 fi

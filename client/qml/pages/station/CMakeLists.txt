@@ -2,6 +2,8 @@
 # (one path per line, e.g. ${CMAKE_CURRENT_SOURCE_DIR}/StationHomePage.qml);
 # do not touch anything outside this directory.
 set(CHARGING_QML_FILES ${CHARGING_QML_FILES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/QueuePage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/FaultReportsPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/LoginPage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/StationHomePage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/StationDetailPage.qml

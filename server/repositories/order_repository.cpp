@@ -4,6 +4,7 @@
 #include "charging/common/model/enums.h"
 #include "charging/common/protocol/user_api_contract.h"
 #include "repository_row_mapper.h"
+#include "charging_target_repository.h"
 
 #include <QSqlError>
 #include <QSqlQuery>
@@ -98,6 +99,8 @@ bool loadOrder(const QSqlDatabase& database, qint64 orderId, charging::model::Or
         *diagnostic = QStringLiteral("The stored order row contains invalid data");
         return false;
     }
+    if (!chargingTargetDto(database, orderId, &order->target, &order->stopReason, diagnostic))
+        return false;
     *found = true;
     return true;
 }
@@ -220,6 +223,11 @@ OrderQueryResult OrderRepository::list(const OrderQuery& value) const
         OrderListItem item;
         if (!repository_detail::readOrder(dataQuery, &item.order)) {
             result.errorMessage = QStringLiteral("The stored order row contains invalid data");
+            result.orders.clear();
+            return result;
+        }
+        if (!chargingTargetDto(database_, item.order.id, &item.order.target,
+                               &item.order.stopReason, &result.errorMessage)) {
             result.orders.clear();
             return result;
         }

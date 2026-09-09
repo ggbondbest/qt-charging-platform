@@ -75,9 +75,14 @@ Item {
     }
     function startReservation(id) {
         if (page.startPending || page.pendingCancelId.length > 0 || chargingService.isStarting()) return
+        targetDialog.reservationId = String(id)
+        targetDialog.open()
+    }
+    function confirmStart(id, targetType, targetValue) {
+        if (page.startPending || page.pendingCancelId.length > 0 || chargingService.isStarting()) return
         page.startPending = true
         page.loadError = ""
-        chargingService.startCharging(String(id))
+        chargingService.startChargingWithTarget(String(id), targetType, targetValue)
     }
     function requestCancel(record) {
         if (page.startPending || page.pendingCancelId.length > 0) return
@@ -104,7 +109,14 @@ Item {
         page.activeOrder = null
         page.releaseTracking()
         P.TabCache.charging = null
+        if (s.stopReason && s.stopReason.indexOf("TARGET_") === 0 && App)
+            App.showToast("已按目标自动停止充电，请确认账单", "success")
         if (App) App.navigate(s.status === "waiting_payment" ? "settlement" : "order", s)
+    }
+    function targetQuantity(value, type) {
+        return type === "AMOUNT" ? "¥" + (value / 100).toFixed(2)
+             : type === "ENERGY" ? (value / 1000).toFixed(3) + " 度"
+             : page.dur(value)
     }
 
     Component.onCompleted: {
@@ -154,6 +166,14 @@ Item {
             page.ordersRequested = false
             page.ordersArrived = true
             const selected = orders.filter(function(o) { return String(o.id) === page.trackingId })
+            // A server tick may finish the order before this list refresh
+            // arrives. Keep ownership until its terminal status is read, or
+            // the queued STOP snapshot would be ignored and settlement lost.
+            if (!selected.length && !orders.length && page.ownsTracking && page.trackingId.length) {
+                chargingService.fetchStatusNow()
+                if (pull.refreshing) pull.setRefreshing(false)
+                return
+            }
             page.track(selected.length ? selected[0] : orders.length ? orders[0] : null)
             if (pull.refreshing) pull.setRefreshing(false)
         }
@@ -393,6 +413,29 @@ Item {
                                 }
                             }
                         }
+                        Column {
+                            objectName: "chargingTargetProgress"
+                            width: parent.width; spacing: P.Style.spaceSm
+                            visible: page.hasSnapshot && !!page.status.target && page.status.target.type !== undefined
+                            property var target: visible ? page.status.target : ({})
+                            Text {
+                                width: parent.width; wrapMode: Text.Wrap; color: "#FFFFFF"
+                                font.pixelSize: P.Style.fontMd; font.bold: true
+                                text: "充电目标 · " + page.targetQuantity(parent.target.value || 0, parent.target.type)
+                            }
+                            Rectangle {
+                                width: parent.width; height: 8; radius: 4; color: "#40FFFFFF"
+                                Rectangle {
+                                    width: parent.width * Math.min(1, Math.max(0, (parent.parent.target.progressPercent || 0) / 100))
+                                    height: parent.height; radius: parent.radius; color: "white"
+                                }
+                            }
+                            Text {
+                                width: parent.width; wrapMode: Text.Wrap; color: "#E5FFF5"; font.pixelSize: P.Style.fontSm
+                                text: "已完成 " + page.targetQuantity(parent.target.completedValue || 0, parent.target.type)
+                                      + " · 剩余 " + page.targetQuantity(parent.target.remainingValue || 0, parent.target.type)
+                            }
+                        }
                     }
                 }
 
@@ -434,11 +477,17 @@ Item {
                 P.ActionButton {
                     objectName: "simulatedScanButton"
                     visible: typeof CHARGING_CHANNEL !== "undefined" && CHARGING_CHANNEL === "mock"
-                    width: parent.width; variant: "secondary"; text: "模拟扫码（demo）"
+                    width: parent.width; variant: "secondary"; text: "扫码充电"
                     onClicked: if (App) App.navigate("scan")
                 }
                 Item { width: 1; height: P.Style.spaceSm }
             }
+        }
+    }
+    P.ChargingTargetDialog {
+        id: targetDialog
+        onConfirmed: function(reservationId, targetType, targetValue) {
+            page.confirmStart(reservationId, targetType, targetValue)
         }
     }
     Dialog {

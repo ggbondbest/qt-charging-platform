@@ -182,6 +182,7 @@ Item {
                         { k: "单价", v: "¥ " + money(page.arg.unitPriceCentsPerKwh || 0) + " /kWh" },
                         { k: "电量", v: ((page.arg.energyWh || 0) / 1000).toFixed(2) + " kWh" },
                         { k: "时长", v: page.dur(page.arg.durationSeconds || 0) },
+                        { k: "停止原因", v: ({"TARGET_AMOUNT": "按预算自动结束", "TARGET_ENERGY": "达到电量目标", "TARGET_DURATION": "达到时长目标", "MANUAL": "用户主动结束"})[page.arg.stopReason] || "—" },
                         { k: "下单时间（北京时间）", v: App ? App.displayTime(page.arg.createdAt || "—") : "—" },
                     ] : []
                     Row {

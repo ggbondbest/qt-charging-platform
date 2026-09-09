@@ -170,10 +170,13 @@ void AdminBillingSnapshotTest::legacyMigrationIsAtomic()
     {
         QSqlQuery query(db.database());
         for (const auto* sql : {
+                 "DROP TABLE queue_entries", "DROP TABLE repair_timeline", "DROP TABLE repair_reports",
+                 "DROP TABLE repair_operations", "DROP TABLE order_charge_targets",
                  "DROP TABLE order_pricing_snapshots", "DROP TABLE charger_exceptions",
                  "ALTER TABLE stations DROP COLUMN city", "ALTER TABLE stations DROP COLUMN district",
                  "ALTER TABLE stations DROP COLUMN contact_name", "ALTER TABLE stations DROP COLUMN contact_phone",
                  "ALTER TABLE orders DROP COLUMN telemetry_captured_at", "ALTER TABLE orders DROP COLUMN telemetry_power_watts",
+                 "ALTER TABLE orders DROP COLUMN stop_reason",
                  "UPDATE users SET nickname = 'preserved-name', balance_cents = 12345 WHERE id = 1",
                  "PRAGMA user_version = 3"})
             QVERIFY2(query.exec(QString::fromLatin1(sql)), qPrintable(query.lastError().text()));
@@ -202,7 +205,7 @@ void AdminBillingSnapshotTest::legacyMigrationIsAtomic()
         QSqlQuery query(verification);
         QVERIFY(query.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(query.next());
-        QCOMPARE(query.value(0).toInt(), injectFailure ? 3 : 4);
+        QCOMPARE(query.value(0).toInt(), injectFailure ? 3 : 5);
         QVERIFY(query.exec(QStringLiteral("SELECT nickname,balance_cents FROM users WHERE id=1")));
         QVERIFY(query.next());
         QCOMPARE(query.value(0).toString(), QStringLiteral("preserved-name"));

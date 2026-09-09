@@ -2,6 +2,7 @@
 
 #include <QAbstractSocket>
 #include <QList>
+#include <QJsonDocument>
 #include <QTcpSocket>
 #include <QTimer>
 #include <QUuid>
@@ -124,6 +125,16 @@ void ClientConnection::handleReadyRead()
     }
 
     for (const QByteArray& payload : payloads) {
+        if (QJsonDocument::fromJson(payload).object().value(QStringLiteral("kind")).toString() == QStringLiteral("EVENT")) {
+            charging::protocol::EventEnvelope event;
+            charging::protocol::ProtocolError error;
+            if (!charging::protocol::parseEventPayload(payload, &event, &error)) {
+                closeForProtocolError(error);
+                return;
+            }
+            emit eventReceived(event.type, event.data);
+            continue;
+        }
         charging::protocol::ResponseEnvelope response;
         charging::protocol::ProtocolError parseError;
         if (!charging::protocol::parseResponsePayload(payload, &response, &parseError)) {

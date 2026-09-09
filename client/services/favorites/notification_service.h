@@ -20,6 +20,9 @@ enum class NotificationType
     ReservationCancelNotice,   // ❌ 预约取消通知（用户主动取消）
     ChargingStopped,           // 🔌 充电结束通知（服务端通道 GET_NOTIFICATIONS）
     OrderPaid,                 // 💰 支付成功通知（服务端通道 GET_NOTIFICATIONS）
+    QueueCalled,
+    QueueExpired,
+    RepairUpdated,
 };
 
 // 一条站内通知（标题/内容/时间——迭代 3 通知页展示口径）。

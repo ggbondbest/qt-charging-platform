@@ -43,6 +43,7 @@
           "type": "FAST",
           "powerWatts": 60000,
           "status": "AVAILABLE",
+          "maintenance": false,
           "totalChargeCount": 0,
           "totalChargeSeconds": 0,
           "createdAt": "2026-09-01T00:00:00.000Z",

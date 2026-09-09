@@ -44,6 +44,14 @@ Item {
     // 底线，不保连点——回执落地前胶囊必须自己挡住重复 checkIn（审查反馈 2026-09-09）。
     property bool checkingIn: false
     function money(cents) { return ((cents || 0) / 100).toFixed(2) }
+    // emoji 头像预设（与 ProfileEditPage.avatarChoices 同表字面量——页面内
+    // 重复换零跨页耦合）：名片卡头像位消费预设 key，选了即在卡面生效。
+    readonly property var avatarPresets: ({
+        bolt:  { g: "⚡", c: "#00B578" }, plug: { g: "🔌", c: "#1971C2" },
+        car:   { g: "🚗", c: "#D97706" }, leaf: { g: "🌿", c: "#4CAF50" },
+        cat:   { g: "🐱", c: "#E0855E" }, panda: { g: "🐼", c: "#607D8B" },
+        moon:  { g: "🌙", c: "#7E57C2" }, rocket: { g: "🚀", c: "#DC2626" } })
+    function avatarPreset(key) { return avatarPresets[String(key || "")] || null }
     // image://glyphs URL 单点在 platform/Glyphs.js（provider 见 glyph_provider.cpp）。
     function glyphSource(name, colorValue) { return Glyphs.source(name, colorValue) }
     // 从流水推导"今天已签"：存在今日（UTC）"每日签到"行即已签。账本跨页面
@@ -88,14 +96,18 @@ Item {
     }
 
     // 经验等级引擎（2026-09-09）：客户端本地成长系统，经 App.progressService
-    // 透传；裸引擎/无 App 场景取 null，等级块整体隐藏（页面对测试上下文健壮）。
+    // 透传；裸引擎/无 App 场景取 null，等级卡整体隐藏（页面对测试上下文健壮）。
     readonly property var progress: (App && App.progressService) ? App.progressService : null
 
-    // 档位主题色：青铜/白银/黄金/铂金/黑金（与 LevelPage.tierColor 逐字同表——
-    // 两页各自页面内字面量，改档色须同批，LevelPage 头注已互指）。
+    // 会员中心批（参考"白金会员"卡形态）：档位主题色与星级（页内字面量，
+    // 与 LevelPage tierColor 同谱——两处小重复换零跨页耦合，映射稿有口径）。
     function tierColor(lv) {
         const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
         return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
+    }
+    function tierStars(lv) {
+        const n = Math.max(1, Math.min(5, lv || 1))
+        return "★".repeat(n) + "☆".repeat(5 - n)
     }
 
     // 待支付角标数据（widgets ordersCell waitingBadge_ 同款）
@@ -185,13 +197,17 @@ Item {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         width: 64; height: 64; radius: 32
-                        color: "#9AA4B2"
+                        // 预设 emoji 头像：底色用档位色；图片/默认态维持灰底。
+                        readonly property var preset: page.avatarPreset(
+                            page.user ? page.user.avatarKey : "")
+                        color: preset ? preset.c : "#9AA4B2"
                         border.width: 2; border.color: "#66FFFFFF"
                         Text {
                             anchors.centerIn: parent
-                            text: page.user && page.user.avatarKey
-                                  ? (page.user.nickname ? page.user.nickname[0] : "用") : "👤"
-                            font.pixelSize: 22; font.bold: true; color: P.Style.surface
+                            text: avatarHub.preset ? avatarHub.preset.g
+                                  : (page.user && page.user.avatarKey
+                                      ? (page.user.nickname ? page.user.nickname[0] : "用") : "👤")
+                            font.pixelSize: 26; font.bold: true; color: P.Style.surface
                             visible: profileAvatar.status !== Image.Ready
                         }
                         Image {
@@ -218,8 +234,8 @@ Item {
                             text: page.user ? (page.user.nickname || "未设置") : "未登录"
                             font.pixelSize: P.Style.fontHero; font.bold: true; color: P.Style.surface
                         }
-                        // 经验等级三件套已于 2026-09-09 迁出 hero（见下方
-                        // "①.5 经验等级卡"：名片卡与钱包卡之间）。
+                        // 等级三件套（经验等级批）已于会员中心批移出 hero——
+                        // 现在是昵称框与钱包框之间独立的「会员等级卡」（uiLevelCard）。
                         Row {
                             spacing: P.Style.spaceXs
                             Text {
@@ -362,6 +378,127 @@ Item {
                 }
             }
 
+            // ---------- ①.5 会员等级卡（会员中心批，参考"白金会员"卡形态） ----------
+            // 昵称框与余额框之间的独立大卡：档位名+星级 → 成长值条 → 经验行
+            // → 当前档权益；点卡任意处进会员中心页（等级+每日任务+礼包记录）。
+            // 锚点沿用经验等级批：uiLevelBar/uiLevelXpLabel/uiLevelBadgeButton
+            // （右侧"会员中心›"入口），回归钉不破。
+            Rectangle {
+                objectName: "uiLevelCard"
+                visible: page.progress !== null
+                width: col.contentW
+                height: 118
+                radius: P.Style.radiusLg
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal   // Qt6.2 无 Diagonal
+                    GradientStop { position: 0.0
+                        color: page.progress ? page.tierColor(page.progress.level) : P.Style.heroFrom }
+                    GradientStop { position: 1.0
+                        color: Qt.lighter(page.progress ? page.tierColor(page.progress.level)
+                                                         : P.Style.heroTo, 1.35) }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (App) App.navigate("level") }
+                }
+                Item {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20; anchors.rightMargin: 16
+                    anchors.topMargin: 13; anchors.bottomMargin: 12
+                    Column {
+                        anchors.left: parent.left; anchors.right: levelEntry.left
+                        anchors.rightMargin: P.Style.spaceMd
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+                        Row {
+                            spacing: P.Style.spaceSm
+                            Text {
+                                objectName: "uiLevelCardTier"
+                                text: page.progress ? (page.progress.tierGlyph + " "
+                                                       + page.progress.tierName) : ""
+                                font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
+                                color: "white"
+                            }
+                            Text {
+                                objectName: "uiLevelCardStars"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.progress ? page.tierStars(page.progress.level) : ""
+                                font.pixelSize: P.Style.fontSm
+                                color: P.Style.starGold
+                            }
+                        }
+                        Rectangle {
+                            objectName: "uiLevelBar"
+                            width: parent.width; height: 7; radius: 3.5
+                            color: "#40FFFFFF"
+                            Rectangle {
+                                objectName: "uiLevelBarFill"
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: parent.height; radius: parent.radius
+                                width: parent.width * (page.progress ? page.progress.progress : 0)
+                                color: "white"
+                                Behavior on width {
+                                    enabled: P.Style.motionEnabled
+                                    NumberAnimation { duration: P.Style.durValue }
+                                }
+                            }
+                        }
+                        Text {
+                            objectName: "uiLevelXpLabel"
+                            width: parent.width; elide: Text.ElideRight
+                            text: page.progress
+                                  ? (page.progress.xpToNext > 0
+                                     ? "成长值 " + page.progress.xp
+                                       + "/" + (page.progress.xp + page.progress.xpToNext)
+                                       + " · 距" + page.progress.nextTierName
+                                       + "还需 " + page.progress.xpToNext + " XP"
+                                     : "成长值 " + page.progress.xp + " · 已达巅峰档位")
+                                  : ""
+                            font.pixelSize: P.Style.fontXs; color: "#E6FFFFFF"
+                        }
+                        Text {
+                            objectName: "uiLevelCardPerk"
+                            width: parent.width; elide: Text.ElideRight
+                            text: page.progress
+                                  ? String(page.progress.tiers[
+                                       Math.max(0, page.progress.level - 1)].perk) : ""
+                            font.pixelSize: P.Style.fontXs; color: "#BFFFFFFF"
+                        }
+                    }
+                    Item {
+                        id: levelEntry
+                        objectName: "uiLevelBadgeButton"
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        width: entryCol.implicitWidth; height: entryCol.implicitHeight
+                        Column {
+                            id: entryCol
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+                            Text {
+                                anchors.right: parent.right
+                                text: "会员中心 ›"
+                                font.pixelSize: P.Style.fontSm; font.weight: Font.DemiBold
+                                color: "white"
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                text: page.progress
+                                      ? "查看 " + (5 - page.progress.level + 1) + " 档权益" : ""
+                                font.pixelSize: P.Style.fontXs; color: "#BFFFFFFF"
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { if (App) App.navigate("level") }
+                        }
+                    }
+                }
+            }
+
             // ---------- ② 钱包三列浮卡（一张卡：余额 | 充值 | 充值记录） ----------
             Rectangle {
                 objectName: "walletCard"
@@ -483,6 +620,9 @@ Item {
                 text: "账号与服务"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
+            // 宫格（2026-09-09）：八格 + 会员中心批随合并补三格——积分商城
+            // （points_mall）/ 我的排队（queue）/ 我的报障（fault_reports），
+            // 共 11 格 4 列三行；会员等级格已退役（入口在经验卡）。
             Grid {
                 objectName: "accountGrid"
                 width: col.contentW
@@ -508,6 +648,15 @@ Item {
                         // 在经验卡（"会员等级"格同日退役，避免双入口）。
                         { obj: "openTasksButton",   glyph: "calendar-check", title: "每日任务",
                           route: "tasks",      badge: "" },
+                        // 会员中心批（PR54 合并）：积分商城——入口入宫格，
+                        // 页面自身可换可留，先接通路由。
+                        { obj: "openMallButton",    glyph: "gift", title: "积分商城",
+                          route: "points_mall", badge: "" },
+                        // 排队/报障（PR55 合并）：虚拟排队与维修跟进的入口。
+                        { obj: "openQueueButton",   glyph: "clock", title: "我的排队",
+                          route: "queue",       badge: "" },
+                        { obj: "openFaultReportsButton", glyph: "hammer", title: "我的报障",
+                          route: "fault_reports", badge: "" },
                         { obj: "openRatingsButton", glyph: "star", title: "我的评价",
                           route: "ratings",     badge: "" },
                         { obj: "openSettingsButton", glyph: "settings", title: "设置",

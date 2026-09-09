@@ -6,6 +6,10 @@
 #include "charging_repository.h"
 #include "charging_server.h"
 #include "charging_service.h"
+#include "queue_repository.h"
+#include "queue_service.h"
+#include "repair_repository.h"
+#include "repair_service.h"
 #include "database_connection.h"
 #include "order_repository.h"
 #include "order_service.h"
@@ -19,6 +23,7 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QDebug>
+#include <QSqlQuery>
 
 namespace charging::server {
 
@@ -62,9 +67,17 @@ protected:
             if (isInterruptionRequested()) return;
             UserRepository users(database.database());
             ChargingRepository charging(database.database());
-            const auto expireReservations = [&charging] {
-                if (charging.expireReservations(QDateTime::currentDateTimeUtc())) return true;
-                qWarning() << "Reservation expiry maintenance failed; transaction rolled back";
+            QueueRepository queues(database.database());
+            RepairRepository repairs(database.database());
+            QueueService queueService(&queues);
+            RepairService repairService(&repairs);
+            BillingService billing;
+            ChargingService chargingService(&charging, &billing);
+            const auto expireReservations = [&] {
+                const auto now = QDateTime::currentDateTimeUtc();
+                if (charging.expireReservations(now) && chargingService.advanceTargets()
+                    && queueService.tick(now)) return true;
+                qWarning() << "Workflow maintenance failed; operation rolled back";
                 return false;
             };
             if (!expireReservations()) {
@@ -77,6 +90,7 @@ protected:
             expiryTimer.start();
             AdminRepository adminRepository(database.database());
             AdminService adminService(&adminRepository);
+            adminService.setWorkflowServices(&queueService, &repairService);
             QObject adminContext; // constructed and destroyed in this worker
             connect(this, &ServerThread::adminRequest, &adminContext,
                     [this, &adminService, &expireReservations](const QString& id, const QString& action,
@@ -104,14 +118,27 @@ protected:
             OrderRepository orders(database.database());
             UserApiRepository userApi(database.database());
             UserService userService(&users);
-            BillingService billing;
-            ChargingService chargingService(&charging, &billing);
             OrderService orderService(&orders);
             UserApiService userApiService(&userApi);
             RequestDispatcher dispatcher(&userService, &chargingService, &orderService,
                                          &userApiService);
+            dispatcher.setWorkflowServices(&queueService, &repairService, expireReservations);
             ChargingServer server;
             server.setRequestDispatcher(&dispatcher);
+            // Coalesce state invalidations once per second. Clients re-read
+            // their own authorized DTOs; no user/report data is broadcast.
+            qint64 previousChanges = -1;
+            quint64 revision = 0;
+            connect(&expiryTimer, &QTimer::timeout, &server, [&] {
+                QSqlQuery changes(database.database());
+                if (!changes.exec(QStringLiteral("SELECT total_changes()")) || !changes.next()) return;
+                const qint64 current = changes.value(0).toLongLong();
+                if (current == previousChanges) return;
+                previousChanges = current;
+                server.broadcastWorkflowChanged(QJsonObject{
+                    {QStringLiteral("revision"), QString::number(++revision)},
+                    {QStringLiteral("observedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+            });
             // Signal forwarding only: this direct lambda runs in the worker and
             // never reads or writes GUI-owned state. Facade connections are queued.
             connect(&server, &ChargingServer::clientCountChanged, &server,

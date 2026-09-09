@@ -140,6 +140,13 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - **UI 三处**：ProfilePage hero 昵称下 徽章「🥉 Lv.1 青铜会员 ›」/进度条（starGold 填充+Behavior 动画）/经验行「当前 X/SPAN XP · 距 NEXT 还需 N」，点徽章→level；行列表与设置并列新增「🗓️ 每日任务 / 🏅 会员等级」；**TasksPage.qml**（"tasksPage"，route "tasks"：等级 hero 卡+五任务卡+签到直发钮+全勤行+分账脚注）；**LevelPage.qml**（"levelPage"，route "level"：档位色 hero+五档阶梯权益 StatusTag（已达成/当前/未解锁）+升级礼包记录+分账脚注）。
 - **测试**：新增 `tst_progress_service.cpp` 10 例（QTemporaryDir 隔离域；起点/当日幂等/未知事件/全勤只发一次/多日升档礼包逐档/跨日重置/落盘续读/手机号互不串）；client_pages +2（任务页×真引擎签到→经验→升级 toast 全链，**用例开头 remove("progress") 清零**——PointsPage 用例经新签到钩子合法写入会污染基线；等级页×引擎状态镜像，断言全取动态值）；station_interactions +1 真壳端到端（等级条渲染/点徽章进页/tasks 路由/stats 漏斗+幂等）。Shell.qml migrated/pageSource 各 +2 路由。
 
+## 会员中心批（2026-09-09 二批，用户参考"白金会员"卡截图改版：等级从 hero 抽出独立成卡 + 每日任务并入会员中心 + 新增积分商城——同属无 widgets 对账源的新增功能）
+
+- **等级卡（ProfilePage ①.5 位）**：昵称框与余额框之间独立大卡——档位名+五星（★×等级+☆×余档）+ 档位色渐变（tierColor 页内字面量与 LevelPage 同谱，两处小重复换零跨页耦合）+ 成长值条「成长值 X/Y · 距NEXT还需 N」+ 当前档权益行 + 右上「会员中心›」入口；整卡点按进 level 页。**锚点沿用上批**（uiLevelBar/uiLevelXpLabel/uiLevelBadgeButton 原样迁进卡内），station 真壳钉只增不改。hero 撤三件套回昵称+手机号朴素形态；行列表删「每日任务/会员等级」两行（路由保留可深链）。
+- **TaskSection.qml（共享区块）**：任务五卡+全勤行自 TasksPage 抽出（签到直发 pointsService.checkIn() 回执记经验的链路整体搬入），TasksPage 与 LevelPage 共用——会员中心页四段式：hero→阶梯→**每日任务**→礼包记录。TasksPage 留等级 hero+脚注+独立路由；`checkingIn` 以 property alias 转发（测试/外层消费位不破）。
+- **PointsMallPage.qml**（"pointsMallPage"，route "points_mall"，与设置并列行）：券/小物品/充电卡三类 6 商品 + 分类 chip 过滤 + 兑换记录。**诚实口径（第三套账，页脚标注）**：积分余额读**服务端真账**（GET_POINTS，不足→兑换钮置灰），但 CONTRACT 无 REDEEM/扣减动作 → 点击兑换**只写本机演示记录、不扣真积分**；TODO(contract)：REDEEM wire 动作+券发放服务落地后自动切真扣减真发货。测试口径=页根公开状态钉（listCount/points/redeem + records 模型直子对象，delegate 不入树约定不破）。
+- **测试**：client_pages +1（商城：进页拉真余额 fetchCalls=1、三类过滤计数、余额不足双拒、未知 id 静默拒、够兑成功 +1 记录、成功回执 toast 含"演示"）+1 断言（等级页含 uiTaskSection）；station_interactions 改版（uiLevelCard 钉、等级页任务区块、openMallButton 行存在+路由进页——860px 折叠线附近不点按、走 navigate）。ctest 53/53。
+
 ## 桥缺口（今晚补桥的形状建议，成员2→成员3）
 
 | 服务 | 需要的桥方法/信号（名字=C++ 原名，载荷改 map/list） |
@@ -164,6 +171,7 @@ ListView delegate ClickableCard（站点/桩号/时长/费用/状态 StatusTag�
 - [x] 审计轮修正批：登录/退出在 mock（authService=nullptr）下兜底 `App.login()/logout()`（不再卡遮罩）；收藏页投影补 voltageBands 组；导航页存 `route.steps`（真实转向指引 + >15 段截断文案）；地图 hit-test 与 onPaint 界域同构（markers∪route、NaN 坐标天然跳）；卡内 anchors.fill 告警 9 处清理（ClickableCard/P.Card 同款：内容 default-property 进内部 Column，卡内锚点被忽略且逐实例告警）——ClickableCard 5 处（profile×2 实爆 + favorites/station/completed×3 潜伏）+ P.Card 4 处（notification delegate×1 + 订单页三栏卡×3，均桥落地/记录到达即爆）；改 Column 契约内 width 绑定、卡高交内容自然高，10 路由复跑零告警零报错
 - [x] 二轮修复批（98c9b6b→e4fd0b9）：二级密码倒转到登录环节/四页 Flickable/顶栏搜索·铃铛·返回钮修复/三页演示数据通道/订单页 polish 环/NoWrap 裁字族——11 路由 rc=0 零告警 + 密码断言 10/10 + qmllint 零 Error，详见 §二轮修复批
 - [x] **经验等级批（2026-09-09）**：ctest 53/53（含新 progress_service 10 例）；qmllint 新改页面零告警；三页 offscreen 截图（我的页 hero 等级三件套/任务页五卡+全勤/等级页阶梯）；Wayland 真机换新二进制运行中
+- [x] **会员中心批（同日二批）**：ctest 53/53；qmllint 六文件零告警；三截图（我的页等级卡夹在昵称与余额框间/会员中心页含任务区块/商城余额不足全部置灰）；Wayland 真机换二进制运行中
 - [x] **变基轮（rebase 至 develop `0fcc44d` 后复测）**：成员3 服务桥（`3db8931`）与路由翻位（`0f65111`）已在基底落地 → station/reservation_module 直渲**真数据**（上条"桥未就绪"降级态自然退位，演示通道 catch 不再触发）；订单三栏=成员3 塌陷修正（colW+自然高）外套本分支整页 Flickable；排序 chip `selected` 机制与"综合=2/空闲=0/距离=1"编号以 develop 为准并入。复跑 11 路由 offscreen rc=0 零报错、qmllint 零 Error；解冲突口径=样式/机制按成员3、widgets 对账锚点 objectName 按本分支（`detailPriceLabel/detailDistanceLabel/reservationOrderTabButton/uiProfileHeroButton` 等实名保留）
 
 ## 截图环境（发给成员3 的翻位清单=克隆内已验证补丁）

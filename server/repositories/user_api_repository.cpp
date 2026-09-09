@@ -1,5 +1,6 @@
 #include "user_api_repository.h"
 #include "charging_repository.h"
+#include "charging_target_repository.h"
 #include "charging/common/model/models.h"
 #include "charging/common/protocol/user_api_contract.h"
 
@@ -25,7 +26,9 @@ QVariantMap row(const QSqlQuery& query)
 {
     QVariantMap result;
     const QSqlRecord record = query.record();
-    for (int i = 0; i < record.count(); ++i) result.insert(record.fieldName(i), query.value(i));
+    for (int i = 0; i < record.count(); ++i)
+        result.insert(record.fieldName(i), record.fieldName(i) == QStringLiteral("maintenance")
+                          ? QVariant(query.value(i).toBool()) : query.value(i));
     return result;
 }
 bool run(QSqlQuery& query, const QString& sql, const QVariantMap& values = {})
@@ -302,7 +305,10 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
         if (!run(q, "SELECT id FROM stations WHERE id=:sid AND status='ACTIVE'", {{"sid", in.stationId}})) return {};
         if (!q.next()) return failure(UserApiError::NotFound);
         q.finish();
-        from = "chargers c"; columns = "c.*"; where = "c.station_id=:sid";
+        from = "chargers c";
+        columns = "c.*,EXISTS(SELECT 1 FROM repair_reports rp WHERE rp.charger_id=c.id "
+                  "AND rp.status IN ('ACCEPTED','PROCESSING')) AS maintenance";
+        where = "c.station_id=:sid";
         binds.insert("sid", in.stationId); sort = "c.id ASC";
         break;
     case UserApiAction::Reservations:
@@ -363,7 +369,19 @@ UserApiResult UserApiRepository::execute(const UserApiQuery& in) const
     binds.insert("offset", (qint64(in.page) - 1) * in.pageSize);
     if (!run(q, "SELECT " + columns + " FROM " + from + " WHERE " + where + " ORDER BY " + sort
                  + " LIMIT :limit OFFSET :offset", binds)) return {};
-    while (q.next()) result.rows.append(row(q));
+    while (q.next()) {
+        auto value = row(q);
+        if (in.action == UserApiAction::Orders) {
+            QJsonObject target;
+            QString stopReason;
+            if (!chargingTargetDto(database_, value.value(QStringLiteral("id")).toLongLong(),
+                                   &target, &stopReason)) return {};
+            value.insert(QStringLiteral("target"), target.toVariantMap());
+            if (!stopReason.isEmpty()) value.insert(QStringLiteral("stop_reason"), stopReason);
+            else value.remove(QStringLiteral("stop_reason"));
+        }
+        result.rows.append(value);
+    }
     if (q.lastError().isValid()) return {};
     q.finish();
     return finish();

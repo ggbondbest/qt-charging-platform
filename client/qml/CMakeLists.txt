@@ -13,6 +13,7 @@ add_executable(charging_client
     main.cpp
     app_bridge.cpp
     app_bridge.h
+    workflow_bridge.cpp workflow_bridge.h
     glyph_provider.cpp
     glyph_provider.h
     service_bridges.cpp

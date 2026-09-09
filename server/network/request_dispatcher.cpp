@@ -6,6 +6,8 @@
 #include "order_service.h"
 #include "user_service.h"
 #include "user_api_service.h"
+#include "queue_service.h"
+#include "repair_service.h"
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -98,11 +100,42 @@ RequestDispatcher::RequestDispatcher(UserService* userService, ChargingService* 
     Q_ASSERT(userService_ != nullptr);
 }
 
+void RequestDispatcher::setWorkflowServices(QueueService* queue, RepairService* repair,
+                                             std::function<bool()> maintenance)
+{
+    queueService_ = queue;
+    repairService_ = repair;
+    maintenance_ = std::move(maintenance);
+}
+
 charging::protocol::ResponseEnvelope
 RequestDispatcher::dispatch(const charging::protocol::RequestEnvelope& request,
                             qint64* authenticatedUserId) const
 {
     using namespace charging::protocol::request_type;
+
+    if (maintenance_ && !maintenance_())
+        return charging::protocol::makeErrorResponse(request, serviceUnavailableError());
+    if (request.type == QStringLiteral("WORKFLOW_SUBSCRIBE") || QueueService::handles(request.type)
+        || RepairService::handles(request.type)) {
+        const qint64 userId = authenticatedUserId ? *authenticatedUserId : 0;
+        if (userId <= 0) return charging::protocol::makeErrorResponse(request, unauthorizedError());
+        if (request.type == QStringLiteral("WORKFLOW_SUBSCRIBE"))
+            return charging::protocol::makeSuccessResponse(request, QJsonObject{{QStringLiteral("subscribed"), true}});
+        QJsonObject result;
+        if (QueueService::handles(request.type) && queueService_)
+            result = queueService_->handle(request.type, request.data, userId);
+        else if (RepairService::handles(request.type) && repairService_)
+            result = repairService_->handle(request.type, request.data, userId);
+        else return charging::protocol::makeErrorResponse(request, serviceUnavailableError());
+        if (result.value(QStringLiteral("success")).toBool())
+            return charging::protocol::makeSuccessResponse(request, result.value(QStringLiteral("data")).toObject());
+        const QJsonObject error = result.value(QStringLiteral("error")).toObject();
+        charging::protocol::ProtocolError failure;
+        failure.code = error.value(QStringLiteral("code")).toString(QStringLiteral("INTERNAL_ERROR"));
+        failure.message = error.value(QStringLiteral("message")).toString(QStringLiteral("操作失败，请稍后重试"));
+        return charging::protocol::makeErrorResponse(request, failure);
+    }
 
     if (request.type == QString::fromLatin1(kUserLogin)) {
         const QJsonValue phoneValue = request.data.value(QStringLiteral("phone"));
@@ -172,7 +205,16 @@ RequestDispatcher::dispatch(const charging::protocol::RequestEnvelope& request,
         } else if (request.type == QString::fromLatin1(kCancelReservation)) {
             result = chargingService_->cancelReservation(*authenticatedUserId, targetId);
         } else if (request.type == QString::fromLatin1(kStartCharging)) {
-            result = chargingService_->startCharging(*authenticatedUserId, targetId);
+            if (request.data.contains(QStringLiteral("target"))
+                && (!request.data.value(QStringLiteral("target")).isObject()
+                    || request.data.value(QStringLiteral("target")).toObject().isEmpty())) {
+                charging::protocol::ProtocolError error;
+                error.code = QStringLiteral("INVALID_ARGUMENT");
+                error.message = QStringLiteral("充电目标格式不正确");
+                return charging::protocol::makeErrorResponse(request, error);
+            }
+            result = chargingService_->startCharging(*authenticatedUserId, targetId,
+                request.data.value(QStringLiteral("target")).toObject());
         } else if (request.type == QString::fromLatin1(kGetChargingStatus)) {
             result = chargingService_->chargingStatus(*authenticatedUserId, targetId);
         } else {

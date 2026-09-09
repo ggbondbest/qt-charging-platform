@@ -2,6 +2,7 @@
 
 #include "billing_service.h"
 #include "charging_repository.h"
+#include "charging_target_repository.h"
 #include "charging_state_machine.h"
 #include "workflow_repository_types.h"
 
@@ -91,51 +92,31 @@ ChargingOperationResult ChargingService::cancelReservation(qint64 userId,
         chargingRepository_->cancelReservation(userId, reservationId, utcNow(clock_)));
 }
 
-ChargingOperationResult ChargingService::startCharging(qint64 userId, qint64 reservationId) const
+ChargingOperationResult ChargingService::startCharging(qint64 userId, qint64 reservationId,
+                                                       const QJsonObject& target) const
 {
+    if (!validateChargingTarget(target)) {
+        ChargingOperationResult result;
+        result.error = makeError(charging::protocol::error_code::kInvalidEnvelope,
+                                 QStringLiteral("请选择有效的充电目标和正整数目标值"));
+        return result;
+    }
     return fromRepository(
-        chargingRepository_->startCharging(userId, reservationId, utcNow(clock_)));
+        chargingRepository_->startCharging(userId, reservationId, utcNow(clock_), target));
 }
 
 ChargingOperationResult ChargingService::chargingStatus(qint64 userId, qint64 orderId) const
 {
-    const QDateTime now = utcNow(clock_);
-    ChargingOperationResult result =
-        fromRepository(chargingRepository_->chargingStatus(userId, orderId, now));
-    if (!result.success || result.order.status != charging::model::OrderStatus::Charging) {
-        return result;
-    }
-    if (!result.order.startedAtUtc.isValid() || now < result.order.startedAtUtc) {
-        result.success = false;
-        result.error = makeError(charging::protocol::error_code::kInternalError,
-                                 QStringLiteral("订单的充电开始时间无效"));
-        return result;
-    }
-
-    const BillingResult billing =
-        billingService_->calculate(result.charger.powerWatts, result.order.startedAtUtc.secsTo(now),
-                                   result.order.unitPriceCentsPerKwh);
-    if (!billing.success) {
-        result.success = false;
-        result.error = billing.error;
-        return result;
-    }
-    QString diagnostic;
-    if (!chargingRepository_->recordTelemetry(userId, orderId, now, result.charger.powerWatts,
-                                              billing.durationSeconds, billing.energyWh,
-                                              billing.amountCents, &diagnostic)) {
-        result.success = false;
-        result.error = mapRepositoryError(RepositoryError::Database, diagnostic);
-        return result;
-    }
-    result.order.durationSeconds = billing.durationSeconds;
-    result.order.energyWh = billing.energyWh;
-    result.order.amountCents = billing.amountCents;
-    result.currentPowerWatts = result.charger.powerWatts;
-    return result;
+    return sampleCharging(userId, orderId, false);
 }
 
 ChargingOperationResult ChargingService::stopCharging(qint64 userId, qint64 orderId) const
+{
+    return sampleCharging(userId, orderId, true);
+}
+
+ChargingOperationResult ChargingService::sampleCharging(qint64 userId, qint64 orderId,
+                                                        bool manualStop) const
 {
     const QDateTime now = utcNow(clock_);
     const ChargingRepositoryResult snapshot =
@@ -147,7 +128,7 @@ ChargingOperationResult ChargingService::stopCharging(qint64 userId, qint64 orde
 
     if (current.order.status == charging::model::OrderStatus::WaitingPayment ||
         current.order.status == charging::model::OrderStatus::Completed) {
-        current.idempotent = true;
+        current.idempotent = manualStop;
         current.currentPowerWatts = 0;
         return current;
     }
@@ -155,24 +136,80 @@ ChargingOperationResult ChargingService::stopCharging(qint64 userId, qint64 orde
         !ChargingStateMachine::canTransition(current.order.status,
                                              charging::model::OrderStatus::WaitingPayment) ||
         !current.order.startedAtUtc.isValid() || now < current.order.startedAtUtc) {
+        if (!manualStop && current.order.status != charging::model::OrderStatus::Charging)
+            return current;
         current.success = false;
         current.error = makeError(charging::protocol::error_code::kInvalidStateTransition,
                                   QStringLiteral("当前订单不允许停止充电"));
         return current;
     }
 
-    const BillingResult billing = billingService_->calculate(current.charger.powerWatts,
-                                                             current.order.startedAtUtc.secsTo(now),
-                                                             current.order.unitPriceCentsPerKwh);
+    BillingResult billing;
+    QString stopReason = QStringLiteral("MANUAL");
+    bool reached = false;
+    if (!current.order.target.isEmpty()) {
+        const TargetMeterSample sample = calculateTargetSample(
+            current.charger.powerWatts, current.order.startedAtUtc.secsTo(now),
+            current.order.unitPriceCentsPerKwh, current.order.target);
+        billing.success = sample.success;
+        billing.durationSeconds = sample.durationSeconds;
+        billing.energyWh = sample.energyWh;
+        billing.amountCents = sample.amountCents;
+        reached = sample.reached;
+        if (reached) stopReason = sample.stopReason;
+        if (!sample.success)
+            billing.error = makeError(charging::protocol::error_code::kInternalError,
+                                      QStringLiteral("无法计算当前充电目标的安全计量值"));
+    } else {
+        billing = billingService_->calculate(current.charger.powerWatts,
+                                              current.order.startedAtUtc.secsTo(now),
+                                              current.order.unitPriceCentsPerKwh);
+    }
     if (!billing.success) {
         current.success = false;
         current.error = billing.error;
         return current;
     }
 
-    return fromRepository(chargingRepository_->stopCharging(
-        userId, orderId, current.order.startedAtUtc, now, billing.durationSeconds, billing.energyWh,
-        billing.amountCents));
+    if (manualStop || reached) {
+        return fromRepository(chargingRepository_->stopCharging(
+            userId, orderId, current.order.startedAtUtc, now, billing.durationSeconds,
+            billing.energyWh, billing.amountCents, stopReason));
+    }
+    QString diagnostic;
+    if (!chargingRepository_->recordTelemetry(userId, orderId, now, current.charger.powerWatts,
+                                              billing.durationSeconds, billing.energyWh,
+                                              billing.amountCents, &diagnostic)) {
+        current.success = false;
+        current.error = mapRepositoryError(RepositoryError::Database, diagnostic);
+        return current;
+    }
+    current.order.durationSeconds = billing.durationSeconds;
+    current.order.energyWh = billing.energyWh;
+    current.order.amountCents = billing.amountCents;
+    if (!chargingTargetDto(chargingRepository_->database(), orderId, &current.order.target,
+                           &current.order.stopReason, &diagnostic)) {
+        current.success = false;
+        current.error = mapRepositoryError(RepositoryError::Database, diagnostic);
+    }
+    return current;
+}
+
+bool ChargingService::advanceTargets(QString* diagnostic) const
+{
+    if (diagnostic) diagnostic->clear();
+    QVector<QPair<qint64, qint64>> orders;
+    if (!activeChargingTargetOrders(chargingRepository_->database(), &orders, diagnostic))
+        return false;
+    bool success = true;
+    for (const auto& entry : orders) {
+        const ChargingOperationResult result = sampleCharging(entry.first, entry.second, false);
+        if (!result.success) {
+            success = false;
+            if (diagnostic) *diagnostic = QStringLiteral("A target charging sample could not be applied");
+        }
+    }
+    return success;
 }
 
 ChargingOperationResult ChargingService::fromRepository(const ChargingRepositoryResult& value) const
@@ -184,6 +221,14 @@ ChargingOperationResult ChargingService::fromRepository(const ChargingRepository
     result.order = value.order;
     result.charger = value.charger;
     if (value.ok) {
+        QString diagnostic;
+        if (value.order.id > 0 && !chargingTargetDto(chargingRepository_->database(), value.order.id,
+                                                    &result.order.target, &result.order.stopReason,
+                                                    &diagnostic)) {
+            result.success = false;
+            result.error = mapRepositoryError(RepositoryError::Database, diagnostic);
+            return result;
+        }
         result.currentPowerWatts = value.order.status == charging::model::OrderStatus::Charging
                                        ? value.charger.powerWatts
                                        : 0;

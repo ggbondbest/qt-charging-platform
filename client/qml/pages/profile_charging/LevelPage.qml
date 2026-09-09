@@ -3,11 +3,12 @@ import QtQuick.Controls.Basic
 import "../../platform" as P
 import "../../platform/Glyphs.js" as Glyphs
 
-// 会员等级页（2026-09-09 经验等级批）：从「我的」页经验卡整卡点击进入。
-// 三段式：当前等级 hero（条+经验）→ 等级阶梯与权益 → 升级记录。
-// 数据全在 ProgressService（App.progressService）；升级礼包积分 2026-09-09
-// 拍板改真入账（推翻原"分账"设计）：bridge 发 CREDIT_LEVEL_REWARD 落服务端
-// points_ledger，「积分」页流水可见"等级礼包"行；本页「升级记录」为展示镜像。
+// 会员等级页 = 会员中心（2026-09-09 会员中心批）：从「我的」页等级卡进入。
+// 四段式：当前等级 hero → 等级阶梯与权益 → 每日任务（攒经验，TaskSection
+// 与任务页共用）→ 升级礼包记录。数据全在 ProgressService（App.progressService）；
+// 升级礼包积分 2026-09-09 拍板改真入账（推翻原"分账"设计）：bridge 发
+// CREDIT_LEVEL_REWARD 落服务端 points_ledger，「积分」页流水可见"等级礼包"行；
+// 本页「升级记录」为展示镜像。
 Item {
     id: page
     objectName: "levelPage"
@@ -206,6 +207,18 @@ Item {
                         }
                     }
                 }
+            }
+
+            // ---- 每日任务（会员中心批：做任务攒经验直接在等级页完成）----
+            Text {
+                objectName: "uiLevelTasksTitle"
+                text: "每日任务 · 攒经验升等级"
+                font.pixelSize: P.Style.fontSm; color: P.Style.muted
+            }
+            TaskSection {
+                id: levelTasks
+                width: parent.width
+                visible: !!page.prog
             }
 
             // ---- 升级记录 ----

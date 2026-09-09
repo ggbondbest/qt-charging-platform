@@ -21,6 +21,22 @@ using charging::client::ChargingService;
 using charging::client::ChargingStatus;
 using charging::client::MockRequestTransport;
 
+class CapturingTransport final : public charging::client::IRequestTransport
+{
+public:
+    QString lastType;
+    QJsonObject lastData;
+    ResponseCallback pending;
+    int calls = 0;
+    void send(const QString& type, const QJsonObject& data, const ResponseCallback& callback) override
+    {
+        ++calls;
+        lastType = type;
+        lastData = data;
+        pending = callback;
+    }
+};
+
 constexpr int kWaitMs = 3000;
 
 void registerMetaTypes()
@@ -314,6 +330,37 @@ private slots:
         QTest::qWait(600);
         QCOMPARE(started.count(), 1);
         service.stopTracking();
+    }
+
+    void targetStartSendsIntegerDefinitionAndKeepsDuplicateGuard()
+    {
+        CapturingTransport transport;
+        ChargingService service(&transport);
+        service.startChargingWithTarget(123, QStringLiteral("AMOUNT"), 2000);
+        QCOMPARE(transport.lastType, QStringLiteral("START_CHARGING"));
+        QCOMPARE(transport.lastData.value(QStringLiteral("reservationId")).toString(), QStringLiteral("123"));
+        const auto target = transport.lastData.value(QStringLiteral("target")).toObject();
+        QCOMPARE(target.value(QStringLiteral("type")).toString(), QStringLiteral("AMOUNT"));
+        QCOMPARE(target.value(QStringLiteral("value")).toInt(), 2000);
+        QVERIFY(service.isStarting());
+        service.startChargingWithTarget(123, QStringLiteral("ENERGY"), 10000);
+        QCOMPARE(transport.calls, 1);
+        transport.pending(false, {}, {});
+        QVERIFY(!service.isStarting());
+        service.startChargingWithTarget(123, QStringLiteral("ENERGY"), 10000);
+        QCOMPARE(transport.calls, 2);
+    }
+
+    void invalidTargetDoesNotReachTransport()
+    {
+        CapturingTransport transport;
+        ChargingService service(&transport);
+        QSignalSpy failed(&service, &ChargingService::operationFailed);
+        service.startChargingWithTarget(123, QStringLiteral("AMOUNT"), 0);
+        service.startChargingWithTarget(123, QStringLiteral("UNKNOWN"), 10);
+        QCOMPARE(transport.calls, 0);
+        QCOMPARE(failed.count(), 2);
+        QVERIFY(!service.isStarting());
     }
 };
 

@@ -24,6 +24,9 @@ constexpr int kSeedOffsetsMinutes[3] = {14, 95, 1520};
 // 服务端 schema CHECK 目前放行 charging_stopped/order_paid/reservation_expiry_reminder）。
 bool typeFromServerWord(const QString& word, NotificationType* out)
 {
+    if (word.compare(QStringLiteral("QUEUE_CALLED"), Qt::CaseInsensitive) == 0) { *out = NotificationType::QueueCalled; return true; }
+    if (word.compare(QStringLiteral("QUEUE_EXPIRED"), Qt::CaseInsensitive) == 0) { *out = NotificationType::QueueExpired; return true; }
+    if (word.compare(QStringLiteral("REPAIR_UPDATED"), Qt::CaseInsensitive) == 0) { *out = NotificationType::RepairUpdated; return true; }
     if (word == QLatin1String("reservation_expiry_reminder")) {
         *out = NotificationType::ReservationExpiryReminder;
     } else if (word == QLatin1String("reservation_success_notice")) {
@@ -138,6 +141,8 @@ void NotificationService::resetForTesting()
 
 bool NotificationService::enabledForType(NotificationType type) const
 {
+    if (type == NotificationType::QueueCalled || type == NotificationType::QueueExpired
+        || type == NotificationType::RepairUpdated) return true;
     if (settings_ == nullptr) {
         return true; // 未注入 = 全展示（独立测试/降级口径）
     }
@@ -208,6 +213,9 @@ QString NotificationService::typeTitle(NotificationType type)
         return QStringLiteral("充电结束通知");
     case NotificationType::OrderPaid:
         return QStringLiteral("支付成功通知");
+    case NotificationType::QueueCalled: return QStringLiteral("轮到您充电了");
+    case NotificationType::QueueExpired: return QStringLiteral("叫号已过期");
+    case NotificationType::RepairUpdated: return QStringLiteral("报障进度更新");
     }
     return QStringLiteral("系统通知");
 }

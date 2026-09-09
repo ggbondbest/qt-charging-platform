@@ -23,6 +23,7 @@ namespace charging::qml {
 class WalletBridge; class OrderBridge; class ChargingBridge; class StationQueryBridge;
 class ReservationBridge; class SettingsBridge; class FavoritesBridge; class NotificationBridge;
 class MapBridge;
+class WorkflowBridge;
 
 class StatsBridge; class CouponBridge; class PointBridge; class RatingBridge;
 
@@ -31,6 +32,7 @@ class QmlApp final : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QObject* walletService READ walletService NOTIFY servicesChanged)
+    Q_PROPERTY(QObject* workflowService READ workflowService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* orderService READ orderService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* chargingService READ chargingService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* reservationService READ reservationService NOTIFY servicesChanged)
@@ -57,6 +59,7 @@ public:
     QmlApp(const QString& host, quint16 port, bool mockMode, QObject* parent = nullptr);
     ~QmlApp() override;
     QObject* walletService() const;
+    QObject* workflowService() const;
     QObject* orderService() const;
     QObject* chargingService() const;
     QObject* reservationService() const;
@@ -115,6 +118,7 @@ private:
     charging::client::OrderService* orderService_ = nullptr;
     charging::client::ChargingService* chargingService_ = nullptr;
     WalletBridge* walletBridge_ = nullptr;
+    WorkflowBridge* workflowBridge_ = nullptr;
     OrderBridge* orderBridge_ = nullptr;
     ChargingBridge* chargingBridge_ = nullptr;
     StationQueryBridge* stationQueryBridge_ = nullptr;

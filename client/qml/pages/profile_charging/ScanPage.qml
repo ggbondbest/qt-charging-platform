@@ -197,7 +197,7 @@ Item {
             Text {
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                 objectName: "uiScanSourceTag"
-                text: "模拟通道"
+                text: "实时取景"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
         }
@@ -234,7 +234,7 @@ Item {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "对准桩身二维码（本轮为模拟演示）"
+            text: "对准桩身二维码扫描，或粘贴桩码"
             font.pixelSize: P.Style.fontSm; color: P.Style.muted
         }
 
@@ -264,7 +264,7 @@ Item {
         // ---- 模拟码速选（search 回来的每站一张）----
         Text {
             width: listScroll.width
-            text: "或点选模拟桩码"
+            text: "或点选附近站点码"
             font.pixelSize: P.Style.fontSm; color: P.Style.muted
             visible: page.stations.length > 0
         }
