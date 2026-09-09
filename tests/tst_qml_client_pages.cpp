@@ -923,8 +923,10 @@ private slots:
         QCOMPARE(available, 3);
     }
 
-    // 批次C 签到/积分页 × 桥替身：进页自拉流水、流水卡入模、签到回执驱动
-    // 按钮三态（未签 → 签到成功 → 重放不反悔），失败回执解锁在途。
+    // 积分页 × 桥替身：进页自拉流水、流水卡入模（含结算返点行）、GET_POINTS
+    // 失败解锁在途。2026-09-09 去签到化：本页不得再暴露任何签到面
+    //（签到入口唯一在 ProfilePage hero 胶囊，守卫用例见
+    //  profileCheckInPillGuardsRepeatedTaps）。
     void pointsPageRendersBridgeLedger()
     {
         QmlApp app;
@@ -942,42 +944,38 @@ private slots:
         QCOMPARE(fake.lastPageSize, 20);
         QVERIFY(!page->property("loadedOnce").toBool());
 
-        fake.emitPoints(60, {QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+        fake.emitPoints(70, {QVariantMap{{QStringLiteral("id"), QStringLiteral("3")},
                                          {QStringLiteral("amount"), 10},
-                                         {QStringLiteral("reason"), QStringLiteral("每日签到")},
+                                         {QStringLiteral("reason"), QStringLiteral("消费返积分")},
                                          {QStringLiteral("createdAtUtc"),
-                                          QStringLiteral("2026-09-08T08:00:00.000Z")}},
-                            QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                                          QStringLiteral("2026-09-08T09:00:00.000Z")}},
+                             QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+                                        {QStringLiteral("amount"), 10},
+                                        {QStringLiteral("reason"), QStringLiteral("每日签到")},
+                                        {QStringLiteral("createdAtUtc"),
+                                         QStringLiteral("2026-09-08T08:00:00.000Z")}},
+                             QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
                                         {QStringLiteral("amount"), 50},
                                         {QStringLiteral("reason"), QStringLiteral("注册礼包")},
                                         {QStringLiteral("createdAtUtc"),
-                                         QStringLiteral("2026-09-05T08:00:00.000Z")}}}, 2);
+                                         QStringLiteral("2026-09-05T08:00:00.000Z")}}}, 3);
         auto* model = page->findChild<QObject*>("uiPointsModel");
         QVERIFY(model);
-        QCOMPARE(model->property("count").toInt(), 2);
-        QCOMPARE(page->property("points").toInt(), 60);
+        QCOMPARE(model->property("count").toInt(), 3);
+        QCOMPARE(page->property("points").toInt(), 70);
         QVERIFY(page->property("loadedOnce").toBool());
         QVERIFY(!page->property("reqActive").toBool());
 
-        // 签到按钮路径（delegate 在 offscreen 不可 findChild——走页面函数，
-        // 与 onClicked 同一代码路径）：请求发出、checkingIn 置真。
-        QMetaObject::invokeMethod(page, "checkInNow");
-        QCOMPARE(fake.checkInCalls, 1);
-        QVERIFY(page->property("checkingIn").toBool());
-
-        // 成功回执：总分更新、按钮进入"今日已签"态（重放同样置真，不反悔）。
-        fake.emitCheckIn(QStringLiteral("2026-09-08"), 70, 10, false);
-        QVERIFY(!page->property("checkingIn").toBool());
-        QCOMPARE(page->property("points").toInt(), 70);
-        QVERIFY(page->property("todayCheckedIn").toBool());
-
         auto* title = page->findChild<QQuickItem*>("uiPointsTitle");
         QVERIFY(title);
-        QCOMPARE(title->property("text").toString(), QStringLiteral("签到 · 积分"));
+        QCOMPARE(title->property("text").toString(), QStringLiteral("积分"));
 
-        // 失败回执（CHECK_IN 在途挂掉）：checkingIn 解锁、已签态保持。
-        QMetaObject::invokeMethod(page, "checkInNow");   // todayCheckedIn 拦路：不发请求
-        QCOMPARE(fake.checkInCalls, 1);
+        // 去签到化钉子：签到面（属性/入口函数）不得回流本页。
+        QVERIFY(!page->property("todayCheckedIn").isValid());
+        QVERIFY(!page->property("checkingIn").isValid());
+        QVERIFY(!QMetaObject::invokeMethod(page, "checkInNow"));
+
+        // 失败回执（GET_POINTS 在途挂掉）：reqActive 解锁。
         fake.emitFailure(QStringLiteral("GET_POINTS"));
         QVERIFY(!page->property("reqActive").toBool());
     }
@@ -1351,7 +1349,8 @@ private slots:
     }
 
     // 审查 P2#3 回归（通知侧）：同会话支付成功 → mock payOrder 落 order_paid
-    // 通知；navigate("notifications") 进页强制补拉后新行到账。
+    // 通知；navigate("notifications") 进页强制补拉后新行到账。尾部顺带钉
+    // 结算返积分（2026-09-09）：mock 与服务端同事务口径的镜像行。
     void notificationsRefetchOnEntryAfterPayment()
     {
         QmlApp app;
@@ -1380,6 +1379,29 @@ private slots:
         QCOMPARE(notifications->notifications().first().toMap()
                      .value(QStringLiteral("type")).toString(),
                  QStringLiteral("order_paid"));
+
+        // 结算返积分镜像：payOrder 同一动作落账——满 1 元部分返 1 分/元，
+        // 返点行 prepend 在种子"欢迎礼包"之上；不足 1 元无行（条件断言自洽）。
+        const qint64 paidCents = page1.first().toMap()
+            .value(QStringLiteral("amountCents")).toLongLong();
+        const qint64 expectedPoints = paidCents / 100;
+        auto* points = qobject_cast<PointBridge*>(app.pointsService());
+        QVERIFY(points);
+        QSignalSpy pointsSpy(points, &PointBridge::pointsLoaded);
+        points->fetchPoints(1, 10);
+        QTRY_VERIFY_WITH_TIMEOUT(pointsSpy.count() >= 1, 4000);
+        const QVariantList ledger = pointsSpy.at(0).at(1).toList();
+        if (expectedPoints > 0) {
+            QCOMPARE(ledger.first().toMap()
+                         .value(QStringLiteral("reason")).toString(),
+                     QStringLiteral("消费返积分"));
+            QCOMPARE(ledger.first().toMap()
+                         .value(QStringLiteral("amount")).toLongLong(),
+                     expectedPoints);
+            QCOMPARE(pointsSpy.at(0).at(0).toLongLong(), 50 + expectedPoints);
+        } else {
+            QCOMPARE(ledger.size(), 1);   // 仅种子欢迎行
+        }
     }
 
     // 批次F 扫码页 × 桥替身全状态机：入场拉站、速选码→detail 取首台空闲桩、

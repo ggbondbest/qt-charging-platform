@@ -19,8 +19,22 @@ private slots:
     void invalidRequests_data();
     void invalidRequests();
     void boundariesAndNormalization();
+    void settlementRewardPointsRule();
     void unsupportedAction();
 };
+
+// 结算返积分规则单点（2026-09-09）：floor(amount/100)，负/零一律 0。
+// 服务端事务与 mock 都调此函数，钉住它即钉住两端一致（TODO(contract) 比例）。
+void UserApiContractTest::settlementRewardPointsRule()
+{
+    QCOMPARE(settlementRewardPoints(0), 0);
+    QCOMPARE(settlementRewardPoints(99), 0);        // 不足 1 元不返
+    QCOMPARE(settlementRewardPoints(100), 1);
+    QCOMPARE(settlementRewardPoints(199), 1);       // floor 向下取整
+    QCOMPARE(settlementRewardPoints(549), 5);
+    QCOMPARE(settlementRewardPoints(5000), 50);
+    QCOMPARE(settlementRewardPoints(-100), 0);
+}
 
 template <typename Model>
 static void verifyModel(const QJsonObject& object)

@@ -2,6 +2,7 @@
 
 #include "charging/common/model/models.h"
 #include "charging/common/model/enums.h"
+#include "charging/common/protocol/user_api_contract.h"
 #include "repository_row_mapper.h"
 
 #include <QSqlError>
@@ -343,6 +344,23 @@ OrderRepositoryResult OrderRepository::pay(qint64 userId, qint64 orderId,
                 .arg((currentBalance - result.order.amountCents) / 100.0, 0, 'f', 2),
             paidAtUtc, &notificationError)) {
         return failure(RepositoryError::Database, notificationError);
+    }
+
+    // Settlement reward in the SAME transaction (2026-09-09): every full yuan
+    // paid grants kSettlementPointsPerYuan points, reason code 'SETTLEMENT'
+    // (display-mapped on the GET_POINTS output side). The idempotent replay
+    // branch returned above, so one payment credits points exactly once.
+    // TODO(contract): rate/business rule pending sign-off — see
+    // settlementRewardPoints() in user_api_contract.h (single source).
+    const qint64 rewardPoints = charging::protocol::user_api::settlementRewardPoints(
+        result.order.amountCents);
+    if (rewardPoints > 0) {
+        QString pointsError;
+        if (!repository_detail::insertPointsLedgerInTransaction(
+                database_, userId, rewardPoints, QStringLiteral("SETTLEMENT"),
+                paidAtUtc, &pointsError)) {
+            return failure(RepositoryError::Database, pointsError);
+        }
     }
 
     if (!loadOrder(database_, orderId, &result.order, &found, &result.diagnostic) || !found ||

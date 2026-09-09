@@ -35,8 +35,8 @@ PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由�
 | `GET_USER_STATS` | 本人已完成订单按月聚合 + 碳排换算 | 已实现 | 月报页 StatsPage（statsService 桥），mock 同形 |
 | `GET_COUPONS` | 本人券状态过滤 + 分页 | 已实现 | 券页 CouponPage（couponService 桥），接线即拉缓存 |
 | `GET_NOTIFICATIONS` | 本人站内通知分页（充电结束/支付成功/超时提醒） | 已实现 | NotificationPage（NotificationService 服务端通道） |
-| `CHECK_IN` | 每日签到幂等入账 + 积分余额 | 已实现 | PointsPage 签到按钮（pointsService 桥），mock 同形 |
-| `GET_POINTS` | 本人积分总分 + 流水分页 | 已实现 | PointsPage 流水卡（pointsService 桥） |
+| `CHECK_IN` | 每日签到幂等入账 + 积分余额 | 已实现 | 「我的」页名片卡签到胶囊（pointsService 桥），mock 同形 |
+| `GET_POINTS` | 本人积分总分 + 流水分页 | 已实现 | PointsPage 流水卡（pointsService 桥）；含 `SETTLEMENT` 结算返点行 |
 | `SUBMIT_CHARGER_RATING` | 完成单一次评价（order_id UNIQUE 幂等重放） | 已实现 | OrderDetailPage 完成态评价卡（ratingsService 桥） |
 | `GET_MY_RATINGS` | 本人评价分页（JOIN 桩/站展示字段） | 已实现 | RatingsPage 我的评价（ratingsService 桥） |
 
@@ -237,8 +237,14 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 
 - 请求：`page?`、`pageSize?`。
 - 返回：`{points, entries: [{id, amount, reason, createdAtUtc}], page, pageSize,
-  total}`，新→旧。`reason` 词表一期只映射 `CHECK_IN` → "每日签到"，其余运营文案
-  原样透传；TODO(contract)：词表评审。不回显 `userId`。
+  total}`，新→旧。`reason` 词表映射 `CHECK_IN` → "每日签到"、`SETTLEMENT` →
+  "消费返积分"，其余运营文案原样透传；TODO(contract)：词表评审。不回显 `userId`。
+- `SETTLEMENT` 由 `PAY_ORDER` 成功事务同笔写入（2026-09-09 追加）：
+  `amount = settlementRewardPoints(order.amountCents)`，即每满 1 元返
+  `kSettlementPointsPerYuan` 分（floor 取整，¥5.99→5 分）；不足 1 元不产生流水行。
+  幂等重放分支在扣款前返回，故一笔订单只返一次积分。比例常量与计算单点收敛于
+  contract.h 的 `settlementRewardPoints()`，服务端与 mock 共用——TODO(contract)：
+  比例/业务规则终确认。
 
 ### SUBMIT_CHARGER_RATING
 

@@ -297,6 +297,30 @@ void UserApiIntegrationTest::statsCouponsAndNotifications()
     QCOMPARE(response.data.value("notifications").toArray().first().toObject().value("type").toString(),
              QStringLiteral("order_paid"));   // newest first within one clock tick (id DESC)
 
+    // Settlement reward rides the SAME transaction as the order_paid notify
+    // (2026-09-09): floor(amount/100) via settlementRewardPoints()
+    // (TODO(contract) rate; helper itself unit-pinned in tst_user_api_contract).
+    // Ground truth = the paid order's own amountCents from GET_ORDERS, so this
+    // test pins "credited once, mapped, total = ledger SUM, replay no-double"
+    // without hardcoding the billing number. This user never checked in.
+    const auto ordersResp = call(a, kGetOrders, {{"status", "COMPLETED"}});
+    QVERIFY2(ordersResp.success, qPrintable(ordersResp.error.message));
+    const int paidCents = ordersResp.data.value("orders").toArray()
+                              .first().toObject().value("amountCents").toInt();
+    const int expectedPoints = paidCents / 100;   // same floor rule, independent source
+    response = call(a, kGetPoints);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    const QJsonArray ledger = response.data.value("entries").toArray();
+    QCOMPARE(ledger.size(), expectedPoints > 0 ? 1 : 0);
+    if (expectedPoints > 0) {
+        QCOMPARE(ledger.first().toObject().value("reason").toString(),
+                 QStringLiteral("消费返积分"));   // SETTLEMENT mapped at output
+        QCOMPARE(ledger.first().toObject().value("amount").toInt(), expectedPoints);
+    }
+    QCOMPARE(response.data.value("points").toInt(), expectedPoints);
+    QVERIFY(call(a, kPayOrder, {{"orderId", orderId}}).success);   // idempotent replay
+    QCOMPARE(call(a, kGetPoints).data.value("points").toInt(), expectedPoints);
+
     response = call(a, kGetUserStats);
     QVERIFY(response.success);
     const QJsonArray months = response.data.value("months").toArray();

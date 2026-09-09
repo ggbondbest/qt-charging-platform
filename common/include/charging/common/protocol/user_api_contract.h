@@ -22,6 +22,17 @@ inline constexpr int kCouponValidityDays = 30;
 // amount lives here so the team can change it in one place).
 // One check-in per user per UTC day, idempotent; grants kCheckInRewardPoints.
 inline constexpr qint64 kCheckInRewardPoints = 10;
+// Settlement reward (2026-09-09 proposal; TODO(contract): business sign-off
+// pending — rate lives here so the team can change it in one place): every
+// full yuan paid on an order settlement grants kSettlementPointsPerYuan points
+// (floor division: ¥48.64 pays 48 points). Ledger reason 'SETTLEMENT',
+// display-mapped to "消费返积分" on the GET_POINTS output side. Computed once
+// in settlementRewardPoints() so server and mock share the exact rule.
+inline constexpr qint64 kSettlementPointsPerYuan = 1;
+inline constexpr qint64 settlementRewardPoints(qint64 amountCents)
+{
+    return amountCents <= 0 ? 0 : (amountCents / 100) * kSettlementPointsPerYuan;
+}
 // Charger rating (2026-09-08): 1..5 stars, optional comment capped at 140
 // code points. TODO(contract): whether to allow editing a submitted rating
 // (one rating per order, immutable once submitted).

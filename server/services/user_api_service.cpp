@@ -209,13 +209,15 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     }
     if (query.action == UserApiAction::GetPoints) {
         // 响应形冻结为 {points, entries:[{id, amount, reason, createdAtUtc}],
-        // page, pageSize, total}；reason 词表只映射 CHECK_IN，其余运营文案
-        // 原样透传（TODO(contract): 词表评审）。
+        // page, pageSize, total}；reason 词表映射 CHECK_IN/SETTLEMENT，其余
+        // 运营文案原样透传（TODO(contract): 词表评审）。
         QJsonArray entries;
         for (const auto& row : result.rows) {
             QJsonObject item = wireRow(row);
             if (item.value("reason").toString() == QLatin1String("CHECK_IN"))
                 item.insert("reason", QStringLiteral("每日签到"));
+            else if (item.value("reason").toString() == QLatin1String("SETTLEMENT"))
+                item.insert("reason", QStringLiteral("消费返积分"));
             item.insert("createdAtUtc", item.take("createdAt"));
             item.remove("userId");    // never echo internal identity columns
             entries.append(item);

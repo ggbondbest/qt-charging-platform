@@ -1054,6 +1054,20 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                                    .arg(order->amountCents / 100.0, 0, 'f', 2)
                                    .arg(user_.balanceCents / 100.0, 0, 'f', 2),
                                now);
+        // 镜像服务端同事务的结算返积分（2026-09-09）：规则单点 =
+        // settlementRewardPoints()（每满 1 元返 1 分，TODO(contract)）。
+        // reason 存显示词与 CHECK_IN 同款（真服务端存码、输出侧映射）。
+        const qint64 rewardPoints =
+            charging::protocol::user_api::settlementRewardPoints(order->amountCents);
+        if (rewardPoints > 0) {
+            pointsTotal_ += rewardPoints;
+            QJsonObject entry;
+            entry.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+            entry.insert(QStringLiteral("amount"), static_cast<double>(rewardPoints));
+            entry.insert(QStringLiteral("reason"), QStringLiteral("消费返积分"));
+            entry.insert(QStringLiteral("createdAtUtc"), now.toString(Qt::ISODateWithMs));
+            pointsLedger_.prepend(entry);
+        }
 
         callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
         return;

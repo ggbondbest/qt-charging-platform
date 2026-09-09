@@ -425,7 +425,7 @@ Item {
                           route: "stats",       badge: "" },
                         { obj: "openCouponButton",  glyph: "🎫", title: "优惠券",
                           route: "coupon",      badge: "coupon" },
-                        { obj: "openPointsButton",  glyph: "🪙", title: "签到积分",
+                        { obj: "openPointsButton",  glyph: "🪙", title: "积分",
                           route: "points",      badge: "points" },
                         // 经验等级/每日任务（2026-09-09 需求批）：任务做经验，等级看权益。
                         { obj: "openTasksButton",   glyph: "🗓️", title: "每日任务",
