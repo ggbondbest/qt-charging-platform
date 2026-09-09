@@ -59,6 +59,8 @@ Window {
         return migrated.indexOf(r) >= 0 ? t[r] : "pages/PlaceholderPage.qml"
     }
     function pushRoute(r, arg) {
+        // Historical links share the same tab and the same tracking owner.
+        if (r === "charging_run") r = "charging"
         if ((!App || !App.loggedIn) && r !== "login") r = "login"
         const src = pageSource(r)
         if (src.length === 0) return
@@ -72,6 +74,8 @@ Window {
         const isTab = tabIds.indexOf(r) >= 0 || r === "login"
                       || r === "charging_run" || r === "settlement"
         if (isTab) {
+            if (stack.currentItem && typeof stack.currentItem.releaseTracking === "function")
+                stack.currentItem.releaseTracking()
             stack.clear(StackView.Immediate)
             if (stack.depth > 0) stack.replace(url, props)
             else stack.push(url, props)
@@ -91,6 +95,8 @@ Window {
         function onToastRequested(text, tone) { toast.show(text, tone) }
         function onLoginStateChanged() {
             P.TabCache.charging = null
+            if (stack.currentItem && typeof stack.currentItem.releaseTracking === "function")
+                stack.currentItem.releaseTracking()
             stack.clear(StackView.Immediate)
             if (!App.loggedIn) shell.pushRoute("login")
             else shell.pushRoute("station")

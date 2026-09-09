@@ -1467,7 +1467,7 @@ private slots:
         QVERIFY(!arg.value(QStringLiteral("hasStationLocation")).toBool());
         QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), -1);
         QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
-        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("charging_run"));
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("charging"));
         QVERIFY(!app.checkingOrders());
     }
 

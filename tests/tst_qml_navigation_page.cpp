@@ -15,6 +15,7 @@ class NavigationMapFake final : public QObject
     Q_OBJECT
     Q_PROPERTY(bool hasLocation MEMBER hasLocation NOTIFY locationChanged)
     Q_PROPERTY(QString locationLabel MEMBER locationLabel NOTIFY locationChanged)
+    Q_PROPERTY(QString browsingCity MEMBER browsingCity CONSTANT)
     Q_PROPERTY(bool busy MEMBER busy NOTIFY changed)
     Q_PROPERTY(QString error MEMBER error NOTIFY changed)
     Q_PROPERTY(QString routeHtml MEMBER routeHtml NOTIFY changed)
@@ -24,6 +25,7 @@ class NavigationMapFake final : public QObject
 public:
     bool hasLocation = false;
     QString locationLabel;
+    QString browsingCity = QStringLiteral("大连市");
     bool busy = false;
     QString error, routeHtml;
     int routeDistanceMeters = -1, durationMinutes = -1;
@@ -123,6 +125,36 @@ private slots:
         QVERIFY(caption);
         QVERIFY(caption->property("text").toString().contains(QStringLiteral("请先定位")));
         QVERIFY(page->property("loadedHtml").toString().isEmpty());
+    }
+
+    void missingOriginInheritsBrowsingCity_data()
+    {
+        QTest::addColumn<QString>("city");
+        QTest::newRow("dalian") << QStringLiteral("大连市");
+        QTest::newRow("shenyang") << QStringLiteral("沈阳市");
+        QTest::newRow("beijing") << QStringLiteral("北京市");
+        QTest::newRow("shanghai") << QStringLiteral("上海市");
+        QTest::newRow("shenzhen") << QStringLiteral("深圳市");
+    }
+
+    void missingOriginInheritsBrowsingCity()
+    {
+        QFETCH(QString, city);
+        NavigationMapFake map;
+        map.browsingCity = city;
+        NavigationAppFake app;
+        QQmlEngine engine;
+        QQuickWindow window;
+        auto page = load(engine, window, map, app);
+        QVERIFY(page);
+        auto* region = page->findChild<QObject*>(QStringLiteral("navigationRegionInput"));
+        auto* input = page->findChild<QObject*>(QStringLiteral("originField"));
+        QVERIFY(region && input);
+        QCOMPARE(region->property("editText").toString(), city);
+        QVERIFY(map.modes.isEmpty());
+        input->setProperty("text", QStringLiteral("市民广场"));
+        QVERIFY(QMetaObject::invokeMethod(page.get(), "locateOrigin"));
+        QCOMPARE(map.addresses, QStringList{city + QStringLiteral(" 市民广场")});
     }
 
     void invalidDestinationDoesNotRequestRoute_data()

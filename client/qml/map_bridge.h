@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <QStringList>
 
 namespace charging::qml {
 
@@ -22,6 +23,8 @@ class MapBridge final : public QObject
     Q_PROPERTY(int routeDistanceMeters READ routeDistanceMeters NOTIFY changed)
     Q_PROPERTY(int durationMinutes READ durationMinutes NOTIFY changed)
     Q_PROPERTY(QVariantList steps READ steps NOTIFY changed)
+    Q_PROPERTY(QStringList availableCities READ availableCities CONSTANT)
+    Q_PROPERTY(QString browsingCity READ browsingCity NOTIFY browsingCityChanged)
 public:
     explicit MapBridge(QObject* parent = nullptr);
     explicit MapBridge(charging::client::services::map::MapGeoService* service, QObject* parent);
@@ -36,6 +39,9 @@ public:
     int routeDistanceMeters() const { return routeDistanceMeters_; }
     int durationMinutes() const { return durationMinutes_; }
     QVariantList steps() const { return steps_; }
+    QStringList availableCities() const;
+    QString browsingCity() const { return browsingCity_; }
+    Q_INVOKABLE bool setBrowsingCity(const QString& city);
 
     Q_INVOKABLE void geocodeAddress(const QString& address);
     Q_INVOKABLE void setUserLocation(double latitude, double longitude);
@@ -49,10 +55,12 @@ public:
 signals:
     void locationChanged();
     void changed();
+    void browsingCityChanged();
 private:
     QString html(const QVariantList& markers, const QVariantList& points) const;
     charging::client::services::map::MapGeoService* service_;
     bool hasLocation_ = false;
+    QString browsingCity_ = QStringLiteral("大连市");
     QString locationLabel_;
     QString requestedAddress_;
     QString error_;

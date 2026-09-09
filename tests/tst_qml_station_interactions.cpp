@@ -65,6 +65,7 @@ class QmlStationInteractionsTest final : public QObject
     {
         engine_ = new QQmlEngine;
         app_ = new QmlApp(QStringLiteral("127.0.0.1"), 9527, true);
+        qobject_cast<MapBridge*>(app_->mapBridge())->setBrowsingCity(QStringLiteral("深圳市"));
         app_->login(QStringLiteral("13800138000"));
         QTRY_VERIFY(app_->loggedIn());
         auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
@@ -327,7 +328,7 @@ private slots:
         QCOMPARE(clicked.size(), 1);
         QTRY_VERIFY(!navigated.isEmpty());
         QVERIFY(!app_->checkingOrders());
-        QCOMPARE(navigated.last().at(0).toString(), QStringLiteral("charging_run"));
+        QCOMPARE(navigated.last().at(0).toString(), QStringLiteral("charging"));
         QVERIFY(!toast.isEmpty());
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
     }

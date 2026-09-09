@@ -111,6 +111,8 @@ private slots:
         QCOMPARE(bridge.durationMinutes(), 19);
         QCOMPARE(bridge.steps().size(), 1);
         QVERIFY(bridge.routeHtml().contains(QStringLiteral("qq.maps.Polyline")));
+        QVERIFY(bridge.routeHtml().contains("endpointMarker(center,'起点','#DC2626')"));
+        QVERIFY(bridge.routeHtml().contains("'终点','#059669'"));
         QVERIFY(server.lastRequestTarget().startsWith("/ws/direction/v1/walking/"));
         bridge.requestRoute(22.542, 113.945, QStringLiteral("driving"));
         QVERIFY(bridge.routeHtml().isEmpty());
@@ -146,6 +148,37 @@ private slots:
             {"label", "</script><script>alert('bad')</script>"}}});
         QVERIFY(!html.contains("</script><script>alert"));
         QVERIFY(html.contains("\\u003c/script\\u003e"));
+    }
+
+    void citySwitchChangesMapWithoutInventingOriginAndIgnoresOldGeocode()
+    {
+        qputenv("TENCENT_MAP_JS_KEY", "test-only");
+        qputenv("TENCENT_MAP_API_KEY", "test-only");
+        FakeTencentServer server;
+        QVERIFY(server.start());
+        server.setHoldRequests(true);
+        MapGeoService service;
+        service.setEndpointBaseForTesting(server.endpointBase());
+        MapBridge bridge(&service, nullptr);
+        QCOMPARE(bridge.availableCities().size(), 5);
+        bridge.setUserLocation(38.88, 121.53);
+        bridge.geocodeAddress(QStringLiteral("大连市旧地址"));
+        QVERIFY(bridge.setBrowsingCity(QStringLiteral("北京市")));
+        QVERIFY(!bridge.hasLocation());
+        QVERIFY(!bridge.busy());
+        QVERIFY(bridge.locationLabel().isEmpty());
+        QVERIFY(bridge.mapHtml({}).contains("39.9042"));
+        QVERIFY(bridge.mapHtml({}).contains("116.4074"));
+        service.forwardGeocodeSucceeded(1, {38.88, 121.53}, {});
+        QVERIFY(!bridge.hasLocation());
+        QCOMPARE(bridge.distanceMeters(39.9, 116.4), -1);
+        QVERIFY(!bridge.setBrowsingCity(QStringLiteral("不存在的城市")));
+        QCOMPARE(bridge.browsingCity(), QStringLiteral("北京市"));
+        for (const auto& city : bridge.availableCities()) {
+            QVERIFY(bridge.setBrowsingCity(city));
+            QVERIFY(!bridge.hasLocation());
+            QVERIFY(!bridge.mapHtml({}).isEmpty());
+        }
     }
 };
 

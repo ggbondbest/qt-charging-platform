@@ -77,7 +77,13 @@ Item {
         if (mapLoader.item) mapLoader.item.loadRoute()
     }
     function fillOriginEditor() {
-        if (!mapBridge.hasLocation) return
+        // Entering navigation before locating must inherit the city currently
+        // browsed on Home, not prepend the default Dalian to another city's address.
+        if (!mapBridge.hasLocation) {
+            const index = cities.indexOf(mapBridge.browsingCity || cities[0])
+            regionInput.currentIndex = index >= 0 ? index : 0
+            return
+        }
         const label = mapBridge.locationLabel || ""
         for (var i = 0; i < cities.length; ++i) {
             if (label.indexOf(cities[i]) === 0) {

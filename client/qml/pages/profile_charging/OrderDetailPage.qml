@@ -195,6 +195,15 @@ Item {
             }
         }
 
+        P.ActionButton {
+            objectName: "orderManageReservationButton"
+            visible: page.arg.status === "reserved"
+            width: parent.width
+            text: "管理预约 / 取消预约"
+            variant: "secondary"
+            onClicked: App.navigate("reservation_module")
+        }
+
         // ———— 批次E：电桩评价卡（仅完成态）————
         P.Card {
             objectName: "uiOrderRatingCard"

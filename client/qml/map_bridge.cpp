@@ -15,6 +15,39 @@ bool valid(double latitude, double longitude)
     return std::isfinite(latitude) && std::isfinite(longitude)
         && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
 }
+LatLng cityCenter(const QString& city)
+{
+    // Approximate browsing centers, never a device/user location.
+    if (city == QStringLiteral("沈阳市")) return {41.8057, 123.4315};
+    if (city == QStringLiteral("北京市")) return {39.9042, 116.4074};
+    if (city == QStringLiteral("上海市")) return {31.2304, 121.4737};
+    if (city == QStringLiteral("深圳市")) return {22.5431, 114.0579};
+    return {38.914, 121.614};
+}
+}
+
+QStringList MapBridge::availableCities() const
+{
+    return {QStringLiteral("大连市"), QStringLiteral("沈阳市"), QStringLiteral("北京市"),
+            QStringLiteral("上海市"), QStringLiteral("深圳市")};
+}
+
+bool MapBridge::setBrowsingCity(const QString& city)
+{
+    if (!availableCities().contains(city)) return false;
+    if (city == browsingCity_) return true;
+    browsingCity_ = city;
+    // A previous city's in-flight geocode may still finish. Ignore its ID,
+    // clear the old origin, and never treat a city center as a new GPS fix.
+    geocodeRequest_ = 0;
+    hasLocation_ = false;
+    requestedAddress_.clear();
+    locationLabel_.clear();
+    error_.clear();
+    cancelRoute();
+    emit browsingCityChanged();
+    emit locationChanged();
+    return true;
 }
 
 MapBridge::MapBridge(QObject* parent) : MapBridge(new MapGeoService, parent)
@@ -158,8 +191,9 @@ QString MapBridge::html(const QVariantList& markers, const QVariantList& points)
     query.addQueryItem(QStringLiteral("v"), QStringLiteral("2.exp"));
     query.addQueryItem(QStringLiteral("key"), key);
     script.setQuery(query);
-    const QVariantMap data{{QStringLiteral("latitude"), hasLocation_ ? latitude() : 38.914},
-                           {QStringLiteral("longitude"), hasLocation_ ? longitude() : 121.614},
+    const LatLng center = hasLocation_ ? service_->userLocation() : cityCenter(browsingCity_);
+    const QVariantMap data{{QStringLiteral("latitude"), center.latitude},
+                           {QStringLiteral("longitude"), center.longitude},
                            {QStringLiteral("hasOrigin"), hasLocation_},
                            {QStringLiteral("markers"), markers},
                            {QStringLiteral("route"), points}};
@@ -174,8 +208,12 @@ QString MapBridge::html(const QVariantList& markers, const QVariantList& points)
 </head><body><div id="map"></div><div id="error">正在加载腾讯地图…</div>
 <script src="%1" onerror="document.getElementById('error').textContent='腾讯底图加载失败，请检查网络和 TENCENT_MAP_JS_KEY 授权'"></script>
 <script>try{var d=%2;var center=new qq.maps.LatLng(d.latitude,d.longitude);
-var map=new qq.maps.Map(document.getElementById('map'),{center:center,zoom:13,mapTypeControl:false});
-if(d.hasOrigin)new qq.maps.Marker({position:center,map:map,title:'当前起点'});
+var map=new qq.maps.Map(document.getElementById('map'),{center:center,zoom:12,mapTypeControl:false});
+function endpointMarker(position,caption,color){
+var svg='<svg xmlns="http://www.w3.org/2000/svg" width="54" height="58" viewBox="0 0 54 58"><rect x="1" y="1" width="52" height="36" rx="12" fill="'+color+'" stroke="white" stroke-width="2"/><path d="M19 36L27 55L35 36" fill="'+color+'"/><text x="27" y="25" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="bold" fill="white">'+caption+'</text></svg>';
+var icon=new qq.maps.MarkerImage('data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(svg),new qq.maps.Size(54,58),new qq.maps.Point(0,0),new qq.maps.Point(27,55));
+return new qq.maps.Marker({position:position,map:map,title:caption,icon:icon,zIndex:1000});}
+if(d.hasOrigin)endpointMarker(center,'起点','#DC2626');
 var stationBounds=new qq.maps.LatLngBounds(),stationCount=0;
 d.markers.forEach(function(s){if(typeof s.lat==='number'&&typeof s.lng==='number'&&isFinite(s.lat)&&isFinite(s.lng)&&Math.abs(s.lat)<=90&&Math.abs(s.lng)<=180){
 var p=new qq.maps.LatLng(s.lat,s.lng);var marker=new qq.maps.Marker({position:p,map:map,title:s.label||''});
@@ -185,7 +223,7 @@ if(stationCount>1&&!d.hasOrigin)map.fitBounds(stationBounds);
 else if(stationCount===1&&!d.hasOrigin)map.setCenter(stationBounds.getCenter());
 if(d.route.length>1){var path=d.route.map(function(p){return new qq.maps.LatLng(p[0],p[1]);});
 new qq.maps.Polyline({map:map,path:path,strokeColor:'#00B578',strokeWeight:6,strokeOpacity:0.9});
-new qq.maps.Marker({position:path[path.length-1],map:map,title:'目标电站'});
+endpointMarker(path[path.length-1],'终点','#059669');
 var bounds=new qq.maps.LatLngBounds();path.forEach(function(p){bounds.extend(p);});map.fitBounds(bounds);}
 document.getElementById('error').style.display='none';
 }catch(e){document.getElementById('error').textContent='腾讯地图初始化失败，请检查 JavaScript 地图密钥授权';}</script></body></html>)HTML")

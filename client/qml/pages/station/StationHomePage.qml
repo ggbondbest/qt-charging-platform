@@ -27,7 +27,7 @@ Item {
     property bool loading: false
     property bool loaded: false         // 状态门（缺陷4 模式）：未落定不进"空"
     property bool failed: false
-    property string originCity: "大连市"
+    readonly property string originCity: mapBridge.browsingCity
     property string originAddressValue: ""
     property int priceTierIndex: 0
 
@@ -51,7 +51,9 @@ Item {
     function refresh() {
         if (!stationQueryService) { failQuery("站点服务未连接，请重新登录"); return }
         loading = true; failed = false
-        try { stationQueryService.search(keyword) }
+        // Load the complete paginated station catalogue; city/keyword are a
+        // local projection, so rapid city changes cannot mix stale responses.
+        try { stationQueryService.search("") }
         catch (e) { failQuery("无法提交站点查询，请检查服务连接") }
     }
     function failQuery(message) {
@@ -67,6 +69,9 @@ Item {
         const rows = []
         for (const source of (page.raw || [])) {
             const s = Object.assign({}, source)
+            if (String(s.address || "").indexOf(page.originCity) !== 0) continue
+            const search = page.keyword.trim().toLowerCase()
+            if (search.length && (String(s.name) + " " + String(s.address)).toLowerCase().indexOf(search) < 0) continue
             // Only real station coordinates and the explicitly selected origin
             // participate. Missing coordinates must not become a 0,0 location.
             s.distanceMeters = (typeof mapBridge !== "undefined" && mapBridge.hasLocation
@@ -156,6 +161,12 @@ Item {
     Connections {
         target: typeof mapBridge !== "undefined" ? mapBridge : null
         function onLocationChanged() { page.project() }
+        function onBrowsingCityChanged() {
+            page.originAddressValue = ""
+            stationPopup.close()
+            page.selectedStation = null
+            page.resetFilters()
+        }
     }
     Connections {
         target: favoritesService
@@ -214,7 +225,7 @@ Item {
                 width: parent.width
                 Text {
                     Layout.fillWidth: true
-                    text: "附近充电站"; font.pixelSize: P.Style.fontXl
+                    text: page.originCity + "充电站"; font.pixelSize: P.Style.fontXl
                     font.bold: true; color: P.Style.ink
                 }
                 P.ActionButton {
@@ -232,15 +243,17 @@ Item {
                         P.ComboBox {
                             id: originRegion
                             objectName: "originRegionComboBox"
-                            Layout.preferredWidth: 104; editable: true
-                            model: ["大连市", "沈阳市", "北京市", "上海市", "深圳市", "选择地区 / 输入完整地址"]
-                            onEditTextChanged: page.originCity = editText
+                            Layout.preferredWidth: 104
+                            model: mapBridge.availableCities
+                            currentIndex: mapBridge.availableCities.indexOf(mapBridge.browsingCity)
+                            onActivated: function(index) { mapBridge.setBrowsingCity(model[index]) }
                         }
                         P.TextField {
                             id: originAddress
                             objectName: "originAddressField"
                             Layout.fillWidth: true
                             placeholderText: "输入起始地址，例如软件园路"
+                            text: page.originAddressValue
                             onTextChanged: page.originAddressValue = text
                             onAccepted: page.locateOrigin()
                         }
@@ -252,7 +265,7 @@ Item {
                             text: mapBridge.error.length ? mapBridge.error
                                   : mapBridge.busy ? "正在查询腾讯地图…"
                                   : mapBridge.hasLocation ? "起点：" + mapBridge.locationLabel
-                                  : "默认浏览大连，输入地址设置起点"
+                                  : "浏览" + page.originCity + "；输入地址设置红色起点"
                             color: mapBridge.error.length ? P.Style.danger : P.Style.muted
                             font.pixelSize: P.Style.fontSm
                         }
@@ -269,13 +282,15 @@ Item {
                 width: parent.width; height: Math.max(200, Math.min(240, page.height * 0.32))
                 html: {
                     const originRevision = mapBridge.locationLabel
+                    const cityRevision = mapBridge.browsingCity
                     return mapBridge.mapHtml(page.mapMarkers)
                 }
+                cityName: page.originCity
                 onStationSelected: function(id) { page.selectMapStation(id) }
             }
             Text {
                 width: parent.width; wrapMode: Text.Wrap
-                text: "点击地图电站标记，可选桩预约或导航 · 距离为起点直线距离"
+                text: "红色为起点 · 点击电站标记预约或导航 · 列表距离为直线距离"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
             Flow {
@@ -309,7 +324,7 @@ Item {
                 }
             }
             Text {
-                text: "找到 " + stationModel.count + " 座电站"
+                text: page.originCity + " · 找到 " + stationModel.count + " 座电站"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
             Item { width: 1; height: 2 }

@@ -7,6 +7,7 @@ import "../../platform" as P
 Rectangle {
     id: panel
     property string html: ""
+    property string cityName: "大连市"
     signal stationSelected(string stationId)
     color: P.Style.surface
     radius: P.Style.radiusLg
@@ -70,7 +71,7 @@ Rectangle {
         spacing: 10
         Text {
             width: parent.width; horizontalAlignment: Text.AlignHCenter
-            text: "大连电站地图"; font.pixelSize: P.Style.fontLg
+            text: panel.cityName + "电站地图"; font.pixelSize: P.Style.fontLg
             font.bold: true; color: P.Style.ink
         }
         Text {

@@ -229,6 +229,15 @@ bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
     return true;
 }
 
+bool DatabaseConnection::applyCityDemoSeed(QString* errorMessage)
+{
+    clearError(errorMessage);
+    if (!isOpen()) {
+        return fail(errorMessage, QStringLiteral("Database must be open before loading demo data"));
+    }
+    return executeResourceScript(QStringLiteral(":/database/city_demo_seed.sql"), errorMessage);
+}
+
 bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
 {
     const QList<QPair<QString, QString>> managedIndexes = {

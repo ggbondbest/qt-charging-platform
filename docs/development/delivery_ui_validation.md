@@ -92,6 +92,36 @@ CHARGING_SMOKE_SIZE=420x860 CHARGING_SMOKE_THEME=dark \
 6. 管理端冻结无活动订单用户，检查客户端拒绝继续操作；断开服务端应退出旧会话，
    重新连接不能继续显示上个用户的私有缓存。
 
+## 充电统一、预约取消与五市地图增量
+
+本分支后续增量保留同一条 TCP/SQLite 业务链，未恢复两套充电页：
+
+- 开始充电、重登恢复及旧 `charging_run` 链接都进入“充电”动态卡片。
+  功率、电量、时长及预估费用来自服务端快照；动画不自行累加计费数据。
+  卡片下直接“停止充电并结算”，停止失败可重试，成功后进入待支付结算。
+- “充电”页的预约卡可直接取消；“订单 → 已预约订单详情 → 管理预约 / 取消预约”
+  也能进入预约页。取消前有确认，成功后释放电桩并保留取消历史；开始充电后只能
+  停止充电结算，不能再通过取消预约绕过计费。
+- 五市选择为大连、沈阳、北京、上海、深圳；完整演示库每市 5 站、每站 3 桩。
+  这是近似片区坐标的实训示范目录，不是现实运营站点清单。
+- 首页先读完整分页目录，再按地址的城市前缀投影同一批列表和地图标记。
+  管理端新增/修改地址请保留完整城市前缀，例如“北京市朝阳区……”。
+  切市时清除旧起点、旧路线与高级筛选；导航页未定位时默认继承刚选的城市。
+  搜索关键词仍保留，若结果少于 5 站先清空关键词/筛选，并核对管理员是否编辑过记录。
+- 定位成功后使用红色“起点”，路线末端使用绿色“终点”；城市浏览中心不是用户位置。
+  底图与道路仍使用原有运行环境 Key，无真实 Key 的自动检查不消耗地图配额。
+
+已有库升级：关闭服务端，备份并保留原数据库路径，在服务端启动参数中加
+`--demo-seed`，然后启动客户端。新增目录按 `code` 幂等补齐，不删除原订单、余额或
+覆盖管理员编辑；只改客户端而未重启新版服务端不会自动增加站点。
+完整说明见 [五市数据与升级说明](../../database/README.md)。
+
+回归重点：`city_demo_seed`（追加/重启/回滚/保留旧记录）、
+`qml_tcp_delivery`（真实 TCP 五市列表/地图 ID 坐标同步，充电→支付）、
+`qml_reservation_cancel`（两尺寸真实鼠标取消与失败重试）、
+`qml_charging_unified`（动态卡片、停止、恢复与大字号滚动）、
+`qml_navigation_page` / `qml_map_bridge`（默认城市、旧响应隔离、起终点）。
+
 自动化优先检查 `qml_tcp_delivery`、`user_api_integration`、`charging_workflow`、
 `charging_tcp_integration`、`database_maintenance` 和管理接口/页面测试；先使用
 `ctest --test-dir build-delivery -N` 核对实际测试名称。`qml_tcp_delivery` 已包含
@@ -111,7 +141,7 @@ CHARGING_SMOKE_SIZE=420x860 CHARGING_SMOKE_THEME=dark \
 | 检查 | 版本/命令/证据 | 实际结果 |
 | --- | --- | --- |
 | 代码与 Qt Framework 版本 | 本分支源码；Qt 6.12.0；提交号见 `git log -1` | 本地完整 Debug 构建通过 |
-| CTest | `ctest --test-dir build --output-on-failure --parallel 4` | 50/50 测试程序通过 |
+| CTest | `ctest --test-dir build --output-on-failure --parallel 4` | 五市/充电统一增量后重新执行，53/53 测试程序通过 |
 | Qt 6.2.4 严格版本构建 | Ubuntu 中运行 `scripts/verify_delivery.sh` | 待验收环境验证，不能以较新 Qt 替代 |
 | 23 页默认冒烟 | `build/ui-light/`，420×860/light | 23/23 通过 |
 | 小窗口、暗色冒烟 | `build/ui-narrow/`，360×740/light；`build/ui-dark/`，420×860/dark | 各 23/23 通过；三组共 69 次 |
@@ -121,6 +151,8 @@ CHARGING_SMOKE_SIZE=420x860 CHARGING_SMOKE_THEME=dark \
 | 连续定位及驾驶/步行请求 | `map_geo_service`、`map_geocoding_recovery`、`qml_map_bridge`、`qml_navigation_page` | 假 HTTP 服务及页面状态回归通过，保留缓存/合并/错误恢复 |
 | 真实腾讯底图/道路与 Key 授权 | 使用自己的 Key 依照上方步骤人工验证 | 待用户环境联网验证，未使用或展示真实凭证 |
 | TCP 预约→充电→待支付→支付及管理端核对 | `qml_tcp_delivery`、`user_api_integration`、`charging_workflow`、`charging_tcp_integration` | 真实本机 TCP 与独立 SQLite 测试通过 |
+| 五市目录与首页切换 | `city_demo_seed`、`qml_tcp_delivery`、`verify_city_demo_data.sh` | 25 站 / 75 桩、旧记录保留、重复加载幂等；真实 TCP 下五市各 5 个地图标记与列表 ID/坐标一致 |
+| 统一充电与取消预约 | `qml_charging_unified`、`qml_reservation_cancel` | 动态卡片停止/恢复及小窗口滚动通过；420×860、360×640 实际点击取消、释放桩及失败重试通过 |
 | 旧备份副本恢复（需要使用旧备份时） | `database_maintenance` 自动回归通过；已有旧库副本另行检查 | 用户旧备份未人工验收 |
 
 ### 管理端已执行记录（2026-09-09）
@@ -170,3 +202,9 @@ QT_QPA_PLATFORM=offscreen CHARGING_ADMIN_UI_SCREENSHOTS=./runtime/admin-ui \
 `build/ui-interactions/station-card-360.png`。可用环境变量
 `CHARGING_INTERACTION_SCREENSHOTS` 为该测试指定截图目录；测试使用隔离偏好目录，
 不修改实际用户的收藏或界面设置。
+
+五市/充电统一增量后，三组 23 页冒烟已重新执行；默认 Mock 目录仍是原深圳夹具，
+不能用首页 Mock 截图代替真实五市验证。五市验证使用 `qml_tcp_delivery` 的真实
+服务器与独立 SQLite。另已目视检查 `build-charging/captures/charging-regular.png`、
+`build-cancel/captures/reservation-module-small-active.png` 和
+`reservation-module-small-confirm.png`；这些生成文件不提交、不作为应用依赖。
