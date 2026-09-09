@@ -1,7 +1,8 @@
 import QtQuick
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
-// 充电月报（成员3 新页，2026-09-08）：GET_USER_STATS 的展示端。
+// 充电报告（成员3 新页，2026-09-08）：GET_USER_STATS 的展示端。
 // 数据 = 近 6 个月已完成订单的服务端聚合（statsService 桥，monthsLoaded 事件），
 // 卡面沿用订单页设计语言：hero 总计 + 月份卡 + 40ms 级联入场 + 下拉刷新。
 // 碳减排 = 电量 × 0.5568 kg/kWh（全国电网平均因子，服务端单点注入，
@@ -132,8 +133,7 @@ Item {
             Text {
                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                 objectName: "uiStatsTitle"
-                text: "充电" + (page.period === "week" ? "周报"
-                     : page.period === "year" ? "年报" : "月报")
+                text: "充电报告"
                 font.pixelSize: P.Style.fontXl; font.weight: Font.Bold; color: P.Style.ink
             }
             Text {
@@ -233,9 +233,11 @@ Item {
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                         width: 44; height: 44; radius: 22
                         color: P.Style.brandSoft
-                        Text {
+                        Image {
                             anchors.centerIn: parent
-                            text: "📅"; font.pixelSize: 18
+                            width: Math.round(20 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("calendar-event", P.Style.brandDeep)
                         }
                     }
                     Column {
@@ -307,7 +309,7 @@ Item {
             width: listScroll.width
             height: 200
             visible: page.loadedOnce && !page.reqActive && monthsModel.count === 0
-            glyph: "📊"
+            glyph: "chart-bar"
             title: "近 6 个月还没有充电记录"
             description: "完成一次充电结算后，这里会按月汇总电量、花费与碳减排。"
             actionText: ""

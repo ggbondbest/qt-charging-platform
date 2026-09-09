@@ -3,6 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Controls as Controls // Overlay is not exported by Basic in Qt 6.2.
 import QtQuick.Layouts
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // One scrollable page: explicit origin, real map, filters and station cards.
 // Station data comes from the selected transport; errors never load fake rows.
@@ -380,7 +381,9 @@ Item {
                     Item { Layout.fillWidth: true }
                     P.ActionButton {
                         objectName: "favoriteStarButton"; variant: "ghost"
-                        text: page.isFav(model.stationId) ? "★" : "☆"
+                        glyph: page.isFav(model.stationId) ? "star-filled" : "star"
+                        glyphColor: P.Style.warning
+                        text: ""
                         onClicked: favoritesService.toggle(model.stationId)
                     }
                     P.ActionButton {

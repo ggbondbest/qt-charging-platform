@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets ReservationCompletedPage (objectName "reservationCompletedPage").
 // ReservationModulePage 的 Tab1 子视图：records 由母页喂入；点击卡片弹详情（全字段）。
@@ -39,7 +40,7 @@ Item {
         objectName: "completedEmptyNotice"
         anchors.fill: parent
         visible: records.length === 0 && !loading
-        glyph: "📒"
+        glyph: "calendar-event"
         title: "暂无历史预约"
         description: "结束（完成 / 取消 / 过期）的预约会归档到这里，点击卡片可查看详情。"
         actionText: ""

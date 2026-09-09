@@ -1,5 +1,6 @@
 import QtQuick
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 我的评价页（成员3 新页，2026-09-08 批次E）：GET_MY_RATINGS 展示端。
 // 行 = 服务端联查响应形 {id,orderId,chargerId,chargerCode,stationName,
@@ -119,10 +120,12 @@ Item {
                         property int rating: model.rating
                         Repeater {
                             model: 5
-                            Text {
-                                text: index < starsRow.rating ? "★" : "☆"
-                                font.pixelSize: 16
-                                color: index < starsRow.rating ? P.Style.warning : P.Style.faint
+                            Image {
+                                width: Math.round(16 * P.Style.fontScaleFactor)
+                                height: width
+                                source: index < starsRow.rating
+                                        ? Glyphs.source("star-filled", P.Style.warning)
+                                        : Glyphs.source("star", P.Style.faint)
                             }
                         }
                     }
@@ -168,7 +171,7 @@ Item {
             width: listScroll.width
             height: 200
             visible: page.loadedOnce && !page.reqActive && ratingsModel.count === 0
-            glyph: "⭐"
+            glyph: "star"
             title: "还没有评价"
             description: "充电订单完成后，在订单详情页就能给电桩打个分。"
             actionText: ""

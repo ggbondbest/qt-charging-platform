@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 import "../station/StationState.js" as StationState
 
 // 扫码充电页（成员3 新页，2026-09-08 批次F）：mock 模拟扫码演示线
@@ -226,8 +227,8 @@ Item {
             }
             Text {
                 anchors.centerIn: parent
-                text: page.reqActive ? "识别中…" : "📷"
-                font.pixelSize: page.reqActive ? P.Style.fontLg : 48
+                text: page.reqActive ? "识别中…" : ""
+                font.pixelSize: P.Style.fontLg
                 color: P.Style.muted
             }
         }
@@ -282,10 +283,6 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: 16; anchors.rightMargin: 16
                     spacing: P.Style.spaceMd
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "🔳"; font.pixelSize: 20
-                    }
                     Column {
                         id: codeCol
                         anchors.verticalCenter: parent.verticalCenter
@@ -373,7 +370,7 @@ Item {
             width: parent.width
             height: 160
             visible: page.phase === "miss"
-            glyph: "🔍"
+            glyph: "search"
             title: "这个码没认出来"
             description: page.failMessage
             actionText: ""

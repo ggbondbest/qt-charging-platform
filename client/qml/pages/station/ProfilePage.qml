@@ -453,7 +453,7 @@ Item {
                         // 同日 emoji→Tabler glyph 名（染色 provider，见 glyph_provider.h）。
                         { obj: "openNotificationsButton", glyph: "bell", title: "消息通知",
                           route: "notifications", badge: "notif" },
-                        { obj: "openStatsButton",   glyph: "chart-bar", title: "充电月报",
+                        { obj: "openStatsButton",   glyph: "chart-bar", title: "充电报告",
                           route: "stats",       badge: "" },
                         { obj: "openCouponButton",  glyph: "ticket", title: "优惠券",
                           route: "coupon",      badge: "coupon" },

@@ -1,5 +1,6 @@
 import QtQuick
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 积分页（成员3 新页，2026-09-08 批次C；2026-09-09 去签到化）。
 // GET_POINTS 展示端：总分 = 服务端 SUM(points_ledger) 单一事实源
@@ -139,9 +140,11 @@ Item {
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                         width: 40; height: 40; radius: 20
                         color: P.Style.brandSoft
-                        Text {
+                        Image {
                             anchors.centerIn: parent
-                            text: "🪙"; font.pixelSize: 17
+                            width: Math.round(20 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("coin", P.Style.brandDeep)
                         }
                     }
                     Column {
@@ -199,7 +202,7 @@ Item {
             width: listScroll.width
             height: 200
             visible: page.loadedOnce && !page.reqActive && ledgerModel.count === 0
-            glyph: "🪙"
+            glyph: "coin"
             title: "还没有积分流水"
             description: "签到（在「我的」页名片卡）或支付订单后，获得的积分会记在这里。"
             actionText: ""

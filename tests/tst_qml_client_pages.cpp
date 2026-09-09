@@ -817,7 +817,7 @@ private slots:
         QCOMPARE(fake.lastPeriod, QStringLiteral("week"));
         auto* title = page->findChild<QQuickItem*>("uiStatsTitle");
         QVERIFY(title);
-        QCOMPARE(title->property("text").toString(), QStringLiteral("充电周报"));
+        QCOMPARE(title->property("text").toString(), QStringLiteral("充电报告"));
     }
 
     // 审查 P2#5 回归：响应在途时切档——陈旧档位响应必须被丢弃（不入模型、

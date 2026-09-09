@@ -90,7 +90,7 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🔐 账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
                         objectName: "protectionPasswordLabel"
                         text: page.hasPassword ? "二级保护密码：已设置" : "二级保护密码：未设置"
@@ -136,7 +136,7 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🚗 车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
                         objectName: "vehiclesEmptyLabel"
                         visible: page.vehicles.length === 0
@@ -217,7 +217,7 @@ Item {
                     id: notifyCol
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🔔 通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Repeater {
                         model: [
                             { obj: "expiryReminderSwitch",     label: "预约到期提醒", key: "expiry" },
@@ -247,20 +247,22 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🎨 外观与字号"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "外观与字号"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text { width: parent.width; text: "主题"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     Row {
                         spacing: P.Style.spaceSm
                         P.ActionButton {
                             objectName: "themeLightButton"
                             variant: page.theme === "light" ? "primary" : "secondary"
-                            text: "☀️ 浅色"
+                            glyph: "sun"
+                            text: "浅色"
                             onClicked: page.applyTheme("light")
                         }
                         P.ActionButton {
                             objectName: "themeDarkButton"
                             variant: page.theme === "dark" ? "primary" : "secondary"
-                            text: "🌙 深色"
+                            glyph: "moon"
+                            text: "深色"
                             onClicked: page.applyTheme("dark")
                         }
                     }

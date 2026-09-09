@@ -196,15 +196,15 @@ private slots:
         QVERIFY(card != nullptr);
         auto* star = findItem(card, QStringLiteral("favoriteStarButton"));
         QVERIFY(star != nullptr);
-        const QString before = star->property("text").toString();
-        QVERIFY(before == QStringLiteral("☆") || before == QStringLiteral("★"));
+        const QString before = star->property("glyph").toString();
+        QVERIFY(before == QStringLiteral("star") || before == QStringLiteral("star-filled"));
         QVERIFY(realClick(window_, star));
         QTest::qWait(150);
         card = visibleStationCard();
         QVERIFY(card != nullptr);
         star = findItem(card, QStringLiteral("favoriteStarButton"));
         QVERIFY(star != nullptr);
-        QCOMPARE(star->property("text").toString(), before == QStringLiteral("☆") ? QStringLiteral("★") : QStringLiteral("☆"));
+        QCOMPARE(star->property("glyph").toString(), before == QStringLiteral("star") ? QStringLiteral("star-filled") : QStringLiteral("star"));
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) == nullptr);
         // Card surface still navigates after correcting nested button events.
         QVERIFY(realClick(window_, card));

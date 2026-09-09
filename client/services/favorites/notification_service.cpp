@@ -193,21 +193,23 @@ int NotificationService::visibleCount() const
     return notifications().size();
 }
 
+// 标题纯文字：类型图形由 QML 通知页行首的线稿图标承担（emoji 前缀已剥，
+// 避免文本图标与 glyph 双重表意）。
 QString NotificationService::typeTitle(NotificationType type)
 {
     switch (type) {
     case NotificationType::ReservationExpiryReminder:
-        return QStringLiteral("🔔 预约到期提醒");
+        return QStringLiteral("预约到期提醒");
     case NotificationType::ReservationSuccessNotice:
-        return QStringLiteral("✅ 预约成功通知");
+        return QStringLiteral("预约成功通知");
     case NotificationType::ReservationCancelNotice:
-        return QStringLiteral("❌ 预约取消通知");
+        return QStringLiteral("预约取消通知");
     case NotificationType::ChargingStopped:
-        return QStringLiteral("🔌 充电结束通知");
+        return QStringLiteral("充电结束通知");
     case NotificationType::OrderPaid:
-        return QStringLiteral("💰 支付成功通知");
+        return QStringLiteral("支付成功通知");
     }
-    return QStringLiteral("📣 系统通知");
+    return QStringLiteral("系统通知");
 }
 
 void NotificationService::seedMockHistory()
