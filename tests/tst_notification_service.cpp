@@ -89,7 +89,7 @@ private slots:
         QCOMPARE(spy.count(), 1);
         const QVector<NotificationItem> items = service_.notifications();
         QCOMPARE(items.size(), 4);
-        QVERIFY(items.at(0).title.contains(QStringLiteral("✅")));
+        QVERIFY(items.at(0).title.contains(QStringLiteral("预约成功"))); // 标题纯文字（emoji 前缀已剥，图形在 glyph 行首）
         QVERIFY(items.at(0).body.contains(QStringLiteral("测试站")));
         QVERIFY(items.at(0).body.contains(QStringLiteral("粤B·12345")));
         QVERIFY(items.at(0).createdAtUtc.isValid());
@@ -102,7 +102,7 @@ private slots:
 
         settings_.setNotificationEnabled(
             SettingsService::Notification::ReservationSuccessNotice, false);
-        QCOMPARE(service_.visibleCount(), 2); // ✅ 类被隐藏（数据仍在）
+        QCOMPARE(service_.visibleCount(), 2); // 成功类被隐藏（数据仍在）
         const QVector<NotificationItem> items = service_.notifications();
         for (const NotificationItem& item : items) {
             QVERIFY(item.type != NotificationType::ReservationSuccessNotice);
@@ -165,9 +165,9 @@ private slots:
     void serverTypesHaveTitles()
     {
         QVERIFY(NotificationService::typeTitle(NotificationType::ChargingStopped)
-                    .contains(QString::fromUtf8("🔌")));
+                    .contains(QString::fromUtf8("充电结束")));
         QVERIFY(NotificationService::typeTitle(NotificationType::OrderPaid)
-                    .contains(QString::fromUtf8("💰")));
+                    .contains(QString::fromUtf8("支付成功")));
     }
 
     void refreshMergesServerRows()

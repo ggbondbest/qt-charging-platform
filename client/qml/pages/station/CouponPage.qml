@@ -1,5 +1,6 @@
 import QtQuick
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 优惠券页（新增功能，用户指定：与「设置」入口并列、UI 同款式）。
 // 旧版仅在 README 口径里留了"同款式敬请期待"占位槽、从未实装页面——本页为实装。
@@ -193,7 +194,7 @@ Item {
             width: parent.width
             height: 160
             visible: page.rowsFor(page.tab).length === 0
-            glyph: "🎫"
+            glyph: "ticket"
             title: ["暂无可用优惠券", "暂无已使用的券", "暂无已过期的券"][page.tab]
             description: "充值回馈与平台活动发的券会出现在这里；结算页可勾选抵扣。"
             actionText: ""

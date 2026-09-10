@@ -117,14 +117,66 @@ void QmlApp::createSession(const charging::model::User& user)
     reservationService_ = new charging::client::services::reservation::ReservationService(session_);
     settingsService_ = new charging::client::services::settings::SettingsService(session_);
     mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
-    // 经验等级引擎（2026-09-09）：按登录手机号分组持久化，随 session_ 生灭；
-    // 升级庆祝走 toastRequested（与其余提示同一出口）。
+    // 经验等级引擎（2026-09-09）：按登录手机号分组持久化，随 session_ 生灭。
+    // 2026-09-09 需求批（用户拍板改到账）：升级礼包不再是"记入等级账目"的
+    // 展示数字——levelUp 即发 CREDIT_LEVEL_REWARD（只带 level，金额由服务端
+    // levelRewardPoints() 单点推导），toast 等回执后如实播报；失败自动重试
+    // 一次，再失败提示下次启动补送。登录时把 gifts_ 全量重放入账请求，
+    // 服务端 (user_id,'LEVEL_GIFT',amount) 流水去重幂等——重放零副作用，
+    // 兜住"断网升级/上次没送到"的漏网礼包。
     progressService_ = new charging::client::ProgressService(user.phone, session_);
     connect(progressService_, &charging::client::ProgressService::levelUp, this,
-            [this](int, const QString& tier, qint64 giftPoints) {
-        emit toastRequested(tr("🎉 恭喜升级到 %1！礼包 +%2 积分已记入等级账目")
-                            .arg(tier).arg(giftPoints), "success");
+            [this](int level, const QString& tier, qint64 giftPoints) {
+        pendingReward_ = PendingReward{level, tier, giftPoints, false};
+        pointService_->creditLevelReward(level);
     });
+    connect(pointService_, &charging::client::PointService::levelRewardCredited, this,
+            [this](int, qint64, qint64, bool alreadyCredited) {
+        if (pendingReward_.level <= 0) {
+            // 登录对账链的回执：不播历史庆祝，取下一笔继续补送。
+            if (!pendingReconcile_.isEmpty()) {
+                pointService_->creditLevelReward(pendingReconcile_.takeFirst());
+            }
+            return;
+        }
+        const QString tier = pendingReward_.tier;
+        const qint64 gift = pendingReward_.giftPoints;
+        pendingReward_ = PendingReward{};
+        emit toastRequested(alreadyCredited
+                ? tr("恭喜升级到 %1！礼包积分已到账").arg(tier)
+                : tr("恭喜升级到 %1！礼包 +%2 积分已到账").arg(tier).arg(gift),
+            "success");
+        // 庆祝回执后接力历史对账链（此时无页内 pointsLoaded 挂接，直连安全）。
+        if (!pendingReconcile_.isEmpty()) {
+            pointService_->creditLevelReward(pendingReconcile_.takeFirst());
+        }
+    });
+    connect(pointService_, &charging::client::PointService::operationFailed, this,
+            [this](const QString& type, const charging::protocol::ProtocolError&) {
+        if (pendingReward_.level <= 0 ||
+            type != QString::fromLatin1(charging::protocol::request_type::kCreditLevelReward)) {
+            return;
+        }
+        if (!pendingReward_.retried) {
+            pendingReward_.retried = true;   // 一次性重试（服务端幂等，不会双发）
+            pointService_->creditLevelReward(pendingReward_.level);
+            return;
+        }
+        const QString tier = pendingReward_.tier;
+        pendingReward_ = PendingReward{};
+        emit toastRequested(tr("升级到 %1 的礼包积分暂时没送到，下次启动会自动补到账").arg(tier),
+            "warning");
+    });
+    // 登录对账（2026-09-09 拍板批）：把本地 gifts_ 全量排队补送——服务端以
+    // (user_id,'LEVEL_GIFT',amount) 流水去重幂等，历史已入账的重放零副作用
+    // （gained=0），断网升级/上次没送的漏网礼包就此兜住。链式单发（回执取
+    // 下一笔）不并枪；中途失败即止，下次登录再来。
+    for (const QVariant& gift : progressService_->gifts()) {
+        pendingReconcile_.append(gift.toMap().value(QStringLiteral("level")).toInt());
+    }
+    if (!pendingReconcile_.isEmpty()) {
+        pointService_->creditLevelReward(pendingReconcile_.takeFirst());
+    }
     reservationService_->setUserId(user.id);
     // 2026-09-08 业务变更：预约不再强制车辆（QML 侧删闸同步）。撤 settings 注入
     // = finishMockSubmit 的 0车拒绝/每车唯一两道自然失效，名额闸回退"至多 1 条

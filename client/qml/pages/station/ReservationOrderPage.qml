@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // The server owns cancellation/expiry. Never hide the reservation before ACK.
 Item {
@@ -108,7 +109,7 @@ Item {
         objectName: "orderEmptyNotice"
         anchors.fill: parent
         visible: !page.hasActive && !page.loading
-        glyph: "🅿️"; title: "暂无进行中的预约"
+        glyph: "car"; title: "暂无进行中的预约"
         description: "已取消、已过期或已开始充电的预约可在预约历史中查看。"
         actionText: "去找桩"
         onActionTriggered: App.navigate("station")

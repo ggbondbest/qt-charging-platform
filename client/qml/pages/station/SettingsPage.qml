@@ -28,6 +28,7 @@ Item {
     // 外观（批次A）：初值即 Service 默认档；reload() 从服务回读真值。
     property string theme: "light"
     property string fontScale: "standard"
+    property string palette: "green"
 
     function call(target, fn, args) {   // 桥缺位期统一吞异常
         try { return target[fn].apply(target, args) } catch (e) { return undefined }
@@ -52,6 +53,8 @@ Item {
         if (typeof t === "string" && t.length > 0) page.theme = t
         const f = call(settingsService, "fontScale", [])
         if (typeof f === "string" && f.length > 0) page.fontScale = f
+        const p = call(settingsService, "palette", [])
+        if (typeof p === "string" && p.length > 0) page.palette = p
     }
     // 点击→服务（持久化+appearanceChanged→Shell 同步 Style）；按钮选中态
     // 只认服务返回 true，非法值 UI 与服务两侧同口径拒绝。
@@ -60,6 +63,9 @@ Item {
     }
     function applyFontScale(v) {
         if (call(settingsService, "setFontScale", [v]) === true) page.fontScale = v
+    }
+    function applyPalette(v) {
+        if (call(settingsService, "setPalette", [v]) === true) page.palette = v
     }
     Component.onCompleted: reload()
     Connections {
@@ -90,7 +96,7 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🔐 账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "账号安全"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
                         objectName: "protectionPasswordLabel"
                         text: page.hasPassword ? "二级保护密码：已设置" : "二级保护密码：未设置"
@@ -136,7 +142,7 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🚗 车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "车辆管理"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text {
                         objectName: "vehiclesEmptyLabel"
                         visible: page.vehicles.length === 0
@@ -217,7 +223,7 @@ Item {
                     id: notifyCol
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🔔 通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "通知与提醒"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Repeater {
                         model: [
                             { obj: "expiryReminderSwitch",     label: "预约到期提醒", key: "expiry" },
@@ -247,21 +253,58 @@ Item {
                 Column {
                     width: parent.width
                     spacing: P.Style.spaceSm
-                    Text { objectName: "settingsSectionTitle"; text: "🎨 外观与字号"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
+                    Text { objectName: "settingsSectionTitle"; text: "外观与字号"; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                     Text { width: parent.width; text: "主题"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
                     Row {
                         spacing: P.Style.spaceSm
                         P.ActionButton {
                             objectName: "themeLightButton"
                             variant: page.theme === "light" ? "primary" : "secondary"
-                            text: "☀️ 浅色"
+                            glyph: "sun"
+                            text: "浅色"
                             onClicked: page.applyTheme("light")
                         }
                         P.ActionButton {
                             objectName: "themeDarkButton"
                             variant: page.theme === "dark" ? "primary" : "secondary"
-                            text: "🌙 深色"
+                            glyph: "moon"
+                            text: "深色"
                             onClicked: page.applyTheme("dark")
+                        }
+                    }
+                    Text { width: parent.width; text: "配色（品牌色板）"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+                    Row {   // 色板四圆点：色值/名称单源 P.Style.paletteSpecs，页面零字面量
+                        spacing: P.Style.spaceLg
+                        Repeater {
+                            model: P.Style.paletteKeys
+                            delegate: Item {   // Column 禁 fill/centerIn 锚（告警严口径）
+                                width: 48; height: swatchCol.implicitHeight
+                                Column {
+                                    id: swatchCol
+                                    width: parent.width
+                                    spacing: 2
+                                    Rectangle {
+                                        x: (parent.width - width) / 2
+                                        width: 30; height: 30; radius: 15
+                                        color: P.Style.paletteSpecs[modelData].brand
+                                        border.width: page.palette === modelData ? 3 : 1
+                                        border.color: page.palette === modelData
+                                            ? P.Style.ink : P.Style.lineStrong
+                                    }
+                                    Text {
+                                        x: (parent.width - implicitWidth) / 2
+                                        text: P.Style.paletteSpecs[modelData].label
+                                        font.pixelSize: P.Style.fontXs
+                                        color: page.palette === modelData ? P.Style.brandDeep : P.Style.muted
+                                    }
+                                }
+                                MouseArea {
+                                    objectName: "palette" + modelData.charAt(0).toUpperCase()
+                                        + modelData.slice(1) + "Button"
+                                    anchors.fill: parent
+                                    onClicked: page.applyPalette(modelData)
+                                }
+                            }
                         }
                     }
                     Text { width: parent.width; text: "字号"; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
@@ -283,7 +326,7 @@ Item {
                     }
                     Text {
                         width: parent.width; wrapMode: Text.WordWrap
-                        text: "改动即时全应用生效并记住在本机（深浅色下品牌绿渐变不变）。"
+                        text: "改动即时全应用生效并记住在本机；换配色档后全站品牌色随动（顶部渐变横幅在重新进入页面时翻新）。"
                         font.pixelSize: P.Style.fontSm; color: P.Style.faint
                     }
                 }

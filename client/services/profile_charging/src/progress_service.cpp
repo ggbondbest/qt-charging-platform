@@ -33,7 +33,7 @@ constexpr TaskDef kTasks[] = {
     {"search",  "🔍", "搜索充电站",   "用顶栏搜索地址或找站关键词",   20, "station"},
     {"detail",  "🏢", "浏览电站详情", "打开任意电站详情页浏览",       20, "station"},
     {"route",   "🧭", "规划导航路线", "为电站规划一条驾车/步行路线",  20, "station"},
-    {"stats",   "📊", "查看充电月报", "打开月报看本月充电账单",       20, "stats"},
+    {"stats",   "📊", "查看充电报告", "打开充电报告看本月账单",       20, "stats"},
 };
 constexpr int kTaskCount = int(sizeof(kTasks) / sizeof(kTasks[0]));
 

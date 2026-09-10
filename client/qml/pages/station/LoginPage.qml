@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 import "StationState.js" as StationState
 
 // QML twin of widgets LoginPage (objectName "loginPage" kept).
@@ -138,10 +139,11 @@ Item {
         Column {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: P.Style.spaceSm
-            Text {
+            Image {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "⚡"; font.pixelSize: 44
-                color: P.Style.brand
+                width: Math.round(44 * P.Style.fontScaleFactor)
+                height: width
+                source: Glyphs.source("bolt", P.Style.brand)
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter

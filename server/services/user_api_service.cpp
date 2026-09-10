@@ -45,6 +45,7 @@ const QMap<QString, UserApiAction> actions{
     {request_type::kGetNotifications, UserApiAction::Notifications},
     {request_type::kCheckIn, UserApiAction::CheckIn},
     {request_type::kGetPoints, UserApiAction::GetPoints},
+    {request_type::kCreditLevelReward, UserApiAction::CreditLevelReward},
     {request_type::kSubmitChargerRating, UserApiAction::SubmitRating},
     {request_type::kGetMyRatings, UserApiAction::GetMyRatings}
 };
@@ -126,6 +127,8 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
     query.orderId = input.value("orderId").toString().toLongLong();
     query.rating = input.value("rating").toInt();
     query.comment = input.value("comment").toString();
+    // 2026-09-09 需求批：CREDIT_LEVEL_REWARD 档位（金额在服务端推导，无传额入参）。
+    query.level = input.value("level").toInt();
     query.nowUtc = clock_ ? clock_().toUTC() : QDateTime::currentDateTimeUtc();
     const UserApiResult result = repository_->execute(query);
     switch (result.error) {
@@ -207,15 +210,27 @@ UserApiReply UserApiService::handle(const QString& type, const QJsonObject& data
         reply.success = true;
         return reply;
     }
+    // 2026-09-09 需求批：升级礼包入账（形同 CheckIn：总分+本次所得+重放标记）。
+    if (query.action == UserApiAction::CreditLevelReward) {
+        reply.data.insert("points", static_cast<double>(result.points));
+        reply.data.insert("gained", static_cast<double>(result.pointsGained));
+        reply.data.insert("alreadyCredited", result.alreadyCredited);
+        reply.success = true;
+        return reply;
+    }
     if (query.action == UserApiAction::GetPoints) {
         // 响应形冻结为 {points, entries:[{id, amount, reason, createdAtUtc}],
-        // page, pageSize, total}；reason 词表只映射 CHECK_IN，其余运营文案
-        // 原样透传（TODO(contract): 词表评审）。
+        // page, pageSize, total}；reason 词表映射 CHECK_IN/SETTLEMENT/LEVEL_GIFT，
+        // 其余运营文案原样透传（TODO(contract): 词表评审）。
         QJsonArray entries;
         for (const auto& row : result.rows) {
             QJsonObject item = wireRow(row);
             if (item.value("reason").toString() == QLatin1String("CHECK_IN"))
                 item.insert("reason", QStringLiteral("每日签到"));
+            else if (item.value("reason").toString() == QLatin1String("SETTLEMENT"))
+                item.insert("reason", QStringLiteral("消费返积分"));
+            else if (item.value("reason").toString() == QLatin1String("LEVEL_GIFT"))
+                item.insert("reason", QStringLiteral("等级礼包"));
             item.insert("createdAtUtc", item.take("createdAt"));
             item.remove("userId");    // never echo internal identity columns
             entries.append(item);

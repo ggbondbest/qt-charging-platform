@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets NotificationPage (objectName "notificationPage").
 // 数据源 = notificationService（桥缺位期盲写 notifications() / notificationsChanged，
@@ -27,11 +28,18 @@ Item {
     }
     Component.onCompleted: load()
 
+    // 类型 → 线稿图标名（NoticePanel 同款 GlyphProvider 面）
     function glyphFor(type) {
         const t = String(type).toLowerCase()
-        return t === "reservation_success_notice" ? "✅"
-             : t === "reservation_cancel_notice" ? "❌"
-             : t === "reservation_expiry_reminder" ? "🔔" : "•"
+        return t === "reservation_success_notice" ? "check"
+             : t === "reservation_cancel_notice" ? "x"
+             : t === "reservation_expiry_reminder" ? "bell" : ""
+    }
+    function glyphColorFor(type) {
+        const t = String(type).toLowerCase()
+        return t === "reservation_success_notice" ? P.Style.brandDeep
+             : t === "reservation_cancel_notice" ? P.Style.danger
+             : t === "reservation_expiry_reminder" ? P.Style.warning : P.Style.faint
     }
     function timeText(v) {
         if (typeof v === "number") return new Date(v).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
@@ -67,13 +75,18 @@ Item {
                 Row {
                     width: parent.width            // Card 内容进 Column 容器：anchors 被忽略且告警
                     spacing: P.Style.spaceSm
-                    Text { id: glyphLbl
+                    Image { id: glyphLbl
                         anchors.verticalCenter: parent.verticalCenter
-                        text: page.glyphFor(modelData.type); font.pixelSize: P.Style.fontXl }
+                        visible: page.glyphFor(modelData.type).length > 0
+                        width: Math.round(P.Style.fontXl * P.Style.fontScaleFactor)
+                        height: width
+                        source: visible ? Glyphs.source(page.glyphFor(modelData.type),
+                                                        page.glyphColorFor(modelData.type)) : ""
+                    }
                     Column {
                         // 原 parent.width - 60 的魔数预留放不下放大档时间列 →
                         // 按两侧内容实宽扣减（字号档适配 2026-09-08，成员3 代修）
-                        width: Math.max(40, parent.width - glyphLbl.implicitWidth
+                        width: Math.max(40, parent.width - glyphLbl.width
                                         - timeLbl.implicitWidth - parent.spacing * 2)
                         spacing: 2
                         Text { width: parent.width; elide: Text.ElideRight
@@ -96,7 +109,7 @@ Item {
             width: parent.width
             height: 160
             visible: page.items.length === 0
-            glyph: "🔔"
+            glyph: "bell"
             title: "暂无通知"
             description: "开启新的预约后，成功/取消/到期消息会出现在这里；也可到设置页检查“通知与提醒”开关。"
             actionText: ""

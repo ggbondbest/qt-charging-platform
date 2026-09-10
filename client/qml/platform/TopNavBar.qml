@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import "."
 import "." as P
+import "Glyphs.js" as Glyphs
 
 // QML twin of widgets TopNavBar. Signals kept verbatim:
 //   searchSubmitted(keyword) loginRequested profileRequested
@@ -57,19 +58,30 @@ Rectangle {
                     onClicked: nav.backRequested() }
             }
         }
-        Text {
+        Row { // 平台标题：线稿 bolt 图标（Tabler）+ 文字，图标仅"充电平台"语境出现
             id: platformTitle
             anchors.verticalCenter: parent.verticalCenter
-            text: nav.searchVisible ? "充电" : "⚡ 充电平台"
-            font.pixelSize: Style.fontLg
-            font.bold: true
-            color: Style.ink
+            spacing: 4
+            Image {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.round(Style.fontLg * Style.fontScaleFactor)
+                height: width
+                visible: !nav.searchVisible   // 搜索语境短文"充电"不带图标（原 emoji 同款行为）
+                source: Glyphs.source("bolt", Style.ink)
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: nav.searchVisible ? "充电" : "充电平台"
+                font.pixelSize: Style.fontLg
+                font.bold: true
+                color: Style.ink
+            }
         }
         Item {
             anchors.verticalCenter: parent.verticalCenter
             width: nav.searchVisible
                  ? Math.max(96, nav.width - 2 * Style.spaceLg - platformTitle.implicitWidth
-                            - 32 - filterText.implicitWidth - notificationText.implicitWidth
+                            - 32 - filterText.implicitWidth - notificationBell.width
                             - 5 * Style.spaceSm) : 0
             height: 36
             visible: nav.searchVisible
@@ -114,12 +126,14 @@ Rectangle {
             MouseArea { id: filterMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                 onClicked: nav.filterRequested() }
         }
-        Text { // 通知铃铛
-            id: notificationText
+        Image { // 通知铃铛（原 "🔔" emoji → Tabler bell 线稿，随主题染色）
+            id: notificationBell
+            objectName: "topNavBell"   // 测试锚点（原按 "🔔" 文本找，图标化后改按名找）
             anchors.verticalCenter: parent.verticalCenter
             visible: nav.notificationsVisible
-            text: "🔔"
-            font.pixelSize: Style.fontLg
+            width: Math.round(Style.fontLg * Style.fontScaleFactor)
+            height: width
+            source: visible ? Glyphs.source("bell", Style.ink) : ""
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                 onClicked: nav.notificationsRequested() }
         }

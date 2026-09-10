@@ -110,6 +110,7 @@ private slots:
     void statsCouponsAndNotifications();
     void couponExpiryDerivedFromServerClock();
     void checkInAndPoints();
+    void levelGiftCredit();
     void chargerRatings();
     void authorizationAndValidation();
     void pagingExpiryAndLiveLists();
@@ -297,6 +298,30 @@ void UserApiIntegrationTest::statsCouponsAndNotifications()
     QCOMPARE(response.data.value("notifications").toArray().first().toObject().value("type").toString(),
              QStringLiteral("order_paid"));   // newest first within one clock tick (id DESC)
 
+    // Settlement reward rides the SAME transaction as the order_paid notify
+    // (2026-09-09): floor(amount/100) via settlementRewardPoints()
+    // (TODO(contract) rate; helper itself unit-pinned in tst_user_api_contract).
+    // Ground truth = the paid order's own amountCents from GET_ORDERS, so this
+    // test pins "credited once, mapped, total = ledger SUM, replay no-double"
+    // without hardcoding the billing number. This user never checked in.
+    const auto ordersResp = call(a, kGetOrders, {{"status", "COMPLETED"}});
+    QVERIFY2(ordersResp.success, qPrintable(ordersResp.error.message));
+    const int paidCents = ordersResp.data.value("orders").toArray()
+                              .first().toObject().value("amountCents").toInt();
+    const int expectedPoints = paidCents / 100;   // same floor rule, independent source
+    response = call(a, kGetPoints);
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    const QJsonArray ledger = response.data.value("entries").toArray();
+    QCOMPARE(ledger.size(), expectedPoints > 0 ? 1 : 0);
+    if (expectedPoints > 0) {
+        QCOMPARE(ledger.first().toObject().value("reason").toString(),
+                 QStringLiteral("消费返积分"));   // SETTLEMENT mapped at output
+        QCOMPARE(ledger.first().toObject().value("amount").toInt(), expectedPoints);
+    }
+    QCOMPARE(response.data.value("points").toInt(), expectedPoints);
+    QVERIFY(call(a, kPayOrder, {{"orderId", orderId}}).success);   // idempotent replay
+    QCOMPARE(call(a, kGetPoints).data.value("points").toInt(), expectedPoints);
+
     response = call(a, kGetUserStats);
     QVERIFY(response.success);
     const QJsonArray months = response.data.value("months").toArray();
@@ -477,6 +502,61 @@ void UserApiIntegrationTest::checkInAndPoints()
     QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
     QCOMPARE(call(b, kGetPoints).data.value("total").toInt(), 0);
     QCOMPARE(call(b, kCheckIn).data.value("points").toInt(), 10);
+}
+
+void UserApiIntegrationTest::levelGiftCredit()
+{
+    // 2026-09-09 需求批：升级礼包真入账（CREDIT_LEVEL_REWARD）——金额服务端
+    // 单点推导（不信任传额入参）、同档流水去重幂等、GET_POINTS 词映射。
+    Fixture f; QVERIFY(f.start());
+    ClientConnection a("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(a, kUserLogin, {{"phone", "13800138000"}}).success);
+
+    // 形态防线：normalize 挡 2..5 之外（1=青铜无礼包、6=不存在档、字符串）。
+    for (const QJsonValue& level : {QJsonValue(1), QJsonValue(6), QJsonValue("2"),
+                                    QJsonValue(QJsonValue::Null)}) {
+        const auto rejected = call(a, kCreditLevelReward, QJsonObject{{"level", level}});
+        QCOMPARE(rejected.error.code, QStringLiteral("INVALID_ARGUMENT"));
+    }
+
+    auto response = call(a, kCreditLevelReward, {{"level", 2}});
+    QVERIFY2(response.success, qPrintable(response.error.message));
+    QCOMPARE(response.data.value("gained").toInt(), 100);       // 白银额服务端推导
+    QCOMPARE(response.data.value("points").toInt(), 100);
+    QCOMPARE(response.data.value("alreadyCredited").toBool(), false);
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT COUNT(*) FROM points_ledger WHERE user_id=1 AND reason='LEVEL_GIFT'")),
+             1);
+
+    // 同档重放（bridge 登录对账/断网重试路径）：幂等成功、不双发。
+    response = call(a, kCreditLevelReward, {{"level", 2}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("alreadyCredited").toBool(), true);
+    QCOMPARE(response.data.value("gained").toInt(), 0);
+    QCOMPARE(response.data.value("points").toInt(), 100);
+    QCOMPARE(f.number(QStringLiteral(
+                 "SELECT COUNT(*) FROM points_ledger WHERE user_id=1 AND reason='LEVEL_GIFT'")),
+             1);
+
+    // 跨档独立入账：黑金 300 与白银 100 互不干扰（各档金额可辨即幂等键可辨）。
+    response = call(a, kCreditLevelReward, {{"level", 5}});
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("gained").toInt(), 300);
+    QCOMPARE(response.data.value("points").toInt(), 400);
+
+    // 输出侧词映射：流水首行"等级礼包"，与 CHECK_IN/SETTLEMENT 同族。
+    response = call(a, kGetPoints);
+    QVERIFY(response.success);
+    QCOMPARE(response.data.value("total").toInt(), 2);
+    QCOMPARE(response.data.value("points").toInt(), 400);       // SUM 单一事实源
+    const QJsonObject entry = response.data.value("entries").toArray().first().toObject();
+    QCOMPARE(entry.value("reason").toString(), QStringLiteral("等级礼包"));
+    QCOMPARE(entry.value("amount").toInt(), 300);
+
+    // 账户隔离：礼包按人入账，不串档。
+    ClientConnection b("127.0.0.1", f.server.serverPort());
+    QVERIFY(call(b, kUserLogin, {{"phone", "13900000002"}}).success);
+    QCOMPARE(call(b, kGetPoints).data.value("total").toInt(), 0);
 }
 
 void UserApiIntegrationTest::chargerRatings()

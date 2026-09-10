@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 每日任务页（2026-09-09 经验等级批）：任务清单 + 当日完成态 + 全勤进度。
 // 会员中心批起任务卡形态抽到 TaskSection.qml（与 LevelPage 共用）；本页
 // 保留独立路由（深链/测试入口）与等级 hero。数据全在 ProgressService
-// （App.progressService）：QSettings 本地持久化、日粒度幂等（服务端积分
-// 账本零改动，签到动作仍走 pointsService 真实入账）。
+// （App.progressService）：QSettings 本地持久化、日粒度幂等（经验记账纯
+// 本地；签到积分仍走 pointsService 真实入账，升级礼包由 bridge 收 levelUp
+// 后发 CREDIT_LEVEL_REWARD 入账——2026-09-09 拍板批）。
 // 裸引擎/无桥场景 prog 为 null：渲染空态提示，页面不炸（成员3 页测试口径）。
 Item {
     id: page
@@ -21,6 +23,19 @@ Item {
     // 测试/外层消费位保持原样（别名转发进区块）：签到在途镜像 + 手动触发。
     property alias checkingIn: taskSection.checkingIn
     function checkInNow() { taskSection.checkInNow() }
+
+    // 经验域图形单表意（2026-09-09 emoji→glyph 批）：服务层 tasks[].glyph 仍存
+    // emoji（导出形状不动），页面按 id 自映射母版名，染色随完成态。
+    function taskGlyph(id) {
+        const m = { checkin: "calendar-check", search: "search", detail: "eye",
+                    route: "compass", stats: "chart-bar" }
+        return m[id] || "check"
+    }
+    // 档位主题色（与 ProfilePage.tierColor / LevelPage.tierColor 同表三处互指）。
+    function tierColor(lv) {
+        const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
+        return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
+    }
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
@@ -79,12 +94,28 @@ Item {
                     Column {
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                         spacing: 4
-                        Text {
-                            objectName: "uiTasksLevelLine"
-                            text: page.prog ? (page.prog.tierGlyph + " Lv." + page.prog.level
-                                               + " " + page.prog.tierName) : ""
-                            font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
-                            color: P.Style.surface
+                        // 等级行：档位色圆托 + 白色奖牌线稿 + 文字（emoji tierGlyph 已退役）。
+                        Row {
+                            spacing: P.Style.spaceXs
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.round(24 * P.Style.fontScaleFactor)
+                                height: width; radius: width / 2
+                                color: page.tierColor(page.prog ? page.prog.level : 1)
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: Math.round(16 * P.Style.fontScaleFactor)
+                                    height: width
+                                    source: Glyphs.source("medal", "#FFFFFF")
+                                }
+                            }
+                            Text {
+                                objectName: "uiTasksLevelLine"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.prog ? ("Lv." + page.prog.level + " " + page.prog.tierName) : ""
+                                font.pixelSize: P.Style.fontLg2; font.weight: Font.Bold
+                                color: P.Style.surface
+                            }
                         }
                         Text {
                             objectName: "uiTasksXpLine"
@@ -113,12 +144,12 @@ Item {
                 visible: !!page.prog
             }
 
-            // ---- 口径说明（诚实标注两套账本）----
+            // ---- 口径说明（经验本地、积分入账）----
             Text {
                 objectName: "uiTasksFootnote"
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: "经验与等级为客户端成长体系；签到积分以「签到积分」页的服务端账本为准。"
+                text: "经验与等级为客户端成长体系；签到积分与升级礼包积分入账服务端，见「积分」页流水。"
                 font.pixelSize: P.Style.fontXs; color: P.Style.faint
             }
 
@@ -128,7 +159,7 @@ Item {
                 width: parent.width
                 height: 180
                 visible: !page.prog
-                glyph: "🗓️"
+                glyph: "calendar-check"
                 title: "任务系统未就绪"
                 description: "登录后即可开始攒经验、升会员等级。"
                 actionText: ""

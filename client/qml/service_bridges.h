@@ -222,6 +222,9 @@ public:
     Q_INVOKABLE bool setTheme(const QString& theme);
     Q_INVOKABLE QString fontScale() const;
     Q_INVOKABLE bool setFontScale(const QString& scale);
+    // palette ∈ "green" | "blue" | "violet" | "amber"（2026-09-10 配色批）。
+    Q_INVOKABLE QString palette() const;
+    Q_INVOKABLE bool setPalette(const QString& palette);
 
 signals:
     void vehiclesChanged();

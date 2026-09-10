@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "."
+import "Glyphs.js" as Glyphs
 
 // QML twin of widgets ActionButton — same name, same variant vocabulary:
 //   primary | secondary | danger | ghost | chip | logout
@@ -14,6 +15,8 @@ Button {
     id: root
     property string variant: "primary"
     property bool selected: false      // chip 选中态（排序/tab/筛选 chips 用）
+    property string glyph: ""          // image://glyphs 母版名（空=纯文本按钮）
+    property color glyphColor: fg      // 图标染色（默认随字色，可传 starGold 等）
     objectName: "actionButton_" + (text || "")
 
     implicitHeight: Math.max(44, implicitContentHeight + topPadding + bottomPadding)
@@ -56,18 +59,33 @@ Button {
     readonly property color borderColor: variant === "logout" ? Style.line
                                          : root.selected ? Style.brand : Style.lineStrong
 
-    contentItem: Text {
-        text: root.text
-        font.pixelSize: root.variant === "primary" || root.variant === "danger"
-                        || root.variant === "chip" || root.variant === "logout"
-                        ? Style.fontLg : Style.fontMd
-        font.bold: root.variant === "primary" || root.variant === "danger"
-                   || root.variant === "logout"
-                   || (root.variant === "chip" && root.selected)
-        color: root.fg
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+    contentItem: Row {
+        spacing: glyphIcon.visible && root.text.length > 0 ? 4 : 0
+        Image {
+            id: glyphIcon
+            visible: root.glyph.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.round((root.variant === "primary" || root.variant === "danger"
+                               || root.variant === "chip" || root.variant === "logout"
+                               ? Style.fontLg : Style.fontMd) * Style.fontScaleFactor)
+            height: width
+            source: visible ? Glyphs.source(root.glyph, root.glyphColor) : ""
+        }
+        Text {
+            text: root.text
+            visible: text.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            font.pixelSize: root.variant === "primary" || root.variant === "danger"
+                            || root.variant === "chip" || root.variant === "logout"
+                            ? Style.fontLg : Style.fontMd
+            font.bold: root.variant === "primary" || root.variant === "danger"
+                       || root.variant === "logout"
+                       || (root.variant === "chip" && root.selected)
+            color: root.fg
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
     }
     background: Rectangle {
         radius: root.rad

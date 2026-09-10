@@ -9,13 +9,15 @@ namespace charging::client {
 
 // 经验等级 + 每日任务引擎（2026-09-09 需求批）。纯客户端本地成长系统：
 // QSettings 持久化（与 SettingsService 同通道，按登录手机号分组，互不串档）。
-// 与积分体系（PointService/points_ledger，服务端单一事实源）严格分账：
-// 本服务永不写积分账本、也不镜像服务端总分——签到任务只上报本地事件
-// （真实 +10 积分仍走 pointsService.checkIn），升级礼包的"积分"记录在
-// 等级体系自己的礼包账目里（LevelPage「升级记录」展示），不入余额/积分页。
+// 与积分体系（PointService/points_ledger，服务端单一事实源）边界：本服务自身
+// 永不写积分账本、也不镜像服务端总分——签到任务只上报本地事件（真实 +10 积分
+// 仍走 pointsService.checkIn）。升级礼包口径 2026-09-09 拍板变更：原"记等级
+// 自己的账目"改为真入账——bridge 收 levelUp 后发 CREDIT_LEVEL_REWARD 落
+// points_ledger（金额由服务端 levelRewardPoints() 单点推导）；本服务导出形状
+// 不变，gifts_ 仍是 LevelPage「升级记录」的展示镜像与登录对账重放的数据源。
 // 等级曲线（累计 XP）：青铜0 / 白银60 / 黄金150 / 铂金350 / 黑金700。
 // 每日任务（当天幂等，跨天自动重置）：签到30 / 搜索20 / 详情20 / 路线20 /
-// 月报20，全勤奖励30 —— 全勤一天 140 XP，约两天白银、四天铂金、五天黑金。
+// 充电报告20，全勤奖励30 —— 全勤一天 140 XP，约两天白银、四天铂金、五天黑金。
 class ProgressService final : public QObject
 {
     Q_OBJECT

@@ -1,8 +1,10 @@
 import QtQuick
 import "."
+import "Glyphs.js" as Glyphs
 
 // QML twin of widgets BottomTabBar.
-//   property var tabs: [{id:"station", text:"🔍 找站"}, …]
+//   property var tabs: [{id:"station", icon:"search", label:"找站"}, …]
+//   (icon = assets/glyphs 母版名，经 GlyphProvider 随主题染色)
 //   currentTab / setCurrentTab(id) / tabChanged(id)
 Rectangle {
     id: bar
@@ -37,9 +39,17 @@ Rectangle {
                 Column {
                     anchors.centerIn: parent
                     spacing: 2
+                    Image {
+                        id: tabIcon
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: Math.round(20 * Style.fontScaleFactor)
+                        height: width
+                        source: Glyphs.source(modelData.icon,
+                            bar.currentTab === modelData.id ? Style.brandDeep : Style.faint)
+                    }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: modelData.text
+                        text: modelData.label
                         font.pixelSize: Style.fontSm
                         font.bold: bar.currentTab === modelData.id
                         color: bar.currentTab === modelData.id ? Style.brandDeep : Style.faint
