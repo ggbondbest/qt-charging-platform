@@ -70,6 +70,8 @@ private:
     void sendPendingWrite();
     void showWriteStatus();
     QString statusCode(const QString& display) const;
+    QString selectedChargerTypeCode() const;
+    int selectedPowerWatts() const;
 
     QVector<ChargerRecord> records_;
     QVector<int> filteredRecordIndexes_;
@@ -113,7 +115,9 @@ private:
     QLabel* detailStationLabel_ = nullptr;
     QLabel* detailStatusLabel_ = nullptr;
     QLabel* detailBasicInfoLabel_ = nullptr;
+    QLabel* detailLiveChargeLabel_ = nullptr;
     QLabel* detailRuntimeInfoLabel_ = nullptr;
+    QLabel* detailRecoveryLabel_ = nullptr;
     QPushButton* previousPageButton_ = nullptr;
     QPushButton* nextPageButton_ = nullptr;
     QPushButton* restartButton_ = nullptr;

@@ -259,6 +259,8 @@ private slots:
             {"capturedAt", "2026-09-09T00:01:00.000Z"}, {"currentPowerWatts", 120000},
             {"energyWh", 2000}, {"chargeSeconds", 60}, {"currentAmountCents", 240}, {"lastHeartbeatAt", QJsonValue::Null}};
         page.handleRuntimeResponse(success({{"item", snapshot}}));
+        QVERIFY(page.detailLiveChargeLabel_->text().contains(QStringLiteral("120.0 kW")));
+        QVERIFY(page.detailLiveChargeLabel_->text().contains(QStringLiteral("¥ 2.40")));
         QVERIFY(page.detailRuntimeInfoLabel_->text().contains(QStringLiteral("服务端模拟采样")));
         QVERIFY(page.detailRuntimeInfoLabel_->text().contains(QStringLiteral("非硬件遥测")));
         QVERIFY(page.detailRuntimeInfoLabel_->text().contains(QStringLiteral("暂估金额")));

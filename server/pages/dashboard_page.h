@@ -41,16 +41,12 @@ private:
     QLabel* totalChargersLabel_ = nullptr;
     QLabel* refreshedAtLabel_ = nullptr;
     QLabel* exceptionCountBadge_ = nullptr;
+    QTableWidget* deviceStatusTable_ = nullptr;
     QTableWidget* exceptionTable_ = nullptr;
     QTableWidget* latestOrdersTable_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
     DeliveryRevenueTrendWidget* trendWidget_ = nullptr;
     DeliveryDeviceStatusWidget* deviceStatusWidget_ = nullptr;
-    QLabel* availableLegendValue_ = nullptr;
-    QLabel* chargingLegendValue_ = nullptr;
-    QLabel* reservedLegendValue_ = nullptr;
-    QLabel* offlineLegendValue_ = nullptr;
-    QLabel* faultLegendValue_ = nullptr;
     int requestedDays_ = 7;
 };
 

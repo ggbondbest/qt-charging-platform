@@ -1,8 +1,10 @@
 #include "admin_request_gateway.h"
+#include "activity_records_page.h"
 #include "charger_management_page.h"
 #include "dashboard_page.h"
 #include "delivery_dashboard_widgets.h"
 #include "database_connection.h"
+#include "order_management_page.h"
 #include "server_runtime.h"
 #include "station_management_page.h"
 
@@ -11,6 +13,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QHeaderView>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
@@ -35,6 +38,166 @@ class AdminManagementPagesTest final : public QObject
     Q_OBJECT
 
 private slots:
+    void operationLogOffersClearlyLabeledRuntimeMock()
+    {
+        ActivityRecordsPage page(ActivityRecordsMode::OperationLog);
+        auto* source = page.findChild<QComboBox*>(QStringLiteral("operationLogSourceComboBox"));
+        auto* table = page.findChild<QTableWidget*>(QStringLiteral("operationLogTable"));
+        QVERIFY(source != nullptr);
+        QVERIFY(table != nullptr);
+
+        source->setCurrentIndex(1);
+        QTRY_COMPARE(table->horizontalHeaderItem(1)->text(), QStringLiteral("级别"));
+        QTRY_COMPARE(table->horizontalHeaderItem(2)->text(), QStringLiteral("事件"));
+        QTRY_COMPARE(table->rowCount(), 5);
+        QCOMPARE(table->item(0, 1)->text(), QStringLiteral("INFO"));
+        QCOMPARE(table->item(2, 2)->text(), QStringLiteral("协议异常"));
+
+        source->setCurrentIndex(0);
+        QTRY_COMPARE(table->horizontalHeaderItem(1)->text(), QStringLiteral("管理员"));
+        QTRY_COMPARE(table->rowCount(), 10);
+    }
+
+    void rechargeRecordsUseCreationTimeLabel()
+    {
+        ActivityRecordsPage page(ActivityRecordsMode::Recharge);
+        auto* table = page.findChild<QTableWidget*>(QStringLiteral("rechargeRecordsTable"));
+        QVERIFY(table != nullptr);
+        QCOMPARE(table->horizontalHeaderItem(4)->text(), QStringLiteral("创建时间"));
+    }
+
+    void detailPanelsClearlySeparateMockMonitoringAndFees()
+    {
+        ChargerManagementPage chargers;
+        auto* liveMonitor = chargers.findChild<QLabel*>(QStringLiteral("chargerLiveChargeMonitor"));
+        auto* recovery = chargers.findChild<QLabel*>(QStringLiteral("chargerExceptionRecovery"));
+        QVERIFY(liveMonitor != nullptr);
+        QVERIFY(recovery != nullptr);
+        QVERIFY(liveMonitor->text().contains(QStringLiteral("当前功率")));
+        QVERIFY(recovery->text().contains(QStringLiteral("恢复")));
+
+        OrderManagementPage orders;
+        auto* feeBreakdown = orders.findChild<QLabel*>(QStringLiteral("orderFeeBreakdown"));
+        auto* feeHint = orders.findChild<QLabel*>(QStringLiteral("orderFeeContractHint"));
+        QVERIFY(feeBreakdown != nullptr);
+        QVERIFY(feeHint != nullptr);
+        QVERIFY(feeBreakdown->text().contains(QStringLiteral("实付金额")));
+        QVERIFY(feeHint->text().contains(QStringLiteral("Mock")));
+    }
+
+    void chargerPowerFilterUsesSelectedWattsAndFillsTableWidth()
+    {
+        ChargerManagementPage page;
+        auto* powerFilter = page.findChild<QComboBox*>(QStringLiteral("chargerPowerFilterComboBox"));
+        auto* typeFilter = page.findChild<QComboBox*>(QStringLiteral("chargerTypeFilterComboBox"));
+        auto* table = page.findChild<QTableWidget*>(QStringLiteral("chargerManagementTable"));
+        QVERIFY(powerFilter != nullptr && typeFilter != nullptr && table != nullptr);
+
+        const auto buttons = page.findChildren<QPushButton*>();
+        const auto queryButton = std::find_if(buttons.cbegin(), buttons.cend(),
+                                              [](const QPushButton* button) {
+                                                  return button->text() == QObject::tr("查询");
+                                              });
+        QVERIFY(queryButton != buttons.cend());
+        // Every visible power option carries an immutable watt value.  This
+        // catches regressions where a visual item index inadvertently drives
+        // either the power request or the adjacent type selector.
+        for (const auto& expectation : {qMakePair(7000, 4), qMakePair(60000, 2),
+                                        qMakePair(120000, 4), qMakePair(180000, 2)}) {
+            const int powerIndex = powerFilter->findData(expectation.first, Qt::UserRole + 2);
+            QVERIFY(powerIndex > 0);
+            powerFilter->setCurrentIndex(powerIndex);
+            (*queryButton)->click();
+            QTRY_COMPARE(table->rowCount(), expectation.second);
+            QCOMPARE(typeFilter->currentIndex(), 0);
+            for (int row = 0; row < table->rowCount(); ++row)
+                QCOMPARE(table->item(row, 3)->text(), powerFilter->currentText());
+        }
+
+        QCOMPARE(table->horizontalHeader()->sectionResizeMode(1), QHeaderView::Fixed);
+        QVERIFY(table->columnWidth(1) >= 140);
+        for (const int column : {0, 2, 3, 5, 6, 7, 8})
+            QCOMPARE(table->horizontalHeader()->sectionResizeMode(column), QHeaderView::Stretch);
+    }
+
+    void chargerPowerFilterKeepsTypeSelectionAndUsesExactServerWatts()
+    {
+        QTemporaryDir directory;
+        const QString databasePath = directory.filePath(QStringLiteral("charger-power-filter.sqlite"));
+        ServerRuntime runtime;
+        QSignalSpy listening(&runtime, &ServerRuntime::listening);
+        QVERIFY(runtime.start(databasePath, true, QHostAddress::LocalHost, 0));
+        QTRY_COMPARE(listening.size(), 1);
+
+        // An isolated four-power fixture makes this a real gateway/UI test:
+        // every selected option must reach chargers.list as its exact watts.
+        {
+            DatabaseConnection database;
+            QVERIFY(database.open(databasePath, false));
+            QSqlQuery query(database.database());
+            QVERIFY(query.exec(QStringLiteral(
+                "INSERT INTO stations(code,name,address,latitude,longitude,price_cents_per_kwh) "
+                "VALUES('POWER-FILTER-STATION','功率筛选回归站','测试路',38.8,121.5,120)")));
+            const qint64 stationId = query.lastInsertId().toLongLong();
+            QVERIFY(stationId > 0);
+            for (const auto& expectation : {qMakePair(7000, QStringLiteral("SLOW")),
+                                            qMakePair(60000, QStringLiteral("FAST")),
+                                            qMakePair(120000, QStringLiteral("FAST")),
+                                            qMakePair(180000, QStringLiteral("FAST"))}) {
+                query.prepare(QStringLiteral(
+                    "INSERT INTO chargers(station_id,code,type,power_watts,status) VALUES(?,?,?,?, 'AVAILABLE')"));
+                query.addBindValue(stationId);
+                query.addBindValue(QStringLiteral("POWER-FILTER-%1").arg(expectation.first));
+                query.addBindValue(expectation.second);
+                query.addBindValue(expectation.first);
+                QVERIFY2(query.exec(), qPrintable(query.lastError().text()));
+            }
+            database.close();
+        }
+
+        AdminRequestGateway gateway(&runtime);
+        gateway.request(QStringLiteral("auth.login"),
+                        {{QStringLiteral("username"), QStringLiteral("admin")},
+                         {QStringLiteral("password"), QStringLiteral("123456")}},
+                        this, QStringLiteral("admin-power-filter-login"));
+        QTRY_VERIFY(gateway.isAuthenticated());
+
+        ChargerManagementPage page;
+        page.setAdminGateway(&gateway);
+        page.show();
+        auto* keywordFilter = page.findChild<QLineEdit*>(QStringLiteral("chargerKeywordFilterLineEdit"));
+        auto* typeFilter = page.findChild<QComboBox*>(QStringLiteral("chargerTypeFilterComboBox"));
+        auto* powerFilter = page.findChild<QComboBox*>(QStringLiteral("chargerPowerFilterComboBox"));
+        auto* table = page.findChild<QTableWidget*>(QStringLiteral("chargerManagementTable"));
+        QVERIFY(keywordFilter != nullptr && typeFilter != nullptr && powerFilter != nullptr && table != nullptr);
+        const auto buttons = page.findChildren<QPushButton*>();
+        const auto queryButton = std::find_if(buttons.cbegin(), buttons.cend(),
+                                              [](const QPushButton* button) {
+                                                  return button->text() == QObject::tr("查询");
+                                              });
+        QVERIFY(queryButton != buttons.cend());
+        keywordFilter->setText(QStringLiteral("POWER-FILTER-"));
+
+        for (const auto& expectation : {qMakePair(7000, QStringLiteral("交流桩")),
+                                        qMakePair(60000, QStringLiteral("直流桩")),
+                                        qMakePair(120000, QStringLiteral("直流桩")),
+                                        qMakePair(180000, QStringLiteral("直流桩"))}) {
+            const int powerIndex = powerFilter->findData(expectation.first, Qt::UserRole + 2);
+            QVERIFY(powerIndex > 0);
+            powerFilter->setCurrentIndex(powerIndex);
+            (*queryButton)->click();
+            QTRY_VERIFY(table->rowCount() == 1 && table->item(0, 0) != nullptr
+                        && table->item(0, 0)->text()
+                               == QStringLiteral("POWER-FILTER-%1").arg(expectation.first));
+            QCOMPARE(table->item(0, 0)->text(), QStringLiteral("POWER-FILTER-%1").arg(expectation.first));
+            QCOMPARE(table->item(0, 2)->text(), expectation.second);
+            QCOMPARE(table->item(0, 3)->text(), QStringLiteral("%1 kW").arg(expectation.first / 1000));
+            QCOMPARE(typeFilter->currentIndex(), 0);
+            QVERIFY(typeFilter->currentData(Qt::UserRole + 1).toString().isEmpty());
+        }
+        runtime.stop();
+    }
+
     void stationCreatePersistsParsedCoordinatesAndPrice()
     {
         QTemporaryDir directory;
@@ -378,11 +541,13 @@ private slots:
         auto* pie = qobject_cast<QPieSeries*>(distribution->chart()->series().first());
         QVERIFY(pie);
         QCOMPARE(pie->sum(), 75.0);
-        const QStringList expected{"73（97.3%）", "0（0.0%）", "1（1.3%）", "0（0.0%）", "1（1.3%）"};
-        for (int index = 0; index < expected.size(); ++index) {
-            auto* legend = page.findChild<QLabel*>(QStringLiteral("deviceStateCount%1").arg(index));
-            QVERIFY(legend);
-            QCOMPARE(legend->text(), expected.at(index));
+        auto* stateTable = page.findChild<QTableWidget*>(QStringLiteral("deviceStatusDistributionTable"));
+        QVERIFY(stateTable);
+        const QStringList expectedCounts{"73", "0", "1", "0", "1"};
+        const QStringList expectedPercentages{"97.3%", "0.0%", "1.3%", "0.0%", "1.3%"};
+        for (int row = 0; row < expectedCounts.size(); ++row) {
+            QCOMPARE(stateTable->item(row, 1)->text(), expectedCounts.at(row));
+            QCOMPARE(stateTable->item(row, 2)->text(), expectedPercentages.at(row));
         }
         page.refreshCurrent();
         QCOMPARE(value->text(), QStringLiteral("74 台")); // timer refresh preserves the confirmed snapshot

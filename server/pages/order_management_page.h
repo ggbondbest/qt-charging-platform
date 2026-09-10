@@ -84,6 +84,7 @@ private:
     QLabel* detailCreatedAtLabel_ = nullptr;
     QLabel* chargingInfoLabel_ = nullptr;
     QLabel* feeInfoLabel_ = nullptr;
+    QLabel* feeContractHintLabel_ = nullptr;
     QLabel* paymentInfoLabel_ = nullptr;
     QPushButton* previousPageButton_ = nullptr;
     QPushButton* nextPageButton_ = nullptr;

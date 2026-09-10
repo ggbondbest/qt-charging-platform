@@ -696,7 +696,13 @@ void UserManagementPage::handleDetailResponse(const QJsonObject& response)
 void UserManagementPage::handleListResponse(const QJsonObject& response)
 {
     if (!response.value(QStringLiteral("success")).toBool()) {
-        setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()), true); return;
+        const QString message = response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();
+        setFeedback(tr("加载失败：%1").arg(message), true);
+        if (!hasRealSnapshot_) {
+            statePanel_->setState(ManagementListState::LoadError,
+                                  tr("用户列表加载失败：%1").arg(message));
+        }
+        return;
     }
     const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
         ? records_.at(selectedRecordIndex_).serverId : QString();

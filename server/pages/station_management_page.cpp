@@ -185,8 +185,8 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->setObjectName(QStringLiteral("stationManagementTable"));
     tableWidget_->setColumnCount(8);
     tableWidget_->setHorizontalHeaderLabels(
-        {tr("电站编号"), tr("电站名称"), tr("详细地址"), tr("电桩总数"), tr("可用电桩"),
-         tr("在线率 / 在线桩"), tr("运营状态"), tr("操作")});
+        {tr("电站编号"), tr("电站名称"), tr("详细地址 / 坐标（纬度，经度）"), tr("电桩总数"),
+         tr("可用电桩"), tr("在线率 / 在线桩"), tr("运营状态"), tr("操作")});
     tableWidget_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableWidget_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -355,7 +355,11 @@ void StationManagementPage::rebuildTable()
     for (int row = 0; row < end - begin; ++row) {
         const int recordIndex = filteredRecordIndexes_.at(begin + row);
         const StationRecord& record = records_.at(recordIndex);
-        const QList<QString> values = {record.code, record.name, record.address,
+        const QList<QString> values = {record.code, record.name,
+                                       tr("%1\n坐标：%2, %3")
+                                           .arg(record.address,
+                                                QString::number(record.latitude, 'f', 6),
+                                                QString::number(record.longitude, 'f', 6)),
                                        QString::number(record.chargerCount),
                                        realMode_ ? (record.availableChargerCount >= 0
                                            ? QString::number(record.availableChargerCount) : tr("—"))
@@ -925,7 +929,13 @@ void StationManagementPage::handleDetailResponse(const QJsonObject& response)
 void StationManagementPage::handleListResponse(const QJsonObject& response)
 {
     if (!response.value(QStringLiteral("success")).toBool()) {
-        setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return;
+        const QString message = response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();
+        setFeedback(tr("加载失败：%1").arg(message));
+        if (!hasRealSnapshot_) {
+            statePanel_->setState(ManagementListState::LoadError,
+                                  tr("电站列表加载失败：%1").arg(message));
+        }
+        return;
     }
     const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
         ? records_.at(selectedRecordIndex_).serverId : QString();
