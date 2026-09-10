@@ -136,8 +136,20 @@ private slots:
                  QColor(QStringLiteral("#1E242C")));
         QCOMPARE(objectProperty(price, "background")->property("color").value<QColor>(),
                  QColor(QStringLiteral("#1E242C")));
-        QCOMPARE(objectProperty(book, "contentItem")->property("color").value<QColor>(),
-                 QColor(Qt::white));
+        // 2026-09-09 图标批适配：ActionButton contentItem 由 Text 改 Row{Image,Text}
+        // （无 glyph 时 Image 隐藏，语义不变）——取字色下钻到行内 Text。
+        auto* bookContent = objectProperty(book, "contentItem");
+        QVERIFY(bookContent);
+        QQuickItem* bookLabel = nullptr;
+        const auto contentKids = bookContent->findChildren<QQuickItem*>();
+        for (auto* kid : contentKids) {
+            if (kid->property("color").isValid() && kid->property("text").isValid()) {
+                bookLabel = kid;
+                break;
+            }
+        }
+        QVERIFY(bookLabel);
+        QCOMPARE(bookLabel->property("color").value<QColor>(), QColor(Qt::white));
     }
 
     void comboFieldOpensAndSelectsWithKeyboard()

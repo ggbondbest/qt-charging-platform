@@ -18,7 +18,8 @@ PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由�
 `RECHARGE` 达标同事务发券）。同日再加签到积分域 `CHECK_IN`/`GET_POINTS`
 （`user_checkins`/`points_ledger` 两表，日粒度幂等）与评价域
 `SUBMIT_CHARGER_RATING`/`GET_MY_RATINGS`（`charger_ratings` 表，`order_id UNIQUE`
-一单一评幂等），动作总数达十五个。
+一单一评幂等）。2026-09-09 需求批再加 `CREDIT_LEVEL_REWARD`（升级礼包入账，
+账本无新表、以流水行去重幂等），动作总数达十六个。
 本次不依赖 PR #19，不引入其管理查询或备份恢复代码，不修改 schema v1。
 运行、验证及剩余 UI 工作见 [用户业务接入说明](../development/user_api_runtime.md)。
 
@@ -35,8 +36,9 @@ PR #20 交付契约；后续用户业务分支已增加八个 Dispatcher 路由�
 | `GET_USER_STATS` | 本人已完成订单按月聚合 + 碳排换算 | 已实现 | 月报页 StatsPage（statsService 桥），mock 同形 |
 | `GET_COUPONS` | 本人券状态过滤 + 分页 | 已实现 | 券页 CouponPage（couponService 桥），接线即拉缓存 |
 | `GET_NOTIFICATIONS` | 本人站内通知分页（充电结束/支付成功/超时提醒） | 已实现 | NotificationPage（NotificationService 服务端通道） |
-| `CHECK_IN` | 每日签到幂等入账 + 积分余额 | 已实现 | PointsPage 签到按钮（pointsService 桥），mock 同形 |
-| `GET_POINTS` | 本人积分总分 + 流水分页 | 已实现 | PointsPage 流水卡（pointsService 桥） |
+| `CHECK_IN` | 每日签到幂等入账 + 积分余额 | 已实现 | 「我的」页名片卡签到胶囊（pointsService 桥），mock 同形 |
+| `GET_POINTS` | 本人积分总分 + 流水分页 | 已实现 | PointsPage 流水卡（pointsService 桥）；含 `SETTLEMENT` 结算返点行与 `LEVEL_GIFT` 礼包行 |
+| `CREDIT_LEVEL_REWARD` | 升级礼包入账（金额服务端单点推导，同档重放幂等） | 已实现 | bridge 收经验引擎 levelUp 自动发起（非页桥面）+ 登录全量对账重放；mock 同形 |
 | `SUBMIT_CHARGER_RATING` | 完成单一次评价（order_id UNIQUE 幂等重放） | 已实现 | OrderDetailPage 完成态评价卡（ratingsService 桥） |
 | `GET_MY_RATINGS` | 本人评价分页（JOIN 桩/站展示字段） | 已实现 | RatingsPage 我的评价（ratingsService 桥） |
 
@@ -88,7 +90,7 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 以上是已接入接口的业务错误；其余未注册动作仍返回 `UNKNOWN_REQUEST_TYPE`。
 失败 `data` 为 `{}`，不返回部分业务结果；`success: false` 与主协议一致。
 
-## 3. 十五个接口
+## 3. 十六个接口
 
 完整成功示例位于 [user_api_examples.json](user_api_examples.json)，由测试读取。
 表中 User/Station/Charger/Reservation/Order/RechargeRecord 均指现有
@@ -240,8 +242,31 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 
 - 请求：`page?`、`pageSize?`。
 - 返回：`{points, entries: [{id, amount, reason, createdAtUtc}], page, pageSize,
-  total}`，新→旧。`reason` 词表一期只映射 `CHECK_IN` → "每日签到"，其余运营文案
-  原样透传；TODO(contract)：词表评审。不回显 `userId`。
+  total}`，新→旧。`reason` 词表映射 `CHECK_IN` → "每日签到"、`SETTLEMENT` →
+  "消费返积分"、`LEVEL_GIFT` → "等级礼包"，其余运营文案原样透传；TODO(contract)：词表评审。不回显 `userId`。
+- `SETTLEMENT` 由 `PAY_ORDER` 成功事务同笔写入（2026-09-09 追加）：
+  `amount = settlementRewardPoints(order.amountCents)`，即每满 1 元返
+  `kSettlementPointsPerYuan` 分（floor 取整，¥5.99→5 分）；不足 1 元不产生流水行。
+  幂等重放分支在扣款前返回，故一笔订单只返一次积分。比例常量与计算单点收敛于
+  contract.h 的 `settlementRewardPoints()`，服务端与 mock 共用——TODO(contract)：
+  比例/业务规则终确认。
+
+### CREDIT_LEVEL_REWARD
+
+- 请求：`{level: 2..5}`（已达档位；青铜 Lv.1 为初始档无礼包）。**金额不是入参**：
+  礼包积分由服务端从 contract.h `levelRewardPoints(level)` 单点推导
+  （白银 100/黄金 150/铂金 200/黑金 300），杜绝客户端自报金额刷分。
+  TODO(contract)：金额待业务终确认——与客户端经验引擎 `kTiers` 礼包额为互指
+  镜像（tst_qml_client_pages 钉一致性，改动必撞测试）。
+- 返回：`{points, gained, alreadyCredited}`（`points` = 当前总分，SUM 单一事实源）。
+- 幂等语义：账本不加新表——`(user_id, 'LEVEL_GIFT', amount)` 流水行去重（四档
+  金额互不相同天然可辨；`INSERT … SELECT WHERE NOT EXISTS` 单语句"查+插"无竞态
+  窗口），同档重放返回 `alreadyCredited: true`、`gained: 0`、总分不变（重放不
+  报错——`RECHARGE`/`CHECK_IN` 同族语义）。
+- 触发面：客户端经验引擎 levelUp 回执自动发起（bridge 内部，不经页桥）；登录时
+  另把本地已存礼包全量重放对账——幂等保证零副作用，兜住断网升级/上次未送达的
+  漏网礼包。背景：原设计礼包只记客户端等级账目不入账，2026-09-09 用户拍板推翻
+  分账、改真到账。
 
 ### SUBMIT_CHARGER_RATING
 
@@ -295,6 +320,6 @@ Service 负责映射，无须让数据库结构照搬 JSON 名称。计数与列
 使用 `model::toJson()` 输出基础部分后补充字段，不修改数据库基础模型来塞 UI 字段。
 
 `user_api_contract` 测试覆盖示例与字段校验；`user_api_integration` 使用真实 TCP+SQLite
-验证十五个接口、已有充电闭环、用户隔离、充值事务、独立数据库连接并发、重连和超时。
+验证十六个接口、已有充电闭环、用户隔离、充值事务、独立数据库连接并发、重连和超时。
 独立页面预览仍使用 Mock，保留部分旧字段兼容预览；不能把 Mock 作为鉴权或事务验收依据。
 新增或改变必填字段、枚举、金额/状态语义时，先改本文、公共定义和测试，再改双方实现。

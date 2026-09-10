@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QVector>
 
 namespace charging::client {
@@ -87,6 +88,9 @@ private:
     QVector<QJsonObject> pointsLedger_; // newest first
     qint64 pointsTotal_ = 0;
     QString checkInDay_;
+    // 2026-09-09 需求批：升级礼包幂等集合（镜像服务端 (user_id,'LEVEL_GIFT',
+    // amount) 流水去重——各档金额互不相同，按额即按档）。
+    QSet<qint64> creditedGifts_;
     qint64 nextLedgerId_ = 1;
     // 批次E（2026-09-08）评价：行即 GET_MY_RATINGS ratings 响应形（id/orderId/
     // chargerId 十进制字符串、createdAtUtc ISO 串），新→旧。幂等锚 orderId 唯一

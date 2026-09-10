@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets ReservationModulePage (objectName "reservationModulePage").
 // 两级 Tab：🕒 预约订单（ReservationOrderPage.qml）/ 📒 已完成的预约
@@ -111,7 +112,8 @@ Item {
                 width: parent.width
                 height: 180
                 visible: page.failed
-                glyph: "⚠️"
+                glyph: "triangle-alert"
+                glyphColor: P.Style.warning
                 title: "预约列表加载失败"
                 description: page.failMessage
                 actionText: "重试"

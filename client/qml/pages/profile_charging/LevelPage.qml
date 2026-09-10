@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // 会员等级页 = 会员中心（2026-09-09 会员中心批）：从「我的」页等级卡进入。
-// 四段式：当前等级 hero → 等级阶梯与权益 → **每日任务（攒经验，TaskSection
-// 与任务页共用）** → 升级礼包记录。数据全在 ProgressService（App.progressService）；
-// 升级礼包积分是等级体系自己的账目（本页「升级记录」），与服务端积分账本
-// 分账并在页脚如实标注。
+// 四段式：当前等级 hero → 等级阶梯与权益 → 每日任务（攒经验，TaskSection
+// 与任务页共用）→ 升级礼包记录。数据全在 ProgressService（App.progressService）；
+// 升级礼包积分 2026-09-09 拍板改真入账（推翻原"分账"设计）：bridge 发
+// CREDIT_LEVEL_REWARD 落服务端 points_ledger，「积分」页流水可见"等级礼包"行；
+// 本页「升级记录」为展示镜像。
 Item {
     id: page
     objectName: "levelPage"
@@ -79,12 +81,23 @@ Item {
                         anchors.left: parent.left; anchors.top: parent.top
                         anchors.right: parent.right
                         spacing: 3
-                        Text {
-                            objectName: "uiLevelHeroTier"
-                            text: page.prog ? (page.prog.tierGlyph + " " + page.prog.tierName
-                                               + " · Lv." + page.prog.level) : ""
-                            font.pixelSize: P.Style.fontHero; font.weight: Font.ExtraBold
-                            color: "white"
+                        // 档名行：白色奖牌线稿承托档位渐变（tierGlyph emoji 已退役，
+                        // 图形与文字不再双重表意）。
+                        Row {
+                            spacing: P.Style.spaceSm
+                            Image {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Math.round(26 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source("medal", "#FFFFFF")
+                            }
+                            Text {
+                                objectName: "uiLevelHeroTier"
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: page.prog ? (page.prog.tierName + " · Lv." + page.prog.level) : ""
+                                font.pixelSize: P.Style.fontHero; font.weight: Font.ExtraBold
+                                color: "white"
+                            }
                         }
                         Text {
                             objectName: "uiLevelHeroXp"
@@ -149,9 +162,11 @@ Item {
                             anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                             width: 42; height: 42; radius: 21
                             color: page.tierColor(modelData.level)
-                            Text {
+                            Image {
                                 anchors.centerIn: parent
-                                text: modelData.glyph; font.pixelSize: 19
+                                width: Math.round(22 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source("medal", "#FFFFFF")
                             }
                         }
                         Column {
@@ -227,9 +242,11 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 16; anchors.rightMargin: 16
                         spacing: P.Style.spaceMd
-                        Text {
+                        Image {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.glyph; font.pixelSize: 18
+                            width: Math.round(22 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("medal", page.tierColor(modelData.level))
                         }
                         Column {
                             anchors.verticalCenter: parent.verticalCenter
@@ -245,9 +262,11 @@ Item {
                                 font.pixelSize: P.Style.fontSm; color: P.Style.faint
                             }
                         }
-                        Text {
+                        Image {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "🎁"; font.pixelSize: 16
+                            width: Math.round(20 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("gift", P.Style.warning)
                         }
                     }
                 }
@@ -257,18 +276,18 @@ Item {
                 width: parent.width
                 height: 150
                 visible: !!page.prog && page.prog.gifts.length === 0
-                glyph: "🎁"
+                glyph: "gift"
                 title: "还没有升级记录"
                 description: "去「每日任务」攒经验，跨过档位门槛即自动发放礼包。"
                 actionText: ""
             }
 
-            // ---- 分账说明（诚实口径）----
+            // ---- 到账口径说明（诚实标注）----
             Text {
                 objectName: "uiLevelFootnote"
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: "等级礼包积分记录在等级体系账目（本页）；签到所得积分以服务端「签到积分」页账本为准，两者分账互不影响。"
+                text: "升级礼包积分已并入服务端积分账本（「积分」页流水可见「等级礼包」行）；经验与档位为客户端成长体系。"
                 font.pixelSize: P.Style.fontXs; color: P.Style.faint
             }
 
@@ -278,7 +297,7 @@ Item {
                 width: parent.width
                 height: 180
                 visible: !page.prog
-                glyph: "🏅"
+                glyph: "medal"
                 title: "等级系统未就绪"
                 description: "登录后即可在这里查看会员等级与权益。"
                 actionText: ""

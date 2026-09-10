@@ -1,11 +1,15 @@
 import QtQuick
 import "."
+import "Glyphs.js" as Glyphs
 
 // QML twin of widgets NoticePanel — inline empty/error placeholder with
 // optional retry action; signal actionTriggered().
+// glyph = image://glyphs 母版名（assets/glyphs/，GlyphProvider 随主题染色），
+// glyphColor 供错误态传 warning/danger 等语义色。
 Card {
     id: panel
-    property alias glyph: glyphText.text
+    property string glyph: "info-circle"
+    property color glyphColor: Style.ink
     property alias title: titleText.text
     property alias description: descText.text
     property alias actionText: actionBtn.text
@@ -22,11 +26,11 @@ Card {
         // Column) — vertical/center anchors are illegal there; center via width.
         width: parent ? parent.width : 0
         spacing: Style.spaceSm
-        Text {
-            id: glyphText
+        Image {
             anchors.horizontalCenter: parent.horizontalCenter
-            font.pixelSize: 36
-            text: "ℹ️"
+            width: Math.round(36 * Style.fontScaleFactor)
+            height: width
+            source: Glyphs.source(panel.glyph, panel.glyphColor)
         }
         Text {
             id: titleText

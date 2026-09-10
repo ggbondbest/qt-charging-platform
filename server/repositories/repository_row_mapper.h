@@ -163,4 +163,31 @@ inline bool insertNotificationInTransaction(const QSqlDatabase& database, qint64
     return true;
 }
 
+// Inserts one points_ledger row within the caller's open transaction
+// (2026-09-09 settlement reward; mirrors insertNotificationInTransaction).
+// `reason` stores the machine code ('SETTLEMENT'), mapped to display text on
+// the GET_POINTS output side, same split as CHECK_IN.
+inline bool insertPointsLedgerInTransaction(const QSqlDatabase& database, qint64 userId,
+                                            qint64 amount, const QString& reason,
+                                            const QDateTime& createdAtUtc,
+                                            QString* diagnostic)
+{
+    QSqlQuery query(database);
+    query.prepare(QStringLiteral(
+        "INSERT INTO points_ledger (user_id, amount, reason, created_at) "
+        "VALUES (:userId, :amount, :reason, :now)"));
+    query.bindValue(QStringLiteral(":userId"), userId);
+    query.bindValue(QStringLiteral(":amount"), amount);
+    query.bindValue(QStringLiteral(":reason"), reason);
+    query.bindValue(QStringLiteral(":now"),
+                    createdAtUtc.toUTC().toString(Qt::ISODateWithMs));
+    if (!query.exec()) {
+        if (diagnostic != nullptr) {
+            *diagnostic = query.lastError().text();
+        }
+        return false;
+    }
+    return true;
+}
+
 } // namespace charging::server::repository_detail

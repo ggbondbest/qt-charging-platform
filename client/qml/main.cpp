@@ -20,6 +20,7 @@
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "app_bridge.h"
+#include "glyph_provider.h"
 
 int main(int argc, char* argv[])
 {
@@ -95,6 +96,8 @@ int main(int argc, char* argv[])
     }
 
     QQmlEngine engine;
+    // 单色 glyph 染色（image://glyphs/<name>/<hex>）：emoji 图标替换的运行时面。
+    engine.addImageProvider(QStringLiteral("glyphs"), new charging::qml::GlyphProvider);
     // Keep screenshot/deep-link flags while accepting standard endpoint flags.
     QString host = qEnvironmentVariable("CHARGING_SERVER_HOST", "127.0.0.1");
     int port = qEnvironmentVariableIntValue("CHARGING_SERVER_PORT");
@@ -148,7 +151,8 @@ int main(int argc, char* argv[])
     QObject::connect(&qmlApp, &charging::qml::QmlApp::servicesChanged, ctx, bindServices);
     ctx->setContextProperty(QStringLiteral("mapBridge"), qmlApp.mapBridge());
     ctx->setContextProperty(QStringLiteral("authService"), qmlApp.authService());
-    // --theme=light|dark / --font=standard|large|extraLarge（批次A）：覆盖式
+    // --theme=light|dark / --font=standard|large|extraLarge（批次A）、
+    // --palette=green|blue|violet|amber（配色批 2026-09-10）：覆盖式
     // 设置外观持久化（Service 白名单自拒非法值），Shell 启动同步即生效——
     // 给暗色截图验收与演示用；不传则维持本机已存值。
     const QString themeArg = valueOf("--theme=");
@@ -159,6 +163,10 @@ int main(int argc, char* argv[])
     if (!fontArg.isEmpty())
         QMetaObject::invokeMethod(qmlApp.settingsService(), "setFontScale",
                                   Q_ARG(QString, fontArg));
+    const QString paletteArg = valueOf("--palette=");
+    if (!paletteArg.isEmpty())
+        QMetaObject::invokeMethod(qmlApp.settingsService(), "setPalette",
+                                  Q_ARG(QString, paletteArg));
     QQmlComponent component(&engine);
     component.loadUrl(QUrl(QStringLiteral("qrc:/charging/Shell.qml")));
     if (component.isError()) {

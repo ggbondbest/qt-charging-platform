@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic   // 批次E 评价卡用 TextField
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets OrderDetailPage (route: "order_detail", arg = order map).
 Item {
@@ -230,7 +231,11 @@ Item {
                         spacing: 2
                         Repeater {
                             model: page.myRating !== null ? page.myRating.rating : 0
-                            Text { text: "★"; font.pixelSize: 18; color: P.Style.warning }
+                            Image {
+                                width: Math.round(18 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source("star-filled", P.Style.warning)
+                            }
                         }
                     }
                     Text {
@@ -260,12 +265,15 @@ Item {
                         Repeater {
                             model: 5
                             Item {
-                                width: 32; height: 34
-                                Text {
+                                width: Math.round(32 * P.Style.fontScaleFactor)
+                                height: Math.round(34 * P.Style.fontScaleFactor)
+                                Image {
                                     anchors.centerIn: parent
-                                    text: index < page.pickedStars ? "★" : "☆"
-                                    font.pixelSize: 26
-                                    color: index < page.pickedStars ? P.Style.warning : P.Style.faint
+                                    width: Math.round(26 * P.Style.fontScaleFactor)
+                                    height: width
+                                    source: index < page.pickedStars
+                                            ? Glyphs.source("star-filled", P.Style.warning)
+                                            : Glyphs.source("star", P.Style.faint)
                                 }
                                 MouseArea {
                                     anchors.fill: parent

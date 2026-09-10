@@ -296,6 +296,17 @@
     }
   },
   {
+    "type": "CREDIT_LEVEL_REWARD",
+    "requestData": {
+      "level": 2
+    },
+    "responseData": {
+      "points": 110,
+      "gained": 100,
+      "alreadyCredited": false
+    }
+  },
+  {
     "type": "SUBMIT_CHARGER_RATING",
     "requestData": {
       "orderId": "3",

@@ -1,5 +1,6 @@
 import QtQuick
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets OrderListPage (tab route: "order").
 // Billing-style list (industry conventions from ChargePoint / Electrix order
@@ -47,13 +48,17 @@ Item {
     readonly property var statusTone: ({
         reserved: "info", charging: "warning", waiting_payment: "danger",
         completed: "success", cancelled: "neutral" })
-    // Icon hub 座：tone → 软底色 + 字形（widgets buildMonthGroups 的状态图形语）
+    // Icon hub 座：tone → 软底色 + 线稿图标名 + 前景色（widgets buildMonthGroups 的状态图形语；
+    // 图标经 GlyphProvider 染色，母版见 assets/glyphs/）
     readonly property var hubSpec: ({
-        warning: { g: "⚡", bg: P.Style.warningSoft },
-        danger:  { g: "💰", bg: P.Style.dangerSoft },
-        success: { g: "✅", bg: P.Style.brandSoft },
-        info:    { g: "📒", bg: P.Style.infoSoft },
-        neutral: { g: "✕", bg: P.Style.ghost } })
+        warning: { g: "bolt",     fg: P.Style.warning,   bg: P.Style.warningSoft },
+        danger:  { g: "wallet",   fg: P.Style.danger,    bg: P.Style.dangerSoft },
+        success: { g: "check",    fg: P.Style.brandDeep, bg: P.Style.brandSoft },
+        info:    { g: "calendar-event", fg: P.Style.info, bg: P.Style.infoSoft },
+        neutral: { g: "x",        fg: P.Style.muted,     bg: P.Style.ghost } })
+    function hubOf(status) {
+        return hubSpec[statusTone[status] || "neutral"] || hubSpec.neutral
+    }
 
     function money(cents) { return (cents / 100).toFixed(2) }
     function load(first) {
@@ -316,13 +321,13 @@ Item {
                             width: Math.round(44 * P.Style.fontScaleFactor)
                             height: Math.round(44 * P.Style.fontScaleFactor)
                             radius: width / 2
-                            color: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
-                                    || page.hubSpec.neutral).bg
-                            Text {
+                            color: page.hubOf(card.o.status).bg
+                            Image {
                                 anchors.centerIn: parent
-                                text: (page.hubSpec[page.statusTone[card.o.status] || "neutral"]
-                                       || page.hubSpec.neutral).g
-                                font.pixelSize: Math.round(18 * P.Style.fontScaleFactor)
+                                width: Math.round(18 * P.Style.fontScaleFactor)
+                                height: width
+                                source: Glyphs.source(page.hubOf(card.o.status).g,
+                                                      page.hubOf(card.o.status).fg)
                             }
                         }
                         Item {
@@ -397,9 +402,11 @@ Item {
                 Column {
                     anchors.centerIn: parent
                     spacing: P.Style.spaceSm
-                    Text {
+                    Image {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "🧾"; font.pixelSize: 36
+                        width: Math.round(36 * P.Style.fontScaleFactor)
+                        height: width
+                        source: Glyphs.source("receipt", P.Style.faint)
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter

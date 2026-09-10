@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets FavoritesPage (objectName "favoritesPage").
 // 列表源 = 全量搜索结果 ∩ favoritesService.favoriteIds()（与 widgets 同口径：
@@ -172,10 +173,11 @@ Item {
                     MouseArea {
                         objectName: "unfavoriteStarButton"
                         width: 34; height: parent.height
-                        Text {
+                        Image {
                             anchors.centerIn: parent
-                            text: "★"; font.pixelSize: 20
-                            color: P.Style.warning
+                            width: Math.round(20 * P.Style.fontScaleFactor)
+                            height: width
+                            source: Glyphs.source("star-filled", P.Style.warning)
                         }
                         onClicked: {   // 取消收藏
                             try { favoritesService.toggle(stationId) } catch (e) {}
@@ -190,7 +192,8 @@ Item {
             width: parent.width
             height: parent.height - y
             visible: favModel.count === 0
-            glyph: page.failed ? "⚠️" : "⭐"
+            glyph: page.failed ? "triangle-alert" : "star"
+            glyphColor: page.failed ? P.Style.warning : P.Style.ink
             title: page.failed ? "收藏列表加载失败"
                  : !page.loaded ? "正在加载收藏站点…"
                  : "暂无收藏的充电站"
@@ -198,7 +201,7 @@ Item {
                  : !page.loaded ? ""
                  : (favIds().length > 0 && favModel.count === 0
                     ? "当前筛选条件下没有收藏电站命中，试试放宽或重置筛选条件。"
-                    : "在找站页点击卡片右下角 ☆ 即可收藏，收藏后在这里集中管理。")
+                    : "在找站页点击卡片右下角的收藏星标即可收藏，收藏后在这里集中管理。")
             actionText: page.failed ? "重试" : ""
             onActionTriggered: page.refresh()
         }

@@ -138,6 +138,19 @@ private:
     charging::client::PointService* pointService_ = nullptr;
     charging::client::RatingService* ratingService_ = nullptr;
     charging::client::ProgressService* progressService_ = nullptr;
+    // 2026-09-09 需求批：升级礼包入账的挂起上下文——toast 不再在 levelUp 瞬间
+    // 喊"已记入等级账目"（那是分账时代的旧词），而是等 CREDIT_LEVEL_REWARD
+    // 服务端回执后如实播报"已到账"；失败自动重试一次，再失败提示下次启动
+    // 补送（登录对账重放幂等请求，真到账）。level<=0 即无挂起礼包。
+    struct PendingReward {
+        int level = 0;
+        QString tier;
+        qint64 giftPoints = 0;
+        bool retried = false;
+    };
+    PendingReward pendingReward_;
+    // 登录对账待补送的礼包档位队列（回执链式取下一笔，见 app_bridge.cpp）。
+    QList<int> pendingReconcile_;
     StatsBridge* statsBridge_ = nullptr;
     CouponBridge* couponBridge_ = nullptr;
     PointBridge* pointBridge_ = nullptr;

@@ -14,6 +14,7 @@ constexpr char kPasswordHashKey[] = "settings/security/passwordHash";
 constexpr char kProtectionEnabledKey[] = "settings/security/protectionEnabled";
 // 外观（2026-09-08 批次A，成员3 追加）：主题与字号，白名单值，非法 set 忽略。
 constexpr char kThemeKey[] = "settings/appearance/theme";
+constexpr char kPaletteKey[] = "settings/appearance/palette";
 constexpr char kFontScaleKey[] = "settings/appearance/fontScale";
 
 QString hashPassword(const QString& password)
@@ -291,6 +292,30 @@ bool SettingsService::setFontScale(const QString& scale)
     return true;
 }
 
+QString SettingsService::palette() const
+{
+    const QString value
+        = QSettings().value(QLatin1String(kPaletteKey), QStringLiteral("green")).toString();
+    static const QStringList kPaletteWhitelist = {
+        QStringLiteral("green"), QStringLiteral("blue"),
+        QStringLiteral("violet"), QStringLiteral("amber") };
+    return kPaletteWhitelist.contains(value) ? value : QStringLiteral("green");
+}
+
+bool SettingsService::setPalette(const QString& palette)
+{
+    static const QStringList kPaletteWhitelist = {
+        QStringLiteral("green"), QStringLiteral("blue"),
+        QStringLiteral("violet"), QStringLiteral("amber") };
+    if (!kPaletteWhitelist.contains(palette)) {
+        return false; // 白名单外：不改状态不发信号
+    }
+    QSettings settings;
+    settings.setValue(QLatin1String(kPaletteKey), palette);
+    emit appearanceChanged();
+    return true;
+}
+
 void SettingsService::resetForTesting()
 {
     QSettings settings;
@@ -303,6 +328,7 @@ void SettingsService::resetForTesting()
     settings.remove(notificationKey(Notification::OrderPaid));
     settings.remove(QLatin1String(kThemeKey));
     settings.remove(QLatin1String(kFontScaleKey));
+    settings.remove(QLatin1String(kPaletteKey));
     settings.sync();
     vehicles_.clear();
     nextVehicleId_ = 1;

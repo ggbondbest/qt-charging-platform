@@ -477,7 +477,7 @@ Item {
                 P.ActionButton {
                     objectName: "simulatedScanButton"
                     visible: typeof CHARGING_CHANNEL !== "undefined" && CHARGING_CHANNEL === "mock"
-                    width: parent.width; variant: "secondary"; text: "模拟扫码（demo）"
+                    width: parent.width; variant: "secondary"; text: "扫码充电"
                     onClicked: if (App) App.navigate("scan")
                 }
                 Item { width: 1; height: P.Style.spaceSm }

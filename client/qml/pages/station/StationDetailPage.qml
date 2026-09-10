@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import "../../platform" as P
+import "../../platform/Glyphs.js" as Glyphs
 
 // QML twin of widgets StationDetailPage (objectName "stationDetailPage" kept).
 // arg = 列表页点击卡片带来的 map：{id, name, address, priceCentsPerKwh, distanceMeters, status}。
@@ -185,7 +186,7 @@ Item {
             Text {
                 id: offlineText
                 anchors.centerIn: parent; width: parent.width - 24; wrapMode: Text.Wrap
-                text: "⚠️ 该站点当前处于离线状态，暂不可用，请稍后再试或选择其他站点"
+                text: "该站点当前处于离线状态，暂不可用，请稍后再试或选择其他站点"
                 font.pixelSize: P.Style.fontSm; color: P.Style.ink
             }
         }
@@ -196,7 +197,7 @@ Item {
             visible: page.hasHeader && !page.detailLoaded && !page.detailFailed
             width: parent.width
             height: 120
-            glyph: "⏳"
+            glyph: "clock"
             title: "正在加载充电桩列表…"
             description: "正在查询电站的实时桩位状态"
             actionText: ""
@@ -206,7 +207,8 @@ Item {
             visible: page.hasHeader && page.detailFailed
             width: parent.width
             height: 120
-            glyph: "⚠️"
+            glyph: "triangle-alert"
+            glyphColor: P.Style.warning
             title: "充电桩列表加载失败"
             description: page.failMessage
             actionText: "重试"
@@ -302,7 +304,7 @@ Item {
             visible: page.detailLoaded && chargers.length === 0
             width: parent.width
             height: 140
-            glyph: "🔌"
+            glyph: "plug"
             title: "该站点暂无充电桩"
             description: "站点信息已展示；桩位尚未录入，暂无法预约或充电。"
             actionText: ""
@@ -314,7 +316,8 @@ Item {
         objectName: "detailNotice"
         anchors.fill: parent
         visible: !page.hasHeader
-        glyph: page.detailFailed ? "⚠️" : "⏳"
+        glyph: page.detailFailed ? "triangle-alert" : "clock"
+        glyphColor: page.detailFailed ? P.Style.warning : P.Style.ink
         title: page.detailFailed ? "站点详情加载失败" : "正在加载站点详情…"
         description: page.detailFailed ? page.failMessage : ""
         actionText: page.detailFailed ? "返回首页" : ""

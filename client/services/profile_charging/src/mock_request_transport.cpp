@@ -438,6 +438,8 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         QString::fromLatin1(charging::protocol::request_type::kSubmitChargerRating);
     const QString getMyRatingsType =
         QString::fromLatin1(charging::protocol::request_type::kGetMyRatings);
+    const QString creditLevelRewardType =
+        QString::fromLatin1(charging::protocol::request_type::kCreditLevelReward);
 
     if (type == getUserInfoType) {
         QJsonObject payload;
@@ -756,6 +758,44 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
         return;
     }
 
+    if (type == creditLevelRewardType) {
+        // 2026-09-09 需求批：升级礼包入账镜像——金额与真 server 同一单点
+        // levelRewardPoints(level)（客户端不传额），同档重放幂等（服务端以
+        // (user_id,'LEVEL_GIFT',amount) 流水去重，mock 用等价集合）。reason
+        // 直接存显示词"等级礼包"（mock 现有 CHECK_IN 风格）。
+        QJsonObject normalized;
+        charging::protocol::ProtocolError contractError;
+        if (!charging::protocol::user_api::normalizeRequestData(type, data, &normalized,
+                                                                &contractError)) {
+            callback(false, QJsonObject{}, contractError);
+            return;
+        }
+        const qint64 gift = charging::protocol::user_api::levelRewardPoints(
+            normalized.value(QStringLiteral("level")).toInt());
+        bool already = false;
+        if (gift <= 0) {
+            already = false;   // 防御：normalize 已挡 2..5 之外，理论不可达
+        } else if (creditedGifts_.contains(gift)) {
+            already = true;
+        } else {
+            creditedGifts_.insert(gift);
+            pointsTotal_ += gift;
+            QJsonObject entry;
+            entry.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+            entry.insert(QStringLiteral("amount"), static_cast<double>(gift));
+            entry.insert(QStringLiteral("reason"), QStringLiteral("等级礼包"));
+            entry.insert(QStringLiteral("createdAtUtc"),
+                         QDateTime::currentDateTimeUtc().toUTC().toString(Qt::ISODateWithMs));
+            pointsLedger_.prepend(entry);
+        }
+        callback(true, QJsonObject{{QStringLiteral("points"), static_cast<double>(pointsTotal_)},
+                                   {QStringLiteral("gained"),
+                                    already || gift <= 0 ? 0.0 : static_cast<double>(gift)},
+                                   {QStringLiteral("alreadyCredited"), already}},
+                 charging::protocol::ProtocolError{});
+        return;
+    }
+
     if (type == getPointsType) {
         QJsonObject normalized;
         charging::protocol::ProtocolError contractError;
@@ -1054,6 +1094,20 @@ void MockRequestTransport::handleRequest(const QString& type, const QJsonObject&
                                    .arg(order->amountCents / 100.0, 0, 'f', 2)
                                    .arg(user_.balanceCents / 100.0, 0, 'f', 2),
                                now);
+        // 镜像服务端同事务的结算返积分（2026-09-09）：规则单点 =
+        // settlementRewardPoints()（每满 1 元返 1 分，TODO(contract)）。
+        // reason 存显示词与 CHECK_IN 同款（真服务端存码、输出侧映射）。
+        const qint64 rewardPoints =
+            charging::protocol::user_api::settlementRewardPoints(order->amountCents);
+        if (rewardPoints > 0) {
+            pointsTotal_ += rewardPoints;
+            QJsonObject entry;
+            entry.insert(QStringLiteral("id"), QString::number(nextLedgerId_++));
+            entry.insert(QStringLiteral("amount"), static_cast<double>(rewardPoints));
+            entry.insert(QStringLiteral("reason"), QStringLiteral("消费返积分"));
+            entry.insert(QStringLiteral("createdAtUtc"), now.toString(Qt::ISODateWithMs));
+            pointsLedger_.prepend(entry);
+        }
 
         callback(true, payResultPayload(*order), charging::protocol::ProtocolError{});
         return;

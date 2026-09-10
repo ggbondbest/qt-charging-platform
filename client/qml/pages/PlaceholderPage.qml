@@ -1,5 +1,6 @@
 import QtQuick
 import "../platform" as P
+import "../platform/Glyphs.js" as Glyphs
 
 // Placeholder for routes not migrated yet this sprint (member 2's pages land
 // under pages/station/, mine under pages/profile_charging/). Delete at cutover.
@@ -20,10 +21,11 @@ Item {
     Column {
         anchors.centerIn: parent
         spacing: P.Style.spaceSm
-        Text {
+        Image {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "🚧"
-            font.pixelSize: 36
+            width: Math.round(36 * P.Style.fontScaleFactor)
+            height: width
+            source: Glyphs.source("hammer", P.Style.muted)
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

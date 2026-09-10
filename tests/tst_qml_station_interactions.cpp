@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 
 #include "app_bridge.h"
+#include "glyph_provider.h"
 #include "map_bridge.h"
 #include "service_bridges.h"
 #include "charging/client/profile_charging/progress_service.h"
@@ -29,15 +30,6 @@ QQuickItem* findItem(QQuickItem* root, const QString& name)
     if (root->objectName() == name) return root;
     for (auto* child : root->childItems()) {
         if (auto* found = findItem(child, name)) return found;
-    }
-    return nullptr;
-}
-QQuickItem* findText(QQuickItem* root, const QString& text)
-{
-    if (!root) return nullptr;
-    if (root->property("text").toString() == text) return root;
-    for (auto* child : root->childItems()) {
-        if (auto* found = findText(child, text)) return found;
     }
     return nullptr;
 }
@@ -95,6 +87,10 @@ class QmlStationInteractionsTest final : public QObject
     {
         qmlWarnings_.clear();
         engine_ = new QQmlEngine;
+        // ProfilePage 的 image://glyphs 图标与 main.cpp 同名注册（本套件把引擎
+        // 告警当失败，缺 provider 会报 Invalid image provider）。
+        engine_->addImageProvider(QStringLiteral("glyphs"),
+                                  new charging::qml::GlyphProvider);
         // A page can still render and accept clicks after a binding fails.
         // Treat engine warnings as failures, just like the packaged UI smoke.
         connect(engine_, &QQmlEngine::warnings, this, [this](const QList<QQmlError>& warnings) {
@@ -211,7 +207,10 @@ private slots:
     {
         bootShell();
         QVERIFY(window_ != nullptr);
-        auto* bell = findText(findItem(window_->contentItem(), QStringLiteral("topNavBar")), QStringLiteral("🔔"));
+        // 铃铛现为 image://glyphs 图标（TopNavBar），按 objectName 找而非 emoji 文本。
+        auto* bell = findItem(window_->contentItem(), QStringLiteral("topNavBell"));
+        QVERIFY(bell != nullptr);
+        QVERIFY(bell->property("source").toString().startsWith(QStringLiteral("image://glyphs/bell/")));
         QVERIFY(realClick(window_, bell));
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
@@ -224,15 +223,15 @@ private slots:
         QVERIFY(card != nullptr);
         auto* star = findItem(card, QStringLiteral("favoriteStarButton"));
         QVERIFY(star != nullptr);
-        const QString before = star->property("text").toString();
-        QVERIFY(before == QStringLiteral("☆") || before == QStringLiteral("★"));
+        const QString before = star->property("glyph").toString();
+        QVERIFY(before == QStringLiteral("star") || before == QStringLiteral("star-filled"));
         QVERIFY(realClick(window_, star));
         QTest::qWait(150);
         card = visibleStationCard();
         QVERIFY(card != nullptr);
         star = findItem(card, QStringLiteral("favoriteStarButton"));
         QVERIFY(star != nullptr);
-        QCOMPARE(star->property("text").toString(), before == QStringLiteral("☆") ? QStringLiteral("★") : QStringLiteral("☆"));
+        QCOMPARE(star->property("glyph").toString(), before == QStringLiteral("star") ? QStringLiteral("star-filled") : QStringLiteral("star"));
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("stationDetailPage")) == nullptr);
         // Card surface still navigates after correcting nested button events.
         QVERIFY(realClick(window_, card));
