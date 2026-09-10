@@ -44,6 +44,14 @@ namespace charging::client::pages::station {
 // 路由至独立预约确认页面；存在未结束预约时发 reservationBlocked 由宿主
 // 提示拦截；未登录点击发 reservationLoginRequired 交宿主拦截跳登录。
 // 桩列表置于 QScrollArea，鼠标滚轮上下滚动。
+//
+// 数据流：本页自身不发网络请求——站点/桩数据经 StationQueryService 详情通道
+// 获取（模拟 ↔ TCP 真实通道对 UI 透明，liveMode 下请求 GET_CHARGERS），预约
+// 资格仅同步查询 ReservationService/SettingsService 状态，动作出口全部以信号
+// 交宿主。
+//
+// 被谁用：HomeShell（widgets 充电客户端宿主）注入三个服务并接住 5 条预约
+// 信号做路由/提示；QML 孪生页口径对照见 docs/design/qml-station-mapping.md。
 class StationDetailPage final : public QWidget
 {
     Q_OBJECT
@@ -85,6 +93,7 @@ public:
     bool chargerEmptyVisible() const;
 
 signals:
+    // 错误页“返回首页”→ 宿主切回找站列表（全局 TopNavBar 的“返回”不经过本页）。
     void backRequested();
     // 预约入口点击（携带桩 ID，宿主/测试可观察）。
     void reservationRequested(qint64 chargerId);
@@ -102,12 +111,23 @@ signals:
                                      int distanceMeters);
 
 private:
+    // ---- 状态机与渲染（内部） ----
+
+    // 三态切换唯一入口：viewState_（探针口径）与 pageStack_ 当前页同步变更，
+    // 其它地方不绕过它直接 setCurrentIndex。
     void setDetailState(DetailState state);
+    // 重建前清空旧桩卡：widget 走 deleteLater（重拉在信号槽栈内同步发生）。
     void clearChargerRows();
+    // 单桩卡片：编号 + 状态标签 / 类型·功率 / 预约按钮（灰化、匹配提示内置），
+    // isChargerCard/chargerId/chargerStatus 属性即测试契约。
     QWidget* createChargerCard(const charging::model::Charger& charger);
     // 桩接口类型与默认车辆匹配（无车辆/无默认车时视为匹配，不做筛选）。
     bool matchesDefaultVehicle(const charging::model::Charger& charger) const;
+    // ---- 预约出口与服务回调（内部） ----
+    // 三级拦截链（登录 → 车辆 → 名额），顺序与豁免理由见 .cpp 同名函数。
     void handleReserveRequested(const charging::model::Charger& charger);
+    // 服务详情通道三段信号：开始=回加载（防旧数据滞留），成功=数据源回写并
+    // 重建桩卡，失败=全屏错误态。
     void handleDetailStarted();
     void handleDetailSucceeded(const services::station::StationDetail& detail);
     void handleDetailFailed(const QString& message);
@@ -136,6 +156,8 @@ private:
     QVBoxLayout* chargerListLayout_ = nullptr;
 
     charging::model::Station station_;
+    // -1 = 未知距离（formatDistance 显示 “--”）；同时随 confirm 信号透传给
+    // 预约确认页，保证两页距离口径同源。
     int lastDistanceMeters_ = -1;
 };
 

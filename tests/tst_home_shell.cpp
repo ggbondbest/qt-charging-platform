@@ -1,3 +1,16 @@
+// ============================================================================
+// tst_home_shell：widgets 壳（HomeShell）级 QtTest 端到端回归二进制。
+// 钉什么：真壳装配（登录态/访客页栈数量）、四 Tab 路由与选中态，以及
+//   「找站→详情→预约确认→预约模块→设置/导航/收藏/消息」全链路的页面状态机。
+// boot 方式：直接构造真实 HomeShell（真服务装配），数据走内置 mock 通道
+//   （带延迟，因此断言普遍用 QTRY_* 轮询而非固定等待）；地图系用例注入
+//   FakeTencentServer 假 HTTP（hold/release 扣包，永不触外网）。
+// 隔离手段：init/cleanup 清四个地图 key 环境变量（无 key = 纯模拟口径）；
+//   收藏（用户键固定 42）与设置持久化经 resetForTesting 清 QSettings，防
+//   跨用例/跨运行泄漏；非模态 QMessageBox 按 objectName 定位，并等
+//   WA_DeleteOnClose 销毁后再走下一步，防陈旧弹窗误命中。
+// 截图：设 CHARGING_SNAPSHOT_DIR 时由 saveSnapshotIfRequested 输出 UI 评审证据。
+// ============================================================================
 #include "charging/client/profile_charging/charging_home_page.h"
 #include "charging/client/profile_charging/charging_page.h"
 #include "charging/client/profile_charging/order_detail_page.h"
@@ -97,6 +110,7 @@ void saveSnapshotIfRequested(QWidget& widget, const QString& fileName)
     widget.grab().save(directory + QStringLiteral("/") + fileName);
 }
 
+// 四个底部 Tab 按钮按 objectName 命名约定 "tab_<id>" 查找：widget 侧改名即全线红，顺带钉住命名契约。
 QPushButton* tabButton(QWidget& shell, const QString& id)
 {
     return shell.findChild<QPushButton*>(QStringLiteral("tab_") + id);
@@ -124,6 +138,8 @@ charging::model::Station makeStationSnapshot(qint64 id,
     return station;
 }
 
+// 下面三个路由页访问器（详情/确认/模块）：页面由 HomeShell 构造期装配、findChild 取回即单例；
+// 缺失走 Q_ASSERT_X 即崩即定位——装配回归要快炸，而不是拖到后面的断言里迷惑地红。
 StationDetailPage* detailPage(HomeShell& shell)
 {
     auto* detail = shell.findChild<StationDetailPage*>();
@@ -415,6 +431,7 @@ private slots:
     void guestShellGatesFavoritesAndNotificationsToLogin();
 };
 
+// ---- 顶栏登录态契约：头像可见、登录按钮隐藏、搜索框在场（任务 #2 壳 ↔ TopNavBar 装配） ----
 void HomeShellTest::loggedInShellRendersTopBarWithUser()
 {
     HomeShell shell(makeSampleUser());
@@ -438,6 +455,7 @@ void HomeShellTest::loggedInShellRendersTopBarWithUser()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_station.png"));
 }
 
+// ---- 顶栏未登录态：登录按钮可见 + 点击发 loginRequested（登录跳转由宿主承担，壳只发信号） ----
 void HomeShellTest::loggedOutShellShowsLoginButtonAndEmits()
 {
     // 未登录进入首页：右上角必须显示登录按钮（规格异常路径）。
@@ -458,6 +476,8 @@ void HomeShellTest::loggedOutShellShowsLoginButtonAndEmits()
     QCOMPARE(loginSpy.count(), 1);
 }
 
+// ---- 页栈组成钉死：登录态 homePageStack 必须恰有 17 页（新增路由页不登记即红）；
+//      启动落「找站」且四个 Tab 按钮恰好一个选中 ----
 void HomeShellTest::startsOnStationTab()
 {
     HomeShell shell(makeSampleUser());
@@ -487,6 +507,7 @@ void HomeShellTest::startsOnStationTab()
     QVERIFY(!profileTab->isChecked());
 }
 
+// ---- 四 Tab 互切：按序点击直达对应栈索引（订单1/充电2/我的3/找站0），被点即选中且任意时刻恰一个选中态 ----
 void HomeShellTest::togglesBetweenTabs()
 {
     HomeShell shell(makeSampleUser());
@@ -541,6 +562,8 @@ void HomeShellTest::avatarOpensProfilePage()
     QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
 }
 
+// ---- 整合回归：“我的”Tab 换成 ProfilePage 中心页后，旧测试锚点（昵称/余额/预约入口/
+//      logoutRequested）语义不变——重构不得静默改 objectName 或断掉退出信号 ----
 void HomeShellTest::profilePageRedesignKeepsUserAndAddsFunctionSlots()
 {
     // 全端整合：登录态“我的”Tab 由成员 3 的 ProfilePage 中心页承接（取代
@@ -667,6 +690,8 @@ void HomeShellTest::profileWalletAndReservationCellsRoute()
     QCOMPARE(pageStack->currentIndex(), 3);
 }
 
+// ---- 进页即检索的加载态机：Loading（同步可断言）→ mock 回包 → List 6 站；
+//      站点总数是后续所有筛选/详情用例的口径基准 ----
 void HomeShellTest::initialSearchGoesThroughLoadingToResultList()
 {
     // 进入页面即发起检索：先加载态，模拟数据返回后展示列表。
@@ -675,6 +700,7 @@ void HomeShellTest::initialSearchGoesThroughLoadingToResultList()
 
     auto* page = shell.findChild<StationHomePage*>();
     QVERIFY(page != nullptr);
+    // show 后同步读取即可断 Loading（mock 通道自带延迟），落 List 交给 QTRY 轮询。
     QCOMPARE(page->viewState(), StationHomePage::ViewState::Loading);
 
     QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
@@ -682,6 +708,7 @@ void HomeShellTest::initialSearchGoesThroughLoadingToResultList()
     QCOMPARE(page->stationCardCount(), 6);
 }
 
+// ---- 关键词检索走顶栏公共搜索框（页内不再私建输入框）：回车触发重查，命中数与 keyword 回显 ----
 void HomeShellTest::topBarSearchFiltersStationList()
 {
     // 地址搜索走顶部导航公共组件的搜索框，不再另建输入框。
@@ -703,6 +730,7 @@ void HomeShellTest::topBarSearchFiltersStationList()
     QCOMPARE(page->currentKeyword(), QStringLiteral("科技园"));
 }
 
+// ---- 关键词无命中 → Empty 态（不是 Error、也不残留旧列表） ----
 void HomeShellTest::noMatchShowsEmptyState()
 {
     HomeShell shell(makeSampleUser());
@@ -714,6 +742,7 @@ void HomeShellTest::noMatchShowsEmptyState()
     QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::Empty, 3000);
 }
 
+// ---- 异常分支：服务层注错（setSimulateFailure）→ Error 态；撤错后 retrySearch 回 List ----
 void HomeShellTest::errorStateOffersFriendlyRetry()
 {
     // 异常分支：服务报错时列表区展示错误提示；重试成功后回到列表。
@@ -732,6 +761,7 @@ void HomeShellTest::errorStateOffersFriendlyRetry()
     QVERIFY(page->stationCardCount() > 0);
 }
 
+// ---- 排序/电价筛选是本地投影：不发请求（点完仍 List、无加载往返），首卡与命中数按 mock 数据钉死 ----
 void HomeShellTest::sortAndPriceFiltersRefreshInstantly()
 {
     HomeShell shell(makeSampleUser());
@@ -764,6 +794,8 @@ void HomeShellTest::sortAndPriceFiltersRefreshInstantly()
     QCOMPARE(page->stationCardCount(), 6);
 }
 
+// ---- 卡片→详情路由（索引 4）双向契约：路由带快照信息区立即可见、桩列表异步 Ready；
+//      返回按钮仅路由页出现；从详情点当前 Tab 也必须能回列表（重复点击不被去重吞掉） ----
 void HomeShellTest::cardClickOpensDetailRouteAndBackReturns()
 {
     // 站点卡片点击 → 详情路由页（任务 #12）；顶部导航“返回”回找站列表。
@@ -808,6 +840,8 @@ void HomeShellTest::cardClickOpensDetailRouteAndBackReturns()
     QVERIFY(!topBar->isBackVisible());
 }
 
+// ---- 详情正常态：桩卡数/空闲汇总与列表页口径一致；置灰按钮带 tooltip 且点击无效；
+//      空闲桩点击只发 reservationRequested 信号、不自行跳转（拦截决策归壳） ----
 void HomeShellTest::detailPageShowsChargersWithFaultAndReservation()
 {
     // 正常态：充电桩卡片列表 + 故障视觉标记 + 预约入口按钮。
@@ -874,6 +908,7 @@ void HomeShellTest::detailPageShowsChargersWithFaultAndReservation()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_chargers.png"));
 }
 
+// ---- 详情两个边界态：无桩站→页内空提示不留白；离线站→横幅+“已离线”标签（均由数据源驱动） ----
 void HomeShellTest::detailEmptyAndOfflineStates()
 {
     HomeShell shell(makeSampleUser());
@@ -900,6 +935,7 @@ void HomeShellTest::detailEmptyAndOfflineStates()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_offline.png"));
 }
 
+// ---- 非法路由入参兜底：站点 id=0 → Error 态 + “返回首页”可回找站（不是白屏或卡死） ----
 void HomeShellTest::detailInvalidRouteShowsErrorAndBackHome()
 {
     // 无站点 ID / ID 非法：错误提示 + “返回首页”回到找站列表。
@@ -924,6 +960,8 @@ void HomeShellTest::detailInvalidRouteShowsErrorAndBackHome()
     QCOMPARE(pageStack->currentIndex(), 0);
 }
 
+// ---- 确认页带上下文开页（成功前置：登录+有车+名额未满）：车辆下拉默认选中、
+//      推荐时段（距离→车程公式）与预估费用（电价×时长）全部预填正确 ----
 void HomeShellTest::confirmPageOpensWithReservationContext()
 {
     // 任务 #17 二次迭代：满足预约条件（已登录 + 有车辆 + 名额未满）→
@@ -967,6 +1005,8 @@ void HomeShellTest::confirmPageOpensWithReservationContext()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_confirm.png"));
 }
 
+// ---- 时间段行内校验：两类非法输入（结束≤开始 / 超 45 分钟）各自红字 + 禁用提交；
+//      推荐时段按钮一键复位回合法态 ----
 void HomeShellTest::confirmSlotGatingRecommendedAndOverLimit()
 {
     // 时间段行内校验：结束 ≤ 开始 / 超过 45 分钟 → 红字提示 + 禁用提交；
@@ -1003,6 +1043,7 @@ void HomeShellTest::confirmSlotGatingRecommendedAndOverLimit()
     QVERIFY(confirmButton->isEnabled());
 }
 
+// ---- “关闭”与“返回”两条出口都回详情页（路由成对，不弹整栈） ----
 void HomeShellTest::confirmCloseReturnsToDetail()
 {
     // 【关闭】按钮 → 返回站点详情页。
@@ -1018,6 +1059,8 @@ void HomeShellTest::confirmCloseReturnsToDetail()
     QCOMPARE(pageStack->currentIndex(), 4);
 }
 
+// ---- 提交成功主链路：按钮 loading 防重入 → 非模态引导框（站点文案取详情通道回查）→
+//      “稍后再说”落模块订单 Tab（等待态绿倒计时、名额 1/1、确认页复位 Idle 可幂等再入） ----
 void HomeShellTest::confirmSubmitPromptsGoChargeThenOrderTab()
 {
     // 确认预约成功（二次迭代）：loading 提交态 → 弹“是否现在前往充电？”
@@ -1076,6 +1119,8 @@ void HomeShellTest::confirmSubmitPromptsGoChargeThenOrderTab()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order_tab.png"));
 }
 
+// ---- 提交失败（桩被抢占，注入 next-submit conflict）：停留本页 + 红字原因 + 按钮恢复，
+//      可修改重试；关闭仍能回详情（失败不是死路） ----
 void HomeShellTest::confirmFailureKeepsPageOpenForRetry()
 {
     // 提交失败（桩被抢占）：红色原因展示、停留在本页、可修改后重试。
@@ -1103,6 +1148,8 @@ void HomeShellTest::confirmFailureKeepsPageOpenForRetry()
     QCOMPARE(pageStack->currentIndex(), 4);
 }
 
+// ---- 名额制端到端（二次迭代核心）：名额=车辆数；同车重复提交由 Service 兜底拒绝；
+//      换车成功；满额后拦截点前移到详情入口；全程非模态弹窗需等销毁再进下一轮 ----
 void HomeShellTest::slotQuotaFollowsVehicleCountWithPerVehicleUniqueness()
 {
     // 名额制端到端（二次迭代核心变更）：2 辆车 = 2 个名额；同一车辆重复
@@ -1143,6 +1190,8 @@ void HomeShellTest::slotQuotaFollowsVehicleCountWithPerVehicleUniqueness()
     QVERIFY(vehicleCombo->count() == 2);
     vehicleCombo->setCurrentIndex(1);
     confirmButton->click();
+    // prompt2 != prompt：上一轮成功提示是非模态框、可能尚未销毁；不校验“新框换体”，
+    // 点到的会是旧框里的按钮，断言就成了假通过。
     QMessageBox* prompt2 = nullptr;
     QTRY_VERIFY_WITH_TIMEOUT(
         (prompt2 = shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt"))) != nullptr
@@ -1163,6 +1212,8 @@ void HomeShellTest::slotQuotaFollowsVehicleCountWithPerVehicleUniqueness()
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
     QCOMPARE(pageStack->currentIndex(), 4); // 不跳转确认页
     promptButton(quotaPrompt, QStringLiteral("知道了"))->click();
+    // 两类非模态提示都确认销毁（WA_DeleteOnClose）才算闭环：钉“知道了”只关提示、
+    // 不改路由，同时防残留旧框被后续 findChild 误命中。
     QTRY_VERIFY_WITH_TIMEOUT(
         shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt")) == nullptr
             && shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt"))
@@ -1170,6 +1221,8 @@ void HomeShellTest::slotQuotaFollowsVehicleCountWithPerVehicleUniqueness()
         3000);
 }
 
+// ---- 默认 mock 已有 1 条“预约中”：1 车即满额 → 详情入口直接提示（文案逐字钉规格），
+//      不进确认页；“去查看”/“知道了”两分支：前者直达模块订单 Tab、后者关框不动路由 ----
 void HomeShellTest::fullQuotaBlocksNewConfirmWithPrompt()
 {
     // 业务约束：默认模拟数据已有 1 条“预约中”（车辆数 1 → 名额 1），点
@@ -1213,6 +1266,7 @@ void HomeShellTest::fullQuotaBlocksNewConfirmWithPrompt()
     QCOMPARE(pageStack->currentIndex(), 4);
 }
 
+// ---- 未登录预约拦截：提示且路由不动（仍在详情）；“去登录”经壳的 loginRequested 外抛 ----
 void HomeShellTest::reservationWithoutLoginPromptsAndRoutesToLogin()
 {
     // 未登录点击预约：提示登录，“去登录”经全局 loginRequested 跳登录页。
@@ -1241,6 +1295,8 @@ void HomeShellTest::reservationWithoutLoginPromptsAndRoutesToLogin()
         shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt")) == nullptr, 3000);
 }
 
+// ---- 模块二级 Tab：订单页三栏文案逐字钉 mock 记录（9001 不进归档 → 归档恰 3 卡）；
+//      历史卡→详情弹窗→关闭；二级 Tab 切换不得污染全局底部 Tab 选中态 ----
 void HomeShellTest::reservationModuleShowsOrderAndCompletedSubTabs()
 {
     // 预约模块：二级 Tab 切换【预约订单】（三栏）/【已完成的预约】（归档）。
@@ -1308,6 +1364,8 @@ void HomeShellTest::reservationModuleShowsOrderAndCompletedSubTabs()
     QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
 }
 
+// ---- 取消闭环：按钮 loading 防重复提交 → 成功自动跳归档（3→4 卡）→
+//      订单页转空态、名额归零可再约（取消必须同时释放 UI 和业务名额） ----
 void HomeShellTest::cancelReservationSwitchesToCompletedTab()
 {
     // 取消预约：成功 → 自动跳转【已完成的预约】页。
@@ -1339,6 +1397,8 @@ void HomeShellTest::cancelReservationSwitchesToCompletedTab()
     QCOMPARE(module->service()->activeReservationCount(), 0);
 }
 
+// ---- 模块异常口径：空记录→友好空态（倒计时不留残影）+“去找桩”回找站 Tab；
+//      注错→两页同步 Error，已完成页“重试”撤错后恢复 Empty ----
 void HomeShellTest::reservationEmptyAndErrorStates()
 {
     // 空记录 → 订单页友好空态（“去找桩”回找站 Tab）；
@@ -1396,6 +1456,9 @@ void HomeShellTest::reservationEmptyAndErrorStates()
         completed->viewState() == ReservationCompletedPage::PageState::Empty, 3000);
 }
 
+// ---- 倒计时状态机三阶段全钉：等待态绿“距开始”/ 进行中剩余分档（45min绿、10min黄、
+//      2min红）/ 归零自动流转（订单空 + 归档+1 + 名额释放）。记录用 setMockRecords
+//      回填历史时刻构造、refresh() 驱动收敛，避免真等 45 分钟 ----
 void HomeShellTest::countdownPhasesThresholdsAndExpiryTransition()
 {
     // 三阶段倒计时（任务 #17 二次迭代）：时段未开始 → “距开始 mm:ss”绿色
@@ -1473,6 +1536,8 @@ void HomeShellTest::countdownPhasesThresholdsAndExpiryTransition()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_countdown.png"));
 }
 
+// ---- 迟到超 15 分钟宽限自动取消：开始 20min 前、时段未过期 → 订单页每秒 tick
+//      自行流转“已取消·迟到”并归档、名额释放（页面不轮询，流转由服务定时驱动） ----
 void HomeShellTest::lateReservationAutoCancelledAndFlaggedInHistory()
 {
     // 迟到超 15 分钟自动取消：开始 20 分钟前、时段仍在有效期内 →
@@ -1519,6 +1584,7 @@ void HomeShellTest::lateReservationAutoCancelledAndFlaggedInHistory()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_late_cancelled.png"));
 }
 
+// ---- 模块返回链单级化：全局“返回”回“我的”Tab 并收起返回按钮（Tab 层不出现返回） ----
 void HomeShellTest::moduleRouteBackReturnsToProfile()
 {
     // 模块顶部“返回”（复用全局导航）→ 回“我的”Tab。
@@ -1816,12 +1882,15 @@ void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
 
 // —— 任务 #17 二次迭代：设置页 / 车辆管理 / 导航引导 ——
 
+// ---- 无车辆拦截：0 辆车点预约 → 引导提示且路由不动；“去添加车辆”直达设置页
+//      （空态文案 + 名额“当前 0 辆车”同步可见） ----
 void HomeShellTest::noVehiclePromptRoutesToSettings()
 {
     // 无车辆拦截：0 辆车时点“预约”→ 引导提示；“去添加车辆”直达设置页。
     HomeShell shell(makeSampleUser());
     shell.show();
     QCOMPARE(shell.settingsService()->vehicleCount(), 0);
+    // 清掉默认 mock“预约中”记录：排除名额拦截抢跑，本用例只留车辆门这一个变量。
     clearReservations(shell);
     openDetailAndWait(shell, 1, 850);
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
@@ -1849,6 +1918,8 @@ void HomeShellTest::noVehiclePromptRoutesToSettings()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings_empty_vehicle.png"));
 }
 
+// ---- 设置入口与装配：ProfilePage“⚙️设置”→ 路由页（索引 12）三模块卡齐备、
+//      通知开关 QSettings 复位回读；guest 走 openSettings() 同样被登录门拦截 ----
 void HomeShellTest::settingsRouteFromProfileCard()
 {
     // 个人中心“⚙️ 设置”按钮行（成员 3 ProfilePage）→ 设置路由页
@@ -1889,6 +1960,8 @@ void HomeShellTest::settingsRouteFromProfileCard()
     QCOMPARE(loginSpy.count(), 1);
 }
 
+// ---- 车辆 CRUD 闭环：空车牌被必填拦截 → 保存渲染卡片（首台自动默认）→ 删除回空态；
+//      预约名额 unfinishedSlotLimit 随车辆数实时演进（0→1→0），钉住两条链路的联动 ----
 void HomeShellTest::settingsVehicleDialogCrudAndQuota()
 {
     // 车辆管理对话框式增删：空车牌校验 → 填写保存 → 卡片渲染 → 删除；
@@ -1931,6 +2004,8 @@ void HomeShellTest::settingsVehicleDialogCrudAndQuota()
     pageStack->setCurrentIndex(0);
 }
 
+// ---- 二级保护门禁：无密码→开关置灰+引导文案；对话框双校验（≥4 位、两次一致）后放行；
+//      开关联动 Service，明文不落盘（只留哈希可 verify）；用例尾复位防 QSettings 泄漏 ----
 void HomeShellTest::protectionSwitchGatedByPasswordDialog()
 {
     // 二级保护密码：未设置密码时开关置灰 + 引导文案；对话框校验（长度/
@@ -1980,6 +2055,8 @@ void HomeShellTest::protectionSwitchGatedByPasswordDialog()
     saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings_security.png"));
 }
 
+// ---- “去充电”引导链：成功弹窗→导航页（索引 13，模拟路线摘要可见）→
+//      返回链逐层回收：导航→模块订单 Tab→“我的”（复用全局导航不自建返回） ----
 void HomeShellTest::goChargePromptNavigatesAndBackReturnsToOrderTab()
 {
     // 预约成功 → “去充电” → 导航页（模拟路线摘要）；导航页“返回”→
@@ -2018,10 +2095,14 @@ void HomeShellTest::goChargePromptNavigatesAndBackReturnsToOrderTab()
     QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
 }
 
+// ---- 地图升级时序（独立页注入假 HTTP，不动壳装配）：模拟推荐先出+“更新中”后缀 →
+//      真实矩阵扣包释放后原地升级分钟数并标“真实路况”，时长上限 45 不变 ----
 void HomeShellTest::confirmPageUpgradesSlotWithRealMatrix()
 {
     // 地图接入（确认页）：模拟推荐即时可用 → 真实矩阵到达后原地升级
     // 车程分钟数并标注“真实路况”；时序由假服务扣包控制，永不触外网。
+    // init() 清了 key（无 key = 纯模拟口径，页面根本不发矩阵请求），本用例自备假
+    // key 只为过 hasUsableKey() 门槛，endpoint 随即改指假服务器。
     qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
     FakeTencentServer server;
     QVERIFY(server.start());
@@ -2040,6 +2121,7 @@ void HomeShellTest::confirmPageUpgradesSlotWithRealMatrix()
     QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 7 分钟")));
     QVERIFY(page.recommendedSlotText().contains(QStringLiteral("（更新中…）")));
 
+    // 等请求真的被假服务器扣下（hold 模式）再 release，release 早了会空放、永远等不到升级。
     QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
     server.releasePending(kMapMatrixJson);
     QTRY_VERIFY_WITH_TIMEOUT(!page.recommendedSlotText().contains(QStringLiteral("更新中")),
@@ -2052,6 +2134,8 @@ void HomeShellTest::confirmPageUpgradesSlotWithRealMatrix()
     QCOMPARE(page.selectedMinutes(), 45);  // 时长仍为规格上限 45 分钟
 }
 
+// ---- 异步结果让位用户编辑：矩阵晚到只升级推荐文案（“真实路况”出现），
+//      不回填用户已手改的起止时刻（userEditedSlot_ 代际守卫） ----
 void HomeShellTest::confirmPageKeepsUserEditedSlotWhenMatrixArrives()
 {
     // 用户手动改过起止时间后，真实矩阵只升级文案、不覆盖其编辑。
@@ -2072,6 +2156,7 @@ void HomeShellTest::confirmPageKeepsUserEditedSlotWhenMatrixArrives()
     const QDateTime edited = QDateTime::currentDateTime().addSecs(2 * 3600);
     startEdit->setDateTime(edited); // 触发 userEditedSlot_
 
+    // 同“先扣后放”时序：确认矩阵请求已到假服务器，再释放真实结果。
     QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
     server.releasePending(kMapMatrixJson);
     QTRY_VERIFY_WITH_TIMEOUT(page.recommendedSlotText().contains(QStringLiteral("真实路况")),
@@ -2080,6 +2165,8 @@ void HomeShellTest::confirmPageKeepsUserEditedSlotWhenMatrixArrives()
     QCOMPARE(page.startUtc(), edited.toUTC()); // 未被真实推荐覆盖
 }
 
+// ---- 地图失败降级（假服务器直回 status 310）：推荐保持模拟口径 + 一次性非阻塞 Toast，
+//      页流程不打断（规格：Toast + 页内文案，禁模态框） ----
 void HomeShellTest::confirmPageFallsBackWithToastOnMatrixFailure()
 {
     // 密钥无效（status 310）：推荐保持模拟口径 + 一次性非阻塞 Toast，
@@ -2110,6 +2197,8 @@ void HomeShellTest::confirmPageFallsBackWithToastOnMatrixFailure()
     QVERIFY(toastLabel->text().contains(QStringLiteral("模拟")));
 }
 
+// ---- 导航真实路线替换：模拟路线先渲染（永不空页）→ 扣包释放后距离/时长原地切真实口径；
+//      页内在途两条请求（路线+逆地理），用 requestTargets() 认出 driving 请求再整体释放 ----
 void HomeShellTest::navigationPageSwapsToRealRoute()
 {
     // 地图接入（导航页）：模拟路线先行渲染（永不空页）→ 真实路线到达
@@ -2150,6 +2239,8 @@ void HomeShellTest::navigationPageSwapsToRealRoute()
     QVERIFY(caption->text().contains(QStringLiteral("真实导航路线")));
 }
 
+// ---- 限流降级（status 121）：路线保持模拟口径不替换，caption 标“接口异常+模拟数据”，
+//      Toast 告知“已展示模拟路线”（失败可解释、不留黑盒） ----
 void HomeShellTest::navigationPageKeepsMockRouteOnFailure()
 {
     // 限流（status 121）：保持模拟路线，caption 标注接口异常原因 + Toast。
@@ -2179,6 +2270,8 @@ void HomeShellTest::navigationPageKeepsMockRouteOnFailure()
 // 迭代 3：高级筛选 / 收藏 / 消息通知（壳级接线回归）
 // ============================================================================
 
+// ---- 顶栏新控件排布口径（搜索→筛选→铃铛→头像，x 单调）+ 可见性跟“找站”语境
+//      联动（切订单 Tab 与搜索框同步收起，切回恢复） ----
 void HomeShellTest::navFilterAndBellFollowStationContext()
 {
     HomeShell shell(makeSampleUser());
@@ -2215,6 +2308,8 @@ void HomeShellTest::navFilterAndBellFollowStationContext()
     QVERIFY(topBar->isNotificationsVisible());
 }
 
+// ---- 筛选弹窗全生命周期：QPointer 去重（连点仍一框）→ 组内单选/组间 AND 应用生效 →
+//      accept 销毁去重复位 → 重开回显已应用条件 → 重置只清内部勾选、确定才下发 ----
 void HomeShellTest::advancedFilterDialogRoundTripAndDedup()
 {
     HomeShell shell(makeSampleUser());
@@ -2264,6 +2359,8 @@ void HomeShellTest::advancedFilterDialogRoundTripAndDedup()
     QVERIFY(shell.stationPage()->filterCriteria().isEmpty());
 }
 
+// ---- 筛选空集走专属空态文案“暂无符合条件的充电站”（与关键词无结果区分口径）；
+//      清空条件全量恢复 ----
 void HomeShellTest::advancedFilterNoMatchShowsDedicatedEmptyState()
 {
     HomeShell shell(makeSampleUser());
@@ -2295,6 +2392,8 @@ void HomeShellTest::advancedFilterNoMatchShowsDedicatedEmptyState()
 
 // 验收缺陷 2 回归：电价筛选生效（与关键词叠加成空集）时空态按钮承诺「重置
 // 筛选」，必须重置全部筛选条件并保留关键词——不得清词绕开电价筛选。
+// （测试口径：关键词“科技园”×电价档 ≤¥1.00 叠加成空集后点空态 ActionButton，
+//  钉“档位归 0 且命中集仍是 {1}”两个方向。）
 void HomeShellTest::emptyStateResetClearsPriceFilterAndKeepsKeyword()
 {
     HomeShell shell(makeSampleUser());
@@ -2327,6 +2426,8 @@ void HomeShellTest::emptyStateResetClearsPriceFilterAndKeepsKeyword()
     QCOMPARE(page->visibleStationIds(), QVector<qint64>({1})); // 关键词未被静默清空
 }
 
+// ---- 筛选投影代数钉死：组内 OR（自营={1,4}）、电压档集合、距离半径与组间 AND
+//      收敛、空条件=全量；比对排序后的 id 集合，不依赖展示顺序 ----
 void HomeShellTest::filterProjectionCombinesGroupsAndDistance()
 {
     HomeShell shell(makeSampleUser());
@@ -2368,6 +2469,9 @@ void HomeShellTest::filterProjectionCombinesGroupsAndDistance()
     QCOMPARE(shell.stationPage()->stationCardCount(), 6);
 }
 
+// ---- 星星→收藏→持久化闭环：点击后统一按 objectName 重找控件（收藏信号会重建星星）、
+//      starred/★ 回显；出作用域销毁壳后重开新壳（同用户键）验 QSettings“刷新回显”口径，
+//      两端各做一次 favoritesServiceReset 防跨运行残留 ----
 void HomeShellTest::starToggleFeedsFavoritesPageAndPersists()
 {
     favoritesServiceReset();
@@ -2404,6 +2508,8 @@ void HomeShellTest::starToggleFeedsFavoritesPageAndPersists()
     }
 }
 
+// ---- 收藏页三件事：排序口径（服务追加序 [3,1] → 页面反序 = 最近收藏在前）、
+//      卡片星星直接取消（服务/列表同步收缩）、清空后空态 + 返回固定回“我的” ----
 void HomeShellTest::favoritesPageUnfavoriteEmptyAndBack()
 {
     favoritesServiceReset();
@@ -2456,6 +2562,7 @@ void HomeShellTest::favoritesPageUnfavoriteEmptyAndBack()
 
 // 验收缺陷 4 回归：壳层入口的无条件 refresh() 不得旁路查询状态机——首查
 // 落定前保持加载态（不误报“暂无收藏”），落定后才允许真空态出现。
+// （页级隔离口径：单独构造 FavoritesPage、不经壳，只钉查询状态机本身。）
 void HomeShellTest::favoritesPageKeepsLoadingWhileQueryInFlight()
 {
     FavoritesPage page;
@@ -2471,6 +2578,9 @@ void HomeShellTest::favoritesPageKeepsLoadingWhileQueryInFlight()
     QVERIFY(page.emptyStateVisible()); // 查询确有结果、收藏确实为空 → 空态合法
 }
 
+// ---- 铃铛→通知页（mock 历史 3 条三类各一）+ 设置三开关联动：拨一个即时隐一卡、
+//      全关到空态、再开又现（联动是投影不是重查）；返回固定回“找站”语境；
+//      用例尾恢复开关默认值防 QSettings 泄漏 ----
 void HomeShellTest::notificationPageLinksSettingsSwitches()
 {
     HomeShell shell(makeSampleUser());
@@ -2509,6 +2619,8 @@ void HomeShellTest::notificationPageLinksSettingsSwitches()
         SettingsService::Notification::ReservationSuccessNotice, true);
 }
 
+// ---- 跨服务桥接：ReservationService.cancel 成功 → NotificationService 追加
+//      “预约取消通知”（3→4、新在前、正文由记录反查站点上下文），壳负责接线 ----
 void HomeShellTest::reservationCancelBridgesToNotice()
 {
     HomeShell shell(makeSampleUser());
@@ -2543,12 +2655,15 @@ void HomeShellTest::reservationCancelBridgesToNotice()
     QVERIFY(sawContext);
 }
 
+// ---- 访客壳门禁：收藏/通知入口提示且路由不动（“去登录”发信号、“稍后再说”不发）；
+//      收藏仅内存态不落盘（无用户键）——拦截在入口不在组件 ----
 void HomeShellTest::guestShellGatesFavoritesAndNotificationsToLogin()
 {
     HomeShell shell; // 未登录壳：路由页照常构建（登录态 15/16 → 未登录 9/10）
     shell.show();
 
     auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    // 访客页栈恰 11 页（登录专属路由页不构建）：钉“不给访客建达不到的页”装配口径。
     QCOMPARE(pageStack->count(), 11);
     QVERIFY(shell.notificationPage() != nullptr);
     QVERIFY(shell.favoritesPage() != nullptr);

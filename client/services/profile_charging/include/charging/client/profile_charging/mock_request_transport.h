@@ -32,6 +32,8 @@ public:
     // Test/demo helper: sets the in-memory balance so the insufficient-balance
     // path of PAY_ORDER can be exercised without a real wallet drain.
     void drainBalanceTo(qint64 cents);
+    // 我的块（轻注）：上面调试钩子族的取消单声明，用途与调用方见 .cpp
+    // cancelActiveOrders 实现注释（下段英文注释即我原文）。
     // Test/demo helper: cancel every non-terminal seeded order (CHARGING /
     // WAITING_PAYMENT / RESERVED) so flows gated by the app-side unfinished
     // check (QmlApp::checkUnfinished) can be exercised in their empty state.

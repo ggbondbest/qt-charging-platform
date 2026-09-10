@@ -6,9 +6,14 @@ import "../../platform" as P
 // 8 组条件 = 距离单选（再点=取消）+ 7 组多选 chips（组内 OR，组间 AND 由父页 project() 执行）。
 // 选项字面量与 station_query_service.h station_filter::*Options() 逐字一致（字符串即匹配键）。
 // TODO(contract): 选项改由服务层 invokable 暴露后，此处删掉常量数组。
+// 进用：找站首页（StationHomePage）与收藏页（FavoritesPage）的"高级筛选"入口
+// 调 openDialog(page.criteria)——打开即"带当前条件预勾选"，弹窗本身不碰桥。
+// 数据流：勾选全部是弹窗草稿，仅 applyAndClose() 发 applied(criteria) 信号整体
+// 提交；父页收到后写回 criteria 再 project()/查询。取消或点外=草稿作废。
 Popup {
     id: dialog
     objectName: "stationFilterDialog"
+    // 非模态：背后列表仍看得见——筛选要"边看边勾"；点外面关=不提交，天然取消。
     modal: false
     closePolicy: Popup.CloseOnPressOutside
     width: parent ? Math.min(360, parent.width - P.Style.spaceXl) : 360
@@ -19,8 +24,12 @@ Popup {
 
     signal applied(var criteria)
 
+    // 档位与服务端 kDistanceOptionsKm 逐字同组；"不限"不占档位，用 0 表达。
     property var distanceKm: [5, 10, 30, 50]
     property int maxDistanceKm: 0
+    // 真服务链路只留"营业状态"：operator/停车费/电压等六组是 mock 扩展字段，
+    // GET_STATIONS 真响应尚未携带（station_query_service.h TODO(contract)），
+    // 摆出来勾了也不起作用，宁缺不假。
     property var groups: (typeof App !== "undefined" && !App.mockMode) ? [
         { key: "statuses", title: "营业状态", options: ["营业中", "暂停运营"] }
     ] : [
@@ -37,6 +46,7 @@ Popup {
 
     function isChecked(key, label) { return (checked[key] || []).indexOf(label) >= 0 }
     function toggle(key, label) {          // 数组必须整体重赋值才触发绑定重算
+        // 每组先 slice 再改：与父页 criteria 里的数组脱钩，取消/重置不污染对方。
         const next = ({})
         for (const g of groups) next[g.key] = (checked[g.key] || []).slice()
         const a = next[key]
@@ -59,6 +69,9 @@ Popup {
         open()
     }
     function applyAndClose() {
+        // 草稿→生效的唯一出口：整批随 applied 信号交父页，中途勾选从不外泄。
+        // 各组 || [] 归一形状：真服务模式 openDialog 只灌 statuses，其余六组在
+        // checked 里是 undefined，消费端仍拿到"七组齐全"，免逐键判空。
         applied({
             maxDistanceKm: dialog.maxDistanceKm,
             statuses: checked.statuses || [], operators: checked.operators || [],
@@ -85,6 +98,7 @@ Popup {
         ScrollView {
             id: scroller
             width: parent.width
+            // Column 不自动分配高度：滚动区手拼=弹窗高−页脚−间距，页脚才不会顶出框。
             height: parent.height - footerRow.height - parent.spacing
             clip: true
             Column {

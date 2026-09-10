@@ -1,3 +1,13 @@
+// SettingsService 接口（成员 2，设置域：账号安全/车辆管理/通知开关批）。
+// 职责：个人中心“设置”页数据层——二级保护密码（只存哈希）、车辆档案
+// （数量即预约名额来源，ReservationService 经注入读取）、通知开关
+// （NotificationService 据此门控推送）、外观（成员 3 批次A 追加，见下方
+// 接口注释）。
+// 使用方：widgets SettingsPage 与 QML AppBridge（SettingsBridge 挂给 QML
+// 页面）读写；HomeShell 同时注入给 ReservationService/NotificationService。
+// 数据流向：纯本地通道、零网络——状态读写即时落 QSettings（组织/应用名
+// 在 client/app/main.cpp 统一设置）；车辆列表为进程内存态（vehicles_），
+// QSettings 现势键仅安全/通知/外观三族。
 #pragma once
 
 #include "charging/common/model/enums.h"
@@ -34,6 +44,8 @@ struct Vehicle
 //
 // 本服务为纯本地通道（无网络请求）；真实后端 SETTINGS/VEHICLE 命令就绪
 // 后可按 ReservationService 同款双通道模式扩展，页面代码不变。
+// 读出统一口径：除车辆列表外全部 getter 即时读 QSettings、不做内存缓存，
+// 多入口（widgets 页/QML/其他服务）改盘后本服务总能读到最新值。
 class SettingsService final : public QObject
 {
     Q_OBJECT
@@ -43,6 +55,8 @@ public:
     // 2026-09-08 追加服务端通道两值（成员 3 横闯：GET_NOTIFICATIONS 类型接真
     // 数据）——**只可在尾部追加**，与 favorites::NotificationType 的 int 对拍
     // 约定依赖值序（tst_settings_service 对拍用例同步）。
+    // 枚举值=存储槽位：每个值经 .cpp notificationKey() 一对一映射到
+    // QSettings 键，页面/桥接层只经枚举访问、不感知键字符串。
     enum class Notification
     {
         ReservationExpiryReminder, // 🔔 预约到期提醒
@@ -55,6 +69,8 @@ public:
     explicit SettingsService(QObject* parent = nullptr);
 
     // —— 车辆管理 ——
+    // 只读访问器：引用/裸指针仅在当次读取有效（增删改就地重建列表），
+    // 页面不得跨 vehiclesChanged 缓存，信号到达后重新读取。
     const QVector<Vehicle>& vehicles() const;
     int vehicleCount() const;
     const Vehicle* vehicle(qint64 id) const;
@@ -70,7 +86,10 @@ public:
     void setMockVehicles(const QVector<Vehicle>& vehicles);
 
     // —— 账号安全（二级保护密码）——
+    // 有无密码=存储哈希非空；校验/设置全程只比对摘要，明文永不过磁盘。
     bool hasProtectionPassword() const;
+    // 长度兜底与设置页输入校验同口径（≥4），绕过 UI 也拦得住；
+    // 失败仅返回 false、不改存储不发信号。
     bool setProtectionPassword(const QString& password); // 校验：长度 ≥ 4
     bool verifyProtectionPassword(const QString& password) const;
     bool protectionEnabled() const;
@@ -79,6 +98,7 @@ public:
     void clearProtectionPassword();
 
     // —— 通知与提醒（QSettings 持久化，默认全开）——
+    // “默认全开”= 键缺失取 true：首装零键即全开，用户拨动过一次才落盘。
     bool notificationEnabled(Notification key) const;
     void setNotificationEnabled(Notification key, bool enabled);
 
@@ -92,9 +112,13 @@ public:
     bool setFontScale(const QString& scale);
 
     // 清除本服务全部本地持久化（测试隔离用）。
+    // ForTesting 命名约定＝测试缝：只被单测调用，生产路径不触碰；
+    // 逐键删除而非 clear()，不误伤同一存储里其他服务（收藏等）的键。
     void resetForTesting();
 
 signals:
+    // 变更广播一律不带参数：细粒度信息页面经 getter 回读，
+    // 避免把整份车辆列表/键值塞进信号跨线程拷贝。
     void vehiclesChanged();
     void protectionStateChanged();
     void notificationsChanged();

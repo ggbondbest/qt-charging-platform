@@ -1,3 +1,8 @@
+// SettingsService 实现（类职责、三大模块与批史见同名头文件）。
+// 数据流向：设置页（widgets SettingsPage / QML SettingsBridge）→ 本服务 →
+// QSettings 本地存储——安全（密码哈希+保护开关）、通知五开关、外观
+// （主题/字号白名单）三族键；车辆管理现势仅存内存 vehicles_（未落盘），
+// ReservationService 的名额经注入直接读 vehicleCount()。
 #include "settings_service.h"
 
 #include <QCryptographicHash>
@@ -6,6 +11,8 @@
 #include <algorithm>
 
 namespace charging::client::services::settings {
+
+// ---- 匿名命名空间：QSettings 键常量与密码摘要工具（文件私有）----
 
 namespace {
 
@@ -16,6 +23,8 @@ constexpr char kProtectionEnabledKey[] = "settings/security/protectionEnabled";
 constexpr char kThemeKey[] = "settings/appearance/theme";
 constexpr char kFontScaleKey[] = "settings/appearance/fontScale";
 
+// 纯 SHA-256 摘要（无盐）：满足课程演示“明文不落盘、校验=重算比对”即可，
+// 不构成生产级口令防护，哈希只是本地隐私底线而非安全边界。
 QString hashPassword(const QString& password)
 {
     return QString::fromLatin1(
@@ -25,6 +34,8 @@ QString hashPassword(const QString& password)
 
 } // namespace
 
+// 构造刻意留空：安全/通知/外观不入内存缓存，getter 每次现读盘上最新态
+// （多入口读写互见）；本服务唯一内存态是车辆列表，由调用方装配。
 SettingsService::SettingsService(QObject* parent)
     : QObject(parent)
 {
@@ -65,6 +76,7 @@ const Vehicle* SettingsService::defaultVehicle() const
 qint64 SettingsService::addVehicle(const Vehicle& draft)
 {
     Vehicle vehicle = draft;
+    // 编号服务内分配、只增不回收：删车后号不复用，页面若缓存旧 ID 不会撞车。
     vehicle.id = nextVehicleId_++;
     // 首台车自动成为默认车；指定默认时清除其余车辆的默认标记（至多一台）。
     if (vehicles_.isEmpty()) {
@@ -89,6 +101,7 @@ bool SettingsService::updateVehicle(const Vehicle& updated)
     if (index >= vehicles_.size()) {
         return false;
     }
+    // 读-改-写：只覆盖可编辑五字段，id 按主键语义不动。
     Vehicle current = vehicles_[index];
     current.plate = updated.plate;
     current.brandModel = updated.brandModel;
@@ -112,6 +125,7 @@ bool SettingsService::updateVehicle(const Vehicle& updated)
 bool SettingsService::removeVehicle(qint64 id)
 {
     const int before = vehicles_.size();
+    // 删除前先读“是否默认车”：删掉后此信息即失，无法决定要不要让剩余首台接任。
     const bool wasDefault = vehicle(id) != nullptr && vehicle(id)->isDefault;
     vehicles_.erase(
         std::remove_if(vehicles_.begin(), vehicles_.end(),
@@ -130,6 +144,8 @@ bool SettingsService::removeVehicle(qint64 id)
 
 void SettingsService::setDefaultVehicle(qint64 id)
 {
+    // changed 闸：重复点同一默认车时整圈比对无差异、不发信号（幂等，
+    // 防页面刷新风暴）；设置本身天然互斥（want 同步翻转其余车辆）。
     bool changed = false;
     for (Vehicle& vehicle : vehicles_) {
         const bool want = (vehicle.id == id);
@@ -158,6 +174,7 @@ void SettingsService::setMockVehicles(const QVector<Vehicle>& vehicles)
     if (!vehicles_.isEmpty() && !seenDefault) {
         vehicles_.first().isDefault = true;
     }
+    // 自增计数器推到 max(mock ID)+1：之后 addVehicle 的新车不会与注入列表撞号。
     for (const Vehicle& vehicle : vehicles_) {
         nextVehicleId_ = qMax(nextVehicleId_, vehicle.id + 1);
     }
@@ -166,6 +183,7 @@ void SettingsService::setMockVehicles(const QVector<Vehicle>& vehicles)
 
 // —— 账号安全（二级保护密码）——
 
+// “已设密码”＝哈希键非空；每次现构 QSettings 现读盘（无缓存，多入口互见）。
 bool SettingsService::hasProtectionPassword() const
 {
     QSettings settings;
@@ -194,6 +212,8 @@ bool SettingsService::verifyProtectionPassword(const QString& password) const
 bool SettingsService::protectionEnabled() const
 {
     QSettings settings;
+    // 双闸合成：“开关键为真”且“密码仍在”才算开启——哈希被清（本服务
+    // 成对删除或外部写脏）后，残留开关键不得虚报开启。
     return hasProtectionPassword()
         && settings.value(QLatin1String(kProtectionEnabledKey), false).toBool();
 }
@@ -211,6 +231,8 @@ bool SettingsService::setProtectionEnabled(bool enabled)
 
 void SettingsService::clearProtectionPassword()
 {
+    // 哈希与开关键成对删除：只清哈希会留下悬空开关键（读侧靠双闸兜住，
+    // 但盘面应同步干净），随后广播让 UI 把开关拨回置灰态。
     QSettings settings;
     settings.remove(QLatin1String(kPasswordHashKey));
     settings.remove(QLatin1String(kProtectionEnabledKey));
@@ -219,6 +241,8 @@ void SettingsService::clearProtectionPassword()
 
 // —— 通知与提醒（QSettings 持久化，默认全开）——
 
+// 枚举→QSettings 键一一对应；switch 故意不写 default：新增枚举值时编译器
+// 告警“未处理分支”，提醒映射与枚举同步（防新开关静默漏存）。
 QString SettingsService::notificationKey(Notification key)
 {
     switch (key) {
@@ -233,17 +257,21 @@ QString SettingsService::notificationKey(Notification key)
     case Notification::OrderPaid:
         return QStringLiteral("settings/notifications/orderPaid");
     }
+    // 防御兜底：外部强转出词表外枚举值时映射为空键，不命中任何有效配置。
     return QString();
 }
 
 bool SettingsService::notificationEnabled(Notification key) const
 {
     QSettings settings;
+    // 缺省 true：首装零键即全开（产品口径“默认全开”），拨过一次才落盘。
     return settings.value(notificationKey(key), true).toBool();
 }
 
 void SettingsService::setNotificationEnabled(Notification key, bool enabled)
 {
+    // 直接落盘并广播 notificationsChanged：NotificationService 监听该信号
+    // 重做推送门控，页面开关与后台门控同源同刻生效。
     QSettings settings;
     settings.setValue(notificationKey(key), enabled);
     emit notificationsChanged();
@@ -291,8 +319,11 @@ bool SettingsService::setFontScale(const QString& scale)
     return true;
 }
 
+// 测试缝（ForTesting 命名约定）：仅供 tst_settings_service 用例间隔离调用，
+// 生产路径不触碰。
 void SettingsService::resetForTesting()
 {
+    // 逐键枚举删除、不用 clear()：同一配置文件还装着收藏等他人键，全清即误伤。
     QSettings settings;
     settings.remove(QLatin1String(kPasswordHashKey));
     settings.remove(QLatin1String(kProtectionEnabledKey));
@@ -303,7 +334,10 @@ void SettingsService::resetForTesting()
     settings.remove(notificationKey(Notification::OrderPaid));
     settings.remove(QLatin1String(kThemeKey));
     settings.remove(QLatin1String(kFontScaleKey));
+    // sync()：QSettings 默认延迟落盘，强制即刻冲刷，保证下一个用例新建
+    // 实例时看到“已清空”的盘面。
     settings.sync();
+    // 内存车辆表与编号计数器同批复位，测试间不残留车辆。
     vehicles_.clear();
     nextVehicleId_ = 1;
 }

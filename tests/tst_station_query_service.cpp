@@ -1,3 +1,10 @@
+// ---- 文件说明：StationQueryService 站点查询单测（列表搜索 + 详情，各含模拟/live 双接缝）----
+// boot：QTEST_MAIN —— 模拟通道用 QTimer 延迟驱动 queryStarted→succeeded/failed
+//   信号，需要事件循环。
+// 隔离：模拟通道每用例独立栈上 service；live 用例用 ServiceServerFixture ——
+//   QTemporaryDir 专属 SQLite + 端口 0 随机监听，析构即清理。
+//   该 fixture 只挂 UserService，GET_STATIONS / GET_CHARGERS 天然未实现，
+//   专门验证“命令缺位 → 友好失败”的降级路径，而非成功路径。
 #include "charging_server.h"
 #include "database_connection.h"
 #include "network/client_connection.h"
@@ -17,6 +24,7 @@ namespace {
 
 using namespace charging::client::services::station;
 
+// ---- 最小真实服务端：仅登录域装配，站点/桩命令缺位（live 降级接缝的靶子）----
 class ServiceServerFixture final
 {
 public:
@@ -72,6 +80,7 @@ private slots:
     void liveDetailChannelWithoutServerImplementationEmitsFriendlyFailure();
 };
 
+// ---- 测：模拟列表通道信号时序与 6 演示站完整性；钉：金额/桩位计数自洽、离线站与无桩站保留为边界数据 ----
 void StationQueryServiceTest::mockSearchEmitsStartedThenAllStations()
 {
     StationQueryService service;
@@ -97,6 +106,7 @@ void StationQueryServiceTest::mockSearchEmitsStartedThenAllStations()
     }
 }
 
+// ---- 测：关键词分别命中站名与地址；钉：过滤不误伤、命中结果仍走 succeeded 信号 ----
 void StationQueryServiceTest::mockKeywordFiltersNameAndAddress()
 {
     StationQueryService service;
@@ -114,6 +124,7 @@ void StationQueryServiceTest::mockKeywordFiltersNameAndAddress()
     QVERIFY(results.at(0).station.name.contains(QStringLiteral("滨海")));
 }
 
+// ---- 测：列表失败开关驱动 queryFailed；钉：失败消息为用户可读文案（页面直显、无错误码）----
 void StationQueryServiceTest::simulatedFailureEmitsQueryFailed()
 {
     StationQueryService service;
@@ -128,6 +139,7 @@ void StationQueryServiceTest::simulatedFailureEmitsQueryFailed()
     QVERIFY(!failedSpy.at(0).at(0).toString().isEmpty());
 }
 
+// ---- 测：live 下 GET_STATIONS 未实现的降级；钉：走请求-失败路径，不崩溃、不误回模拟数据 ----
 void StationQueryServiceTest::liveChannelWithoutServerImplementationEmitsFriendlyFailure()
 {
     // 真实通道接缝验证：服务端尚未实现 GET_STATIONS 时，liveMode 应走
@@ -175,6 +187,7 @@ StationDetail fetchDetailAndWait(StationQueryService& service, qint64 stationId,
 
 } // namespace
 
+// ---- 测：站 1 详情的桩位数据；钉：总数/可用数自洽且空闲/占用/故障/离线四态齐备（详情页图例依赖）----
 void StationQueryServiceTest::mockFetchDetailReturnsChargersCoveringAllStatuses()
 {
     StationQueryService service;
@@ -220,6 +233,7 @@ void StationQueryServiceTest::mockFetchDetailReturnsChargersCoveringAllStatuses(
     QVERIFY(sawOffline);
 }
 
+// ---- 测：无桩站（id6）详情边界；钉：空桩列表仍算成功回包（页面展示空态而非报错）----
 void StationQueryServiceTest::mockFetchDetailEmptyChargerStation()
 {
     // 空数据边界：id6 为无桩演示站点。
@@ -235,6 +249,7 @@ void StationQueryServiceTest::mockFetchDetailEmptyChargerStation()
              static_cast<int>(charging::model::StationStatus::Active));
 }
 
+// ---- 测：离线站（id4）/未知 ID/无 ID 三种非法或降级输入；钉：均走 detailFailed 或数据源状态，不崩溃不误回空数据 ----
 void StationQueryServiceTest::mockFetchDetailOfflineStationAndUnknownId()
 {
     StationQueryService service;
@@ -268,6 +283,7 @@ void StationQueryServiceTest::mockFetchDetailOfflineStationAndUnknownId()
     QCOMPARE(succeededSpy.count(), 0);
 }
 
+// ---- 测：详情通道的失败开关驱动 detailFailed；钉：与列表开关独立、消息可读 ----
 void StationQueryServiceTest::simulatedFailureEmitsDetailFailed()
 {
     StationQueryService service;
@@ -281,6 +297,7 @@ void StationQueryServiceTest::simulatedFailureEmitsDetailFailed()
     QVERIFY(!failedSpy.at(0).at(0).toString().isEmpty());
 }
 
+// ---- 测：live 下 GET_CHARGERS 未实现的详情降级；钉：友好失败（页面据此展示异常态+返回首页）----
 void StationQueryServiceTest::liveDetailChannelWithoutServerImplementationEmitsFriendlyFailure()
 {
     // 真实通道接缝验证：服务端未实现 GET_CHARGERS 时，liveMode 详情走

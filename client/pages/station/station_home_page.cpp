@@ -1,3 +1,8 @@
+// station_home_page.cpp —— 找站页实现（页面职责与数据通道见头注释）。
+// 刷新架构单点：服务三信号（started/succeeded/failed）驱动状态机，
+// 而“服务层高级筛选 → 电价档 → 排序 → 重建卡片 → 地图标记 → 空态判定”
+// 全部收敛在 refreshFilteredCards() 一处——任何筛选入口（chip、下拉、
+// 弹窗确定、空态重置）都只是改状态后调它，UI 口径天然一致。
 #include "pages/station/station_home_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -79,9 +84,12 @@ QString formatPrice(qint64 centsPerKwh)
 
 QString formatDistance(int meters)
 {
+    // 负值 = 服务未给出可用距离（真实通道下用户位置不可得时的口径），
+    // 展示层收敛为占位符而不是伪造“0 m”。
     if (meters < 0) {
         return QStringLiteral("--");
     }
+    // 1 km 为界自动换单位，保留 1 位小数。
     if (meters < 1000) {
         return QStringLiteral("%1 m").arg(meters);
     }
@@ -110,6 +118,7 @@ enum SortMode
 
 StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
 {
+    // 兼容单测直接 new 本页的启动路径：app/main.cpp 没跑过时装上全局主题。
     installPlatformTheme();
 
     setObjectName(QStringLiteral("stationHomePage"));
@@ -177,6 +186,8 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
 
     priceFilterComboBox_ = new QComboBox(filterBar);
     priceFilterComboBox_->setObjectName(QStringLiteral("priceFilterComboBox"));
+    // 档位值存 userData（分），筛选只读 currentData()——-1 = 不限电价；
+    // 日后调档只动 addItem 行，匹配逻辑零改动。
     priceFilterComboBox_->addItem(tr("全部电价"), -1);
     priceFilterComboBox_->addItem(tr("≤ ¥1.00"), 100);
     priceFilterComboBox_->addItem(tr("≤ ¥1.20"), 120);
@@ -250,6 +261,7 @@ StationHomePage::StationHomePage(QWidget* parent) : QWidget(parent)
 
 void StationHomePage::search(const QString& keyword)
 {
+    // keyword_ 是页面侧唯一记账：异常态“重试”按钮原词重发就靠它。
     keyword_ = keyword.trimmed();
     service_->search(keyword_);
 }
@@ -288,6 +300,8 @@ void StationHomePage::setViewState(ViewState state)
         listStack_->setCurrentWidget(errorNotice_);
         break;
     case ViewState::List:
+        // 索引 3 = 最后 addWidget 进来的滚动列表页（loading/empty/error 各占
+        // 0-2）；上面构造顺序若调整，此处与 addWidget 需同步改。
         listStack_->setCurrentIndex(3);
         break;
     }
@@ -343,6 +357,8 @@ void StationHomePage::refreshFilteredCards()
             }
             break;
         case SortNearest: {
+            // 未知距离（<0）折算为哨兵大值：不参与比较、整体沉底，
+            // 与展示层 "--" 占位同口径（不能当作 0 m 排最前）。
             const auto leftDistance = left.distanceMeters < 0 ? 1 << 30 : left.distanceMeters;
             const auto rightDistance = right.distanceMeters < 0 ? 1 << 30 : right.distanceMeters;
             return leftDistance < rightDistance;
@@ -451,8 +467,12 @@ QWidget* StationHomePage::createStationCard(const services::station::StationList
     detailRow->addWidget(starButton);
     body->addLayout(detailRow);
 
+    // 建卡即回显一次收藏态：卡片是异步重建出来的新控件，不主动取当前
+    // 收藏集合，星星会停留在默认空心态直到下次 favoritesChanged。
     applyStarState(starButton, stationId);
 
+    // 值拷贝后捕获：形参 item 是引用，生命周期止于本次建卡调用栈，而点击
+    // 回调远晚于此（与收藏星星按值捕获 stationId 同理）。
     const charging::model::Station station = item.station;
     const int distanceMeters = item.distanceMeters;
     connect(card, &ClickableCard::clicked, this,
@@ -476,6 +496,8 @@ void StationHomePage::applyStarState(QPushButton* starButton, qint64 stationId) 
     starButton->setToolTip(starred ? tr("取消收藏") : tr("收藏该站点"));
 }
 
+// 状态探针实现（声明侧口径见 .h）：三者都以 listLayout_ 现势内容为准，
+// deleteLater 的旧卡片已脱离布局、天然不计入，测试无需等事件循环。
 int StationHomePage::stationCardCount() const
 {
     return visibleStationIds().size();
@@ -523,6 +545,8 @@ void StationHomePage::setFavoritesService(services::favorites::FavoritesService*
         return;
     }
     if (favoritesService_ != nullptr) {
+        // 断开旧实例对 this 的全部连接再换绑：换账号重复注入不会叠加连接
+        // （否则一次 favoritesChanged 触发多次重画，且旧实例析构留悬挂风险）。
         disconnect(favoritesService_, nullptr, this, nullptr);
     }
     favoritesService_ = service;
@@ -549,6 +573,8 @@ void StationHomePage::refreshStarButtons()
         if (!button->property("isStationStar").toBool()) {
             continue;
         }
+        // stationId 建卡时钉在卡片属性上，星星沿父链上溯一层即可取回，
+        // 页面无需再维护“星星→站点”的映射表。
         applyStarState(button, button->parentWidget()->property("stationId").toLongLong());
     }
 }
@@ -575,6 +601,8 @@ void StationHomePage::handleEmptyAction()
 
 void StationHomePage::openFilterDialog()
 {
+    // QPointer 去重闸：弹窗还活着就置顶聚焦、保留其未确认的草稿勾选；
+    // 关闭销毁后指针自动归零，下次点击才会新建（初值传入当前生效条件）。
     if (filterDialog_ != nullptr) {
         filterDialog_->raise();
         filterDialog_->activateWindow();
@@ -587,6 +615,8 @@ void StationHomePage::openFilterDialog()
     dialog->show(); // 非模态（设置页弹窗口径）
 }
 
+// 筛选条件存取：setter 是弹窗 applied 与空态“重置筛选”两条路径的共同入口，
+// 存下即做纯本地投影刷新（不重发请求）；getter 供弹窗回填与测试断言。
 void StationHomePage::setFilterCriteria(const services::station::StationFilterCriteria& criteria)
 {
     filterCriteria_ = criteria;

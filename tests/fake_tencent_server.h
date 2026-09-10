@@ -27,6 +27,9 @@ public:
                 ++connectionCount_;
                 auto buffer = QByteArray();
                 socket->setProperty("chargingRequest", QVariant::fromValue(buffer));
+                // readyRead 可能分片到达：请求字节攒在 socket 动态属性里，
+                // 见首行换行符才处理；chargingAnswered 幂等闸保证迟到分片
+                // 不再二次解析、一条连接只回一次包。
                 QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
                     QByteArray request =
                         socket->property("chargingRequest").toByteArray();
@@ -41,6 +44,8 @@ public:
                     const QByteArray line = request.left(newline).trimmed();
                     lastRequestTarget_ = QString::fromLatin1(line.split(' ').value(1));
                     requestTargets_ << lastRequestTarget_;
+                    // 攥 socket 用 QPointer：等待期间客户端超时断连、disconnected
+                    // 分支已 deleteLater 时，releasePending 判空自动跳过，不悬垂。
                     if (holdRequests_) {
                         pending_.append(QPointer<QTcpSocket>(socket));
                         return;
@@ -66,6 +71,8 @@ public:
     // 并发多请求时（路线+逆地理）last 不保证顺序，用全量列表断言。
     QStringList requestTargets() const { return requestTargets_; }
 
+    // 预置应答脚本：此后每条请求都回这份 status/body（403/5xx 失败用例经此
+    // 注入；同一用例内可多次 set 换剧本，只影响 set 之后到达的请求）。
     void setResponse(int status, const QByteArray& body)
     {
         status_ = status;
@@ -76,6 +83,8 @@ public:
     // 扣住所有请求不回包：配合 setRequestTimeoutForTesting 驱动超时用例，
     // 或稍后 releasePending 精确控制“模拟数据先渲染、真实响应后到”的时序。
     void setHoldRequests(bool hold) { holdRequests_ = hold; }
+    // 一次性放行全部被扣请求：先整体换出挂起队列（重复 release 不会对同一
+    // 连接二次回包），再逐个统一回 200 + json（放行包不受 status_/body_ 影响）。
     void releasePending(const QByteArray& json)
     {
         const QList<QPointer<QTcpSocket>> sockets = std::exchange(pending_, {});
@@ -104,6 +113,8 @@ private:
             + QByteArray::number(body.size()) + "\r\nConnection: close\r\n";
         if (!retryAfter.isEmpty()) head += "Retry-After: " + retryAfter + "\r\n";
         head += "\r\n";
+        // 回包即主动断连：与头部 Connection: close 呼应，客户端必快收到
+        // finished，简化时序（不做 keep-alive）。
         socket->write(head + body);
         socket->disconnectFromHost();
     }
@@ -112,7 +123,11 @@ private:
     int status_ = 200;
     QByteArray body_;
     QByteArray retryAfter_;
+    // “扣住-放行”编排状态：holdRequests_ 为电平开关，pending_ 存被攥住的
+    // 连接（QPointer 容忍放行前已断连的 socket）。
     bool holdRequests_ = false;
+    // 断言日志：连接数、最后一次/全量 target 序列，测试经同名 getter 事后
+    // 核对“打了几次、打的什么路径”（顺序口径见 getter 处注释）。
     int connectionCount_ = 0;
     QString lastRequestTarget_;
     QStringList requestTargets_;

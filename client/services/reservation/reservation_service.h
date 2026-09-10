@@ -1,3 +1,14 @@
+// ReservationService 接口（成员 2，充电桩预约·任务 #17 二次迭代 / 迭代 3 批）。
+// 职责：预约提交/取消/记录列表的唯一业务入口，并承担“倒计时归零→已过期”
+// “迟到超 15 分钟→已取消”两条自动状态流转；ReservationRecord 给页面补足
+// 展示上下文（common 模型无时间段/车辆字段，客户端扩展、后端字段就绪后换源）。
+// 使用方：widgets HomeShell（预约确认/订单/模块页，通知桥接经
+// reservationRecord() 回查站名桩号）与 QML app_bridge/service_bridges
+// （ReservationBridge → 预约相关 QML 页面）。
+// 数据流向：页面动作 → 本服务 → 双通道出口——模拟通道本地 mockStore_ +
+// QTimer 延迟（驱动加载态）；真实通道经 ClientConnection 走 TCP 契约
+// RESERVE_CHARGER / CANCEL_RESERVATION / GET_RESERVATIONS（车辆绑定等
+// 协议扩展就绪前，名额闸以模拟通道为准）。结果统一以信号回页面。
 #pragma once
 
 #include "charging/common/model/models.h"
@@ -43,6 +54,8 @@ struct ReservationRecord
     double stationLongitude = 0.0;
 };
 
+// 列表统一载体：信号参数、模拟/真实两份存储都用它（Qt 元类型，构造里
+// qRegisterMetaType 登记后方可跨线程排队传递）。
 using ReservationList = QVector<ReservationRecord>;
 
 // 系统推荐时段（时间段预约）：行驶时长为模拟估算（5 分钟出发准备 +
@@ -75,6 +88,9 @@ class ReservationService final : public QObject
 public:
     explicit ReservationService(QObject* parent = nullptr);
 
+    // ---- 真实通道装配三件套：注入 ClientConnection（可为空=离线演示）并
+    // setLiveMode(true) 后命令才走 TCP——各命令分叉统一按 `liveMode_ &&
+    // connection_` 双条件判定（细节见 .cpp），页面 UI 全程无感知 ----
     void setConnection(charging::client::network::ClientConnection* connection);
     void setLiveMode(bool enabled);
     bool liveMode() const;
@@ -84,6 +100,9 @@ public:
 
     // 车辆名额来源：注入后名额 = 车辆数、每车至多一条；未注入回退为
     // 单条约束（兼容独立测试）。由 HomeShell 统一装配。
+    // 现势装配差异：widgets HomeShell 注入（车辆名额语义全量生效）；QML
+    // AppBridge 于 2026-09-08“预约不再强制车辆”业务变更后撤除注入——
+    // finishMockSubmit 的“无车拒绝/每车唯一”两道闸随之自然失效。
     void setSettingsService(settings::SettingsService* settings);
 
     // 演示/测试分支开关：
@@ -141,6 +160,9 @@ public:
     static RecommendedSlot recommendSlotFromTravelMinutes(
         int travelMinutes, const QDateTime& nowUtc = QDateTime::currentDateTimeUtc());
 
+    // ---- 信号面：每条命令一组 started/succeeded/failed 三态（双通道共用
+    // 同一信号形状，页面对模拟/真实无感知）；reservationExpired 是迭代 3
+    // 的“状态自动流转”通知（只带 ID，上下文经 reservationRecord 回查）----
 signals:
     void listStarted();
     void listSucceeded(const charging::client::services::reservation::ReservationList& records);
@@ -148,6 +170,8 @@ signals:
     void submitStarted(qint64 chargerId);
     void submitSucceeded(const charging::client::services::reservation::ReservationRecord& record);
     void submitFailed(const QString& reason);
+    // submitRejected：仅真实通道被服务端拒绝时伴随 submitFailed 发出，携带
+    // ProtocolError 错误码供 QML bridge 拆给页面做精确分支（如占用冲突）。
     void submitRejected(const charging::protocol::ProtocolError& error);
     void cancelStarted(qint64 reservationId);
     void cancelSucceeded(qint64 reservationId);
@@ -157,25 +181,34 @@ signals:
     void reservationExpired(qint64 reservationId);
 
 private:
+    // ---- 真实通道响应路由（见 .cpp：连接广播需按在途 requestId 认领）----
     void handleResponse(const charging::protocol::ResponseEnvelope& response);
     void handleRequestFailure(const QString& requestId, const QString& errorCode,
                               const QString& message);
+    // ---- 模拟通道延迟完成入口（QTimer::singleShot(kMockLatencyMs) 回调）----
     void finishMockList();
     void finishMockSubmit();
     void finishMockCancel();
     static QString chargerSpecText(const charging::model::Charger& charger);
 
+    // ---- 装配与开关（宿主壳注入面）----
     charging::client::network::ClientConnection* connection_ = nullptr;
     settings::SettingsService* settings_ = nullptr;
     bool liveMode_ = false;
     bool simulateFailure_ = false;
     bool simulateSubmitConflict_ = false;
     qint64 userId_ = 0;
+    // ---- 在途配对键：requestId 由 sendRequest 返回、成功/失败即清，
+    // 广播响应据此认领（防止串到别的在途请求）；pendingCancelId_ 兼作
+    // cancel 防重入闸——同一时刻至多一笔取消在途 ----
     QString pendingListRequestId_;
     QString pendingSubmitRequestId_;
     QString pendingCancelRequestId_;
     qint64 pendingCancelId_ = 0;
     ReservationRecord pendingSubmitRecord_; // live 响应补齐展示上下文用
+    // ---- 数据源三态：mockStore_ 模拟通道全量状态（状态流转只写它）；
+    // liveStore_ 真实通道本地镜像（以服务端响应收敛）；
+    // accumulatedList_/listPage_ 分页拉全的中间缓冲（拉齐前不外发）----
     ReservationList mockStore_;
     ReservationList liveStore_;
     ReservationList accumulatedList_;
@@ -184,5 +217,6 @@ private:
 
 } // namespace charging::client::services::reservation
 
+// 跨线程/排队连接携带信号参数所需（构造里 qRegisterMetaType 成对登记）。
 Q_DECLARE_METATYPE(charging::client::services::reservation::ReservationList)
 Q_DECLARE_METATYPE(charging::client::services::reservation::ReservationRecord)

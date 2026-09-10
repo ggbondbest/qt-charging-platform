@@ -5,6 +5,9 @@ import "../../platform" as P
 // QML twin of widgets NotificationPage (objectName "notificationPage").
 // 数据源 = notificationService（桥缺位期盲写 notifications() / notificationsChanged，
 // TODO(contract)：返回 [{type,title,body,createdAtUtc}] 新→旧，type 小写串）。
+// 答辩补注：route="notifications"；入口=顶栏铃铛（Shell onNotificationsRequested → App.navigate）。
+// 与券页同口径：登录会话 boot 拉一次 + 进页在 navigate() 漏斗强制 refresh（审查 P2#3，
+// 停止/支付落通知后同会话进页不能看旧缓存）；本页只读 notifications() 缓存 + 被动重渲染。
 Item {
     id: page
     objectName: "notificationPage"
@@ -15,24 +18,31 @@ Item {
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
+    // 服务返回消息缓存（新→旧）。页内零类型过滤：开关收敛在桥/服务侧
+    //（NotificationService 持 settingsService，按「通知与提醒」开关出数据，caption 即用户口径）。
     property var items: []
     function load() {
         // TODO(contract): notificationService.notifications() invokable。
+        // 整体包 try：桥未注册时裸引用抛 ReferenceError 也被吞成空列表 → 走空态，页面不炸。
         try { page.items = notificationService.notifications() || [] }
         catch (e) { page.items = [] }
     }
+    // target 同样是裸引用：缺桥时该绑定报一次可容忍的求值错误（连接落空、不响应信号），
+    // 首屏数据由 load() 兜底——与 widgets 孪生保持同名盲写，桥落地即通。
     Connections {
         target: notificationService
         function onNotificationsChanged() { page.load() }
     }
     Component.onCompleted: load()
 
+    // 三类预约业务消息→图标（type 按契约小写串再归一一次大小写）；未知类型降级圆点，不空手。
     function glyphFor(type) {
         const t = String(type).toLowerCase()
         return t === "reservation_success_notice" ? "✅"
              : t === "reservation_cancel_notice" ? "❌"
              : t === "reservation_expiry_reminder" ? "🔔" : "•"
     }
+    // 双格式宽容：epoch 毫秒 / ISO 串都吃，只到分钟；解析失败返回空串——宁缺勿假。
     function timeText(v) {
         if (typeof v === "number") return new Date(v).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
         if (typeof v === "string" && v.length) { const d = new Date(v); if (!isNaN(d.getTime())) return d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) }
@@ -53,6 +63,7 @@ Item {
             font.pixelSize: P.Style.fontSm; color: P.Style.muted
         }
 
+        // 列表与空态面板按 items 长度互斥（与券页同一口径）。
         ListView {
             objectName: "notificationStack"
             width: parent.width
@@ -67,6 +78,7 @@ Item {
                 Row {
                     width: parent.width            // Card 内容进 Column 容器：anchors 被忽略且告警
                     spacing: P.Style.spaceSm
+                    // 左右两端先拿 id：中间标题列宽度按下文用两侧实测 implicitWidth 扣减（放大字号不溢出）。
                     Text { id: glyphLbl
                         anchors.verticalCenter: parent.verticalCenter
                         text: page.glyphFor(modelData.type); font.pixelSize: P.Style.fontXl }

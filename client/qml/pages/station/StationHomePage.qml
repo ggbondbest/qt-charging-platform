@@ -6,6 +6,12 @@ import "../../platform" as P
 
 // One scrollable page: explicit origin, real map, filters and station cards.
 // Station data comes from the selected transport; errors never load fake rows.
+// —— 本文件多人混合作品，上方英文头注释属队友；以下中文分段注释只标我的块
+//（5e2ed1b 找站地点搜索/筛选批 + e4fd0b9 二轮复测批）。
+// 路由 route="station"：Shell 首个 tab「找站」进，顶栏搜索经
+// App.navigate("station", kw)→arg 进。数据流：stationQueryService.search("")
+//（TCP 全量目录）→raw→project() 本地投影→列表模型与地图标记，
+// 城市/关键词/距离/电价/排序变化零请求重发。
 Item {
     id: page
     objectName: "stationHomePage"
@@ -37,6 +43,8 @@ Item {
         const selected = page.originCity.trim()
         const region = selected === "选择地区 / 输入完整地址" ? "" : selected
         const address = page.originAddressValue.trim()
+        // 拼接防双写：详址已以城市开头就原样送出，避免「大连市 大连市…」
+        // 让 geocode 命中歧义地址
         return !region || address.indexOf(region) === 0 ? address : (region + " " + address).trim()
     }
     function distText(m) { return (m === undefined || m < 0) ? "--" : (m / 1000).toFixed(1) + "km" }
@@ -65,6 +73,8 @@ Item {
 
     // ---- 三源投影（与 StationQueryService.applyStationFilter 同语义，
     //      距离/电价/排序为纯客户端投影，不重发请求） ----
+    // 全量目录一次入 raw，此后任何筛选变化只重跑本函数：逐条浅拷贝再投影，
+    // 不改 raw 源数据——下次重投影仍从干净源出发，天然幂等。
     function project() {
         const c = page.criteria
         const rows = []
@@ -78,6 +88,9 @@ Item {
             s.distanceMeters = (typeof mapBridge !== "undefined" && mapBridge.hasLocation
                                 && typeof s.latitude === "number" && typeof s.longitude === "number")
                 ? mapBridge.distanceMeters(s.latitude, s.longitude) : -1
+            // 放行口径：priceMax=-1（未选档）、maxDistanceKm=0（未限距）都跳过
+            // 本维筛选；限距开启时 distanceMeters=-1（起点未定）按不满足剔除，
+            // 排序阶段同样把 -1 折成 1e12 沉底，绝不当「最近」
             if (page.priceMax > 0 && s.priceCentsPerKwh > page.priceMax) continue
             if (c.maxDistanceKm > 0 && !(s.distanceMeters >= 0
                                          && s.distanceMeters <= c.maxDistanceKm * 1000)) continue
@@ -127,6 +140,8 @@ Item {
         }
         if (JSON.stringify(mapMarkers) !== JSON.stringify(markers)) mapMarkers = markers
     }
+    // 空态动作按钮选词的依据：命中任一筛选→「重置筛选」，只剩关键词→
+    //「清除搜索」（footer NoticePanel 的 actionText 三元读它）
     function anyFilterActive() {
         const c = page.criteria
         return page.priceMax > 0 || c.maxDistanceKm > 0 || c.statuses.length > 0
@@ -171,10 +186,15 @@ Item {
     }
     Connections {
         target: favoritesService
+        // 星星是函数绑定（isFav 现算），收藏变化不改行数据；重投影只为刷显示
         function onFavoritesChanged() { page.project() }   // 重算星星绑定
     }
     // 壳顶栏搜索→路由参数（Shell 接线待成员3 改 navigate("station", kw)，
     // 现按 arg 变更响应）。
+    // 同实例复用（再次 navigate("station", kw)）才走这里：先比 k!==keyword
+    // 防同词重复 refresh；命令式赋值后 keyword 对 arg 的初值绑定断开，
+    // 之后关键词由页面自持。首次进页由下行 onCompleted 拉全量；
+    // search 类经验 XP 在 App.navigate 漏斗单点折算（app_bridge），页面不记账。
     onArgChanged: { const k = typeof arg === "string" ? arg : ""; if (k !== keyword) { keyword = k; refresh() } }
 
     Component.onCompleted: refresh()
@@ -261,6 +281,7 @@ Item {
                     }
                     RowLayout {
                         width: parent.width
+                        // 地址反馈行优先级：报错 > 正在定位 > 已定位起点 > 引导文案
                         Text {
                             Layout.fillWidth: true; wrapMode: Text.Wrap
                             text: mapBridge.error.length ? mapBridge.error
@@ -297,6 +318,8 @@ Item {
             Flow {
                 objectName: "stationFilterBar"
                 width: parent.width; spacing: P.Style.spaceSm
+                // 三枚排序 chip 单选互斥（综合=服务端顺序/空闲优先/距离最近），
+                // 点击只 project() 重排、零请求重发；价格档与更多筛选同口径
                 P.ActionButton {
                     objectName: "sortRecommendedButton"; variant: "chip"; text: "综合"
                     selected: page.sortMode === 2
@@ -461,6 +484,8 @@ Item {
         }
     }
     StationFilterDialog { id: filterDialog }
+    // 弹框回传完整 criteria 快照→页面整页替换筛选源再投影（弹框零业务）；
+    // 顶栏「更多筛选」与卡内按钮共用 openAdvancedFilter() 单一入口。
     Connections {
         target: filterDialog
         function onApplied(criteria) { page.criteria = criteria; page.project() }

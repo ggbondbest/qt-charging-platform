@@ -12,6 +12,10 @@ import "StationState.js" as StationState
 // 二级密码作用点在登录环节（用户二轮指定口径）：本页只负责设置/开关，
 // 真正的验证发生在 LoginPage——进入本页不再要求解锁。
 // 密码只在库/服务层落哈希，UI 不存任何明文/散列。
+// 路由 route="settings"：「我的」页账号与服务区进（App.navigate 统一漏斗）；
+// 数据流双通道=settingsService invokable（TCP 服务，桥在为准）+ StationState
+//（.pragma library 会话级跨页库，桥缺位承接）。🎨外观卡与 reload 内外观回读
+//（批次A）为队友追加，本文件下方中文注释只标我的块（P2 建页+功能增加+二轮复测批）。
 Item {
     id: page
     objectName: "settingsPage"
@@ -22,6 +26,7 @@ Item {
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }
 
+    // 三属性=reload() 回读快照，控件只绑定不回写：全页单一数据源
     property bool hasPassword: false
     property bool protectionOn: false
     property var vehicles: []
@@ -43,6 +48,7 @@ Item {
             const pe = call(settingsService, "protectionEnabled", [])
             page.protectionOn = (typeof pe === "boolean") ? pe : StationState.protectionEnabled()
         } else {
+            // 桥缺位期整体落库：vehicles 引用直传不拷贝，登录验证/预约准入同读此库
             page.vehicles = StationState.vehicles
             page.hasPassword = StationState.hasSecondPassword()
             page.protectionOn = StationState.protectionEnabled()
@@ -62,6 +68,8 @@ Item {
         if (call(settingsService, "setFontScale", [v]) === true) page.fontScale = v
     }
     Component.onCompleted: reload()
+    // 服务侧变更只触发回读、不反向回写：防「本地先改、服务后知」双源漂移；
+    // 通知侧 syncSwitches 暂为空桩（待 notificationEnabled(key) invokable 化）
     Connections {
         target: settingsService
         function onNotificationsChanged() { notifyCol.syncSwitches() }
@@ -109,15 +117,21 @@ Item {
                             objectName: "protectionSwitch"
                             anchors.verticalCenter: parent.verticalCenter
                             text: "开启二级保护密码验证"
+                            // 无密码置灰：库口径 protectionEnabled()=开关∧已设密码，
+                            // 单独开开关会空转（登录门无从比对，见 StationState 注）
                             enabled: page.hasPassword
                             checked: page.protectionOn
                             onToggled: {
+                                // 先改页面态保即时反馈，再双写：库=会话级跨页（登录门读它），
+                                // 服务=桥在时的持久化通道；call 吞异常，谁缺位另一边照写
                                 page.protectionOn = checked
                                 StationState.setProtectionEnabled(checked)
                                 call(settingsService, "setProtectionEnabled", [checked])
                             }
                         }
                     }
+                    // 提示词三态与开关可达状态一一对应（未设置/已开启/未开启），
+                    // 第一态同时解释开关为何置灰
                     Text {
                         objectName: "protectionSwitchHint"
                         width: parent.width; wrapMode: Text.WordWrap
@@ -171,6 +185,8 @@ Item {
                                 variant: "chip"; text: "设为默认"
                                 visible: !modelData.isDefault
                                 onClicked: {
+                                    // 双通道同 reload 口径：先试服务、桥缺位才落库，
+                                    // 无论走哪条都 reload() 以权威快照刷全部行的默认标
                                     call(settingsService, "setDefaultVehicle", [modelData.id])
                                     if (!svcOk()) StationState.setDefaultVehicle(modelData.id)
                                     reload()
@@ -227,6 +243,8 @@ Item {
                         delegate: Switch {
                             objectName: modelData.obj
                             text: modelData.label
+                            // checked=true 只是桥缺位期保底（开=不拦提醒）；
+                            // Component.onCompleted 从服务回读真值覆盖，无库通道
                             checked: true
                             onToggled: call(settingsService, "setNotificationEnabled", [modelData.key, checked])
                             Component.onCompleted: {
@@ -302,6 +320,7 @@ Item {
         width: parent ? Math.min(320, parent.width - P.Style.spaceXl) : 320
         padding: P.Style.spaceLg
         function openFor(changing_) {
+            // 设置/修改复用同一弹层：每次打开重置模式并清三框与提示，防跨态残留
             passwordDialog.changing = changing_; passwordDialog.note = ""
             oldField.text = ""; newField.text = ""; confirmField.text = ""
             open()
@@ -353,6 +372,8 @@ Item {
                     variant: "primary"; text: "保存密码"
                     width: (parent.width - parent.spacing) / 2
                     onClicked: {
+                        // 校验顺序：改密先验旧（旧密码仅改密态有意义）→≥4 位→两次
+                        // 一致；任一失败短路写 note 不关窗，让用户原地改
                         if (passwordDialog.changing) {
                             const okSvc = call(settingsService, "verifyProtectionPassword", [oldField.text])
                             const ok = (typeof okSvc === "boolean") ? okSvc : StationState.verifySecondPassword(oldField.text)
@@ -394,6 +415,8 @@ Item {
             brandField.text = vehicle ? (vehicle.brandModel || "") : ""
             batteryField.text = vehicle ? String(vehicle.batteryKwh || "") : ""
             isFast = !(vehicle && String(vehicle.connectorType).toLowerCase() === "slow")
+            // 添加态首辆车自动勾默认（车队非空时默认标不能悬空）；
+            // 编辑态沿用该车原默认标
             wantDefault = vehicle ? !!vehicle.isDefault : page.vehicles.length === 0
             defaultCheck.checked = wantDefault
             note = ""
@@ -476,6 +499,8 @@ Item {
                             call(settingsService, "addVehicle", [v])
                             if (!svcOk()) {
                                 StationState.addVehicle(v)
+                                // 库里 addVehicle 自增分配 id，入列后回读末位=新车；
+                                // 设默认须拿真实 id（库只为首辆自动置默认，勾选补设走这里）
                                 if (v.isDefault && page.vehicles.length > 0)
                                     StationState.setDefaultVehicle(StationState.vehicles[StationState.vehicles.length - 1].id)
                             }

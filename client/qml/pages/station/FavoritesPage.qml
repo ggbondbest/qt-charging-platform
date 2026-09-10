@@ -6,6 +6,11 @@ import "../../platform" as P
 // 列表源 = 全量搜索结果 ∩ favoritesService.favoriteIds()（与 widgets 同口径：
 // 取消收藏即时从列表消失，靠 favoritesChanged 重算投影）。高级筛选复用
 // StationFilterDialog；卡片副行"空闲 n/m / 桩位已满"与距离行逐字对齐。
+// route "favorites"：从"我的"页 ⭐收藏 行（openFavoritesButton → App.navigate）进入，
+// Shell migrated 白名单已收，路由翻真页。
+// 数据流：stationQueryService.search("") → 成功信号存全量 raw → project() 做
+// "收藏交集 + 八组筛选"投影灌 favModel；重算触发=query成功/筛选 onApplied/
+// favoritesChanged/定位变化 四路同源。属 station 域 P0 六页批。
 Item {
     id: page
     objectName: "favoritesPage"
@@ -26,12 +31,15 @@ Item {
     property string failMessage: ""
 
     function money(c) { return ((c || 0) / 100).toFixed(2) }
+    // ---- 桥调用全走 try/catch：桥缺位=判否/空集/失败态，页面永不因服务缺席崩 ----
     // 供壳顶栏漏斗接线（同 StationHomePage 口径）：成员3 一行接通即活。
     function openAdvancedFilter() { filterDialog.openDialog(page.criteria) }
     function isFav(id) {
+        // 判"在收藏"从严：桥没到位一律 false——宁可少亮星标不可假亮。
         try { return favoritesService ? favoritesService.contains(id) : false }
         catch (e) { return false }
     }
+    // 桥未补时恒空集=交集判据全滤掉，列表诚实为空，不拿全量站点冒充收藏。
     function favIds() {
         // TODO(contract): favoritesService.favoriteIds() invokable（桥未补 → 空集）。
         try { return (favoritesService && favoritesService.favoriteIds()) || [] }
@@ -40,10 +48,13 @@ Item {
     function refresh() {
         loading = true; failed = false
         // 收藏页不带关键词——全量拉取后取交集（widgets 同做法）。
+        // 全量拉取是"发起"不是"等值"：真值走 onQuerySucceeded 信号，这里只拨状态。
         try { stationQueryService.search("") }
         catch (e) { loading = false; failed = true; failMessage = "收藏桥未就绪" }
     }
+    // ---- 本地投影：收藏交集 ∩ 八组筛选（口径与 StationHomePage.project 同源）----
     function project() {
+        // 收藏交集先行：非收藏条目直接短路，后面八组条件不必白算。
         const ids = favIds()
         const c = page.criteria
         const rows = []
@@ -52,7 +63,9 @@ Item {
             s.distanceMeters = typeof s.latitude === "number" && typeof s.longitude === "number"
                 ? mapBridge.distanceMeters(s.latitude, s.longitude) : -1
             if (ids.indexOf(s.id) < 0) continue
+            // 勾选距离档时 -1（未定位）一律出局：距离未知的站不配自称"在 5 公里内"。
             if (c.maxDistanceKm > 0 && !(s.distanceMeters >= 0 && s.distanceMeters <= c.maxDistanceKm * 1000)) continue
+            // 服务侧状态是英文枚举，筛选键是中文选项字面量——先映射再比，键名两侧一致。
             if (c.statuses.length > 0) {
                 const zh = String(s.status).toLowerCase() === "active" ? "营业中" : "暂停运营"
                 if (c.statuses.indexOf(zh) < 0) continue
@@ -98,14 +111,18 @@ Item {
         target: mapBridge
         function onLocationChanged() { page.project() }
     }
+    // 取消收藏即时消失：favoritesChanged 只重算投影不重拉——raw 仍是全量，
+    // 交集判据变了就够，省一次服务往返。
     Connections {
         target: favoritesService
         function onFavoritesChanged() { page.project() }   // 取消收藏即时消失
     }
     Connections {
         target: filterDialog
+        // 草稿整批提交后才重投影：勾选过程中列表不跟着抖，取消则 criteria 原样。
         function onApplied(criteria) { page.criteria = criteria; page.project() }
     }
+    // 进页即拉全量；桥未就绪时 refresh 内 try/catch 落失败态，页不崩。
     Component.onCompleted: refresh()
 
     Column {
@@ -133,6 +150,7 @@ Item {
             id: favList
             objectName: "favoritesList"
             width: parent.width
+            // Column 不分高度：手拼"剩余高" = 父高 − 起点 y，否则列表按内容收缩滚不动。
             height: parent.height - y
             clip: true
             spacing: P.Style.spaceSm
@@ -142,6 +160,7 @@ Item {
                 objectName: "favoriteCard"
                 width: favList.width
                 onClicked: {
+                    // App.navigate 是导航单点漏斗（带 arg 直达详情）；withArguments 仅给 C++ 孪生用。
                     if (App) App.navigate("station_detail", {
                         id: stationId, name: name, address: address,
                         priceCentsPerKwh: priceCentsPerKwh,
@@ -158,6 +177,7 @@ Item {
                             text: name; font.pixelSize: P.Style.fontLg; font.bold: true; color: P.Style.ink }
                         Text { width: parent.width; elide: Text.ElideRight
                             text: address; font.pixelSize: P.Style.fontSm; color: P.Style.muted }
+                        // 距离行：-1（未定位）显示"--"而非 0m，不骗"就在旁边"；≥1km 折一位小数。
                         Text {
                             text: "¥" + page.money(priceCentsPerKwh) + "/kWh · "
                                   + (availableChargers > 0 ? "空闲 " + availableChargers + "/" + totalChargers
@@ -178,6 +198,7 @@ Item {
                             color: P.Style.warning
                         }
                         onClicked: {   // 取消收藏
+                            // 吞异常：桥没就绪时点击无响应即可，页面不弹错不打断浏览。
                             try { favoritesService.toggle(stationId) } catch (e) {}
                         }
                     }
@@ -194,6 +215,8 @@ Item {
             title: page.failed ? "收藏列表加载失败"
                  : !page.loaded ? "正在加载收藏站点…"
                  : "暂无收藏的充电站"
+            // 空态文案按"真空收藏 vs 筛选没命中"分支：有 favIds 却 0 命中时引导放宽
+            // 筛选，而不是让用户误以为收藏丢了。
             description: page.failed ? page.failMessage
                  : !page.loaded ? ""
                  : (favIds().length > 0 && favModel.count === 0

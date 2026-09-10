@@ -1,3 +1,8 @@
+// settings_page.h —— 设置独立页面（widgets 通道路由页，实现见同名 cpp）。
+// 数据流向：页面 → SettingsService → QSettings 本机持久化（密码只存 SHA-256
+// 哈希），全链路纯本地、不经过 TCP 契约；真实 VEHICLE/SETTINGS 命令就绪后
+// 信号形状不变、页面零改动。与预约链路共用同一 SettingsService 实例，
+// 因此本页改动车辆会实时反映到预约名额。
 #pragma once
 
 #include "services/settings/settings_service.h"
@@ -80,6 +85,8 @@ private:
     QCheckBox* successSwitch_ = nullptr;
     QCheckBox* cancelSwitch_ = nullptr;
 
+    // 防重入闸 + QPointer 去重：弹窗存活期间再次点击直接忽略；
+    // WA_DeleteOnClose 销毁后 QPointer 自动归零，闸门随之重新打开。
     QPointer<QDialog> passwordDialog_;
     QPointer<QDialog> vehicleDialog_;
 };

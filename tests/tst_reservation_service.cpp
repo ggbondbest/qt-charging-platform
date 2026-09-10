@@ -1,3 +1,12 @@
+// ---- 文件说明：ReservationService 预约模块单测（列表/提交/取消/名额/状态流转）----
+// boot：QTEST_MAIN —— 模拟通道用 QTimer 延迟回调驱动 started→succeeded/failed
+//   信号，必须有事件循环，不能像纯逻辑测试那样用 GUILESS main。
+// 隔离：模拟通道每用例各自栈上构造 service，天然互不串扰；需要空列表时用
+//   setMockRecords({}) 清掉内置演示数据。真实通道用 LightServerFixture /
+//   ReservationServerFixture —— QTemporaryDir 专属 SQLite + 端口 0 随机监听，
+//   析构自动清理，用例间零残留。
+// 断言口径：异步统一 QSignalSpy + QTRY_VERIFY_WITH_TIMEOUT；模拟延迟 3s 封顶，
+//   live 用例含真实 TCP 往返，放宽到 8s。
 #include "billing_service.h"
 #include "charging/common/protocol/protocol.h"
 #include "charging_repository.h"
@@ -31,6 +40,7 @@ using namespace charging::client::services::reservation;
 using charging::client::services::settings::SettingsService;
 using charging::client::services::settings::Vehicle;
 
+// ---- 夹具：标准快充桩（160kW、站 7），提交上下文与规格文案断言的数据源 ----
 charging::model::Charger makeCharger(qint64 id, const QString& code = QStringLiteral("CHG-TEST-1"))
 {
     charging::model::Charger charger;
@@ -43,6 +53,7 @@ charging::model::Charger makeCharger(qint64 id, const QString& code = QStringLit
     return charger;
 }
 
+// ---- 夹具：测试站；电价默认 120 分/度，方便手算预估费用（120×45/60=90 分）----
 charging::model::Station makeStation(qint64 priceCentsPerKwh = 120)
 {
     charging::model::Station station;
@@ -64,6 +75,7 @@ void submitSlot(ReservationService& service, const charging::model::Charger& cha
                    distanceMeters);
 }
 
+// ---- 夹具：车辆模型（仅车牌可变），名额制用例按“车辆数=名额数”铺数据 ----
 Vehicle makeVehicle(const QString& plate)
 {
     Vehicle vehicle;
@@ -245,6 +257,7 @@ private slots:
     void liveSubmitAndCancelSucceedEndToEnd();
 };
 
+// ---- 测：默认演示数据四种状态齐备且最新在前；钉：列表信号时序（先 started、延迟后 succeeded）----
 void ReservationServiceTest::mockListCoversAllReservationStatusesNewestFirst()
 {
     ReservationService service;
@@ -285,6 +298,7 @@ void ReservationServiceTest::mockListCoversAllReservationStatusesNewestFirst()
     QCOMPARE(records.last().reservation.id, qint64(9004));
 }
 
+// ---- 测：提交成功回写全字段与预估费用手算值；钉：新记录入列表首位（页面“成功后展示”语义）----
 void ReservationServiceTest::mockSubmitSuccessAppendsRecord()
 {
     ReservationService service;
@@ -328,6 +342,7 @@ void ReservationServiceTest::mockSubmitSuccessAppendsRecord()
     QCOMPARE(records.first().reservation.chargerId, qint64(7001));
 }
 
+// ---- 测：结束≤开始的非法时间段即时拒绝；钉：零时长不产生记录、失败原因文案可匹配 ----
 void ReservationServiceTest::mockSubmitInvalidSlotFails()
 {
     // 参数非法边界：结束 ≤ 开始（时长 ≤ 0）直接失败，不产生记录。
@@ -343,6 +358,7 @@ void ReservationServiceTest::mockSubmitInvalidSlotFails()
     QVERIFY(failedSpy.at(0).at(0).toString().contains(QStringLiteral("时间段无效")));
 }
 
+// ---- 测：单段超过 45 分钟被 Service 兜底拒绝；钉：规格上限不因 UI 漏校验而穿透 ----
 void ReservationServiceTest::mockSubmitRejectsSlotOverLimit()
 {
     // 规格约束：单段超过 45 分钟 → Service 兜底拒绝（UI 行内提示的第一道防线）。
@@ -359,6 +375,7 @@ void ReservationServiceTest::mockSubmitRejectsSlotOverLimit()
                 .contains(QStringLiteral("预约时间段不能超过 45 分钟")));
 }
 
+// ---- 测：注入车辆服务且 0 辆车时提交被拦；钉：引导文案 + 名额随车辆数演进（1 车 = 1 名额）----
 void ReservationServiceTest::mockSubmitRequiresVehicleWhenSettingsInjected()
 {
     // 无车辆拦截：设置服务注入且车辆数为 0 → 引导去“设置-车辆管理”。
@@ -382,6 +399,7 @@ void ReservationServiceTest::mockSubmitRequiresVehicleWhenSettingsInjected()
     QTRY_VERIFY_WITH_TIMEOUT(succeededSpy.count() == 1, 3000);
 }
 
+// ---- 测：名额制三不变式（每车至多 1 条 / 总数=车辆数 / 取消释放名额）；钉：抢占冲突原因透传且不产生记录 ----
 void ReservationServiceTest::mockSubmitPerVehicleUniquenessAndSlotQuota()
 {
     // 名额制（替换上一轮“全局仅一条”）：2 辆车 = 2 个名额，每车至多 1 条。
@@ -450,6 +468,7 @@ void ReservationServiceTest::mockSubmitPerVehicleUniquenessAndSlotQuota()
     QCOMPARE(succeededSpy.count(), 3); // 失败不产生新记录
 }
 
+// ---- 测：仅“预约中”可取消，已结束/不存在各有独立文案；钉：取消成功后列表状态演进 ----
 void ReservationServiceTest::mockCancelOnlyForActiveReservation()
 {
     ReservationService service;
@@ -483,6 +502,7 @@ void ReservationServiceTest::mockCancelOnlyForActiveReservation()
     }
 }
 
+// ---- 测：失败开关覆盖列表/提交/取消三条通道；钉：开关一次性消耗，下一次请求自动恢复（错误态“重试”可用）----
 void ReservationServiceTest::simulatedFailureCoversListSubmitAndCancel()
 {
     ReservationService service;
@@ -508,6 +528,7 @@ void ReservationServiceTest::simulatedFailureCoversListSubmitAndCancel()
     QTRY_VERIFY_WITH_TIMEOUT(listSucceededSpy.count() == 1, 3000);
 }
 
+// ---- 测：空覆盖列表驱动“暂无记录”空态；钉：setMockRecords 即时生效 ----
 void ReservationServiceTest::mockRecordsCanBeOverridden()
 {
     // 空覆盖驱动预约模块“暂无记录”空态（订单页 / 已完成页共用列表通道）。
@@ -520,6 +541,7 @@ void ReservationServiceTest::mockRecordsCanBeOverridden()
     QCOMPARE(listSpy.at(0).at(0).value<ReservationList>().size(), 0);
 }
 
+// ---- 测：名额占用口径（仅 Active 且倒计时未归零才计数）；钉：到期未流转/已结束记录不得占名额（防名额泄漏）----
 void ReservationServiceTest::activeCountTracksStoreAndSlotLimit()
 {
     // 名额口径：仅“预约中”且倒计时未归零的记录计入已占用名额。
@@ -557,6 +579,7 @@ void ReservationServiceTest::activeCountTracksStoreAndSlotLimit()
     QCOMPARE(service.activeReservationCount(), 1);
 }
 
+// ---- 测：倒计时归零的状态流转；钉：仅 Active→Expired、已结束不受影响、重复调用幂等且必发刷新信号 ----
 void ReservationServiceTest::expireReservationOnlyConvertsStillActive()
 {
     // 倒计时归零流转：仅“预约中”记录被置为“已过期”；重复调用幂等，
@@ -593,6 +616,7 @@ void ReservationServiceTest::expireReservationOnlyConvertsStillActive()
     QCOMPARE(service.activeReservationCount(), 0);
 }
 
+// ---- 测：迟到自动取消（开始 +15 分钟宽限）；钉：宽限内保留、已过截止让位过期流转、lateCancelled 打标且幂等 ----
 void ReservationServiceTest::cancelLateReservationsConvertsAndFlags()
 {
     // 迟到自动取消：开始 + 15 分钟宽限已过、时段仍在有效期内 →
@@ -643,6 +667,7 @@ void ReservationServiceTest::cancelLateReservationsConvertsAndFlags()
     QCOMPARE(service.cancelLateReservations(), 0);
 }
 
+// ---- 测：推荐时段数学（路程估算 + 15 分钟对齐 + 固定 45 分钟时长）；钉：估算公式回归（页面默认值来源）----
 void ReservationServiceTest::recommendSlotAlignsAndCaps()
 {
     // 推荐时段数学：行驶时长 = 5 分钟准备 + 每 500 米 1 分钟（向上取整）；
@@ -668,6 +693,7 @@ void ReservationServiceTest::recommendSlotAlignsAndCaps()
     QCOMPARE(round.travelMinutes, 7);
 }
 
+// ---- 测：提交记录携带充电规格文案与导航距离；钉：直流/交流文案格式与缺省 -1（三栏展示回归）----
 void ReservationServiceTest::submitCarriesChargerSpecAndDistance()
 {
     // 预约上下文扩展字段：充电规格文案 + 虚拟导航距离（预约订单页三栏展示）。
@@ -699,6 +725,7 @@ void ReservationServiceTest::submitCarriesChargerSpecAndDistance()
     QCOMPARE(second.distanceMeters, -1); // 未提供距离：占位缺省
 }
 
+// ---- 测：live 通道下列表命令缺位的降级；钉：友好失败，不误回模拟数据、不崩溃 ----
 void ReservationServiceTest::liveListWithoutProtocolCommandFailsFriendly()
 {
     // 真实通道接缝：协议尚未定义预约列表命令，liveMode 下应得到友好失败
@@ -722,6 +749,7 @@ void ReservationServiceTest::liveListWithoutProtocolCommandFailsFriendly()
     QVERIFY(!failedSpy.at(0).at(0).toString().isEmpty());
 }
 
+// ---- 测：未登录会话提交预约被拒；钉：鉴权按连接会话维度生效（弹窗展示失败原因的前提）----
 void ReservationServiceTest::liveSubmitWithoutLoginIsRejected()
 {
     // 鉴权边界：未登录会话提交预约 → 服务端拒绝（弹窗展示失败原因）。
@@ -743,6 +771,7 @@ void ReservationServiceTest::liveSubmitWithoutLoginIsRejected()
     QCOMPARE(succeededSpy.count(), 0);
 }
 
+// ---- 测：真实 TCP+SQLite 提交/取消/再预约端到端；钉：live 信号形状与模拟同构（接口就绪 UI 零改动）、桩被占用由服务端裁决拒绝 ----
 void ReservationServiceTest::liveSubmitAndCancelSucceedEndToEnd()
 {
     // 真实接口就绪验证：同一 ClientConnection 登录后，提交/取消全部经

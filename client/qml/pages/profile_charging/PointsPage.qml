@@ -62,6 +62,7 @@ Item {
             checkingIn = false
             page.points = points
             page.todayCheckedIn = true          // 成功与重放都进入"已签"态
+            // ---- 本人行（经验等级批）：签到成功回执→reportEvent("checkin") 经验钩子，积分真账与 XP 成长账各记各的 ----
             // 经验等级批（2026-09-09）：签到真实积分入账后，同步上报每日任务
             // 事件（当日幂等）；裸引擎/无等级桥场景静默跳过。
             if (typeof App !== "undefined" && App && App.progressService)

@@ -1,5 +1,10 @@
 // SettingsService 单元测试（任务 #17 二次迭代）：车辆管理 CRUD 与默认车
 // 规整、二级保护密码（哈希存储 + 开关前置条件）、通知开关 QSettings 持久化。
+// boot：QTEST_GUILESS_MAIN —— 纯逻辑服务（无窗口、无网络），只验内存模型与
+//   QSettings 落盘行为，事件循环仅需信号投递。
+// 隔离：initTestCase 把 QSettings 指向测试专属的组织/应用域（不碰真实用户
+//   配置）；init 每用例 resetForTesting() 复位到已知状态；“持久化”统一用
+//   重建新实例回读来证明真的落了盘。
 #include "services/settings/settings_service.h"
 
 #include <QCoreApplication>
@@ -47,6 +52,7 @@ private slots:
 
     // —— 车辆管理 ——
 
+// ---- 测：addVehicle 自增 ID 且首台自动默认；钉：第二台不抢默认、vehiclesChanged 每次变更恰发一信号 ----
     void addVehicleAssignsIdsAndFirstBecomesDefault()
     {
         QSignalSpy spy(&service_, &SettingsService::vehiclesChanged);
@@ -60,6 +66,7 @@ private slots:
         QCOMPARE(spy.count(), 2);
     }
 
+// ---- 测：带默认标记新增会顶替旧默认；钉：“默认车至多一台”不变式 ----
     void newDefaultFlagClearsPreviousDefault()
     {
         const qint64 first = service_.addVehicle(makeVehicle(QStringLiteral("粤B·D00001")));
@@ -75,6 +82,7 @@ private slots:
         QCOMPARE(defaults, 1);
     }
 
+// ---- 测：编辑/删除路径下的默认接任规则；钉：“有车必有默认”不变式 + 不存在操作返回 false ----
     void updateAndRemoveKeepDefaultInvariant()
     {
         const qint64 first = service_.addVehicle(makeVehicle(QStringLiteral("粤B·D00001")));
@@ -107,6 +115,7 @@ private slots:
         QVERIFY(service_.defaultVehicle() == nullptr);
     }
 
+// ---- 测：批量注入时的默认规整（保留首个带标记、无标记首台接任、ID 续号）；钉：名额制数据面入口稳定 ----
     void setMockVehiclesNormalizesDefaults()
     {
         service_.setMockVehicles({makeVehicle(QStringLiteral("粤B·D1"), false),
@@ -124,6 +133,7 @@ private slots:
 
     // —— 账号安全 ——
 
+// ---- 测：保护密码长度门槛与校验；钉：落盘仅 64 位 SHA-256 十六进制、明文绝不入库（安全红线）----
     void protectionPasswordStoredAsHashOnly()
     {
         QVERIFY(!service_.hasProtectionPassword());
@@ -149,6 +159,7 @@ private slots:
         QVERIFY(!service_.hasProtectionPassword());
     }
 
+// ---- 测：保护开关的“先设密码”前置条件；钉：开关状态跨实例持久回读（UI 置灰依据）----
     void protectionSwitchRequiresPassword()
     {
         // 未设置密码：开关不可开启（Service 兜底，UI 置灰依据）。
@@ -168,6 +179,7 @@ private slots:
 
     // —— 通知与提醒 ——
 
+// ---- 测：通知开关默认全开、逐个关闭后跨实例回读、reset 复位；钉：QSettings 持久化闭环覆盖全部键 ----
     void notificationTogglesPersistAcrossInstances()
     {
         // 默认全开。

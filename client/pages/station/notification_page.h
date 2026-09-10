@@ -1,3 +1,8 @@
+// 文件职责：消息通知页的类声明（迭代 3，与 notification_page.cpp 成对）。
+// 使用方：HomeShell 构造本页面并注入壳内 NotificationService 单实例，作为
+// 内容栈路由页挂入（顶部铃铛进入，登录门禁在壳侧 openNotifications 拦截）。
+// 数据流向：纯本机同步数据源（页面 ← NotificationService 内存列表 + QSettings
+// 开关过滤），不经 TCP 契约；本页只读展示，无写回通道。
 #pragma once
 
 #include "services/favorites/notification_service.h"
@@ -29,6 +34,8 @@ class NotificationPage final : public QWidget
 public:
     explicit NotificationPage(QWidget* parent = nullptr);
 
+    // 注入通知数据服务（HomeShell 壳内单实例）：同实例重复注入幂等短路；
+    // 换实例先摘净旧对象的信号再重接，避免两路服务同时驱动重渲染。
     void setNotificationService(
         charging::client::services::favorites::NotificationService* service);
 
@@ -40,11 +47,14 @@ public:
     bool emptyStateVisible() const;
 
 private:
+    // 单条通知卡工厂：标题 + UTC→本地时间一行、正文一行，样式走全局 role。
     QWidget* createNotificationCard(
         const charging::client::services::favorites::NotificationItem& item);
 
     charging::client::services::favorites::NotificationService* service_ = nullptr; // not owned
 
+    // ---- 展示骨架：stack_ 两态（0=空态引导 emptyNotice_，1=滚动列表
+    // listPage_/listLayout_）；captionLabel_ 为副标题引用留存（当前只写不读） ----
     QVBoxLayout* listLayout_ = nullptr;
     QWidget* listPage_ = nullptr;
     NoticePanel* emptyNotice_ = nullptr;

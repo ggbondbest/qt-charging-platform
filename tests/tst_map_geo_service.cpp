@@ -1,5 +1,8 @@
 // 腾讯地图 WebService 封装（MapGeoService）单测：全程走进程内假 HTTP 服务
 // （fake_tencent_server.h），永不触真实网络；CI 无 key 也全绿。
+// 断言双锚："发出形态"（FakeTencentServer 记录的请求 target 逐字节比对）与
+// "收到结果"（QSignalSpy 信号参数）；中间靠 setEndpointBaseForTesting /
+// setRequestTimeoutForTesting 两个测试缝把真端点/真超时换成可控夹具。
 #include "fake_tencent_server.h"
 #include "services/map/map_geo_service.h"
 
@@ -15,6 +18,7 @@ using charging::testing::FakeTencentServer;
 
 namespace {
 
+// 矩阵应答夹具：单行双目标（4321m/600s、900m/180s），钉 duration 单位=秒。
 const QByteArray kMatrixJson = R"({
     "status": 0,
     "message": "query ok",
@@ -50,6 +54,7 @@ const QByteArray kRouteLegacyJson = R"({
         "steps": [{"instruction": "直行", "distance": 3000}]}}
 })";
 
+// 地理编码应答夹具：location/address/城市区划齐全，正查、反查、QML 转发路成功用例共用。
 const QByteArray kGeocodeJson = R"({
     "status": 0,
     "message": "Success",
@@ -87,6 +92,7 @@ private slots:
     // Local configuration files must never supply credentials or redirect their requests.
     void configFileCannotSupplyKeyOrEndpoint();
     void environmentIsOnlyProductionConfiguration();
+    // —— 契约用例（查询形态/签名）与结果解析用例：每条自带假服务器 ——
     void matrixParsesMultipleDestinations();
     void requestQueryMatchesTencentContract();
     void businessStatusMapsToTypedErrors();
@@ -112,6 +118,8 @@ private slots:
     void invalidCoordinatesDoNotReachNetwork();
     void routeRoundsFractionalMinutesUp();
 };
+
+// ---- 密钥口径用例：环境唯一、配置文件死透、无 key 零联网 ----
 
 void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
 {
@@ -175,6 +183,7 @@ void MapGeoServiceTest::configFileCannotSupplyKeyOrEndpoint()
     QVERIFY(MapGeoService::resolveApiKey().isEmpty());
     QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
     QCOMPARE(MapGeoService::resolveBaseUrl(), QStringLiteral("https://apis.map.qq.com/ws"));
+    // 不存在的路径同样返回空：函数对入参完全无感——文件读取通道死透的证据。
     QVERIFY(MapGeoService::apiKeyFromConfigFile(dir.filePath("missing.json")).isEmpty());
 
     FakeTencentServer server;
@@ -215,6 +224,8 @@ void MapGeoServiceTest::environmentIsOnlyProductionConfiguration()
     QVERIFY(MapGeoService::baseUrlFromConfigFile(path).isEmpty());
     QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
 }
+
+// ---- 请求契约用例：URL 参数与签名逐字节钉死（防无意改口径破坏真接口）----
 
 void MapGeoServiceTest::matrixParsesMultipleDestinations()
 {
@@ -359,6 +370,9 @@ void MapGeoServiceTest::routeRoundsFractionalMinutesUp()
     QTRY_COMPARE(succeeded.size(), 1);
     QCOMPARE(succeeded.first().at(1).value<RouteResult>().durationMinutes, 2);
 }
+
+// ---- 错误分类表驱动用例：一行一个业务 status，独立假服务器注入后断言 ----
+// MapError 映射（121 必须可辨识为"额度耗尽、重启不可恢复"，见 QuotaExhausted）。
 
 void MapGeoServiceTest::businessStatusMapsToTypedErrors()
 {
@@ -823,6 +837,7 @@ void MapGeoServiceTest::staticMapJsonBodyClassifiesError()
              QStringLiteral("密钥无效或未授权该接口 [HTTP 200] [status 310]"));
 }
 
+// —— URI 导航 URL：同步纯拼串，无网络路径，直接对返回值断形态 ——
 void MapGeoServiceTest::navigationUriUrlShapeAndEncoding()
 {
     qputenv("TENCENT_MAP_API_KEY", "unit-test-key");
@@ -839,6 +854,8 @@ void MapGeoServiceTest::navigationUriUrlShapeAndEncoding()
     QVERIFY(url.endsWith(QStringLiteral("&referer=unit-test-key")));
 }
 
+// GUILESS main：只用 QNetworkAccessManager/QTimer，QCoreApplication 足够；
+// Q_OBJECT 写在源文件内，按 moc 惯例文末 include 同名 .moc 产物。
 QTEST_GUILESS_MAIN(MapGeoServiceTest)
 
 #include "tst_map_geo_service.moc"

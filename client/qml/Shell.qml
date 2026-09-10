@@ -28,6 +28,8 @@ Window {
                                      "reservation_module", "navigation",
                                      "favorites", "notifications", "settings",
                                      "stats", "coupon", "points", "ratings", "scan",
+                                     // 经验等级批（tasks/level）+ 会员中心批（points_mall）：
+                                     // 三张新页进 migrated 白名单，路由才翻真页不回落占位。
                                      "tasks", "level", "points_mall"]
     // Route id → QML page source (relative to this file's directory tree).
     function pageSource(r) {
@@ -55,6 +57,8 @@ Window {
             "points":              "pages/profile_charging/PointsPage.qml",
             "ratings":             "pages/profile_charging/RatingsPage.qml",
             "scan":                "pages/profile_charging/ScanPage.qml",
+            // 经验等级批+会员中心批：每日任务/会员等级/积分商城三页的 route→源文件
+            // 映射（与上方 migrated 白名单同批落，缺一页即回落占位页）。
             "tasks":               "pages/profile_charging/TasksPage.qml",
             "level":               "pages/profile_charging/LevelPage.qml",
             "points_mall":         "pages/profile_charging/PointsMallPage.qml",
@@ -133,6 +137,7 @@ Window {
             width: parent.width
             user: App && App.currentUser ? App.currentUser : null
             backVisible: stack.depth > 1
+            // 二轮修复批（2026-09-07 用户复测点名的"顶栏修复①"）——
             // 搜索框/铃铛随"当前页"显隐（原绑 shell.route——只在启动时求值一次，
             // 从登录进入 station 后不更新，顶栏搜索与通知图标消失；用户实测指定修复）。
             searchVisible: stack.currentItem && stack.currentItem.route === "station"
@@ -142,6 +147,8 @@ Window {
             onLoginRequested: shell.pushRoute("login")
             onProfileRequested: { if (App) App.navigate("profile") }
             onFilterRequested: {
+                // 筛选接线两笔（2026-09-08 收藏点击修复批起意、同日合并对账批定口径，
+                // 见下两行原注释）：
                 // 找站页/收藏页均暴露 openAdvancedFilter()（station 域组件），
                 // 漏斗即开当前页的 8 组高级筛选弹层。typeof 守卫取上游口径。
                 if (stack.currentItem && typeof stack.currentItem.openAdvancedFilter === "function")

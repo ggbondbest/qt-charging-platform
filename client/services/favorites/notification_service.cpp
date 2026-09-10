@@ -1,3 +1,11 @@
+// NotificationService 实现（迭代 3 个人中心域 · 成员 2 通知批；服务端通道为
+// 2026-09-08 成员 3 追加）。职责与通道口径见同目录头文件。
+// 数据流向：
+//   本地通道——宿主桥接（widgets HomeShell / QML service_bridges）把预约事件
+//     转成 push*() 调用 → append() 写入 items_ 全量段；
+//   服务端通道——refresh() 发 GET_NOTIFICATIONS → 解析后整体替换 serverItems_；
+//   读侧——通知页调 notifications()：两段合并按时间倒序、去重、按设置开关
+//   过滤后返回；任何一侧集合变化统一以 notificationsChanged 通知页面重读。
 #include "services/favorites/notification_service.h"
 
 #include "charging/client/profile_charging/i_request_transport.h"
@@ -60,11 +68,16 @@ QDateTime parseCreatedAt(const QJsonValue& value)
 
 } // namespace
 
+// 启动即铺一条一型的演示历史：纯本地通道（未注入 transport）下通知页
+// 首开就有内容可看，演示口径不依赖后端是否在线。
 NotificationService::NotificationService(QObject* parent) : QObject(parent)
 {
     seedMockHistory();
 }
 
+// 注入式协作（而非构造参数）：设置服务生命周期在宿主手里，这里只借引用
+// 读开关。同指针早退是幂等闸——宿主重复注入不再重连信号，否则一次开关
+// 变化会转发多份 notificationsChanged。
 void NotificationService::setSettingsService(settings::SettingsService* settings)
 {
     if (settings_ == settings) {
@@ -127,6 +140,8 @@ void NotificationService::refresh()
                         });
 }
 
+// 测试缝：本地段与服务端段一起清、id 计数器复位、重新铺演示历史——
+// 回到与刚构造时完全一致的初态，用例之间互不串数据。
 void NotificationService::resetForTesting()
 {
     items_.clear();
@@ -193,6 +208,8 @@ int NotificationService::visibleCount() const
     return notifications().size();
 }
 
+// 五类通知的标题文案表（前缀图标兼作列表里的类型辨识符）。static：
+// 页面、测试与 seed/append 内部都取同一份文案，口径单点不散落。
 QString NotificationService::typeTitle(NotificationType type)
 {
     switch (type) {
@@ -207,9 +224,13 @@ QString NotificationService::typeTitle(NotificationType type)
     case NotificationType::OrderPaid:
         return QStringLiteral("💰 支付成功通知");
     }
+    // switch 已穷举枚举，此处仅为枚举值越界（如内存脏数据）兜底，UI 不留空标题。
     return QStringLiteral("📣 系统通知");
 }
 
+// 铺演示历史：一条一型覆盖三类预约通知；偏移量拉大间距（14/95/1520 分钟）
+// 保证列表稳定呈"新→旧"梯队。id 走 nextId_ 正整数段，与 append 实时推送
+// 连续递增，不会和服务端段（负值合成 id）撞号。
 void NotificationService::seedMockHistory()
 {
     // 一条一型，覆盖三类通知的展示样式（时间倒序入列，最新在前）。
@@ -233,6 +254,9 @@ void NotificationService::seedMockHistory()
          kSeedOffsetsMinutes[0]);
 }
 
+// 本地通道唯一写入口（构造演示数据之外的所有推送都收敛到这里）：
+// id 取自增、prepend 保证新在前、超上限裁最旧尾部。推送方只需给文案，
+// 列表不变量（顺序/上限/信号）由本函数统一守住。
 void NotificationService::append(NotificationType type, const QString& title,
                                  const QString& body)
 {
@@ -250,6 +274,10 @@ void NotificationService::append(NotificationType type, const QString& title,
     // 不空发信号打扰页面：全量列表变化即视为可见集可能变化，保守转发。
     emit notificationsChanged();
 }
+
+// 三个 push* 是给宿主的语义门面：调用方只交预约上下文（站名/桩号/车牌/
+// 起始时间），文案在此单点拼装——可缺省字段（无效时间、无车牌）不渲染
+// 对应半句，避免"（）"这类空括号出现在列表里。
 
 void NotificationService::pushReservationSuccess(const QString& stationName,
                                                  const QString& chargerCode,

@@ -1,3 +1,6 @@
+// settings_page.cpp —— 设置页实现（页面职责见头注释）。骨架/回显两段式：
+// 三个 build* 构造期只搭一次控件，三个 refresh* 按 SettingsService 当前状态
+// 回显；服务信号（vehiclesChanged 等）直连对应 refresh*，实现跨页实时联动。
 #include "pages/station/settings_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -94,6 +97,7 @@ void clearLayoutItems(QVBoxLayout* layout)
 
 SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent)
 {
+    // 兼容单测直接 new 本页的启动路径（app/main.cpp 未跑时装上全局主题）。
     installPlatformTheme();
 
     setObjectName(QStringLiteral("settingsPage"));
@@ -131,6 +135,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent)
 
 void SettingsPage::setSettingsService(SettingsService* settings)
 {
+    // 同一实例重复注入直接返回：防信号被 connect 多次（一次变更触发多轮刷新）。
     if (settings_ == settings) {
         return;
     }
@@ -194,6 +199,8 @@ QWidget* SettingsPage::buildSecuritySection()
             return;
         }
         if (!settings_->setProtectionEnabled(on)) {
+            // Service 兜底拒绝 → 复位勾选；QSignalBlocker 阻断“复位再触发
+            // toggled”的回环，仅让随后的 refresh 同步提示文案。
             QSignalBlocker blocker(protectionSwitch_);
             protectionSwitch_->setChecked(settings_->protectionEnabled());
             refreshSecuritySection();
@@ -210,6 +217,8 @@ void SettingsPage::refreshSecuritySection()
     const bool hasPassword = settings_->hasProtectionPassword();
     passwordStatusLabel_->setText(hasPassword ? tr("二级保护密码：已设置") : tr("二级保护密码：未设置"));
     passwordButton_->setText(hasPassword ? tr("修改密码") : tr("设置密码"));
+    // 回显写 enabled/checked 前阻断 toggled：程序刷新不能被当成用户操作
+    // 再写回 Service（否则置灰/复位分支会被联动触发，形成回环）。
     {
         QSignalBlocker blocker(protectionSwitch_);
         protectionSwitch_->setEnabled(hasPassword);
@@ -342,6 +351,8 @@ QWidget* SettingsPage::createVehicleCard(const Vehicle& vehicle)
 
 void SettingsPage::openVehicleDialog(qint64 vehicleId)
 {
+    // 防重入闸：弹窗开着时忽略再次点击（新增/编辑共用一闸）；
+    // WA_DeleteOnClose 销毁后 QPointer 自动归零，闸门重开。
     if (settings_ == nullptr || vehicleDialog_ != nullptr) {
         return;
     }
@@ -405,6 +416,7 @@ void SettingsPage::openVehicleDialog(qint64 vehicleId)
 
     auto* defaultCheck = new QCheckBox(tr("设为默认车辆（预约时默认选用）"), dialog);
     defaultCheck->setObjectName(QStringLiteral("vehicleDefaultCheck"));
+    // 无车时默认勾上：与 Service“首台自动成默认车”同口径，UI 预期与数据行为一致。
     defaultCheck->setChecked(existing.isDefault || settings_->vehicleCount() == 0);
     layout->addWidget(defaultCheck);
 
@@ -436,6 +448,9 @@ void SettingsPage::openVehicleDialog(qint64 vehicleId)
             messageLabel->show();
             return;
         }
+        // 以打开时的快照为底回填可编辑字段：保住对话框之外的字段
+        // （尤其 id——编辑时 updateVehicle 靠它定位；新增时 existing 为
+        // 默认值，Service 忽略 id 自动分配）。
         Vehicle vehicle = existing;
         vehicle.plate = plate;
         vehicle.brandModel = brandEdit->text().trimmed();
@@ -510,6 +525,7 @@ void SettingsPage::refreshNotificationSection()
     if (settings_ == nullptr) {
         return;
     }
+    // 同回显口径：写 checked 前阻断 toggled，防止刷新被当成用户切换再写 QSettings。
     const QSignalBlocker blocker1(expirySwitch_);
     const QSignalBlocker blocker2(successSwitch_);
     const QSignalBlocker blocker3(cancelSwitch_);
@@ -525,6 +541,7 @@ void SettingsPage::refreshNotificationSection()
 
 void SettingsPage::openPasswordDialog()
 {
+    // 防重入闸同车辆弹窗：同时最多一个密码窗，QPointer 随销毁自动归零。
     if (settings_ == nullptr || passwordDialog_ != nullptr) {
         return;
     }

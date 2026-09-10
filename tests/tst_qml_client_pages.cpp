@@ -15,10 +15,13 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScopedPointer>
+// QSettings/QTemporaryDir：经验等级批起本二进制会真写等级档（ProgressService
+// 经 App 落盘），须把配置域钉进 temp dir——见 initTestCase 的说明。
 #include <QSettings>
 #include <QTemporaryDir>
 
 #include "charging/client/profile_charging/avatar_library.h"
+// 真等级引擎（非 fake）：任务页/等级页用例直读 ProgressService 属性对拍。
 #include "charging/client/profile_charging/progress_service.h"
 #include "services/station/station_query_service.h"
 
@@ -1628,6 +1631,8 @@ private slots:
 
     // 等级页 × 同域状态续场：hero 文案与 tiers 属性一致、阶梯 5 档、
     // 礼包记录 = 已升档位数（黑金无礼包口径），页面对无 pointsService 上下文健壮。
+    // 声明序依赖：level()>=2 断言要求前一任务页用例先跑（同 temp 域、同登录号
+    // 13800138000 累计 XP）——单跑本用例该项必红，是故意而非缺陷。
     void levelPageMirrorsEngineState()
     {
         QmlApp app;
@@ -1695,6 +1700,8 @@ private slots:
         QCOMPARE(records->property("count").toInt(), 1);   // 演示兑换成功：本机记录 +1
         QSignalSpy toast(&app, &QmlApp::toastRequested);
         QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c2")));
+        // 文案必含「演示」= 三套账诚实口径：兑换只写本机记录模型（服务端契约
+        // 无 REDEEM，points_ledger 仅 CHECK_IN/RECHARGE），不冒充真实到账。
         QCOMPARE(toast.count(), 1);                        // 500 ≥ 500：兑换回执带 toast
         QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("演示")));
     }

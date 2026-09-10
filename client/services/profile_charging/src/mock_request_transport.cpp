@@ -319,6 +319,9 @@ void MockRequestTransport::setUser(const charging::model::User& user)
     user_.updatedAtUtc = QDateTime::currentDateTimeUtc();
 }
 
+// ---- 我的块（轻注）：Mock 调试钩子——非终态订单（CHARGING/WAITING_PAYMENT/
+// RESERVED）全置已取消；唯一调用方 QmlApp::clearUnfinishedOrdersForTesting，
+// 供演示/测试"无未完单"空态流程（真通道服务端权威，无此钩子）。
 void MockRequestTransport::cancelActiveOrders()
 {
     for (charging::model::Order& order : orders_) {

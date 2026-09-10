@@ -1,3 +1,6 @@
+// station_filter_dialog.cpp —— 弹窗实现：构造期一次性铺出 8 组 chip，
+// 勾选态本身就是唯一状态（无草稿副本）；“确定”时 currentCriteria() 现场
+// 投影并发 applied()，宿主页面据此做纯客户端过滤。
 #include "pages/station/station_filter_dialog.h"
 
 #include <algorithm>
@@ -80,6 +83,10 @@ constexpr int kDialogHeight = 620;
 QVector<StationFilterDialog::GroupSpec> StationFilterDialog::groupSpecs()
 {
     namespace sf = services::station::station_filter;
+    // 8 组规格单点定义：构造铺 chip、“重置”清勾选、“确定”投影三处共用，
+    // 改组序/选项只动这一张表。选项文本即服务层匹配值（无“展示名↔键”
+    // 映射表），弹窗与 station_filter 常量逐字对账；距离例外——标签是
+    // 展示文案，真值按 kDistanceOptionsKm 下标回查。
     QStringList distanceLabels;
     for (const int km : sf::kDistanceOptionsKm) {
         distanceLabels << QStringLiteral("%1公里").arg(km);
@@ -187,6 +194,8 @@ StationFilterDialog::StationFilterDialog(const StationFilterCriteria& initial,
     rootLayout->addLayout(buttonRow);
 
     // 初始回显（收藏夹页二次打开时保留已生效条件）。
+    // 非距离组按“选项文本==已存值”直接喂给测试缝回显；距离组标签带
+    // “公里”后缀、与数值不等值，只能按 km 值反查档位下标。
     const QList<std::pair<QString, QStringList>> initialSelections = {
         {QStringLiteral("status"), initial.statuses},
         {QStringLiteral("operator"), initial.operators},
@@ -214,6 +223,8 @@ StationFilterDialog::StationFilterDialog(const StationFilterCriteria& initial,
 
 void StationFilterDialog::onChipClicked(QPushButton* chip)
 {
+    // 单选组判据直接按组 key 硬编码：距离是八组中唯一的 exclusive 组
+    // （与 groupSpecs() 的 true 标志同源），点击时免查 spec 表。
     const bool exclusive = chip->property("filterGroup").toString() == QStringLiteral("distance");
     if (!exclusive) {
         return; // 多选组交给 QPushButton 自带 checked 翻转
@@ -231,6 +242,8 @@ void StationFilterDialog::onChipClicked(QPushButton* chip)
 
 QVector<QPushButton*> StationFilterDialog::chipsOfGroup(const QString& groupKey) const
 {
+    // 组成员判定以动态属性为唯一事实源（filterChip + filterGroup），页面
+    // 不另存每组的指针列表——chip 与弹窗同生命周期，现查对象树无悬挂风险。
     QVector<QPushButton*> chips;
     const auto buttons = findChildren<QPushButton*>();
     for (QPushButton* button : buttons) {
@@ -267,6 +280,8 @@ void StationFilterDialog::setGroupSelectionForTesting(const QString& groupKey,
 
 StationFilterCriteria StationFilterDialog::currentCriteria() const
 {
+    // 勾选态 → 条件对象：按 filterIndex 反查组内字面量再显式分发到字段；
+    // 新增组时此处与 groupSpecs()/初始回显表三处需同步（口径集中、易对账）。
     StationFilterCriteria criteria;
     for (const GroupSpec& spec : groupSpecs()) {
         for (const QPushButton* chip : chipsOfGroup(spec.key)) {

@@ -10,6 +10,9 @@ import "../../platform" as P
 //   4) 「账号与服务」分组：收藏 / 设置 52px 行
 //   5) 退出登录 = 白卡红字 logout variant（不是 danger 红底）
 // 结构由成员3 于 2026-09-07 按 widgets 原版重建（成员2 文件，PR 报备）。
+// —— 归属注（答辩口径）：hero/钱包/双格等结构为队友对账重建；等级三件套
+//→会员等级卡（ff50509 经验等级批、ddb21fc 会员中心批）、积分商城行与
+// 退出兜底为我的部分，下方中文注释只标这些块。
 Item {
     id: page
     objectName: "profilePage"
@@ -31,10 +34,12 @@ Item {
     // 会员中心批（参考"白金会员"卡形态）：档位主题色与星级（页内字面量，
     // 与 LevelPage tierColor 同谱——两处小重复换零跨页耦合，映射稿有口径）。
     function tierColor(lv) {
+        // 色板下标=档位-1；钳到 [0,4] 防 level 越界返回 undefined 断掉颜色绑定
         const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
         return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
     }
     function tierStars(lv) {
+        // 定宽五格：实心星数=档位（1..5 钳位）、空星补足，档位切换时行宽不跳动
         const n = Math.max(1, Math.min(5, lv || 1))
         return "★".repeat(n) + "☆".repeat(5 - n)
     }
@@ -90,6 +95,8 @@ Item {
                         width: 64; height: 64; radius: 32
                         color: "#9AA4B2"
                         border.width: 2; border.color: "#66FFFFFF"
+                        // 文字层=头像兜底：有头像键取昵称首字（无昵称取「用」），
+                        // 无键为人形占位符；Image.Ready 后本层隐藏、图片层盖住
                         Text {
                             anchors.centerIn: parent
                             text: page.user && page.user.avatarKey
@@ -154,6 +161,7 @@ Item {
                     orientation: Gradient.Horizontal   // Qt6.2 无 Diagonal
                     GradientStop { position: 0.0
                         color: page.progress ? page.tierColor(page.progress.level) : P.Style.heroFrom }
+                    // 右端=同档位色提亮 1.35：整卡跟随档位换色而明暗节奏恒定
                     GradientStop { position: 1.0
                         color: Qt.lighter(page.progress ? page.tierColor(page.progress.level)
                                                          : P.Style.heroTo, 1.35) }
@@ -200,6 +208,8 @@ Item {
                                 height: parent.height; radius: parent.radius
                                 width: parent.width * (page.progress ? page.progress.progress : 0)
                                 color: "white"
+                                // motionEnabled 是 offscreen/降级动效总闸（main.cpp 置位）：
+                                // 关动画时行为失效，测试与截图读到稳态条宽
                                 Behavior on width {
                                     enabled: P.Style.motionEnabled
                                     NumberAnimation { duration: P.Style.durValue }
@@ -209,6 +219,7 @@ Item {
                         Text {
                             objectName: "uiLevelXpLabel"
                             width: parent.width; elide: Text.ElideRight
+                            // xpToNext==0 即黑金封顶：无「还需 N XP」可报，只显累计值
                             text: page.progress
                                   ? (page.progress.xpToNext > 0
                                      ? "成长值 " + page.progress.xp
@@ -222,6 +233,7 @@ Item {
                         Text {
                             objectName: "uiLevelCardPerk"
                             width: parent.width; elide: Text.ElideRight
+                            // tiers 下标=level-1，再钳 0 防服务回 0 级越界取 undefined
                             text: page.progress
                                   ? String(page.progress.tiers[
                                        Math.max(0, page.progress.level - 1)].perk) : ""
@@ -245,6 +257,7 @@ Item {
                             }
                             Text {
                                 anchors.right: parent.right
+                                // 剩余档数 = 5-level+1（当前档至黑金含两端），与等级页阶梯同口径
                                 text: page.progress
                                       ? "查看 " + (5 - page.progress.level + 1) + " 档权益" : ""
                                 font.pixelSize: P.Style.fontXs; color: "#BFFFFFFF"
@@ -426,6 +439,7 @@ Item {
                 text: "退出登录"
                 width: col.contentW
                 height: 50
+                // 未登录不出「退出」：此时点 hero 即登录入口，两态语义不重叠
                 visible: !!(App && App.loggedIn)
                 onClicked: {
                     // TODO(contract): authService.logout() invokable；成功后壳收 loginStateChanged 自动翻页
@@ -433,6 +447,8 @@ Item {
                         try { authService.logout() } catch (e) {
                             if (App) App.showToast("退出登录桥未就绪", "warning")
                         }
+                        // 桥在即短路：登录态收敛后由壳收 loginStateChanged 统一翻页，
+                        // 页面再走 App.logout() 会双跳
                         return
                     }
                     // mock 通道 authService==nullptr（app_bridge.cpp:99）：回退 App.logout()

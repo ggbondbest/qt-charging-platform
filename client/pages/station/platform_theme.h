@@ -1,3 +1,8 @@
+// platform_theme.h —— 全局 QSS 主题的安装入口（widgets 通道公共底座）。
+// 调用方：本目录各 widgets 页面（找站/设置/筛选弹窗等）在构造时各调一次，
+// 以兼容页面在单元测试中被独立构造、未经 app/main.cpp 启动的路径。
+// 数据流向：纯本机资源读取（:/qss/client_platform.qss → qApp 全局样式表），
+// 不经过服务桥、不产生任何 TCP 请求。
 #pragma once
 
 namespace charging::client::pages::station {

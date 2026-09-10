@@ -40,6 +40,8 @@ Rectangle {
         anchors.rightMargin: Style.spaceLg
         spacing: Style.spaceSm
 
+        // 二轮修复批（2026-09-07 用户复测点名的"顶栏修复③"）：返回按钮容器
+        // 1×1→按文案宽高（仅改布局、样式 token 不动，原委见下两行）。
         Item {
             // 容器尺寸对齐文案（原 1×1 容器 + verticalCenter → 文字半数溢出导航条、
             // 被窗口顶缘裁切；用户实测指定修复，仅改布局不改样式）。
@@ -88,11 +90,14 @@ Rectangle {
             implicitWidth: 24
             width: implicitWidth
             height: 32
+            // 顶栏筛选漏斗批（2026-09-08）：⛛ 字符依赖罕见字体出豆腐块，改 Canvas
+            // 手绘标准漏斗（下方整块），渲染确定不依赖字体。
             Canvas {
                 anchors.centerIn: parent
                 width: 20
                 height: 20
                 property color ink: filterMouse.pressed ? Style.brandDeep : Style.muted
+                // 顶栏筛选漏斗批：pressed 态换墨色→变色即重绘；紧接的 onPaint 为手绘主体。
                 onInkChanged: requestPaint()
                 onPaint: {
                     const ctx = getContext("2d")
@@ -109,6 +114,8 @@ Rectangle {
                     ctx.lineTo(8, 10)
                     ctx.closePath()
                     ctx.stroke()
+                    // 顶栏筛选漏斗批：上列 moveTo + 五个 lineTo 描出漏斗六顶点轮廓，
+                    // stroke 描边收尾（此处与 Canvas 块的两个收括号同属本批）。
                 }
             }
             MouseArea { id: filterMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
