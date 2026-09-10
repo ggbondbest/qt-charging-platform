@@ -41,10 +41,10 @@ Item {
     // 服务 invokable 化探测：vehicles() 能返回数组 = 桥已落地，以服务为准。
     function svcOk() { return call(settingsService, "vehicles", []) !== undefined }
     function reload() {
-        // TODO(contract): settingsService.hasProtectionPassword()/protectionEnabled()/vehicles()
+        // 桥契约名：hasSecondPassword()/protectionEnabled()/vehicles()（均为 invokable）。
         if (svcOk()) {
             page.vehicles = call(settingsService, "vehicles", []) || []
-            const hp = call(settingsService, "hasProtectionPassword", [])
+            const hp = call(settingsService, "hasSecondPassword", [])
             page.hasPassword = (typeof hp === "boolean") ? hp : StationState.hasSecondPassword()
             const pe = call(settingsService, "protectionEnabled", [])
             page.protectionOn = (typeof pe === "boolean") ? pe : StationState.protectionEnabled()
@@ -132,7 +132,7 @@ Item {
                                 // 服务=桥在时的持久化通道；call 吞异常，谁缺位另一边照写
                                 page.protectionOn = checked
                                 StationState.setProtectionEnabled(checked)
-                                call(settingsService, "setProtectionEnabled", [checked])
+                                call(settingsService, "setSecondProtectionEnabled", [checked])
                             }
                         }
                     }
@@ -418,7 +418,7 @@ Item {
                         // 校验顺序：改密先验旧（旧密码仅改密态有意义）→≥4 位→两次
                         // 一致；任一失败短路写 note 不关窗，让用户原地改
                         if (passwordDialog.changing) {
-                            const okSvc = call(settingsService, "verifyProtectionPassword", [oldField.text])
+                            const okSvc = call(settingsService, "verifySecondPassword", [oldField.text])
                             const ok = (typeof okSvc === "boolean") ? okSvc : StationState.verifySecondPassword(oldField.text)
                             if (!ok) { passwordDialog.note = "当前密码不正确"; return }
                         }
@@ -426,12 +426,13 @@ Item {
                         if (newField.text !== confirmField.text) { passwordDialog.note = "两次输入的密码不一致"; return }
                         // 明文只透传给哈希通道（库/服务），UI 不留存；
                         // 库通道把密码绑定到当前登录手机号——登录页仅对该号码要求验证。
-                        // TODO(contract): settingsService.setProtectionPassword(plain) invokable。
+                        // 桥契约名 setSecondPassword（缺陷修复 2026-09-10：曾调裸
+                        // 服务名 setProtectionPassword，桥无此方法被吞，密码从未落盘）。
                         StationState.setSecondPassword(newField.text,
                             StationState.accountPhone()
                             || (App && App.currentUser && App.currentUser.phone
                                 ? App.currentUser.phone : ""))
-                        call(settingsService, "setProtectionPassword", [newField.text])
+                        call(settingsService, "setSecondPassword", [newField.text])
                         page.hasPassword = true
                         passwordDialog.close()
                         if (App) App.showToast("二级保护密码已保存", "success")
@@ -504,6 +505,10 @@ Item {
                 }
             }
             CheckBox {
+                id: defaultCheck   // 缺陷修复 2026-09-10：openFor() 以 id 引用本控件
+                                   // 同步"设为默认"勾选态，但 id 从未声明（只有
+                                   // objectName），ReferenceError 令弹窗直接开不出来
+                                   // ——"添加/编辑车辆"整条功能失效。
                 objectName: "vehicleDefaultCheck"
                 text: "设为默认车辆（预约时默认选用）"
                 onToggled: vehicleDialog.wantDefault = checked
