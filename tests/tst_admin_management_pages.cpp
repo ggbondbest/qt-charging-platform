@@ -102,8 +102,8 @@ private slots:
         // Every visible power option carries an immutable watt value.  This
         // catches regressions where a visual item index inadvertently drives
         // either the power request or the adjacent type selector.
-        for (const auto& expectation : {qMakePair(7000, 3), qMakePair(60000, 2),
-                                        qMakePair(120000, 3), qMakePair(180000, 2)}) {
+        for (const auto& expectation : {qMakePair(7000, 4), qMakePair(60000, 2),
+                                        qMakePair(120000, 4), qMakePair(180000, 2)}) {
             const int powerIndex = powerFilter->findData(expectation.first, Qt::UserRole + 2);
             QVERIFY(powerIndex > 0);
             powerFilter->setCurrentIndex(powerIndex);
@@ -114,7 +114,9 @@ private slots:
                 QCOMPARE(table->item(row, 3)->text(), powerFilter->currentText());
         }
 
-        for (const int column : {0, 1, 2, 3, 5, 6, 7, 8})
+        QCOMPARE(table->horizontalHeader()->sectionResizeMode(1), QHeaderView::Fixed);
+        QVERIFY(table->columnWidth(1) >= 140);
+        for (const int column : {0, 2, 3, 5, 6, 7, 8})
             QCOMPARE(table->horizontalHeader()->sectionResizeMode(column), QHeaderView::Stretch);
     }
 

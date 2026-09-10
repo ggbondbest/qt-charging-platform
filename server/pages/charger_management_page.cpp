@@ -212,10 +212,13 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    // Keep status and row actions compact while the remaining columns share
-    // the list-card width, avoiding a blank strip at the right edge.
+    // The station name needs a stable readable width.  Keep status and row
+    // actions compact while the remaining columns share the list-card width,
+    // avoiding a blank strip at the right edge.
+    tableWidget_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
+    tableWidget_->setColumnWidth(1, 160);
     tableWidget_->setColumnWidth(4, kManagementStatusColumnWidth);
     tableWidget_->setColumnWidth(9, 84);
     tableLayout->addWidget(tableWidget_, 1);
@@ -587,7 +590,7 @@ void ChargerManagementPage::showChargerDetails(int recordIndex, bool requestDeta
                  record.lastHeartbeat));
     detailLiveChargeLabel_->setText(record.status == tr("充电中")
         ? tr("当前功率　68.4 kW　｜　已充电量　43.60 kWh\n充电时长　00:38:16　｜　当前费用　¥ 48.21")
-        : tr("当前未在充电；功率、电量、时长与费用将在启动充电后实时展示。"));
+        : tr("当前功率　—　｜　已充电量　—\n充电时长　—　｜　当前费用　—\n当前未在充电；启动充电后将实时展示。"));
     detailRecoveryLabel_->setText(record.alertType.isEmpty()
         ? tr("最近异常　无\n恢复状态　无需处理")
         : tr("最近异常　%1\n恢复状态　待人工确认\n可执行“解除告警”完成恢复流程。")
