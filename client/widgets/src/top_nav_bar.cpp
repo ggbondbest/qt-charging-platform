@@ -1,3 +1,9 @@
+// 文件职责：widgets 通道顶部导航公共组件 TopNavBar 的实现（成员 2，任务 #2；
+// 迭代 3 追加高级筛选/消息通知两个入口）。宿主是 HomeShell 等壳层页面：控件在本
+// 组件内装配，点击一律只发信号（loginRequested/searchSubmitted/filterRequested 等），
+// 弹窗与页面跳转逻辑归外层，组件不持有任何业务数据。显隐维护是双向的：外部经
+// setUser/clearUser/setBackVisible/setSearchVisible 改意图，内部由 refreshVisibility
+// 统一落位。与 QML 通道的孪生件 client/qml/platform/TopNavBar.qml 并行存在，各通道自装配。
 #include "charging/client/widgets/top_nav_bar.h"
 
 #include <QFont>
@@ -13,11 +19,14 @@ namespace charging::client {
 
 namespace {
 
+// ---- 手绘矢量图标（namespace 内部工具，仅本文件可见）----
 // 顶栏手绘矢量图标（迭代 3 UI 反馈：emoji 筛选码位实际渲染为“雪人”、铃铛
 // 偏小且字体不一致）。QPainterPath 单色描画，色值取全局文本 token #1F2937；
 // 2× 像素 + devicePixelRatio 保证高分屏锐利，随 iconSize 缩放。
 constexpr const char* kGlyphColor = "#1F2937";
 
+// 所有图标共用的画布：24×24 逻辑像素、@2× 物理分辨率（48px），铺全透明底，
+// 之后各图标在其上用 QPainter 描画，导出为 QIcon 供按钮 setIcon 使用。
 QPixmap makeGlyphCanvas()
 {
     QPixmap pm(48, 48); // 24×24 逻辑像素 @2×
@@ -73,6 +82,7 @@ QIcon makeBellIcon()
     return QIcon(pm);
 }
 
+// ---- 组件级样式表 ----
 // 组件自带样式：颜色沿用成员 3 全局主题的同一套 token（电动绿 #00B578 等），
 // 但以对象名限定在本组件内部生效，不修改全局 QSS 文件。
 const char* kTopNavBarStyleSheet = R"(
@@ -156,6 +166,10 @@ QLabel#navNickname {
 
 } // namespace
 
+// ---- 构造与装配 ----
+// 构造函数：安装组件级 QSS，按「左品牌 / 中搜索+入口 / 右登录态」三区从左到右
+// 排入 QHBoxLayout（搜索框 stretch=2 吃中部空间，右侧登录区用 addStretch 顶到最右），
+// 再把每个按钮的 clicked 连成对外信号；末尾 refreshVisibility() 定初始显隐。
 TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("uiTopNavBar"));
@@ -224,6 +238,8 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     loginButton_->setObjectName(QStringLiteral("navLoginButton"));
     loginButton_->setCursor(Qt::PointingHandCursor);
 
+    // 装配顺序即规格排布：左区（返回/logo/平台名）→ 中区搜索框（stretch 2
+    // 吃掉大部分横向空间）→ 筛选/铃铛图标 → 弹性 spacer 把登录态区推到最右。
     rootLayout->addWidget(backButton_);
     rootLayout->addWidget(logoLabel_);
     rootLayout->addWidget(nameLabel_);
@@ -235,6 +251,8 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     rootLayout->addWidget(avatarButton_);
     rootLayout->addWidget(loginButton_);
 
+    // 入口按钮统一“哑连”：clicked 只转成对应信号（lambda 仅 emit），跳转/弹窗交宿主；
+    // 搜索框回车则把去空白后的文本随 searchSubmitted 一并抛给外层。
     connect(loginButton_, &QPushButton::clicked, this, [this]() { emit loginRequested(); });
     connect(backButton_, &QPushButton::clicked, this, [this]() { emit backRequested(); });
     connect(avatarButton_, &QPushButton::clicked, this,
@@ -252,6 +270,9 @@ TopNavBar::TopNavBar(QWidget* parent) : QWidget(parent)
     refreshVisibility();
 }
 
+// ---- 登录态切换 ----
+// 进入/退出登录态只翻 hasUser_ 并调整右侧三个控件（昵称/头像/登录按钮），最终的
+// 整栏显隐一律委托 refreshVisibility()——避免各处散写 setVisible 导致分区规则互相打架。
 void TopNavBar::setUser(const charging::model::User& user)
 {
     hasUser_ = true;
@@ -277,6 +298,9 @@ bool TopNavBar::hasUser() const
     return hasUser_;
 }
 
+// ---- 显隐意图 setter 与查询 getter ----
+// setter 只记录“意图”布尔（backVisible_/searchVisible_）再触发统一刷新；getter
+// 直接读按钮 isVisible()（即真实态），因此测试可用 isXxxVisible() 断言刷新结果。
 void TopNavBar::setBackVisible(bool visible)
 {
     backVisible_ = visible;
@@ -313,6 +337,8 @@ void TopNavBar::refreshVisibility()
     nameLabel_->setVisible(!hasUser_ || !searchVisible_);
 }
 
+// 筛选/通知入口没有独立开关——可见性派生自搜索框（同一“找站”语境三件套），
+// 故这两个 getter 实际是在断言“搜索框是否正显示”，供宿主与测试核对。
 bool TopNavBar::isFilterVisible() const
 {
     return filterButton_->isVisible();
@@ -323,6 +349,9 @@ bool TopNavBar::isNotificationsVisible() const
     return notifyButton_->isVisible();
 }
 
+// ---- 搜索词读写 ----
+// getter 同样去首尾空白，与 searchSubmitted 抛出的 keyword 口径保持一致，
+// 宿主无论是“回车即搜”还是“点按钮再查”拿到的都是同一清洗结果。
 QString TopNavBar::searchText() const
 {
     return searchLineEdit_->text().trimmed();

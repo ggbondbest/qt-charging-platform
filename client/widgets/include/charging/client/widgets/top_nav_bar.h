@@ -1,3 +1,7 @@
+// 顶栏组件对外接口（widgets 通道）。实现见 src/top_nav_bar.cpp：手绘矢量图标、
+// 组件级 QSS、以及 refreshVisibility 派生的分区显隐规则都在那边；本头文件只暴露
+// 状态 setter 与入口信号。QML 通道有职责对齐的孪生件 client/qml/platform/TopNavBar.qml，
+// 两套客户端并行演进、互不依赖。
 #pragma once
 
 #include "charging/common/model/models.h"
@@ -29,6 +33,8 @@ public:
     void clearUser();
     bool hasUser() const;
 
+    // 搜索词透传：searchText 返回去空白后的当前文本（宿主“点按钮再搜”时用，
+    // 口径与 searchSubmitted 的 keyword 一致）；clearSearch 供“清空并展示全量”。
     QString searchText() const;
     void clearSearch();
 
@@ -62,6 +68,8 @@ signals:
     void notificationsRequested();
 
 private:
+    // 子控件指针由 Qt 父子所有权托管（构造时传 this），无需手动释放；
+    // 组件自身只保留状态标志，真实显隐一律由 refreshVisibility() 集中派生。
     QPushButton* backButton_ = nullptr;
     QLabel* logoLabel_ = nullptr;
     QLabel* nameLabel_ = nullptr;

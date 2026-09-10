@@ -223,12 +223,15 @@ void ProfilePage::buildUi()
     serviceCaption->setProperty("role", QStringLiteral("sectionTitle"));
     wrapWithMargins(serviceCaption, 18, 22, 16, 8);
 
+    // ---- 我的块（成员 2，迭代 3）：“我的”页收藏入口行 ----
     // 迭代 3：收藏入口（成员 2 收藏夹页，壳路由）。样式与“设置”行同规格：
     // 同一全局 QSS 选择器组、同一 wrap 边距、同一行高。
     auto* favoritesButton = new QPushButton(tr("⭐　收藏　›"), this);
     favoritesButton->setObjectName(QStringLiteral("openFavoritesButton"));
     favoritesButton->setCursor(Qt::PointingHandCursor);
     favoritesButton->setMinimumHeight(52);
+    // 页面只发信号不跳页：路由集中在 HomeShell（openFavorites），本页不依赖
+    // 收藏夹页类型——profile_charging 模块与 station 路由模块因此保持解耦。
     connect(favoritesButton, &QPushButton::clicked, this, &ProfilePage::favoritesRequested);
 
     auto* settingsButton = new QPushButton(tr("⚙️　设置　›"), this);
@@ -236,6 +239,8 @@ void ProfilePage::buildUi()
     settingsButton->setCursor(Qt::PointingHandCursor);
     settingsButton->setMinimumHeight(52);
     connect(settingsButton, &QPushButton::clicked, this, &ProfilePage::settingsRequested);
+    // 收藏/设置两行收进一个零边距小容器再统一 wrap：8px 行距只作用于两入口
+    // 之间，左右 16 边距与页面其余块的 wrap 对齐口径保持一致。
     auto* serviceList = new QWidget(this);
     auto* serviceListLayout = new QVBoxLayout(serviceList);
     serviceListLayout->setContentsMargins(0, 0, 0, 0);

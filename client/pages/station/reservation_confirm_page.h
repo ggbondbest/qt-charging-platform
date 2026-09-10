@@ -114,7 +114,10 @@ private:
     QString recommendedBaseText_;  // 推荐按钮基础文案（“更新中”后缀之外的部分）
     charging::model::Station station_;
     charging::model::Charger charger_;
+    // -1 = 未知/未对接导航（诚实口径，非“0 米”）；推荐估算与订单页左栏
+    // 共用，距离矩阵成功后才升级为真实值。
     int distanceMeters_ = -1;
+    // 提交中标志：兼作防重入闸 + 成功回流去重闸（见 handleSubmit*）。
     bool submitting_ = false;
 
     QLabel* stationNameLabel_ = nullptr;

@@ -1,3 +1,8 @@
+// StationDetailPage 实现（成员 2；任务 #12/#17 及迭代批）。数据流：
+// openStation() → StationQueryService::fetchDetail（模拟 ↔ TCP 真实通道对 UI
+// 透明）→ detail* 三态信号驱动整页切换；桩卡片上的预约点击在页内完成
+// 登录/车辆/名额三级拦截判定，放行才发 reservationConfirmRequested 交宿主
+// 路由独立确认页（#17 迭代起废弃弹窗式预约）。
 #include "pages/station/station_detail_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -57,11 +62,15 @@ QPushButton#detailReserveButton:disabled {
 }
 )";
 
+// 电价展示口径：域内整数分/度（centsPerKwh）传数，仅在 UI 显示边缘换算成
+// 元并定 2 位小数——页内不做任何价格计算，避免浮点误差混进业务数据。
 QString formatPrice(qint64 centsPerKwh)
 {
     return QStringLiteral("¥%1/度").arg(QString::number(centsPerKwh / 100.0, 'f', 2));
 }
 
+// 虚拟测距口径：负数 = 未知距离（如尚未拿到快照），显示 “--” 占位比
+// “0 m” 更诚实；≥1000 自动升 km（1 位小数）。
 QString formatDistance(int meters)
 {
     if (meters < 0) {
@@ -98,6 +107,9 @@ ChargerStatusView statusView(charging::model::ChargerStatus status)
     return {"未知", StatusTag::Tone::Neutral};
 }
 
+// 布局整清：item 逐个 takeAt 后 delete，widget 走 deleteLater——本函数会在
+// 服务信号槽栈内被同步调用（handleDetailSucceeded 重建列表），立即 delete
+// 有悬空风险，deleteLater 交事件循环回收。
 void clearLayoutItems(QLayout* layout)
 {
     while (QLayoutItem* item = layout->takeAt(0)) {
@@ -232,6 +244,9 @@ StationDetailPage::StationDetailPage(QWidget* parent) : QWidget(parent)
     setDetailState(DetailState::Loading);
 }
 
+// 详情通道注入（非拥有，与找站页共用 HomeShell 的同一实例）。幂等闸：同实例
+// 重复注入直接返回——漏闸会让重复 connect 把一次服务信号送进处理函数多次
+// （列表被无谓重建）。context 传 this：页面销毁时连接自动断开。
 void StationDetailPage::setService(services::station::StationQueryService* service)
 {
     if (service_ == service) {
@@ -248,6 +263,9 @@ void StationDetailPage::setService(services::station::StationQueryService* servi
     }
 }
 
+// 页面唯一入口（宿主路由“查看站点”调入）：先用列表页带入的路由快照即时
+// 渲染信息区，再交服务异步拉桩列表——两路数据分阶段回写，页面不等服务即
+// 可露出站名/地址/电价；distanceMeters 为列表页测得的展示值，原样透传。
 void StationDetailPage::openStation(const charging::model::Station& station, int distanceMeters)
 {
     station_ = station;
@@ -270,11 +288,15 @@ void StationDetailPage::openStation(const charging::model::Station& station, int
     }
 }
 
+// 登录态注入（纯 setter，默认 true=宿主未接线时不拦演示路径）：预约闸门
+// 第一级在点击瞬间同步读取它，未登录只发 reservationLoginRequired 交宿主。
 void StationDetailPage::setLoggedIn(bool loggedIn)
 {
     loggedIn_ = loggedIn;
 }
 
+// 预约/车辆档案注入（非拥有）：纯 setter 无信号接线——名额与匹配判定都在
+// 按钮点击瞬间同步读取，避免为瞬时查询维护订阅生命周期。
 void StationDetailPage::setReservationService(
     services::reservation::ReservationService* service)
 {
@@ -297,6 +319,8 @@ bool StationDetailPage::matchesDefaultVehicle(const charging::model::Charger& ch
     return vehicle == nullptr || vehicle->connectorType == charger.type;
 }
 
+// ---- 测试探针（isVisibleTo 语义：整页未被宿主显示也能断言，见 .h） ----
+
 StationDetailPage::DetailState StationDetailPage::viewState() const
 {
     return viewState_;
@@ -304,6 +328,8 @@ StationDetailPage::DetailState StationDetailPage::viewState() const
 
 int StationDetailPage::chargerCardCount() const
 {
+    // 按 isChargerCard 属性计数而非 layout 总项数：属性是页面-测试契约，
+    // 天然排除占位/间隔等非卡片项。
     int count = 0;
     for (int i = 0; i < chargerListLayout_->count(); ++i) {
         const auto* item = chargerListLayout_->itemAt(i);
@@ -326,6 +352,8 @@ bool StationDetailPage::chargerEmptyVisible() const
     return chargerEmptyNotice_->isVisibleTo(this);
 }
 
+// ① 三态切换唯一入口：viewState_（探针口径）与 pageStack_ 当前页同步变更，
+// 其它地方不绕过它直接 setCurrentIndex，保证两者永不漂移。
 void StationDetailPage::setDetailState(DetailState state)
 {
     viewState_ = state;
@@ -342,6 +370,9 @@ void StationDetailPage::setDetailState(DetailState state)
     }
 }
 
+// 服务 detailStarted 回灌：任何一次详情拉取（openStation 进入、预约置位后
+// noteChargerReserved 重拉）都由服务侧信号统一置加载态；openStation 里的
+// 本地置位只兜“未注入服务”的场景。
 void StationDetailPage::handleDetailStarted()
 {
     setDetailState(DetailState::Loading);
@@ -380,6 +411,7 @@ void StationDetailPage::handleDetailSucceeded(const services::station::StationDe
         // 空数据状态：站点正常但暂无桩位。
         chargerStack_->setCurrentWidget(chargerEmptyNotice_);
     } else {
+        // chargerStack_ 页 1 = 桩列表滚动页（页 0 = 空数据提示）。
         chargerStack_->setCurrentIndex(1);
     }
     setDetailState(DetailState::Ready);
@@ -397,6 +429,8 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
 {
     auto* card = new ClickableCard(chargerListPage_);
     card->setProperty("isChargerCard", true);
+    // id/状态以枚举原值写入动态属性：供测试探针逐桩断言，也让故障红框样式
+    // 走属性选择器（chargerFault）而非字符串比较，避免文案漂移破坏契约。
     card->setProperty("chargerId", charger.id);
     card->setProperty("chargerStatus", static_cast<int>(charger.status));
     const bool fault = charger.status == charging::model::ChargerStatus::Fault;
@@ -412,6 +446,8 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
     auto* codeLabel = new QLabel(charger.code, card);
     codeLabel->setProperty("role", QStringLiteral("sectionTitle"));
     const auto view = statusView(charger.status);
+    // 文案表用 const char*（编译期表、无静态初始化负担），构造时再套 tr()
+    // 取译文——Qt 翻译只认 tr() 包裹的运行时字符串。
     auto* tag = new StatusTag(tr(view.text), view.tone, card);
     tag->setObjectName(QStringLiteral("chargerStatusTag"));
     titleRow->addWidget(codeLabel);
@@ -446,6 +482,8 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
         reserveButton->setToolTip(tr("仅空闲充电桩可预约"));
     }
     connect(reserveButton, &QPushButton::clicked, this,
+            // 值捕获 charger：形参生命周期只在本次建卡调用栈内，按钮点击远晚
+            // 于此，捕获引用必悬空。
             [this, charger]() { handleReserveRequested(charger); });
     specRow->addWidget(reserveButton);
     body->addLayout(specRow);
@@ -453,8 +491,13 @@ QWidget* StationDetailPage::createChargerCard(const charging::model::Charger& ch
     return card;
 }
 
+// 预约入口三级闸门（登录 → 车辆 → 名额），任一拦截即止并交宿主提示；全过
+// 才发 reservationConfirmRequested。判定全在页内同步读取（不订阅服务信号），
+// 点击瞬间取最新状态。
 void StationDetailPage::handleReserveRequested(const charging::model::Charger& charger)
 {
+    // 观察信号先行发出：无论后续走拦截还是放行，宿主埋点/测试都能确定性地
+    // 拿到“点了哪根桩”。
     emit reservationRequested(charger.id);
 
     if (!loggedIn_) {
@@ -465,6 +508,8 @@ void StationDetailPage::handleReserveRequested(const charging::model::Charger& c
 
     // 任务 #17 二次迭代：预约名额由车辆决定——账号下无车辆时无法发起
     // 预约，交宿主提示引导去「设置 - 车辆管理」添加。
+    // liveMode 豁免：真实通道的名额/车辆约束以服务端为准，本机档案只用于
+    // 模拟通道的入口拦截，避免拿不可靠的本地状态误挡真实用户。
     if (settings_ != nullptr && settings_->vehicleCount() <= 0
         && !(reservationService_ && reservationService_->liveMode())) {
         emit reservationVehicleRequired();

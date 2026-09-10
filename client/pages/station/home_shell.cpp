@@ -1,3 +1,11 @@
+// 文件职责：widgets 用户端通道总壳 HomeShell 实现——顶栏/内容栈/底部 Tab
+// 三段式骨架，全部页面与服务在此装配并接线；路由/登录闸/名额闸/双通道切换
+// 的单一落点（批次演进：成员 2 任务 #2/#7/#12/#17 初建 → 成员 3 全端整合 →
+// 迭代 3 收藏/通知，详见 home_shell.h 类头注释）。
+// 被谁用：MainWindow 登录成功后构造（tst_home_shell 直接构造两类壳驱动；
+// tst_client_navigation 经 MainWindow 登录流间接驱动）。
+// 数据流向：页面事件 → 壳路由与拦截弹窗 → 各服务 → IRequestTransport
+// （真实连接 = NetworkRequestTransport 走契约 v1 TCP；无连接预览 = mock）。
 #include "pages/station/home_shell.h"
 
 #include "charging/client/profile_charging/charging_page.h"
@@ -13,6 +21,8 @@
 #include "charging/client/profile_charging/settlement_page.h"
 #include "charging/client/profile_charging/wallet_page.h"
 #include "charging/client/profile_charging/wallet_service.h"
+// 成员 2 的 include 块：Card/NoticePanel（占位页与“我的”占位卡）、StatusTag
+// （充值成功 Toast 的状态色）；ClickableCard 当前本文件未实际引用。
 #include "charging/client/widgets/card.h"
 #include "charging/client/widgets/clickable_card.h"
 #include "charging/client/widgets/notice_panel.h"
@@ -99,6 +109,8 @@ const QHash<QString, int>& tabIndexById()
 
 } // namespace
 
+// ---- 构造族：三个公开重载全部委托到私有主构造（User* 为空 = 未登录壳）；
+// 委托层零行为，只改参数形态，装配逻辑全部收在主构造一处 ----
 HomeShell::HomeShell(const charging::model::User& user, QWidget* parent)
     : HomeShell(&user, parent)
 {
@@ -118,6 +130,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     // 页面可能在测试/预览中独立构造；主题安装是幂等的。
     installPlatformTheme();
 
+    // objectName 跨端口径锚点：QML 孪生 Shell.qml 同名保留。
     setObjectName(QStringLiteral("homeShell"));
     hasUser_ = (user != nullptr);
     if (hasUser_) {
@@ -137,6 +150,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     }
     rootLayout->addWidget(topBar_);
 
+    // 顶栏事件全部在构造期一次性接线（信号 → 壳方法/壳 lambda）：页面之间
+    // 互不持有引用，跨页联动一律经壳收口。
     connect(topBar_, &TopNavBar::profileRequested, this,
             [this]() { tabBar_->setCurrentTab(QStringLiteral("profile")); });
     connect(topBar_, &TopNavBar::loginRequested, this,
@@ -182,6 +197,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     if (hasUser_) {
         favoritesService_->setCurrentUser(QString::number(user_.id));
     }
+    // 找站页最先入栈（索引 0 = 默认 Tab）；星星态经共享收藏实例与收藏夹页
+    // 双向同步（两页读写同一份 ids）。
     stationPage_ = new StationHomePage(pageStack_);
     stationPage_->setFavoritesService(favoritesService_);
     pageStack_->addWidget(stationPage_);
@@ -261,6 +278,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     connect(detailPage_, &StationDetailPage::reservationConfirmRequested, this,
             &HomeShell::openReservationConfirm);
 
+    // 确认页三注入：提交走预约服务、名额/默认车约束读设置服务、周边地图查
+    // 腾讯 WebService——三服务都是壳统一装配的单例（见本构造开头），页面不自建。
     confirmPage_ = new ReservationConfirmPage(pageStack_);
     confirmPage_->setService(reservationService_);
     confirmPage_->setSettingsService(settingsService_);
@@ -278,6 +297,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
                 showGoChargePrompt(record);
             });
 
+    // “我的预约”模块页（索引 6）：二级 Tab（预约订单/已完成）由模块页自管，
+    // 壳只负责路由进入与返回目的地固定。
     modulePage_ = new ReservationModulePage(pageStack_);
     modulePage_->setService(reservationService_);
     pageStack_->addWidget(modulePage_);
@@ -302,6 +323,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
             });
     connect(reservationService_, &services::reservation::ReservationService::cancelSucceeded,
             this, [this](qint64 reservationId) {
+                // 反查不到记录（已被清理）就静默放弃推送：通知是尽力口径，
+                // 不得反噬预约主流程。
                 const auto* record = reservationService_->reservationRecord(reservationId);
                 if (record != nullptr) {
                     notificationService_->pushReservationCancelled(record->stationName,
@@ -480,6 +503,7 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
 
     connect(stationPage_, &StationHomePage::stationSelected, this,
             &HomeShell::openStationDetail);
+    // 详情页页内“返回”与顶部导航返回共用 leaveRoute：返回语义单点实现。
     connect(detailPage_, &StationDetailPage::backRequested, this, &HomeShell::leaveRoute);
     rootLayout->addWidget(pageStack_, 1);
 
@@ -500,6 +524,8 @@ HomeShell::HomeShell(const charging::model::User* user, QWidget* parent,
     if (connection) setConnection(connection);
 }
 
+// Tab 落栈统一口径：切栈 + 清返回栈 + 同步顶栏；成员 3 页面进入即重查，
+// 壳只触发 refresh，不关心各页刷新细节（数据新鲜度归页面自己）。
 void HomeShell::showTab(const QString& id)
 {
     const auto index = tabIndexById().value(id, -1);
@@ -547,6 +573,8 @@ void HomeShell::pushRoute(QWidget* page)
     syncTopBar();
 }
 
+// 详情路由唯一出口：找站卡片与收藏卡片两路 stationSelected 都汇到这里
+// （先灌数据后切页，返回栈由 pushRoute 记录出发点）。
 void HomeShell::openStationDetail(const charging::model::Station& station, int distanceMeters)
 {
     // 路由携带站点快照（含站点 ID）：非法/缺失 ID 由服务详情通道回错误态。
@@ -562,6 +590,7 @@ void HomeShell::openReservationConfirm(const charging::model::Station& station,
     // 独立预约确认页面路由（任务 #17 迭代，替代弹窗）：由详情页在满足
     // 预约条件（已登录 + 无未结束预约）后发信号进入；出发位置（详情页）
     // 由 pushRoute 记入返回栈，返回按钮保持可见。
+    // 先灌上下文再切页：页面可见的第一帧就是新数据，不闪上一次的旧站点/旧桩。
     confirmPage_->openContext(station, charger, distanceMeters);
     pushRoute(confirmPage_);
 }
@@ -578,6 +607,8 @@ void HomeShell::openReservationModule()
     // 无论经确认页成功路由还是“去查看”拦截进入，返回都回个人中心）。
     backTargets_.clear();
     backTargets_.push_back(BackTarget{nullptr, QStringLiteral("profile")});
+    // 手工清栈压入而不走 pushRoute：入口语义要求返回目的地固定为“我的”
+    // Tab，不能记成实际出发点（可能正叠在确认页/详情页上）。
     pageStack_->setCurrentWidget(modulePage_);
     syncTopBar();
 }
@@ -632,6 +663,8 @@ void HomeShell::openProfileEdit()
     pushRoute(profileEditPage_);
 }
 
+// 设置页路由入口：登录闸在前，返回目的地固定“我的”Tab（手工压栈，口径与
+// openReservationModule 一致）；refresh 先于切页。
 void HomeShell::openSettings()
 {
     if (!hasUser_) {
@@ -690,6 +723,8 @@ void HomeShell::openNavigation(const services::reservation::ReservationRecord& r
     syncTopBar();
 }
 
+// 全局“返回”唯一出口（顶部导航与路由页内返回共用）：回 Tab 则清栈并补做
+// 进入即重查，回上层路由页则只弹一层、保留剩余栈。
 void HomeShell::leaveRoute()
 {
     if (backTargets_.isEmpty()) {
@@ -727,6 +762,10 @@ void HomeShell::syncTopBar()
     topBar_->setSearchVisible(!inRoute && tabBar_->currentTab() == QLatin1String("station"));
 }
 
+// ---- 拦截/引导弹窗组：登录闸 / 名额闸 / 无车闸 / 去充电引导 ----
+// 共同口径：非模态 open()（不卡主流程）、WA_DeleteOnClose、按钮 objectName
+// 是宿主测试锚点；正向按钮要么转发 loginRequested 交宿主（登录闸），要么
+// 直调壳内路由方法，弹窗自身不碰切页。
 void HomeShell::showReservationLoginPrompt()
 {
     showFeatureLoginPrompt(tr("预约充电桩需要先登录账号。"),
@@ -822,6 +861,8 @@ void HomeShell::showGoChargePrompt(const services::reservation::ReservationRecor
     goCharge->setObjectName(QStringLiteral("goChargeButton"));
     prompt->addButton(tr("稍后再说"), QMessageBox::RejectRole);
     prompt->setAttribute(Qt::WA_DeleteOnClose);
+    // 值拷贝进捕获：record 是信号栈上的引用参数，弹窗回调触发时原对象早已
+    // 出栈——直接捕获引用就是悬垂引用。
     const services::reservation::ReservationRecord recordCopy = record;
     connect(prompt, &QMessageBox::finished, this,
             [this, prompt, goCharge, recordCopy](int) {
@@ -835,6 +876,9 @@ void HomeShell::showGoChargePrompt(const services::reservation::ReservationRecor
     prompt->open();
 }
 
+// 双通道总闸（找站/预约侧）：connection 有无决定 live（契约 v1 TCP）或
+// 预览模拟，切 live 后立刻重查一次拉真实列表；成员 3 三服务的传输在构造期
+// 已定盘（见上方双通道注释），不随本方法切换。
 void HomeShell::setConnection(charging::client::network::ClientConnection* connection)
 {
     // Profile/wallet transport is chosen at construction; previews stay mock.
@@ -845,6 +889,7 @@ void HomeShell::setConnection(charging::client::network::ClientConnection* conne
     if (connection) stationPage_->service()->search();
 }
 
+// ---- 探针访问器组：宿主/集成测试直达壳内页面与服务做断言（UI 不使用） ----
 StationHomePage* HomeShell::stationPage() const
 {
     return stationPage_;
@@ -880,6 +925,8 @@ NotificationPage* HomeShell::notificationPage() const
     return notificationPage_;
 }
 
+// 未登录占位页工厂组：order/charging 共用 makePlaceholderPage 造卡，profile
+// 为定制版（登录引导 + 保留“我的预约”入口锚点）；登录态槽位换成成员 3 真页。
 QWidget* HomeShell::createOrderPage()
 {
     return makePlaceholderPage(QStringLiteral("📋"), tr("订单"),
@@ -911,6 +958,7 @@ QWidget* HomeShell::createProfilePage()
     connect(notice, &NoticePanel::actionTriggered, this,
             [this]() { emit loginRequested(); });
     auto* reservationsButton = new QPushButton(tr("📒 我的预约"), card);
+    // 锚点名保留（迭代前测试口径）：未登录也能点入口，点击由壳统一拦截提示。
     reservationsButton->setObjectName(QStringLiteral("openReservationsButton"));
     reservationsButton->setCursor(Qt::PointingHandCursor);
     connect(reservationsButton, &QPushButton::clicked, this,

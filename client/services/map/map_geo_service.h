@@ -10,6 +10,12 @@
 #include <QVariantMap>
 #include <QVector>
 
+// 文件职责：腾讯地图 WebService 客户端封装（MapGeoService）及结果结构 / 错误
+// 枚举——地图接入批（任务 #17）的唯一头文件。消费方：widgets 侧预约确认页与
+// 导航页（C++ 原形信号）、QML 侧 map_bridge/app_bridge（QML 面信号转发）。
+// 数据流：页面发起请求拿 requestId → 本类拼参签名发 HTTPS → 解析分类 → 信号
+// 回报；密钥与设计口径见下方类注释。
+
 class QNetworkAccessManager;
 
 namespace charging::client::services::map {
@@ -39,6 +45,7 @@ QString mapErrorMessage(MapError error);
 
 // 距离矩阵元素：用户位置 → 某目的地的行驶距离（米）与时长（秒）。
 // 注意口径：矩阵 duration 单位是秒，路线规划 duration 单位是分钟。
+// -1 哨兵 = 响应缺该字段（未知），与真实 0 米/0 秒可区分，页面判负值再使用。
 struct DistanceElement
 {
     int distanceMeters = -1;
@@ -219,11 +226,15 @@ private:
     bool hasKey_ = false;
     QString endpointBase_ = QStringLiteral("https://apis.map.qq.com/ws");
     int timeoutMsec_ = 5000;
+    // 代际计数：从 1 起、只增不减——0 留给"无效 id"语义（调用方 id>0 才登记），
+    // 每个回调带发起时的 id，页面据此丢弃过期响应。
     quint64 nextRequestId_ = 1;
     LatLng userLocation_{22.541, 113.943}; // 演示城市位置（南山区）
     QString lastStaticMapFile_;            // 上一张静态图临时文件（新图落盘时清理）
     // 两个地址解析入口共用：同地址合并在途请求；仅缓存真实成功结果，
     // 最多 32 条、5 分钟、进程内，不写入文件或缓存错误响应。
+    // TTL 用 QElapsedTimer 单调毫秒（非挂钟）：系统时间被调整也不会让缓存
+    // 提前过期或永不过期。
     QElapsedTimer addressClock_;
     QCache<QString, AddressResult> addressCache_{32};
     QMap<QString, QVector<AddressSubscriber>> addressSubscribers_;
@@ -232,6 +243,9 @@ private:
 
 } // namespace charging::client::services::map
 
+// 自定义 struct 注册元类型：信号载荷要经 QVariant 转换、跨线程/排队连接与
+// QML 桥（map_bridge 读信号参数、QSignalSpy value<T>()）才必须声明，
+// 缺一则运行期转换失败。
 Q_DECLARE_METATYPE(charging::client::services::map::DistanceElement)
 Q_DECLARE_METATYPE(charging::client::services::map::LatLng)
 Q_DECLARE_METATYPE(charging::client::services::map::RouteStep)

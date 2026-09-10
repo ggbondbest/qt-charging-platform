@@ -54,6 +54,8 @@ Item {
             loadedOnce = true
             listScroll.setRefreshing(false)
         }
+        // 签到回执处理已随入口上移至「我的」页胶囊与 TaskSection（2026-09-09
+        // 改版），本页不再挂 onCheckInCompleted，只陈述余额与流水。
         function onOperationFailed(type, code, message) {
             if (type !== "GET_POINTS") return   // 签到在途归"我的"页胶囊管，本页不接
             reqActive = false

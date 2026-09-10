@@ -30,6 +30,8 @@ Rectangle {
         onClicked: card.clicked()
     }
 
+    // 收藏点击修复批（2026-09-08）：内容列声明在 MouseArea 之后——QML 同层后来者
+    // 在上，收藏星/预约钮等子交互件才能盖住卡面命中区、先于 clicked() 吃到点击。
     Column {
         id: body
         x: Style.spaceLg

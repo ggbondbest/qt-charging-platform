@@ -51,7 +51,9 @@ signals:
     void findStationRequested();
 
 private:
+    // 列表回流单点分发：第一条 Active → 订单页，其余（含多余 Active）→ 归档页。
     void handleListSucceeded(const services::reservation::ReservationList& records);
+    // 二级 Tab 切换单点：栈页 + 按钮高亮属性 + checkable 三态原子翻转。
     void switchTab(const QString& id);
 
     charging::client::services::reservation::ReservationService* service_ = nullptr;

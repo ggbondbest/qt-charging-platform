@@ -57,6 +57,8 @@ private:
     void openDetailDialog(const services::reservation::ReservationRecord& record);
 
     PageState viewState_ = PageState::Loading;
+    // setHistory 注入记录的快照（详情弹窗按值取字段用）；视图重建以其为准，
+    // 不反向持有模块的列表存储。
     services::reservation::ReservationList records_;
 
     QStackedWidget* stack_ = nullptr;
@@ -67,6 +69,8 @@ private:
     QWidget* listPage_ = nullptr;
     QVBoxLayout* listLayout_ = nullptr;
 
+    // 当前打开的详情弹窗：WA_DeleteOnClose 自毁后 QPointer 自动置空，
+    // detailDialogVisible/Text 探针读它不会悬空。
     QPointer<QWidget> detailDialog_;
 };
 

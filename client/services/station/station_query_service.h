@@ -1,3 +1,15 @@
+// StationQueryService 接口（成员 2，找站·任务 #7；含任务 #12 详情、
+// 任务 #17 模拟“已预约”覆盖、迭代 3 高级筛选）。
+// 职责：站点列表关键字检索 + 站点充电桩详情异步拉取，双通道结果同构；
+// 另暴露高级筛选的纯客户端投影 applyStationFilter() 与规范选项字面量
+// （station_filter 命名空间——弹窗选项/模拟数据取值/过滤匹配三处共用）。
+// 使用方：widgets HomeShell（找站主页/详情页；筛选弹窗 station_filter_dialog
+// 直接复用选项函数）与 QML app_bridge（StationQueryBridge → StationHomePage
+// 等 QML 页面）。
+// 数据流向：页面 → search()/fetchDetail() → 模拟通道（内置演示数据 +
+// 延迟）或真实通道 TCP 契约 GET_STATIONS / GET_CHARGERS（ClientConnection）；
+// 结果经 querySucceeded / detailSucceeded 同形状回页面，排序与筛选投影
+// 由页面对最近一次结果即时应用、不重发请求。
 #pragma once
 
 #include "charging/common/model/models.h"
@@ -17,6 +29,9 @@ namespace charging::client::services::station {
 
 // 迭代 3 · 高级筛选的 8 组条件规范选项：弹窗选项、模拟数据取值、过滤匹配
 // 三处共用同一字面量（字符串即匹配键，避免魔法值漂移）。
+// 实现形态：每个函数返回“函数局部 static QStringList”的引用——字面量表
+// 只构建一次、取用零拷贝；inline 保证全工程共享同一实例，弹窗/数据/匹配
+// 三处各取所引用而不可漂移（7 组多选选项 + 1 组距离档位共 8 组）。
 namespace station_filter {
 
 inline const QStringList& operatorOptions()
@@ -77,6 +92,7 @@ struct StationFilterCriteria
     QStringList chargerTypes;       // 充电桩类型
     QStringList voltageBands;       // 电压档位
 
+    // 全空 = 投影直通（页面据此短路，省一次全表扫描）。
     bool isEmpty() const
     {
         return maxDistanceKm <= 0 && statuses.isEmpty() && operators.isEmpty()
@@ -101,6 +117,8 @@ struct StationListItem
     QString parkingFee;        // 停车费类型
     QStringList features;      // 特色功能（可多个）
     QStringList chargerTypes;  // 站内充电桩类型集合（超充/快充/慢充）
+    // 两个 bool 可同时成立：一站内既可并存低/高压桩，电压多选按“任一
+    // 满足即命中”，单值枚举表达不了这种存在性语义。
     bool hasVoltageBelow700 = true;   // 站内存在电压 <700V 的桩
     bool hasVoltageAtLeast700 = false; // 站内存在电压 ≥700V 的桩
 };
@@ -148,6 +166,8 @@ public:
     // 演示/测试异常分支：置 true 后下一次查询直接走 queryFailed。
     void setSimulateFailure(bool simulate);
 
+    // 在途标志：真实通道列表请求未回时 search 防重入即以此判定；
+    // 页面可据此显示骨架/禁用下拉刷新。
     bool isQueryPending() const;
 
     // 按关键字（站名/地址，不区分大小写）异步检索；空关键字返回全部。
@@ -161,6 +181,8 @@ public:
     // 仅作用于模拟数据；真实通道以服务端状态为准。
     void setMockChargerReserved(qint64 chargerId);
 
+    // ---- 信号面：列表与详情各一组 started/succeeded/failed，
+    // 模拟与真实通道共用同一形状，页面无感 ----
 signals:
     void queryStarted();
     void querySucceeded(const charging::client::services::station::StationList& stations);
@@ -170,6 +192,7 @@ signals:
     void detailFailed(const QString& message);
 
 private:
+    // ---- 真实通道响应路由 + 模拟延迟完成入口（与 ReservationService 同构）----
     void handleResponse(const charging::protocol::ResponseEnvelope& response);
     void handleRequestFailure(const QString& requestId, const QString& errorCode,
                               const QString& message);
@@ -179,17 +202,24 @@ private:
     charging::client::network::ClientConnection* connection_ = nullptr;
     bool liveMode_ = false;
     bool simulateFailure_ = false;
+    // ---- 在途配对键与上下文：列表/详情各一条线互不串扰；
+    // pendingKeyword_ 供真实通道翻页续发与模拟完成复用（续页须带原词），
+    // pendingDetail_ 在分页期间持续累加充电桩列表 ----
     QString pendingRequestId_;
     QString pendingDetailRequestId_;
     QString pendingKeyword_;
     StationDetail pendingDetail_;
+    // ---- 分页累加缓冲（收齐前不外发中间态）----
     StationList accumulatedStations_;
     int stationPage_ = 1;
     int chargerPage_ = 1;
+    // 任务 #17：“已预约”桩状态覆盖表（chargerId→status）。模拟桩数据每次
+    // 调用现生成、改了即丢，预约成功只能记在这张表、详情完成时应用并重算空位。
     QHash<qint64, charging::model::ChargerStatus> mockChargerOverrides_;
 };
 
 } // namespace charging::client::services::station
 
+// 排队（跨线程）连接携带信号参数所需，与构造函数里的 qRegisterMetaType 成对。
 Q_DECLARE_METATYPE(charging::client::services::station::StationList)
 Q_DECLARE_METATYPE(charging::client::services::station::StationDetail)

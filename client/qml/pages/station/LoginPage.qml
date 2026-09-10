@@ -8,6 +8,12 @@ import "StationState.js" as StationState
 // Phone-only login (no SMS code): validator mirrors QRegularExpressionValidator("1[0-9]{0,10}", 11).
 // 二级保护密码在登录环节校验（用户二轮指定口径）：输入了设置过密码并开启
 // 保护的手机号时，卡内出现"二级保护密码"输入行，验证通过才放行登录。
+// route "login"：Shell 登录闸的唯一去处——未登录时 pushRoute 一律重定向到本页，
+// App.loginRequested（其他页要登录）也推它；登录成功由 App.loginStateChanged
+// 驱动 Shell 翻回原路由，本页自己不做任何导航。
+// 数据流：phoneField → submit() → authService.login()（桥→TCP 服务）；结果既走
+// 返回值兜底、也走 onLoginSucceeded/Failed 信号；二级密码双通道：服务真值优先，
+// 桥缺位退 StationState 本地库。属"station 域 P0 六页"批。
 Item {
     id: page
     objectName: "loginPage"
@@ -18,17 +24,22 @@ Item {
 
     Rectangle { anchors.fill: parent; color: P.Style.bg }   // self-painted bg (offscreen grab)
 
+    // busy 一词三用：防重入闸（submit 短路）、按钮禁用、LoadingOverlay 显隐同源。
     property bool busy: false
     property string resultText: "请输入11位手机号"
     property string resultTone: ""          // "" neutral | success | error
 
+    // 金额分→元单点格式化（服务侧整型分防浮点误差，只在展示层除）。
     function money(cents) { return (cents / 100).toFixed(2) }
+    // 提交门用"完整号段"正则；输入期宽松交给 maximumLength/掩码兜着，二者分工。
     function phoneOk(s) { return /^1[0-9]{10}$/.test(s) }
 
     // 该手机号是否需要二级密码（服务通道在线时以服务全局开关为准，否则库判定）
     function secondRequired(phone) {
         if (!App || !App.mockMode) return false // Local demo protection is not server authentication.
         try {
+            // 严格 === true：桥半截或方法缺位会回 undefined——真值判定只认服务
+            // 明确说"是"，其余一律退库通道，不让 truthy 杂值冒充开关。
             if (settingsService && settingsService.hasProtectionPassword
                 && settingsService.hasProtectionPassword() === true
                 && settingsService.protectionEnabled
@@ -37,6 +48,7 @@ Item {
         return StationState.needsSecondPassword(phone)
     }
     function secondOk(pw) {
+        // 同第二道门的双通道次序：服务回答必须是真布尔才采纳，缺位/杂值退库校验。
         try {
             if (settingsService && settingsService.verifyProtectionPassword) {
                 const v = settingsService.verifyProtectionPassword(pw)
@@ -46,9 +58,11 @@ Item {
         return StationState.verifySecondPassword(pw)
     }
     // 绑定用：手机号打全且命中保护账号才显示密码行
+    // （派生只读属性而非命令式显隐：换号/删号时密码行跟着正则自动收起，无需收尾）。
     readonly property bool secondVisible: phoneOk(phoneField.text)
                                           && page.secondRequired(phoneField.text)
 
+    // 全量回初始：busy、两个输入框、回执文案与色调一起归零（登出/换号复用）。
     function resetState() {
         busy = false
         phoneField.text = ""
@@ -57,6 +71,7 @@ Item {
         resultTone = ""
     }
 
+    // 登录成功回执文案的纯函数版（信号通道 onLoginSucceeded 内联同构文案）。
     function echoUser(u, created) {
         busy = false
         resultTone = "success"
@@ -78,6 +93,7 @@ Item {
                 return
             }
             if (!page.secondOk(secondField.text)) {
+                // 错即清空：不留错误残值，逼整段重输
                 secondField.text = ""
                 resultTone = "error"
                 resultText = "二级保护密码错误，请重新输入"
@@ -85,6 +101,8 @@ Item {
                 return
             }
         }
+        // 两段式回执：登录() 同步 false=当场被拒（在途/号段问题）；受理后的
+        // 成败走下方 Connections 异步信号，busy 也在那里收尾。
         busy = true
         resultText = "正在连接服务端并查询用户…"
         resultTone = ""
@@ -95,14 +113,18 @@ Item {
                 resultText = "请检查手机号，或等待当前登录请求完成"
             }
         } catch (e) {
+            // authService 整个未暴露时读它就抛 ReferenceError——catch 兜"桥不存在"，
+            // 区别于上面"桥在但拒单"的同步 false 分支。
             busy = false
             resultTone = "error"
             resultText = "登录服务不可用，请重新启动客户端"
         }
     }
 
+    // ---- 登录回执：结果以服务信号为准，submit() 返回值只表"当场是否受理" ----
     Connections {
         target: authService
+        // 服务侧自报"已开始"也置 busy：在途态双端都有话语权，不依赖调用方那条赋值。
         function onLoginStarted() { page.busy = true }
         function onLoginSucceeded(user, created) {
             busy = false
@@ -123,6 +145,7 @@ Item {
     Flickable {
         anchors.fill: parent
         contentWidth: width
+        // Flickable 量不了内容：contentHeight 手拼 = 列高 + 上下留白，小屏才滚得动。
         contentHeight: loginCol.height + 2 * P.Style.spaceXl
         clip: true
 
@@ -178,9 +201,12 @@ Item {
                     P.TextField {
                         id: phoneField
                         objectName: "phoneLineEdit"
+                        // -44 = "+86" 前缀文本列宽与 Row spacing 的实测合计扣位，
+                        // 手机号框恰好吃满行内剩余宽度（改前缀文案需同步此数）。
                         width: parent.width - 44
                         placeholderText: "请输入 11 位手机号"
                         maximumLength: 11
+                        // 显式声明无掩码：镜像 widgets 的"自由输入+提交期严判"，输入期不套格式枷锁。
                         inputMask: ""
                         enabled: !page.busy
                         // 号段校验交给 phoneOk()（IntValidator 装不下 1e10，超 qint32）

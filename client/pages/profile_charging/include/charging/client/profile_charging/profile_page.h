@@ -38,6 +38,8 @@ signals:
     void rechargeRequested();
     void allOrdersRequested();
     void reservationRecordsRequested(); // 我的预约（成员 2 模块，壳路由）
+    // —— 我的块（成员 2）：以下两行是“我的”页→壳路由的入口信号，
+    // 页面只发信号、跳页由 HomeShell 统一 connect 处理（settings / favorites）。
     void settingsRequested();           // 设置（成员 2 设置页，壳路由）
     void favoritesRequested();          // 收藏（成员 2 迭代 3 收藏夹页，壳路由）
     void logoutRequested();

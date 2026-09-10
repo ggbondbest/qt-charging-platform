@@ -8,6 +8,8 @@ import "../../platform" as P
 // 没有积分扣减/核销动作 → **积分余额读服务端真账**（pointsService 桥），
 // 余额不足置灰兑换钮；点击兑换只生成**本机演示记录**，不扣服务端积分。
 // TODO(contract): REDEEM wire 动作 + 券发放服务落地后自动切换真扣减真发货。
+// 答辩补注：route="points_mall"；入口=「我的」页「积分商城」行（与「设置」并列）。
+// 全页读写分离：余额只读服务端真账（pointsService 桥），唯一写入是本机演示记录，服务端一分不扣。
 Item {
     id: page
     objectName: "pointsMallPage"
@@ -17,6 +19,7 @@ Item {
     height: parent ? parent.height : 600
 
     // ---- 商品目录（页内演示数据，桥就绪后迁服务端） ----
+    // 六款覆盖三分类；cost 与服务端余额同用"积分"单位，数值本身是演示价（契约未定）。
     readonly property var catalog: [
         { id: "c1", cat: "coupon", glyph: "🎫", name: "5元充电券",
           desc: "满30元账单立减", cost: 200 },
@@ -44,11 +47,13 @@ Item {
     // ---- 真实积分余额（服务端账本；桥缺位期 -1=未知） ----
     property int points: -1
 
+    // 单一事实源=catalog+category：结果现算现用，不再维护第二份缓存列表。
     function filtered() {
         return page.catalog.filter(function (it) {
             return page.category === "all" || it.cat === page.category
         })
     }
+    // 同分类短路：重复点当前 chip 不重发列表绑定。
     function setCategory(cat) {
         if (page.category === cat) return
         page.category = cat
@@ -63,10 +68,12 @@ Item {
     function redeem(id) {
         const item = page.findItem(id)
         if (!item) return false
+        // points>=0 这个短路条件是刻意的：-1=未知（还没拉到）时放行演示，"不足"只在余额已知且真缺时成立。
         if (page.points >= 0 && item.cost > page.points) {
             if (App) App.showToast("积分不足 · 还差 " + (item.cost - page.points) + " 分", "danger")
             return false
         }
+        // 本页唯一写入：本机内存账（离开页面即失），刻意不扣服务端积分——切换路径见文件头 TODO(contract)。
         recordsModel.append({
             glyph: item.glyph, name: item.name, cost: item.cost,
             time: Qt.formatDateTime(new Date(), "yyyy-MM-dd hh:mm")
@@ -75,16 +82,19 @@ Item {
         return true
     }
 
+    // list 是派生快照：仅切分类时重取一次，配合下方 listCount 钉测试。
     property var list: filtered()
     // 派生计数（offscreen 测试口径：delegate 何时入树不可靠，页根公开状态做钉）。
     readonly property int listCount: page.list.length
 
     ListModel { id: recordsModel; objectName: "uiMallRecords" }
 
+    // 服务端真账回执：只取 points 标量入页，流水 entries/total 用不上（不渲染账本）。
     Connections {
         target: typeof pointsService !== "undefined" ? pointsService : null
         function onPointsLoaded(points, entries, total) { page.points = points }
     }
+    // 建页拉一次余额即可（页大小取 1 省载荷）；try/catch 防 offscreen 裸引擎无桥炸页根。
     Component.onCompleted: {
         if (typeof pointsService !== "undefined" && pointsService)
             try { pointsService.fetchPoints(1, 1) } catch (e) {}
@@ -203,6 +213,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             variant: "secondary"
+                            // 置灰唯一条件是"已知且真不足"：未知(-1)=加载中不置灰——对未知的诚实做法是放行演示而非假装知道。
                             enabled: page.points < 0 || modelData.cost <= page.points
                             text: "兑换"
                             onClicked: page.redeem(modelData.id)
@@ -217,6 +228,7 @@ Item {
                 text: "我的兑换记录（本机）"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
+            // model 用 ListModel 而非 JS 数组：append 后视图自动追加新记录行，无需手动重绑。
             Repeater {
                 model: recordsModel
                 Rectangle {

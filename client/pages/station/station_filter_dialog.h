@@ -1,3 +1,8 @@
+// station_filter_dialog.h —— 找站页与收藏夹页共用的“高级筛选”弹窗（迭代 3）。
+// 数据流向：弹窗只做“勾选态 → StationFilterCriteria”的投影，applied(criteria)
+// 交给宿主页面在内存结果上过滤（服务层 applyStationFilter，组内 OR / 组间
+// AND），不重新发起 TCP 请求；QML 孪生弹窗的对账口径见
+// docs/design/qml-station-mapping.md（迭代 3 节）。
 #pragma once
 
 #include "services/station/station_query_service.h"
@@ -31,7 +36,10 @@ public:
 
     // 测试/回显接缝：弹窗当前勾选状态投影为条件对象。
     services::station::StationFilterCriteria currentCriteria() const;
+    // 某组当前勾选数：tst_home_shell 用它钉“单选组换点恒为 1、重置后恒为 0”。
     int checkedCountForGroup(const QString& groupKey) const;
+    // ForTesting 缝同时也是构造期回显的实现（cpp 内初始勾选复用本函数，
+    // 避免“程序设勾”与“测试设勾”两套归属逻辑漂移）。
     void setGroupSelectionForTesting(const QString& groupKey, const QStringList& options);
 
 signals:

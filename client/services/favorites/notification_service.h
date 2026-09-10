@@ -1,3 +1,6 @@
+// 头文件：通知服务对外契约（实现见同目录 notification_service.cpp）。
+// 消费方：widgets 通知页/HomeShell（setNotificationService 后读 notifications()），
+// QML 侧经 service_bridges 暴露；生成侧由宿主桥接预约事件调 push*。
 #pragma once
 
 #include "services/settings/settings_service.h"
@@ -87,8 +90,11 @@ signals:
     void notificationsChanged();
 
 private:
+    // 铺演示历史（ctor 与 resetForTesting 共用）：一条一型的三类预约通知。
     void seedMockHistory();
+    // 本地段唯一入列口：所有 push* 与演示数据最终都收敛到这里写 items_。
     void append(NotificationType type, const QString& title, const QString& body);
+    // 读设置页开关；settings_ 未注入时恒 true = 全展示（降级/独立测试口径）。
     bool enabledForType(NotificationType type) const;
 
     settings::SettingsService* settings_ = nullptr;

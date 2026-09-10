@@ -1,3 +1,15 @@
+// reservation_confirm_page.cpp —— 预约确认独立页面的实现（成员 2，任务 #17
+// 预约改版批：弹窗升级为独立页，“选时长”改为“选时间段 + 选车辆”）。
+//
+// 职责：组装预约表单（站点/桩只读展示、车辆下拉、起止时间、推荐时段、
+// 预估费用、行内校验提示），把用户选择拼成一次 submit 调用，并把 Service
+// 回抛的提交中/成功/失败三态映射回页面控件。
+//
+// 数据流向：本页面（widgets） → ReservationService（双通道：liveMode=true
+// 走真实通道经 ClientConnection → TCP 契约 RESERVE_CHARGER；否则本地模拟，
+// UI 对二者无感知） → 信号回抛本页面。车辆下拉数据源为 SettingsService
+// （本机 QSettings 车辆管理）；可选的地图升级走 MapGeoService（HTTP 距离
+// 矩阵，非 TCP）。谁在用：HomeShell 路由站点详情页“预约”按钮进入本页。
 #include "pages/station/reservation_confirm_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -87,6 +99,10 @@ QLabel#reservationMessageLabel {
 
 } // namespace
 
+// 构造：只搭“空壳”UI（标题 + 滚动卡片 + 表单控件 + 底部按钮 + 信号连接），
+// 不依赖任何服务/上下文——服务经 setService/setSettingsService/setMapService
+// 后续注入，站点/桩上下文经 openContext 进入时刷新。因此构造顺序与 HomeShell
+// 装配顺序解耦，单独 new 出来也能渲染（测试缝）。
 ReservationConfirmPage::ReservationConfirmPage(QWidget* parent) : QWidget(parent)
 {
     installPlatformTheme();
@@ -209,6 +225,9 @@ ReservationConfirmPage::ReservationConfirmPage(QWidget* parent) : QWidget(parent
     connect(confirmButton_, &QPushButton::clicked, this, &ReservationConfirmPage::handleSubmit);
     connect(recommendedButton_, &QPushButton::clicked, this,
             &ReservationConfirmPage::applyRecommendedSlot);
+    // 每次时间控件变化都重算合法性（车辆/时长/费用）。applyingSlot_ 为真时
+    // 说明是程序在回填推荐时段，不算用户手动编辑——否则真实矩阵异步结果会
+    // 因“刚写入就置脏”而拒绝覆盖，见 handleMatrixResult 的 userEditedSlot_ 判定。
     connect(vehicleComboBox_, &QComboBox::currentIndexChanged, this,
             [this](int) { updateSlotValidity(); });
     connect(startEdit_, &QDateTimeEdit::dateTimeChanged, this,
@@ -227,6 +246,9 @@ ReservationConfirmPage::ReservationConfirmPage(QWidget* parent) : QWidget(parent
             });
 }
 
+// 注入预约服务并挂三条提交回流信号。开头的相等即返回是幂等闸：HomeShell
+// 可能对同一实例重复注入，QObject::connect 不去重，缺这道闸会重复连接导致
+// 一次成功弹两次。
 void ReservationConfirmPage::setService(services::reservation::ReservationService* service)
 {
     if (service_ == service) {
@@ -314,6 +336,8 @@ void ReservationConfirmPage::openContext(const charging::model::Station& station
     }
 }
 
+// —— 测试探针（以下只读访问器仅供单测断言页面内部态，不参与业务逻辑）——
+
 ReservationConfirmPage::PageState ReservationConfirmPage::pageState() const
 {
     return submitting_ ? PageState::Submitting : PageState::Idle;
@@ -321,6 +345,7 @@ ReservationConfirmPage::PageState ReservationConfirmPage::pageState() const
 
 int ReservationConfirmPage::selectedMinutes() const
 {
+    // 控件按本地时区展示，差值统一到 UTC 秒再折算分钟，规避夏令时/跨日误差。
     return int(startEdit_->dateTime().toUTC().secsTo(endEdit_->dateTime().toUTC()) / 60);
 }
 
@@ -354,8 +379,12 @@ QString ReservationConfirmPage::recommendedSlotText() const
     return recommendedButton_->text();
 }
 
+// refreshVehicles：从 SettingsService 重建下拉项。blockSignals 包住 clear +
+// addItem——否则逐项增删会连发 currentIndexChanged 触发 updateSlotValidity，
+// 刷新中途闪现错误提示且 O(n) 次重算；刷新完再手动校一次即可。
 void ReservationConfirmPage::refreshVehicles()
 {
+    // 先记下当前选中车辆，重建后按 id 找回（车辆增删改实时联动时不跳选）。
     const qint64 previous = vehicleComboBox_->currentData().toLongLong();
     vehicleComboBox_->blockSignals(true);
     vehicleComboBox_->clear();
@@ -469,13 +498,19 @@ void ReservationConfirmPage::handleMatrixFailure(quint64 requestId, const QStrin
                 charging::client::StatusTag::Tone::Warning);
 }
 
+// updateSlotValidity：表单合法性与预估费用的单点联动（时间/车辆变化都汇到
+// 这里），非法 → 行内红/黄提示 + 禁用提交（UI 先行拦截，Service 层兜底防绕过）。
 void ReservationConfirmPage::updateSlotValidity()
 {
     if (submitting_) {
+        // 提交中表单已整体接管，中途重算会覆盖“提交中…”态。
         return;
     }
     const int minutes = selectedMinutes();
 
+    // liveMode（真实通道）分支：服务端 RESERVE_CHARGER 语义是“立即生效、
+    // 保留 15 分钟”，不支持未来时段与车辆绑定——所以直接锁掉时间/车辆编辑，
+    // 时段校验不再适用，提交恒放行。这是 TCP 契约与模拟口径的 UI 差异点。
     if (service_ && service_->liveMode()) {
         startEdit_->setEnabled(false);
         endEdit_->setEnabled(false);
@@ -513,6 +548,9 @@ void ReservationConfirmPage::updateSlotValidity()
         confirmButton_->setEnabled(true);
     }
 
+    // 费用估算：站点电价（分/度）× 时段时长，假设功率拉满 1 kW 折算（课程
+    // 口径，规格未给功率-电量曲线）；qMax(0, minutes) 兜住非法倒挂时段，
+    // 保证错误分支下费用行也有确定文案而非负数。
     const qint64 feeCents = station_.priceCentsPerKwh * qMax(0, minutes) / 60;
     feeLabel_->setText(tr("预估费用 ≈ ¥%1（¥%2/度 × %3 分钟）")
                            .arg(QString::number(feeCents / 100.0, 'f', 2))
@@ -526,6 +564,10 @@ void ReservationConfirmPage::resetSubmitButton()
     confirmButton_->setText(tr("确认预约"));
 }
 
+// handleSubmit：确认预约入口。双重防重入（submitting_ 闸 + 提交后 Service
+// 先发 submitStarted 锁住按钮），service_ 为空是“桥缺位”兜底——独立测试/装配
+// 未完成时给出友好提示而非空指针崩溃。校验通过后把整段表单上下文交给
+// Service 双通道提交，成败由信号回流，本函数不等待结果。
 void ReservationConfirmPage::handleSubmit()
 {
     if (submitting_) {
@@ -545,6 +587,8 @@ void ReservationConfirmPage::handleSubmit()
                      vehicleComboBox_->currentText(), distanceMeters_);
 }
 
+// 提交中信号：Service 是全局单例、多页共用，chargerId 不匹配说明是别的桩的
+// 提交（非本页面发起），直接忽略，避免错误页被串台点亮 loading。
 void ReservationConfirmPage::handleSubmitStarted(qint64 chargerId)
 {
     if (chargerId != charger_.id) {
@@ -556,6 +600,8 @@ void ReservationConfirmPage::handleSubmitStarted(qint64 chargerId)
     confirmButton_->setText(tr("提交中…"));
 }
 
+// 提交成功回流：先过“是本桩 + 确在提交中”双闸（submitting_ 保证同一成功
+// 只转发一次，防重复 emit 让宿主弹两次前往充电框），再原样把 record 交给宿主路由。
 void ReservationConfirmPage::handleSubmitSucceeded(
     const services::reservation::ReservationRecord& record)
 {
@@ -567,6 +613,8 @@ void ReservationConfirmPage::handleSubmitSucceeded(
     emit succeeded(record);
 }
 
+// 提交失败回流：只认“本页面确有一次提交在途”（submitting_ 闸），迟到的
+// failed 信号不会覆盖页面新状态；失败不跳转，原地亮出原因供修改后重试。
 void ReservationConfirmPage::handleSubmitFailed(const QString& reason)
 {
     if (!submitting_) {
@@ -579,6 +627,8 @@ void ReservationConfirmPage::handleSubmitFailed(const QString& reason)
     messageLabel_->setStyleSheet(QStringLiteral("color: #E5484D;"));
     messageLabel_->setText(tr("⚠️ %1").arg(reason));
     messageLabel_->show();
+    // 提交锁定期内 updateSlotValidity 一直早退跳过重算（见其 submitting_
+    // 分支）：解锁此刻必须补一次，时段合法性/费用/按钮态才与现势一致。
     updateSlotValidity();
 }
 

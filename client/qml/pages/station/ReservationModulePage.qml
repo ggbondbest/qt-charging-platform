@@ -7,6 +7,11 @@ import "../../platform/Glyphs.js" as Glyphs
 // 两级 Tab：🕒 预约订单（ReservationOrderPage.qml）/ 📒 已完成的预约
 // （ReservationCompletedPage.qml），两块子页作哑视图由本页喂 records——
 // 避免双 Connections 重复响应服务信号。列表/取消/过期信号在此统一收敛。
+// route "reservation_module"：从"我的"页 预约行（时段预约记录）与订单详情页
+// "查看预约"进入；Shell migrated 白名单已收。
+// 数据流：reservationService.fetchList() → onListSucceeded 灌 raw 全量 →
+// activeRecords/doneRecords 两个只读派生分流 → Loader 以 Qt.binding 喂子页。
+// 本页是唯一服务连接点，子页纯哑视图——信号只响一次，两页数据永不分叉。属 P1 批。
 Item {
     id: page
     objectName: "reservationModulePage"
@@ -24,10 +29,13 @@ Item {
     property bool failed: false
     property string failMessage: ""
 
+    // 唯一数据源：raw=全量回执，两个只读派生按 status 一分流——active 归"进行中"、
+    // 其余（完成/取消/过期）全归"历史"，两 tab 合集=全集，无交集无漏。
     readonly property var activeRecords:
         (raw || []).filter(r => String(r.status).toLowerCase() === "active")
     readonly property var doneRecords:
         (raw || []).filter(r => String(r.status).toLowerCase() !== "active")
+    // 业务口径同时至多 1 条有效预约，故"当前"取首条即可，不做择新排序。
     readonly property var current: activeRecords.length > 0 ? activeRecords[0] : null
 
     function refresh() {
@@ -56,8 +64,10 @@ Item {
             page.tab = 1        // 取消成功后切到归档页（widgets 同行为）
             page.refresh()
         }
+        // 过期=归档事件：重拉让服务端定口径，不在本地挪条目。
         function onReservationExpired(reservationId) { page.refresh() }
     }
+    // 进页即拉全量：tab 切换不重新请求（两派生都从 raw 分流，切页零延迟）。
     Component.onCompleted: refresh()
 
     // 整页可上下拖拽（用户二轮指定）：头部随页滚动，子页列表在自身视口内滚动。
@@ -97,6 +107,8 @@ Item {
                 }
             }
 
+            // 演示记录说明灯：demo 置真才亮、真回执一到即撤——数据出处如实标注，
+            // 不让种子记录混在真列表里冒充服务端数据。
             Text {
                 objectName: "moduleDemoCaption"
                 visible: page.demo
@@ -121,14 +133,18 @@ Item {
             }
 
             // 子页装载：Loader 保单一活动视图
+            // tab 切换=换 source 重建，两页不同时活着，服务信号只被页级接一次。
             Loader {
                 objectName: "reservationTabContent"
                 width: parent.width
+                // 失败态高度归 0：子页连同占位一起撤，错误只剩上方一条横幅。
                 height: page.failed ? 0
                                      : Math.max(320, moduleFlick.height - y - P.Style.spaceMd)
                 active: !page.failed
                 source: page.tab === 0 ? "ReservationOrderPage.qml"
                                        : "ReservationCompletedPage.qml"
+                // Qt.binding 喂的是"活绑定"不是快照：页级 raw 刷新时子页字段
+                // 自动跟着派生走；直接赋值会把子页冻在装载那一刻。
                 onLoaded: {
                     if (!item) return
                     if (page.tab === 0) {

@@ -1,3 +1,15 @@
+// reservation_order_page.cpp —— 预约订单页（进行中预约）的实现（成员 2，
+// 任务 #17 预约改版批：预约模块二级 Tab 之一）。
+//
+// 职责：以左-中-右三栏展示用户唯一一条进行中预约（距离 / 倒计时 + 信息 +
+// 取消 / 电量占位），每秒驱动倒计时与迟到扫描，把取消操作交给 Service 并
+// 响应其回流信号。页面不直连列表信号——数据统一由 ReservationModulePage
+// 经 setActiveReservation/showLoading/showError 分发注入。
+//
+// 数据流向：取消按钮 → ReservationService::cancel（双通道：liveMode 走
+// ClientConnection → TCP 契约 CANCEL_RESERVATION，否则本地模拟）→
+// cancelStarted/cancelFailed 回流本页；cancelSucceeded 由模块页接收并切换
+// 到【已完成的预约】Tab，故本页不订阅成功信号。
 #include "pages/station/reservation_order_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -57,6 +69,8 @@ QLabel#orderModuleCaption {
 constexpr int kGreenThresholdSecs = 30 * 60; // >30 分钟：绿色
 constexpr int kYellowFloorSecs = 5 * 60;     // 5~30 分钟：黄色；<5 分钟：红色
 
+// 秒数 → 时钟文案：≥1 小时用 h:mm:ss，否则 mm:ss（倒计时常见剩余时长在
+// 1 小时内，缩短字号占用）。
 QString formatClock(qint64 secs)
 {
     const qint64 h = secs / 3600;
@@ -212,6 +226,9 @@ ReservationOrderPage::ReservationOrderPage(QWidget* parent) : QWidget(parent)
     stack->setCurrentWidget(loadingPage_);
 }
 
+// 注入服务：只订阅 cancelStarted/cancelFailed（本页对“取消进行中/失败”做
+// 按钮态与页内提示），cancelSucceeded 归模块页处理切 Tab——订阅面按职责裁剪，
+// 不重复消费。开头相等即返回是幂等闸（同 confirm 页）。
 void ReservationOrderPage::setService(
     services::reservation::ReservationService* service)
 {
@@ -227,6 +244,10 @@ void ReservationOrderPage::setService(
     }
 }
 
+// setActiveReservation：模块分发“当前进行中预约”的唯一入口。传 nullptr 表示
+// 无进行中预约 → Empty 态并停表；传有效值则深拷贝一份到 active_（模块持有的
+// 列表指针在下一次 fetchList 后会失效，页面只信快照不信指针），填三栏、跑一次
+// 倒计时预热再启每秒定时器。cancelling_/按钮复位保证再次进入是干净的可取消态。
 void ReservationOrderPage::setActiveReservation(
     const services::reservation::ReservationRecord* record)
 {
@@ -255,6 +276,8 @@ void ReservationOrderPage::setActiveReservation(
                  QString::number(active_.estimatedFeeCents / 100.0, 'f', 2),
                  active_.vehiclePlate.isEmpty() ? tr("未关联") : active_.vehiclePlate,
                  startText, endText));
+    // 距离三档：≥1km 用公里、0~999m 用米、负值（-1 未对接/未知）诚实显示
+    // “--”，绝不把未知当 0 米展示。
     if (active_.distanceMeters >= 1000) {
         distanceLabel_->setText(
             tr("约 %1 km").arg(active_.distanceMeters / 1000.0, 0, 'f', 1));
@@ -289,6 +312,8 @@ void ReservationOrderPage::showError(const QString& message)
     stack_->setCurrentWidget(errorNotice_);
 }
 
+// —— 测试探针（只读访问器仅供单测断言视图态，不参与业务逻辑）——
+
 ReservationOrderPage::PageState ReservationOrderPage::viewState() const
 {
     return viewState_;
@@ -314,6 +339,10 @@ QString ReservationOrderPage::batteryText() const
     return batteryLabel_->text();
 }
 
+// applyCountdown：每秒 tick 的唯一渲染函数。职责三层——顺带驱动全库迟到扫描
+// （cancelLateReservations）、按 now 与 startAtUtc/expiresAtUtc 的比较切“等待
+// 开始 / 进行中三档色 / 归零流转”三种展示、剩余 ≤0 时停表并触发 Service 状态
+// 流转（页面只发起 expire，收敛仍靠模块重拉列表，展示口径不自作主张）。
 void ReservationOrderPage::applyCountdown()
 {
     if (!hasActive_) {
@@ -341,6 +370,9 @@ void ReservationOrderPage::applyCountdown()
         return;
     }
 
+    // setTone：切换 countdownTone 动态属性触发对应 QSS 颜色档。属性值未变
+    // 时不重绘（每秒 tick 只在跨档那一次才 unpolish/polish），且必须显式
+    // 重抛光，否则 Qt 不会自动按新属性值重算样式选择器。
     auto setTone = [this](const QString& tone) {
         if (countdownLabel_->property("countdownTone").toString() != tone) {
             countdownLabel_->setProperty("countdownTone", tone);
@@ -374,6 +406,9 @@ void ReservationOrderPage::applyCountdown()
                  tr("%1 分 %2 秒后").arg(remaining / 60).arg(remaining % 60)));
 }
 
+// 取消按钮：三道闸（cancelling_ 防重入 / hasActive_ 防空态误触 / service_
+// 判空防桥缺位）后仅发起请求，按钮 loading 态等 cancelStarted 回流再点亮，
+// 页面自身不改任何数据——状态变化全部由 Service 信号驱动，保证口径单点。
 void ReservationOrderPage::handleCancelClicked()
 {
     if (cancelling_ || !hasActive_ || service_ == nullptr) {

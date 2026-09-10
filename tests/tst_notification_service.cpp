@@ -44,6 +44,9 @@ public:
 
 } // namespace
 
+// boot：QTEST_GUILESS_MAIN；service_/settings_ 为成员直构。下面"本地通道
+// 基线"各例不注入 transport（=迭代 3 纯内存 push 语义），也无需事件循环；
+// settings_ 会真实读写 QSettings，故 initTestCase 把配置域钉进独立 app 名。
 class NotificationServiceTest final : public QObject
 {
     Q_OBJECT
@@ -68,6 +71,9 @@ private slots:
         service_.resetForTesting();
     }
 
+    // ---- 本地通道基线（迭代 3：seed 历史 / push 生成 / 开关联动）----
+    // 测：构造即有三条"一条一型"的演示历史且新在前；钉通知页默认口径
+    // 非空、三类预约通知齐活（页面首屏演示数据的形状约定）。
     void seededHistoryCoversAllTypes()
     {
         const QVector<NotificationItem> items = service_.notifications();
@@ -79,6 +85,8 @@ private slots:
         QVERIFY(items.at(1).createdAtUtc >= items.at(2).createdAtUtc);
     }
 
+    // 测：pushReservationSuccess 头插一条 + 恰好一发信号；钉 HomeShell 桥接
+    // 预约成功事件的落点——展示上下文（站名/车牌）必须进正文、带 ✅ 前缀。
     void pushAddsItemAndEmits()
     {
         QSignalSpy spy(&service_, &NotificationService::notificationsChanged);
@@ -95,6 +103,8 @@ private slots:
         QVERIFY(items.at(0).createdAtUtc.isValid());
     }
 
+    // 测：关/开某类通知开关 → visibleCount 与 notifications() 只影响"可见"；
+    // 钉联动过滤发生在读侧、数据仍在（重开即恢复，不是删了再加回来）。
     void switchLinkageHidesType()
     {
         service_.setSettingsService(&settings_);
@@ -113,6 +123,8 @@ private slots:
         QCOMPARE(service_.visibleCount(), 3); // 重新打开即恢复展示
     }
 
+    // 测：设置页翻一个开关 → 服务原样转发 notificationsChanged 一发；
+    // 钉"改设置→通知页即时重渲染"这条跨服务信号链（不转发=要重启才生效）。
     void switchChangeForwardsSignal()
     {
         service_.setSettingsService(&settings_);
@@ -122,6 +134,8 @@ private slots:
         QCOMPARE(spy.count(), 1); // 页面据此即时重渲染
     }
 
+    // 测：同类型两条、late 标志分叉文案（late=真→"自动取消"、假→"时段已结束"）；
+    // 钉到期提醒与迟到自动取消两种口径不混（预约域 15 分钟规则的用户可见面）。
     void expiryReminderDistinguishesLate()
     {
         service_.pushReservationExpired(QStringLiteral("迟到站"),
@@ -136,6 +150,8 @@ private slots:
         QVERIFY(items.at(1).body.contains(QStringLiteral("自动取消")));   // late 文案
     }
 
+    // 测：狂推 80 条取消通知；钉列表有界（≤50）且裁旧留新（站79 在头）——
+    // 长时间挂机不无限吃内存、老历史自动滚出。
     void listIsCapped()
     {
         for (int i = 0; i < 80; ++i) {
@@ -147,6 +163,8 @@ private slots:
         QVERIFY(items.first().body.contains(QStringLiteral("站79"))); // 新在前
     }
 
+    // 测：三类开关全关 → visibleCount 归零且读写不炸；钉"暂无通知"空态是
+    // 合法输出（页面直接渲染空列表即可，无需特判分支）。
     void emptyTypeYieldsEmptyListWithoutCrash()
     {
         // 全关 + 清历史 → 空态（页面展示“暂无通知”的口径来源）。
@@ -301,6 +319,8 @@ private slots:
         }
     }
 
+    // 收尾：本地通道用例真实把通知开关写进了 QSettings（switchLinkage 等），
+    // 复位回默认全开，域内不留脏档、重跑基线一致。
     void cleanupTestCase()
     {
         settings_.resetForTesting();

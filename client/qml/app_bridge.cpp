@@ -9,6 +9,8 @@
 #include "charging/client/profile_charging/order_service.h"
 #include "charging/client/profile_charging/stats_service.h"
 #include "charging/client/profile_charging/point_service.h"
+// 经验等级批（2026-09-09 新增功能批）：纯客户端等级/每日任务引擎头文件——
+// 实例装配见下方 createSession，XP 事件接线见 navigate。
 #include "charging/client/profile_charging/progress_service.h"
 #include "charging/client/profile_charging/rating_service.h"
 #include "charging/client/profile_charging/wallet_service.h"
@@ -117,6 +119,8 @@ void QmlApp::createSession(const charging::model::User& user)
     reservationService_ = new charging::client::services::reservation::ReservationService(session_);
     settingsService_ = new charging::client::services::settings::SettingsService(session_);
     mapGeoService_ = new charging::client::services::map::MapGeoService(session_);
+    // 经验等级批（2026-09-09）·服务装配段：以下 8 行为本批在 QmlApp 的两处接线之一
+    //（另一处见 navigate 的 XP 漏斗），构造细节见紧下方原注释。
     // 经验等级引擎（2026-09-09）：按登录手机号分组持久化，随 session_ 生灭。
     // 2026-09-09 需求批（用户拍板改到账）：升级礼包不再是"记入等级账目"的
     // 展示数字——levelUp 即发 CREDIT_LEVEL_REWARD（只带 level，金额由服务端
@@ -185,6 +189,8 @@ void QmlApp::createSession(const charging::model::User& user)
     // （原 reservationService_->setSettingsService(settingsService_);——上游 develop
     //   该行随 favorites/notification 父对象改 session_ 一并合入，注入行按业务指令撤除。）
     favoritesService_ = new charging::client::services::favorites::FavoritesService(session_);
+    // 合并对账批（2026-09-08 并入上游 develop）：通知服务父对象按上游口径改挂 session_
+    // 而非 this——随登录会话重建生灭，登出即销毁，不留跨会话旧实例。
     notificationService_ =
         new charging::client::services::favorites::NotificationService(session_);
     notificationService_->setSettingsService(settingsService_);
@@ -260,6 +266,8 @@ QObject* QmlApp::statsService() const { return statsBridge_; }
 QObject* QmlApp::couponService() const { return couponBridge_; }
 QObject* QmlApp::pointsService() const { return pointBridge_; }
 QObject* QmlApp::ratingsService() const { return ratingBridge_; }
+// 经验等级批：progressService 属性的 READ getter——直接透传引擎指针（其余服务经
+// 转发桥暴露，此处签名全 QML 友好、免桥，见 app_bridge.h 的 Q_PROPERTY 注释）。
 QObject* QmlApp::progressService() const { return progressService_; }
 QObject* QmlApp::authService() const { return const_cast<QmlApp*>(this); }
 QVariantMap QmlApp::currentUser() const { return loggedIn_ ? user_ : QVariantMap{}; }
@@ -310,6 +318,8 @@ void QmlApp::navigate(const QString& route, const QVariant& arg)
     if (route == QStringLiteral("reservation_confirm")) {
         checkBeforeReservation(arg.toMap()); return;
     }
+    // 经验等级批（2026-09-09）·XP 漏斗单点接线：全部页面导航都收口在本函数，
+    // 浏览型任务的事件上报因此只写这一处（判据与幂等口径见下三行原注释）。
     // 每日任务 XP 事件（2026-09-09）：navigate 是全页面导航唯一漏斗（底栏/
     // 行卡/顶栏搜索都经此），四个浏览型任务在漏斗处上报，服务当日幂等，
     // 重复进出只记一次；搜索任务以 station 深链带非空关键词参数为判据。
@@ -337,6 +347,8 @@ void QmlApp::checkBeforeReservation(const QVariantMap& draft)
 void QmlApp::recoverUnfinishedOrder()
 { if (!mockMode_) checkUnfinished({}, false); }
 
+// 合并后全绿批（2026-09-08 测试缝）：预约前置检查的清空入口——mock 通道下取消
+// 种子非终态订单，使"有未完成订单不得再约"的闸可以从空态被测起（真通道不动）。
 void QmlApp::clearUnfinishedOrdersForTesting()
 {
     // IRequestTransport 不是 QObject 血统：RTTI dynamic_cast + mock 守卫双保险。

@@ -1,3 +1,8 @@
+// station_home_page.h —— “找站”主页声明（实现见同名 cpp）。
+// 数据流向：列表数据走 StationQueryService（当前模拟通道，liveMode 打开后
+// 改发 GET_STATIONS TCP 契约、解析回同一组信号，本页零改动）；收藏走
+// FavoritesService（本机/登录态）。本页是 widgets 通道，QML 孪生页的
+// 状态/信号→绑定对账口径见 docs/design/qml-station-mapping.md。
 #pragma once
 
 #include "services/favorites/favorites_service.h"
@@ -37,6 +42,9 @@ class StationHomePage final : public QWidget
     Q_OBJECT
 
 public:
+    // 列表区四态状态机：任何一次查询的终局必落在其一（进行中/无结果/
+    // 失败可重试/有结果），保证 loading→成功→空、loading→失败→重试 等
+    // 信号序列都有确定 UI，不留空白页。
     enum class ViewState
     {
         Loading,
@@ -98,6 +106,8 @@ private:
     services::station::StationQueryService* service_ = nullptr;
     StationMapPanel* mapPanel_ = nullptr;
     services::favorites::FavoritesService* favoritesService_ = nullptr;
+    // 非模态弹窗去重闸：存活期间再点筛选只置顶旧窗；WA_DeleteOnClose
+    // 销毁后 QPointer 自动归零（与设置页弹窗口径一致）。
     QPointer<StationFilterDialog> filterDialog_;
     services::station::StationFilterCriteria filterCriteria_;
 
@@ -116,6 +126,8 @@ private:
     QWidget* listPage_ = nullptr;
     QVBoxLayout* listLayout_ = nullptr;
 
+    // 服务最近一次返回的全量结果：筛选/排序/地图标记全部在其上做纯投影，
+    // 不回源重发请求；仅 search()/retrySearch() 会更新它。
     services::station::StationList lastResults_;
     QString keyword_;
     ViewState viewState_ = ViewState::Loading;
