@@ -375,6 +375,77 @@ private slots:
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
     }
 
+    // 车辆管理批（缺陷修复 2026-09-10）：设置页「添加车辆」点了没反应——根因是
+    // vehicleDialog.openFor() 引用 defaultCheck.checked，而该 CheckBox 只有
+    // objectName 没有 id，ReferenceError 令弹窗直接开不出来（同文件二级密码
+    // protection*/second* 名错位是同一类「QML 引用静默断裂」病灶，call() 吞
+    // 异常/引擎报错只进 stderr，UI 表现为"按钮失灵"）。本用例把添加→编辑→删除
+    // 全链钉成真事件回归：添加按钮用真点击钉命中区，delegate 按钮按本文件
+    // 约定 click() 直调（offscreen delegate 命中时序不稳）。
+    void settingsVehicleAddEditDeleteThroughDialog()
+    {
+        bootShell(QStringLiteral("settings"));
+        QVERIFY(window_ != nullptr);
+        auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
+        QVERIFY(settings != nullptr);
+        for (const auto& vehicle : settings->vehicles())
+            settings->removeVehicle(vehicle.toMap().value("id"));
+        QCOMPARE(settings->vehicleCount(), 0);
+
+        auto* page = findItem(window_->contentItem(), QStringLiteral("settingsPage"));
+        QVERIFY2(page != nullptr, "settings 页未挂载");
+        auto* add = findItem(window_->contentItem(), QStringLiteral("addVehicleButton"));
+        QVERIFY2(add != nullptr, "添加按钮未挂载");
+        // Popup 是非可视 QObject 包装（同 mapStationPopup 约定）：只能 findChild 取本体，
+        // 其内容控件在 open 后才并入 overlay 可视树，故内部字段/按钮走 findItem。
+        auto* dialog = page->findChild<QObject*>(QStringLiteral("vehicleDialog"));
+        QVERIFY2(dialog != nullptr, "车辆弹窗未实例化");
+        QVERIFY(!dialog->property("opened").toBool());
+
+        // ① 添加：真点击入口按钮 → 弹窗必须开出来（修复前 defaultCheck 缺 id
+        // 令 openFor 抛 ReferenceError，这里永远开不出来）。
+        QVERIFY(realClick(window_, add));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        auto* plate = findItem(window_->contentItem(), QStringLiteral("vehiclePlateEdit"));
+        QVERIFY2(plate != nullptr, "车牌输入未挂载");
+        auto* save = findItem(window_->contentItem(), QStringLiteral("vehicleSaveButton"));
+        QVERIFY2(save != nullptr, "保存按钮未挂载");
+        plate->setProperty("text", QStringLiteral("粤B·T3579"));
+        findItem(window_->contentItem(), QStringLiteral("vehicleBatterySpin"))
+            ->setProperty("text", QStringLiteral("65"));
+        QVERIFY(realClick(window_, save));
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+        QCOMPARE(settings->vehicleCount(), 1);
+        auto saved = settings->vehicles().first().toMap();
+        QCOMPARE(saved.value("plate").toString(), QStringLiteral("粤B·T3579"));
+        QCOMPARE(saved.value("batteryKwh").toInt(), 65);
+        QCOMPARE(saved.value("connectorType").toString(), QStringLiteral("fast"));
+        QCOMPARE(saved.value("isDefault").toBool(), true);   // 首辆自动置默认
+
+        // ② 编辑：弹窗回填旧值 → 改车牌+切慢充 → 保存回读。
+        auto* edit = findItem(window_->contentItem(), QStringLiteral("vehicleEditButton"));
+        QVERIFY2(edit != nullptr, "编辑按钮未挂载");
+        QVERIFY(realClick(window_, edit));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QCOMPARE(plate->property("text").toString(), QStringLiteral("粤B·T3579"));
+        plate->setProperty("text", QStringLiteral("粤B·T8642"));
+        auto* slow = findItem(window_->contentItem(), QStringLiteral("vehicleSlowConnectorRadio"));
+        QVERIFY2(slow != nullptr, "慢充单选未挂载");
+        QVERIFY(realClick(window_, slow));
+        QVERIFY(realClick(window_, save));
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+        auto edited = settings->vehicles().first().toMap();
+        QCOMPARE(edited.value("plate").toString(), QStringLiteral("粤B·T8642"));
+        QCOMPARE(edited.value("connectorType").toString(), QStringLiteral("slow"));
+        QCOMPARE(settings->vehicleCount(), 1);                // 编辑不加车
+
+        // ③ 删除：清场，行数归零。
+        auto* remove = findItem(window_->contentItem(), QStringLiteral("vehicleDeleteButton"));
+        QVERIFY2(remove != nullptr, "删除按钮未挂载");
+        QVERIFY(realClick(window_, remove));
+        QTRY_COMPARE(settings->vehicleCount(), 0);
+    }
+
     // 经验等级批（2026-09-09）真壳端到端 + 会员中心批（同日）改版：等级三件套
     // 从 hero 搬进昵称框与余额框之间的独立「会员等级卡」（uiLevelCard），点卡进
     // 会员中心页（等级阶梯+每日任务区块+礼包记录）；行列表撤任务/等级两行、与

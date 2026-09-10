@@ -34,13 +34,17 @@ Item {
     function phoneOk(s) { return /^1[0-9]{10}$/.test(s) }
 
     // 该手机号是否需要二级密码（服务通道在线时以服务全局开关为准，否则库判定）
+    // 二级密码是本机口令闸（存 SettingsService/StationState，从不上传服务端），
+    // 与登录走 mock 还是真 TCP 无关——live 模式同样必须拦（缺陷修复 2026-09-10：
+    // f54cead 曾在 live 模式整体短路本判定，导致设了密码后登录不再询问）。
     function secondRequired(phone) {
-        if (!App || !App.mockMode) return false // Local demo protection is not server authentication.
         try {
             // 严格 === true：桥半截或方法缺位会回 undefined——真值判定只认服务
             // 明确说"是"，其余一律退库通道，不让 truthy 杂值冒充开关。
-            if (settingsService && settingsService.hasProtectionPassword
-                && settingsService.hasProtectionPassword() === true
+            // 方法名走桥契约 second*（缺陷修复 2026-09-10：曾误用裸服务
+            // protection* 名，桥无此方法、call 吞异常，登录永远读不到持久化真值）。
+            if (settingsService && settingsService.hasSecondPassword
+                && settingsService.hasSecondPassword() === true
                 && settingsService.protectionEnabled
                 && settingsService.protectionEnabled() === true) return true
         } catch (e) { /* 桥缺位 → 库通道 */ }
@@ -49,8 +53,8 @@ Item {
     function secondOk(pw) {
         // 同第二道门的双通道次序：服务回答必须是真布尔才采纳，缺位/杂值退库校验。
         try {
-            if (settingsService && settingsService.verifyProtectionPassword) {
-                const v = settingsService.verifyProtectionPassword(pw)
+            if (settingsService && settingsService.verifySecondPassword) {
+                const v = settingsService.verifySecondPassword(pw)
                 if (typeof v === "boolean") return v
             }
         } catch (e) { /* 桥缺位 → 库通道 */ }
