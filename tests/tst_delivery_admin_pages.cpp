@@ -234,11 +234,13 @@ void DeliveryAdminPagesTest::pagesReadRealGatewayAndDatabase()
     QVERIFY(online && onlineHint);
     QCOMPARE(online->text(), QString("6 台"));
     QCOMPARE(onlineHint->text(), QString("在线率 85.7%（北京时间快照）"));
-    const QStringList expected{"5（71.4%）", "0（0.0%）", "1（14.3%）", "0（0.0%）", "1（14.3%）"};
+    auto* stateTable = dashboard.findChild<QTableWidget*>("deviceStatusDistributionTable");
+    QVERIFY(stateTable);
+    const QStringList expectedCounts{"5", "0", "1", "0", "1"};
+    const QStringList expectedPercentages{"71.4%", "0.0%", "14.3%", "0.0%", "14.3%"};
     for (int i = 0; i < 5; ++i) {
-        auto* value = dashboard.findChild<QLabel*>(QString("deviceStateCount%1").arg(i));
-        QVERIFY(value);
-        QCOMPARE(value->text(), expected.at(i));
+        QCOMPARE(stateTable->item(i, 1)->text(), expectedCounts.at(i));
+        QCOMPARE(stateTable->item(i, 2)->text(), expectedPercentages.at(i));
     }
     auto* month = buttonWithText(dashboard, "近30天");
     auto* week = buttonWithText(dashboard, "近7天");

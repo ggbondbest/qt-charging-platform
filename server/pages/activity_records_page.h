@@ -26,7 +26,7 @@ class ActivityRecordsPage final : public QWidget
 public:
     explicit ActivityRecordsPage(ActivityRecordsMode mode, QWidget* parent = nullptr);
     void setAdminGateway(class AdminRequestGateway* gateway);
-    void refreshData() { if (realMode_) requestList(); }
+    void refreshData() { if (realMode_ && !serverRuntimeLogView_) requestList(); }
 
 private:
     struct Record {
@@ -41,8 +41,10 @@ private:
     };
 
     void createMockRecords();
+    void createServerRuntimeMockRecords();
     void applyFilters();
     void resetFilters();
+    void setServerRuntimeLogView(bool enabled);
     void rebuildTable();
     void showDetails(int recordIndex, bool requestDetails = true);
     void showPreviousPage();
@@ -64,6 +66,9 @@ private:
     int selectedRecordIndex_ = -1;
     int totalRecords_ = 0;
     bool realMode_ = false;
+    // Runtime events have no service contract yet.  This view deliberately
+    // remains a clearly-labelled local preview even after administrator login.
+    bool serverRuntimeLogView_ = false;
     bool hasRealSnapshot_ = false;
     QString listRequestId_;
     QString summaryRequestId_;
@@ -74,6 +79,7 @@ private:
     class AdminRequestGateway* gateway_ = nullptr;
 
     QLineEdit* keywordLineEdit_ = nullptr;
+    QComboBox* logSourceComboBox_ = nullptr;
     QComboBox* categoryComboBox_ = nullptr;
     QComboBox* adminComboBox_ = nullptr;
     QComboBox* statusComboBox_ = nullptr;

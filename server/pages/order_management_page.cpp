@@ -340,8 +340,16 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     detailLayout->addWidget(chargingInfoLabel_);
     detailLayout->addWidget(createTextLabel(tr("费用明细"), QStringLiteral("color:#34435b; font-size:14px; font-weight:700;"), detailCard));
     feeInfoLabel_ = createTextLabel(QString(), QStringLiteral("color:#55647c; font-size:13px;"), detailCard);
+    feeInfoLabel_->setObjectName(QStringLiteral("orderFeeBreakdown"));
+    feeInfoLabel_->setStyleSheet(QStringLiteral("background:#f6f9ff; border:1px solid #e4edf9; border-radius:8px;"
+                                                " color:#506078; font-size:13px; padding:8px;"));
     feeInfoLabel_->setWordWrap(true);
     detailLayout->addWidget(feeInfoLabel_);
+    feeContractHintLabel_ = createTextLabel(QString(),
+                                             QStringLiteral("color:#8a96a9; font-size:12px;"), detailCard);
+    feeContractHintLabel_->setObjectName(QStringLiteral("orderFeeContractHint"));
+    feeContractHintLabel_->setWordWrap(true);
+    detailLayout->addWidget(feeContractHintLabel_);
     paymentInfoLabel_ = createTextLabel(QString(), QStringLiteral("color:#55647c; font-size:13px;"), detailCard);
     paymentInfoLabel_->setWordWrap(true);
     detailLayout->addWidget(paymentInfoLabel_);
@@ -495,8 +503,11 @@ void OrderManagementPage::rebuildTable()
         const OrderRecord& record = records_.at(recordIndex);
         const qint64 totalCents = record.chargeFeeCents + record.serviceFeeCents
             - record.discountFeeCents;
+        const QString chargerText = record.chargerType.isEmpty()
+            ? record.charger
+            : record.charger + tr("\n") + record.chargerType;
         const QList<QString> values = {record.orderNo, record.userName + tr("\n") + record.phone, record.station,
-                                       record.charger + tr("\n") + record.chargerType, record.startAt,
+                                       chargerText, record.startAt,
                                        record.duration, formatKwh(record.energyWh),
                                        tr("¥ %1").arg(formatCents(totalCents)), QString(), QString()};
         for (int column = 0; column < values.size(); ++column) {
@@ -533,6 +544,7 @@ void OrderManagementPage::rebuildTable()
                                                          " padding:0 7px; font-size:12px; font-weight:600;"));
         chargingInfoLabel_->setText(tr("请调整筛选条件后再查看订单详情。"));
         feeInfoLabel_->clear();
+        feeContractHintLabel_->clear();
         paymentInfoLabel_->clear();
         refreshButton_->setEnabled(false);
     }
@@ -576,7 +588,9 @@ void OrderManagementPage::showOrderDetails(int recordIndex, bool requestDetails)
     if (realMode_) {
         chargingInfoLabel_->setText(tr("电站名称　%1\n电桩编号　%2\n创建时间　%3\n时长　%4\n电量　%5 kWh\n开始/结束时间、SOC：契约按订单实际字段返回，当前列表未展示")
                                         .arg(record.station, record.charger, record.startAt, record.duration, formatKwh(record.energyWh)));
-        feeInfoLabel_->setText(tr("订单金额　¥ %1\n费用明细　—（请刷新详情）").arg(formatCents(totalCents)));
+        feeInfoLabel_->setText(tr("订单总金额　¥ %1\n充电费　　　　—\n服务费　　　　—\n优惠金额　　　—")
+                                     .arg(formatCents(totalCents)));
+        feeContractHintLabel_->setText(tr("正在加载服务端费用快照；不会从订单总金额反推费用组成。"));
         paymentInfoLabel_->setText(tr("支付信息：契约未提供"));
         refreshButton_->setEnabled(true);
         return;
@@ -589,6 +603,7 @@ void OrderManagementPage::showOrderDetails(int recordIndex, bool requestDetails)
         tr("充电费　　　¥ %1\n服务费　　　¥ %2\n优惠金额　　¥ %3\n────────────\n实付金额　　¥ %4")
             .arg(formatCents(record.chargeFeeCents), formatCents(record.serviceFeeCents),
                  formatCents(record.discountFeeCents), formatCents(totalCents)));
+    feeContractHintLabel_->setText(tr("仅本地 Mock 费用明细预览；真实费用以订单费用快照契约为准。"));
     paymentInfoLabel_->setText(tr("支付方式　%1\n支付状态　%2\n交易单号　4200002825202506011289")
                                      .arg(record.paymentMethod, record.paymentStatus));
     refreshButton_->setEnabled(true);
@@ -645,8 +660,8 @@ void OrderManagementPage::setAdminGateway(AdminRequestGateway* gateway)
 {
     gateway_ = gateway; realMode_ = gateway_ != nullptr;
     if (!gateway_) return;
-    userLineEdit_->setToolTip(tr("按昵称、订单号、手机号、电站名或电桩编号模糊查询；与其他关键字条件不能同时组合。"));
-    phoneLineEdit_->setToolTip(tr("按手机号、订单号、昵称、电站名或电桩编号模糊查询；与其他关键字条件不能同时组合。"));
+    userLineEdit_->setToolTip(tr("按用户昵称字面包含查询；可与订单号、手机号等条件按 AND 组合。"));
+    phoneLineEdit_->setToolTip(tr("按完整手机号精确查询；可与订单号、用户昵称等条件按 AND 组合。"));
     dateRangeComboBox_->setItemText(1, tr("今日（北京时间）"));
     dateRangeComboBox_->setItemText(2, tr("近 7 天（北京时间）"));
     if (auto* donut = findChild<QWidget*>(QStringLiteral("mockPaymentDonut"))) {
@@ -761,6 +776,7 @@ void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
     const auto pricing = item.value(QStringLiteral("pricingSnapshot")).toObject();
     if (item.value(QStringLiteral("billingAvailability")).toString() != QStringLiteral("AVAILABLE") || fees.isEmpty()) {
         feeInfoLabel_->setText(tr("费用明细　—\n费率快照　—\n旧订单无可核验快照，不反推费用组成。"));
+        feeContractHintLabel_->setText(tr("该订单没有可用的费用快照；金额以服务端订单记录为准。"));
     } else {
         const auto money = [&fees](const QString& key) { return formatCents(fees.value(key).toInteger()); };
         feeInfoLabel_->setText(tr("费用明细%1\n电费　¥ %2\n服务费　¥ %3\n停车费　¥ %4\n优惠　¥ %5\n应付　¥ %6\n已付　¥ %7\n币种　%8\n费率版本　%9")
@@ -769,6 +785,9 @@ void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
                  money(QStringLiteral("parkingFeeCents")), money(QStringLiteral("discountCents")),
                  money(QStringLiteral("payableCents")), money(QStringLiteral("paidCents")),
                  fees.value(QStringLiteral("currency")).toString(), pricing.value(QStringLiteral("version")).toVariant().toString()));
+        feeContractHintLabel_->setText(item.value(QStringLiteral("estimated")).toBool()
+            ? tr("当前金额来自服务端模拟计量，标记为暂估；费率使用订单固定快照。")
+            : tr("费用明细由服务端按订单固定费率快照计算。"));
     }
     paymentInfoLabel_->setText(tr("支付时间　%1\n订单状态　%2")
                                      .arg(formatBeijingDateTime(item.value(QStringLiteral("paidAt")).toString()), orderStatusText(record.status)));
@@ -776,7 +795,15 @@ void OrderManagementPage::handleDetailResponse(const QJsonObject& response)
 
 void OrderManagementPage::handleListResponse(const QJsonObject& response)
 {
-    if (!response.value(QStringLiteral("success")).toBool()) { setFeedback(tr("加载失败：%1").arg(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString())); return; }
+    if (!response.value(QStringLiteral("success")).toBool()) {
+        const QString message = response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();
+        setFeedback(tr("加载失败：%1").arg(message));
+        if (!hasRealSnapshot_) {
+            statePanel_->setState(ManagementListState::LoadError,
+                                  tr("订单列表加载失败：%1").arg(message));
+        }
+        return;
+    }
     const QString selectedServerId = selectedRecordIndex_ >= 0 && selectedRecordIndex_ < records_.size()
         ? records_.at(selectedRecordIndex_).serverId : QString();
     records_.clear(); filteredRecordIndexes_.clear(); selectedRecordIndex_ = -1;
@@ -787,7 +814,7 @@ void OrderManagementPage::handleListResponse(const QJsonObject& response)
         const auto status = code == QStringLiteral("CHARGING") ? charging::model::OrderStatus::Charging : code == QStringLiteral("WAITING_PAYMENT") ? charging::model::OrderStatus::WaitingPayment : code == QStringLiteral("COMPLETED") ? charging::model::OrderStatus::Completed : code == QStringLiteral("CANCELLED") ? charging::model::OrderStatus::Cancelled : charging::model::OrderStatus::Reserved;
         const qint64 amount = i.value(QStringLiteral("amountCents")).toInteger();
         records_.append({i.value(QStringLiteral("orderNo")).toString(), i.value(QStringLiteral("nickname")).toString(), i.value(QStringLiteral("phone")).toString(),
-            i.value(QStringLiteral("stationName")).toString(), i.value(QStringLiteral("chargerCode")).toString(), tr("契约未提供"), status,
+            i.value(QStringLiteral("stationName")).toString(), i.value(QStringLiteral("chargerCode")).toString(), QString(), status,
             formatBeijingDateTime(i.value(QStringLiteral("createdAt")).toString()), formatDuration(i.value(QStringLiteral("durationSeconds")).toInteger()),
             i.value(QStringLiteral("energyWh")).toInteger(), amount, 0, 0, tr("契约未提供"), tr("契约未提供"), i.value(QStringLiteral("id")).toString()});
         filteredRecordIndexes_.append(records_.size() - 1);

@@ -143,6 +143,27 @@ void setEmptyRow(QTableWidget* table, const QString& message)
     table->setItem(0, 0, item);
 }
 
+// Keep the chart as the quick visual summary, while this compact table makes
+// the exact state counts and proportions directly scannable for operators.
+void setDeviceStatusTableRow(QTableWidget* table, int row, int count, int total,
+                             bool hasServiceData)
+{
+    Q_ASSERT(table != nullptr);
+    Q_ASSERT(row >= 0 && row < table->rowCount());
+    auto* countItem = table->item(row, 1);
+    auto* percentageItem = table->item(row, 2);
+    Q_ASSERT(countItem != nullptr);
+    Q_ASSERT(percentageItem != nullptr);
+    if (!hasServiceData) {
+        countItem->setText(QObject::tr("—"));
+        percentageItem->setText(QObject::tr("—"));
+        return;
+    }
+    countItem->setText(QString::number(count));
+    percentageItem->setText(
+        QObject::tr("%1%").arg(total > 0 ? 100.0 * count / total : 0.0, 0, 'f', 1));
+}
+
 QFrame* createTableCard(const QString& title, const QString& badge, const QString& footer,
                         QLabel** badgeLabel, QPushButton** footerButton, QWidget* parent)
 {
@@ -338,43 +359,39 @@ DashboardPage::DashboardPage(QWidget* parent) : QWidget(parent)
     distribution->setSpacing(12);
     deviceStatusWidget_ = new DeliveryDeviceStatusWidget(deviceCard);
     distribution->addWidget(deviceStatusWidget_, 0, Qt::AlignCenter);
-    auto* legend = new QVBoxLayout();
-    const struct {
-        const char* name;
-        const char* data;
-        const char* color;
-    } statuses[] = {
-        {"空闲", "—", "#43c7bc"},
-        {"在用", "—", "#347cf6"},
-        {"故障", "—", "#f5a130"},
-        {"预约", "—", "#9469d4"},
-        {"离线", "—", "#aab4c2"},
-    };
-    int statusIndex = 0;
-    for (const auto& status : statuses) {
-        auto* row = new QHBoxLayout();
-        auto* dot = new QLabel(deviceCard);
-        dot->setFixedSize(9, 9);
-        dot->setStyleSheet(
-            QStringLiteral("background:%1; border-radius:4px;").arg(QString::fromLatin1(status.color)));
-        row->addWidget(dot);
-        row->addWidget(makeLabel(QString::fromUtf8(status.name),
-                                 QStringLiteral("color:#536178; font-size:13px;"), deviceCard));
-        row->addStretch();
-        auto* value = makeLabel(QString::fromUtf8(status.data),
-                                QStringLiteral("color:#3c4c67; font-size:13px;"), deviceCard);
-        value->setObjectName(QStringLiteral("deviceStateCount%1").arg(statusIndex));
-        if (statusIndex == 0) availableLegendValue_ = value;
-        else if (statusIndex == 1) chargingLegendValue_ = value;
-        else if (statusIndex == 2) faultLegendValue_ = value;
-        else if (statusIndex == 3) reservedLegendValue_ = value;
-        else offlineLegendValue_ = value;
-        ++statusIndex;
-        row->addWidget(value);
-        legend->addLayout(row);
+    deviceStatusTable_ = new QTableWidget(5, 3, deviceCard);
+    deviceStatusTable_->setObjectName(QStringLiteral("deviceStatusDistributionTable"));
+    deviceStatusTable_->setHorizontalHeaderLabels({tr("状态"), tr("数量"), tr("占比")});
+    deviceStatusTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    deviceStatusTable_->setSelectionMode(QAbstractItemView::NoSelection);
+    deviceStatusTable_->setFocusPolicy(Qt::NoFocus);
+    deviceStatusTable_->setShowGrid(false);
+    deviceStatusTable_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    deviceStatusTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    deviceStatusTable_->verticalHeader()->setVisible(false);
+    deviceStatusTable_->verticalHeader()->setDefaultSectionSize(28);
+    deviceStatusTable_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
+    deviceStatusTable_->horizontalHeader()->setDefaultSectionSize(54);
+    deviceStatusTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    deviceStatusTable_->setFixedSize(192, 190);
+    deviceStatusTable_->setStyleSheet(QStringLiteral(
+        "QTableWidget { background:#ffffff; border:1px solid #edf1f7; font-size:12px; }"
+        "QTableWidget::item { padding:0 3px; color:#40506a; }"
+        "QHeaderView::section { min-height:28px; background:#f7f9fc; color:#68758a;"
+        " font-size:12px; font-weight:600; padding:0 3px; border:none;"
+        " border-bottom:1px solid #edf1f7; }"));
+    const QStringList stateNames = {tr("空闲"), tr("在用"), tr("故障"), tr("预约"), tr("离线")};
+    for (int row = 0; row < stateNames.size(); ++row) {
+        auto* stateItem = createManagementTableItem(stateNames.at(row));
+        stateItem->setTextAlignment(Qt::AlignCenter);
+        deviceStatusTable_->setItem(row, 0, stateItem);
+        for (int column : {1, 2}) {
+            auto* valueItem = createManagementTableItem(tr("—"));
+            valueItem->setTextAlignment(Qt::AlignCenter);
+            deviceStatusTable_->setItem(row, column, valueItem);
+        }
     }
-    legend->addStretch();
-    distribution->addLayout(legend, 1);
+    distribution->addWidget(deviceStatusTable_, 1);
     deviceLayout->addLayout(distribution, 1);
     auto* deviceFooter = new QHBoxLayout();
     totalChargersLabel_ = makeLabel(tr("总电桩数：—"),
@@ -505,11 +522,9 @@ void DashboardPage::clearDashboardData()
     onlineChargersValue_->setText(tr("—"));
     onlineChargersHint_->setText(tr("在线率待加载"));
     totalChargersLabel_->setText(tr("总电桩数：—"));
-    availableLegendValue_->setText(tr("—"));
-    chargingLegendValue_->setText(tr("—"));
-    reservedLegendValue_->setText(tr("—"));
-    offlineLegendValue_->setText(tr("—"));
-    faultLegendValue_->setText(tr("—"));
+    for (int row = 0; row < deviceStatusTable_->rowCount(); ++row) {
+        setDeviceStatusTableRow(deviceStatusTable_, row, 0, 0, false);
+    }
     exceptionCountBadge_->setText(tr("—"));
     trendWidget_->setServiceSeries({}, {}, {});
     if (deviceStatusWidget_) deviceStatusWidget_->setCounts(0, 0, 0, 0, 0);
@@ -549,12 +564,11 @@ void DashboardPage::handleDashboardResponse(const QJsonObject& response)
     const int charging = data.value("chargingChargers").toInt();
     const int reserved = data.value("reservedChargers").toInt();
     if (deviceStatusWidget_) deviceStatusWidget_->setCounts(available, charging, fault, reserved, offline);
-    const auto legend = [total](int count) { return total ? QObject::tr("%1（%2%）").arg(count).arg(100.0 * count / total, 0, 'f', 1) : QObject::tr("0（0.0%）"); };
-    if (availableLegendValue_) availableLegendValue_->setText(legend(available));
-    if (chargingLegendValue_) chargingLegendValue_->setText(legend(charging));
-    if (reservedLegendValue_) reservedLegendValue_->setText(legend(reserved));
-    if (offlineLegendValue_) offlineLegendValue_->setText(legend(offline));
-    if (faultLegendValue_) faultLegendValue_->setText(legend(fault));
+    setDeviceStatusTableRow(deviceStatusTable_, 0, available, total, true);
+    setDeviceStatusTableRow(deviceStatusTable_, 1, charging, total, true);
+    setDeviceStatusTableRow(deviceStatusTable_, 2, fault, total, true);
+    setDeviceStatusTableRow(deviceStatusTable_, 3, reserved, total, true);
+    setDeviceStatusTableRow(deviceStatusTable_, 4, offline, total, true);
     totalChargersLabel_->setText(tr("总电桩数：%1 台").arg(data.value("totalChargers").toInteger()));
     refreshedAtLabel_->setText(tr("刷新时间：%1（北京时间）").arg(formatBeijingDateTime(data.value("observedAt").toString())));
     QStringList dates; QVector<qint64> revenue; QVector<int> orders;
