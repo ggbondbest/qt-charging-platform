@@ -90,6 +90,10 @@ public:
     bool setTheme(const QString& theme);
     QString fontScale() const;
     bool setFontScale(const QString& scale);
+    // palette ∈ "green" | "blue" | "violet" | "amber"（默认 green；
+    // 2026-09-10 配色批，品牌色板换色）。口径同上：白名单外拒收。
+    QString palette() const;
+    bool setPalette(const QString& palette);
 
     // 清除本服务全部本地持久化（测试隔离用）。
     void resetForTesting();
