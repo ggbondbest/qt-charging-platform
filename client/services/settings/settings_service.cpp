@@ -19,6 +19,9 @@ namespace {
 // QSettings 持久化键（组织/应用名在 client/app/main.cpp 统一设置）。
 constexpr char kPasswordHashKey[] = "settings/security/passwordHash";
 constexpr char kProtectionEnabledKey[] = "settings/security/protectionEnabled";
+// 保护口令绑定的手机号（2026-09-11 缺陷修复）：登录页二级密码门按号命中，
+// 此键缺失 = 未绑定（widgets 老通道/迁移前旧密码），登录门退库通道判定。
+constexpr char kProtectionPhoneKey[] = "settings/security/protectionPhone";
 // 外观（2026-09-08 批次A，成员3 追加）：主题与字号，白名单值，非法 set 忽略。
 constexpr char kThemeKey[] = "settings/appearance/theme";
 constexpr char kPaletteKey[] = "settings/appearance/palette";
@@ -191,15 +194,39 @@ bool SettingsService::hasProtectionPassword() const
     return !settings.value(QLatin1String(kPasswordHashKey)).toString().isEmpty();
 }
 
-bool SettingsService::setProtectionPassword(const QString& password)
+bool SettingsService::setProtectionPassword(const QString& password,
+                                            const QString& boundPhone)
 {
     if (password.size() < 4) {
         return false; // 与设置页输入校验一致的 Service 层兜底
     }
     QSettings settings;
     settings.setValue(QLatin1String(kPasswordHashKey), hashPassword(password));
+    // 带号才写：QML 设置页传当前登录号建立绑定；widgets 老通道不传号时
+    // 不得抹掉既有绑定（改密≠换主）。
+    if (!boundPhone.isEmpty()) {
+        settings.setValue(QLatin1String(kProtectionPhoneKey), boundPhone);
+    }
     emit protectionStateChanged();
     return true;
+}
+
+// 绑定号读取：缺失即空串，调用方（登录页）以此决定服务通道命中与否。
+QString SettingsService::protectionPhone() const
+{
+    QSettings settings;
+    return settings.value(QLatin1String(kProtectionPhoneKey)).toString();
+}
+
+// 旧密码自愈（迁移缝）：只在未绑定时补写——已绑定即 no-op，永不换绑他人号。
+void SettingsService::bindProtectionPhone(const QString& phone)
+{
+    if (phone.isEmpty() || !protectionPhone().isEmpty()) {
+        return;
+    }
+    QSettings settings;
+    settings.setValue(QLatin1String(kProtectionPhoneKey), phone);
+    emit protectionStateChanged();
 }
 
 bool SettingsService::verifyProtectionPassword(const QString& password) const
@@ -232,11 +259,12 @@ bool SettingsService::setProtectionEnabled(bool enabled)
 
 void SettingsService::clearProtectionPassword()
 {
-    // 哈希与开关键成对删除：只清哈希会留下悬空开关键（读侧靠双闸兜住，
+    // 哈希/开关/绑定号三键成对删除：只清哈希会留下悬空开关键（读侧靠双闸兜住，
     // 但盘面应同步干净），随后广播让 UI 把开关拨回置灰态。
     QSettings settings;
     settings.remove(QLatin1String(kPasswordHashKey));
     settings.remove(QLatin1String(kProtectionEnabledKey));
+    settings.remove(QLatin1String(kProtectionPhoneKey));
     emit protectionStateChanged();
 }
 
@@ -352,6 +380,7 @@ void SettingsService::resetForTesting()
     QSettings settings;
     settings.remove(QLatin1String(kPasswordHashKey));
     settings.remove(QLatin1String(kProtectionEnabledKey));
+    settings.remove(QLatin1String(kProtectionPhoneKey));
     settings.remove(notificationKey(Notification::ReservationExpiryReminder));
     settings.remove(notificationKey(Notification::ReservationSuccessNotice));
     settings.remove(notificationKey(Notification::ReservationCancelNotice));

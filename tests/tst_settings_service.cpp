@@ -177,6 +177,40 @@ private slots:
         QVERIFY(reopened.verifyProtectionPassword(QStringLiteral("pin-2580")));
     }
 
+// ---- 测：保护密码与绑定手机号的配对/自愈/删除；钉：登录门"按号不按机"的数据面 ----
+    void protectionPasswordBindsPhone()
+    {
+        // 不传号保存（widgets 老通道）：哈希生效但未绑定，登录门退库通道。
+        QVERIFY(service_.setProtectionPassword(QStringLiteral("abcd1234")));
+        QVERIFY(service_.protectionPhone().isEmpty());
+
+        // 自愈补绑：仅未绑定生效；已绑定的号永不覆写（改绑≠换主）。
+        service_.bindProtectionPhone(QStringLiteral("13800138000"));
+        QCOMPARE(service_.protectionPhone(), QStringLiteral("13800138000"));
+        service_.bindProtectionPhone(QStringLiteral("13900139000"));
+        QCOMPARE(service_.protectionPhone(), QStringLiteral("13800138000"));
+
+        // 改密不传号：既有绑定不被抹掉。
+        QVERIFY(service_.setProtectionPassword(QStringLiteral("pin-2580")));
+        QCOMPARE(service_.protectionPhone(), QStringLiteral("13800138000"));
+
+        // 带号改密：绑定随密码走。
+        QVERIFY(service_.setProtectionPassword(QStringLiteral("pin-9999"),
+                                               QStringLiteral("13700137000")));
+        QCOMPARE(service_.protectionPhone(), QStringLiteral("13700137000"));
+
+        // 跨实例回读（QSettings 持久化）；clear 三键成对删；reset 同扫此键。
+        SettingsService reopened;
+        QCOMPARE(reopened.protectionPhone(), QStringLiteral("13700137000"));
+        reopened.clearProtectionPassword();
+        QVERIFY(service_.protectionPhone().isEmpty());
+        QVERIFY(!service_.hasProtectionPassword());
+        QVERIFY(service_.setProtectionPassword(QStringLiteral("abcd1234"),
+                                               QStringLiteral("13600136000")));
+        service_.resetForTesting();
+        QVERIFY(service_.protectionPhone().isEmpty());
+    }
+
     // —— 通知与提醒 ——
 
 // ---- 测：通知开关默认全开、逐个关闭后跨实例回读、reset 复位；钉：QSettings 持久化闭环覆盖全部键 ----

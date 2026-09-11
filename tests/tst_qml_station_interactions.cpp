@@ -474,6 +474,38 @@ private slots:
         QTRY_COMPARE(settings->vehicleCount(), 0);
     }
 
+    // 缺陷回归 2026-09-11（二级密码第三刀）：服务通道曾做设备全局判定——
+    // 盘上"有密码+开启"即令任意手机号亮出密码行。产品口径是只命中"设置密码
+    // 时绑定的那个号"（登录页头注/设置页提示词），服务侧补 protectionPhone
+    // 绑定键后按号比对。钉：未绑号不亮（旧行为在此必红）、绑定号亮、口令可验。
+    void loginSecondPasswordGatesOnBoundPhoneOnly()
+    {
+        bootShell(QStringLiteral("login"));
+        auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
+        QVERIFY(settings != nullptr);
+        QVERIFY(settings->setSecondPassword(QStringLiteral("abcd1234"),
+                                            QStringLiteral("13800138000")));
+        QVERIFY(settings->setSecondProtectionEnabled(true));
+        QCOMPARE(settings->protectionPhone(), QStringLiteral("13800138000"));
+
+        auto* login = findItem(window_->contentItem(), QStringLiteral("loginPage"));
+        QVERIFY(login != nullptr);
+        auto* phone = findItem(login, QStringLiteral("phoneLineEdit"));
+        auto* second = findItem(login, QStringLiteral("secondPasswordEdit"));
+        QVERIFY(phone != nullptr && second != nullptr);
+
+        // 号段完整但未绑定：密码行不得出现（修复前此断言必红）。
+        QVERIFY(phone->setProperty("text", QStringLiteral("13900139000")));
+        QTRY_VERIFY(!second->isVisible());
+        // 绑定号：密码行出现，且口令走服务通道可校验通过。
+        QVERIFY(phone->setProperty("text", QStringLiteral("13800138000")));
+        QTRY_VERIFY(second->isVisible());
+        QVERIFY(settings->verifySecondPassword(QStringLiteral("abcd1234")));
+        QVERIFY(!settings->verifySecondPassword(QStringLiteral("wrong")));
+
+        settings->setSecondProtectionEnabled(false); // 关全局闸，不污染后续用例
+    }
+
     // 经验等级批（2026-09-09）真壳端到端 + 会员中心批（同日）改版：等级三件套
     // 从 hero 搬进昵称框与余额框之间的独立「会员等级卡」（uiLevelCard），点卡进
     // 会员中心页（等级阶梯+每日任务区块+礼包记录）；行列表撤任务/等级两行、与

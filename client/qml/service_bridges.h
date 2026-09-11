@@ -209,10 +209,14 @@ public:
     Q_INVOKABLE void setDefaultVehicle(const QVariant& id);
     // second* 别名 → 裸服务 protection*（语义同一：二级保护密码）。
     Q_INVOKABLE bool hasSecondPassword() const;
-    Q_INVOKABLE bool setSecondPassword(const QString& plain);
+    // boundPhone＝设置密码时绑定的登录手机号：登录页二级密码门按号命中
+    // （2026-09-11 缺陷修复：此前无绑定，服务通道对一切手机号亮密码行）。
+    Q_INVOKABLE bool setSecondPassword(const QString& plain, const QString& boundPhone);
     Q_INVOKABLE bool verifySecondPassword(const QString& plain) const;
     Q_INVOKABLE bool protectionEnabled() const;
     Q_INVOKABLE bool setSecondProtectionEnabled(bool enabled);
+    Q_INVOKABLE QString protectionPhone() const;
+    Q_INVOKABLE void bindProtectionPhone(const QString& phone);
     // key ∈ "expiry" | "success" | "cancel"
     Q_INVOKABLE bool notificationEnabled(const QString& key) const;
     Q_INVOKABLE void setNotificationEnabled(const QString& key, bool enabled);

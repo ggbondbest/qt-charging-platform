@@ -48,6 +48,17 @@ Item {
             page.hasPassword = (typeof hp === "boolean") ? hp : StationState.hasSecondPassword()
             const pe = call(settingsService, "protectionEnabled", [])
             page.protectionOn = (typeof pe === "boolean") ? pe : StationState.protectionEnabled()
+            // 旧密码自愈（缺陷修复 2026-09-11）：绑定手机号字段上线前落的密码
+            // 无号可配，登录门按号判定永不亮——进页时补绑当前登录号（服务侧
+            // 仅未绑定时写入，已绑定 no-op）。
+            if (page.hasPassword) {
+                const bp = call(settingsService, "protectionPhone", [])
+                const mine = StationState.accountPhone()
+                    || (App && App.currentUser && App.currentUser.phone
+                        ? App.currentUser.phone : "")
+                if (typeof bp === "string" && bp.length === 0 && mine.length > 0)
+                    call(settingsService, "bindProtectionPhone", [mine])
+            }
         } else {
             // 桥缺位期整体落库：vehicles 引用直传不拷贝，登录验证/预约准入同读此库
             page.vehicles = StationState.vehicles
@@ -425,14 +436,16 @@ Item {
                         if (newField.text.length < 4) { passwordDialog.note = "密码长度至少 4 位"; return }
                         if (newField.text !== confirmField.text) { passwordDialog.note = "两次输入的密码不一致"; return }
                         // 明文只透传给哈希通道（库/服务），UI 不留存；
-                        // 库通道把密码绑定到当前登录手机号——登录页仅对该号码要求验证。
+                        // 密码绑定到当前登录手机号——登录页仅对该号码要求验证。
                         // 桥契约名 setSecondPassword（缺陷修复 2026-09-10：曾调裸
                         // 服务名 setProtectionPassword，桥无此方法被吞，密码从未落盘）。
-                        StationState.setSecondPassword(newField.text,
-                            StationState.accountPhone()
+                        // 缺陷修复 2026-09-11：桥侧曾不带号——服务通道无绑定可查，
+                        // 任何手机号都亮密码行；现在绑定手机号随密码一起落盘。
+                        const mine = StationState.accountPhone()
                             || (App && App.currentUser && App.currentUser.phone
-                                ? App.currentUser.phone : ""))
-                        call(settingsService, "setSecondPassword", [newField.text])
+                                ? App.currentUser.phone : "")
+                        StationState.setSecondPassword(newField.text, mine)
+                        call(settingsService, "setSecondPassword", [newField.text, mine])
                         page.hasPassword = true
                         passwordDialog.close()
                         if (App) App.showToast("二级保护密码已保存", "success")

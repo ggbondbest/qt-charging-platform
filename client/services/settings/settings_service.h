@@ -90,8 +90,15 @@ public:
     bool hasProtectionPassword() const;
     // 长度兜底与设置页输入校验同口径（≥4），绕过 UI 也拦得住；
     // 失败仅返回 false、不改存储不发信号。
-    bool setProtectionPassword(const QString& password); // 校验：长度 ≥ 4
+    // boundPhone＝建立/更换绑定：登录页二级密码门只对该手机号命中（按号不按机）；
+    // 缺省空＝不改既有绑定（widgets 老通道无账号概念）。
+    bool setProtectionPassword(const QString& password,
+                               const QString& boundPhone = QString()); // 校验：长度 ≥ 4
     bool verifyProtectionPassword(const QString& password) const;
+    // 绑定手机号；空串＝未绑定（老密码/老通道），登录门退库通道判定。
+    QString protectionPhone() const;
+    // 旧密码自愈：仅未绑定时补写当前登录号，已绑定 no-op（永不换绑）。
+    void bindProtectionPhone(const QString& phone);
     bool protectionEnabled() const;
     // 未设置密码时返回 false 且不改变状态（UI 据此保持开关置灰）。
     bool setProtectionEnabled(bool enabled);

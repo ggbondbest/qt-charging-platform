@@ -614,9 +614,9 @@ bool SettingsBridge::removeVehicle(const QVariant& id) { return svc_->removeVehi
 void SettingsBridge::setDefaultVehicle(const QVariant& id) { svc_->setDefaultVehicle(id.toLongLong()); }
 
 bool SettingsBridge::hasSecondPassword() const { return svc_->hasProtectionPassword(); }
-bool SettingsBridge::setSecondPassword(const QString& plain)
+bool SettingsBridge::setSecondPassword(const QString& plain, const QString& boundPhone)
 {
-    return svc_->setProtectionPassword(plain);
+    return svc_->setProtectionPassword(plain, boundPhone);
 }
 bool SettingsBridge::verifySecondPassword(const QString& plain) const
 {
@@ -626,6 +626,11 @@ bool SettingsBridge::protectionEnabled() const { return svc_->protectionEnabled(
 bool SettingsBridge::setSecondProtectionEnabled(bool enabled)
 {
     return svc_->setProtectionEnabled(enabled);
+}
+QString SettingsBridge::protectionPhone() const { return svc_->protectionPhone(); }
+void SettingsBridge::bindProtectionPhone(const QString& phone)
+{
+    svc_->bindProtectionPhone(phone);
 }
 
 namespace {

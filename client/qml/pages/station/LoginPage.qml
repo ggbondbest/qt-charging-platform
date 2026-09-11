@@ -44,10 +44,17 @@ Item {
             // 明确说"是"，其余一律退库通道，不让 truthy 杂值冒充开关。
             // 方法名走桥契约 second*（缺陷修复 2026-09-10：曾误用裸服务
             // protection* 名，桥无此方法、call 吞异常，登录永远读不到持久化真值）。
+            // 缺陷修复 2026-09-11：服务通道此前只查全局双闸——盘上有密码后
+            // 任何手机号都亮密码行；补 protectionPhone 绑定比对，仅"设置密码
+            // 时绑定的那个号"命中（绑定为空的旧密码不亮，进设置页自动补绑）。
             if (settingsService && settingsService.hasSecondPassword
                 && settingsService.hasSecondPassword() === true
                 && settingsService.protectionEnabled
-                && settingsService.protectionEnabled() === true) return true
+                && settingsService.protectionEnabled() === true
+                && settingsService.protectionPhone) {
+                const bound = String(settingsService.protectionPhone())
+                if (bound.length > 0 && bound === String(phone)) return true
+            }
         } catch (e) { /* 桥缺位 → 库通道 */ }
         return StationState.needsSecondPassword(phone)
     }
