@@ -16,6 +16,7 @@ namespace request_type {
 inline constexpr char kUserLogin[] = "USER_LOGIN";
 inline constexpr char kGetStations[] = "GET_STATIONS";
 inline constexpr char kGetChargers[] = "GET_CHARGERS";
+inline constexpr char kGetReservations[] = "GET_RESERVATIONS";
 inline constexpr char kReserveCharger[] = "RESERVE_CHARGER";
 inline constexpr char kCancelReservation[] = "CANCEL_RESERVATION";
 inline constexpr char kStartCharging[] = "START_CHARGING";
@@ -27,6 +28,28 @@ inline constexpr char kUpdateUserInfo[] = "UPDATE_USER_INFO";
 inline constexpr char kRecharge[] = "RECHARGE";
 inline constexpr char kGetRechargeRecords[] = "GET_RECHARGE_RECORDS";
 inline constexpr char kGetOrders[] = "GET_ORDERS";
+inline constexpr char kGetUserStats[] = "GET_USER_STATS";
+inline constexpr char kGetCoupons[] = "GET_COUPONS";
+inline constexpr char kGetNotifications[] = "GET_NOTIFICATIONS";
+inline constexpr char kWorkflowSubscribe[] = "WORKFLOW_SUBSCRIBE";
+inline constexpr char kQueueJoin[] = "QUEUE_JOIN";
+inline constexpr char kQueueGetMine[] = "QUEUE_GET_MINE";
+inline constexpr char kQueueLeave[] = "QUEUE_LEAVE";
+inline constexpr char kQueueConfirm[] = "QUEUE_CONFIRM";
+inline constexpr char kRepairSubmit[] = "REPAIR_SUBMIT";
+inline constexpr char kRepairGetMine[] = "REPAIR_GET_MINE";
+inline constexpr char kRepairGet[] = "REPAIR_GET";
+// 2026-09-08 批次C 签到/积分（冻结只新增）：CHECK_IN 写型无参（日粒度幂等，
+// Session 定身份），GET_POINTS 分页读积分流水。
+inline constexpr char kCheckIn[] = "CHECK_IN";
+inline constexpr char kGetPoints[] = "GET_POINTS";
+// 2026-09-09 需求批（冻结只新增）：升级礼包入账。CREDIT_LEVEL_REWARD 写型带参
+// （level 2..5，服务端按单点表推导礼包积分，不信任客户端传额；同档重放幂等）。
+inline constexpr char kCreditLevelReward[] = "CREDIT_LEVEL_REWARD";
+// 批次E（2026-09-08）：电桩评价。SUBMIT_CHARGER_RATING 写评价（一单一评幂等），
+// GET_MY_RATINGS 分页读本人评价流水。
+inline constexpr char kSubmitChargerRating[] = "SUBMIT_CHARGER_RATING";
+inline constexpr char kGetMyRatings[] = "GET_MY_RATINGS";
 inline constexpr char kAdminLogin[] = "ADMIN_LOGIN";
 inline constexpr char kGetDashboard[] = "GET_DASHBOARD";
 inline constexpr char kGetUsers[] = "GET_USERS";
@@ -41,6 +64,9 @@ inline constexpr char kInvalidFrame[] = "INVALID_FRAME";
 inline constexpr char kPayloadTooLarge[] = "PAYLOAD_TOO_LARGE";
 inline constexpr char kInvalidJson[] = "INVALID_JSON";
 inline constexpr char kInvalidEnvelope[] = "INVALID_ENVELOPE";
+inline constexpr char kInvalidArgument[] = "INVALID_ARGUMENT";
+inline constexpr char kIdempotencyConflict[] = "IDEMPOTENCY_CONFLICT";
+inline constexpr char kRechargeFailed[] = "RECHARGE_FAILED";
 inline constexpr char kUnsupportedProtocolVersion[] = "UNSUPPORTED_PROTOCOL_VERSION";
 inline constexpr char kUnknownRequestType[] = "UNKNOWN_REQUEST_TYPE";
 inline constexpr char kInvalidPhone[] = "INVALID_PHONE";
@@ -94,6 +120,16 @@ struct ResponseEnvelope
     QJsonObject data;
     ProtocolError error;
 };
+
+struct EventEnvelope
+{
+    int protocolVersion = kProtocolVersion;
+    MessageKind kind = MessageKind::Event;
+    QString type;
+    QJsonObject data;
+};
+QByteArray serializePayload(const EventEnvelope& event);
+bool parseEventPayload(const QByteArray& payload, EventEnvelope* outValue, ProtocolError* error = nullptr);
 
 QString toString(MessageKind kind);
 bool messageKindFromString(const QString& text, MessageKind* outValue);

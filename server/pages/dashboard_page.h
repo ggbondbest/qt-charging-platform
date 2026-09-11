@@ -1,0 +1,53 @@
+#pragma once
+
+#include <QJsonObject>
+#include <QString>
+#include <QWidget>
+
+class QLabel;
+class QTableWidget;
+class QPushButton;
+
+namespace charging::server {
+
+class DeliveryRevenueTrendWidget;
+class DeliveryDeviceStatusWidget;
+
+class DashboardPage final : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit DashboardPage(QWidget* parent = nullptr);
+
+    void setAdminGateway(class AdminRequestGateway* gateway);
+    void refresh(int days = 7, bool clearExisting = true);
+    void refreshCurrent(bool clearExisting = false) { refresh(requestedDays_, clearExisting); }
+
+signals:
+    void exceptionListRequested();
+    void latestOrdersRequested();
+
+private:
+    void clearDashboardData();
+    void handleDashboardResponse(const QJsonObject& response);
+    class AdminRequestGateway* gateway_ = nullptr;
+    QString requestId_;
+    QLabel* todayRevenueValue_ = nullptr;
+    QLabel* monthRevenueValue_ = nullptr;
+    QLabel* totalRevenueValue_ = nullptr;
+    QLabel* onlineChargersValue_ = nullptr;
+    QLabel* onlineChargersHint_ = nullptr;
+    QLabel* totalChargersLabel_ = nullptr;
+    QLabel* refreshedAtLabel_ = nullptr;
+    QLabel* exceptionCountBadge_ = nullptr;
+    QTableWidget* deviceStatusTable_ = nullptr;
+    QTableWidget* exceptionTable_ = nullptr;
+    QTableWidget* latestOrdersTable_ = nullptr;
+    QPushButton* refreshButton_ = nullptr;
+    DeliveryRevenueTrendWidget* trendWidget_ = nullptr;
+    DeliveryDeviceStatusWidget* deviceStatusWidget_ = nullptr;
+    int requestedDays_ = 7;
+};
+
+} // namespace charging::server

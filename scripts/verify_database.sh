@@ -28,6 +28,8 @@ trap cleanup EXIT INT TERM
 
 sqlite3 -batch -bail "${temporary_database}" < "${schema_file}" > /dev/null
 sqlite3 -batch -bail "${temporary_database}" < "${seed_file}" > /dev/null
+# Opening an existing database reapplies schema.sql; migrations and indexes must remain idempotent.
+sqlite3 -batch -bail "${temporary_database}" < "${schema_file}" > /dev/null
 # Seed files are required to be safe to run more than once in demo/test setup.
 sqlite3 -batch -bail "${temporary_database}" < "${seed_file}" > /dev/null
 
@@ -46,20 +48,88 @@ if [[ -n "${foreign_key_errors}" ]]; then
     exit 1
 fi
 
-table_count="$(sqlite3 -batch -bail "${temporary_database}" \
-    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';")"
-if [[ "${table_count}" -ne 8 ]]; then
-    printf 'Database verification failed: expected 8 application tables, found %s.\n' \
-        "${table_count}" >&2
+# Compare the explicit set of application tables instead of a bare count: a
+# count can hide a missing table behind an extra one after schema changes.
+expected_tables="$(LC_ALL=C printf '%s\n' \
+    admins chargers coupons notifications operation_logs orders points_ledger \
+    recharge_records reservations stations user_checkins users charger_ratings \
+    charger_exceptions order_pricing_snapshots queue_entries repair_reports repair_timeline \
+    repair_operations order_charge_targets | sort)"
+actual_tables="$(sqlite3 -batch -bail "${temporary_database}" \
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")"
+if [[ "${actual_tables}" != "${expected_tables}" ]]; then
+    printf 'Database verification failed: unexpected application tables.\nExpected:\n%s\nFound:\n%s\n' \
+        "${expected_tables}" "${actual_tables}" >&2
     exit 1
 fi
+table_count="$(printf '%s\n' "${actual_tables}" | wc -l)"
 
 schema_version="$(sqlite3 -batch -bail "${temporary_database}" 'PRAGMA user_version;')"
-if [[ "${schema_version}" -ne 1 ]]; then
-    printf 'Database verification failed: expected schema version 1, found %s.\n' \
+if [[ "${schema_version}" -ne 5 ]]; then
+    printf 'Database verification failed: expected schema version 5, found %s.\n' \
         "${schema_version}" >&2
     exit 1
 fi
+
+required_query_indexes=(
+    idx_chargers_abnormal_updated_at
+    idx_chargers_updated_at
+    idx_users_status_id
+    idx_orders_status_created_at
+    idx_orders_created_at
+    idx_recharge_records_status_created_at
+    idx_recharge_records_created_at
+    idx_operation_logs_action_created_at
+    idx_operation_logs_admin_created_at
+    idx_operation_logs_created_at
+)
+for index_name in "${required_query_indexes[@]}"; do
+    index_count="$(sqlite3 -batch -bail "${temporary_database}" \
+        "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = '${index_name}';")"
+    if [[ "${index_count}" -ne 1 ]]; then
+        printf 'Database verification failed: required query index is missing: %s.\n' \
+            "${index_name}" >&2
+        exit 1
+    fi
+done
+
+assert_query_uses_index() {
+    local index_name="$1"
+    local query="$2"
+    local plan
+    plan="$(sqlite3 -batch -bail "${temporary_database}" "EXPLAIN QUERY PLAN ${query}")"
+    if [[ "${plan}" != *"${index_name}"* ]]; then
+        printf 'Database verification failed: query does not use index %s:\n%s\n' \
+            "${index_name}" "${plan}" >&2
+        exit 1
+    fi
+    if [[ "${plan}" == *"USE TEMP B-TREE"* ]]; then
+        printf 'Database verification failed: query still requires a temporary sort with index %s:\n%s\n' \
+            "${index_name}" "${plan}" >&2
+        exit 1
+    fi
+}
+
+assert_query_uses_index idx_chargers_abnormal_updated_at \
+    "SELECT id FROM chargers WHERE status IN ('FAULT','OFFLINE') ORDER BY updated_at DESC, id DESC LIMIT 5;"
+assert_query_uses_index idx_users_status_id \
+    "SELECT id FROM users WHERE status = 'ACTIVE' ORDER BY id ASC LIMIT 20;"
+assert_query_uses_index idx_recharge_records_status_created_at \
+    "SELECT id FROM recharge_records WHERE status = 'SUCCESS' ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_operation_logs_action_created_at \
+    "SELECT id FROM operation_logs WHERE action = 'station.edit' ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_chargers_updated_at \
+    "SELECT id FROM chargers ORDER BY updated_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_orders_created_at \
+    "SELECT id FROM orders ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_orders_status_created_at \
+    "SELECT id FROM orders WHERE status = 'COMPLETED' ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_recharge_records_created_at \
+    "SELECT id FROM recharge_records ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_operation_logs_created_at \
+    "SELECT id FROM operation_logs ORDER BY created_at DESC, id DESC LIMIT 20;"
+assert_query_uses_index idx_operation_logs_admin_created_at \
+    "SELECT id FROM operation_logs WHERE admin_id = 1 ORDER BY created_at DESC, id DESC LIMIT 20;"
 
 seed_counts="$(sqlite3 -batch -bail "${temporary_database}" \
     "SELECT (SELECT count(*) FROM admins) || '|' ||

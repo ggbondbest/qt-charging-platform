@@ -1,3 +1,113 @@
+foreach(extension IN ITEMS workflow_migration charging_targets queue_workflow repair_workflow admin_extension_queries admin_charger_extensions admin_billing_snapshot)
+    add_executable(test_${extension} tst_${extension}.cpp)
+    target_link_libraries(test_${extension} PRIVATE ChargingPlatform::ServerServices
+        ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test Qt6::Sql)
+    add_test(NAME ${extension} COMMAND test_${extension})
+    set_tests_properties(${extension} PROPERTIES TIMEOUT 60)
+endforeach()
+
+foreach(extension IN ITEMS workflow_management_page admin_extension_pages admin_charger_extension_pages)
+    add_executable(test_${extension} tst_${extension}.cpp)
+    target_link_libraries(test_${extension} PRIVATE ChargingPlatform::ServerPages
+        ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test Qt6::Sql)
+    add_test(NAME ${extension} COMMAND test_${extension})
+    set_tests_properties(${extension} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+endforeach()
+
+target_link_libraries(test_workflow_management_page PRIVATE ChargingPlatform::ServerServices)
+
+add_executable(test_workflow_management_races tst_workflow_management_races.cpp)
+target_link_libraries(test_workflow_management_races PRIVATE ChargingPlatform::ServerPages
+    ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test Qt6::Sql)
+add_test(NAME workflow_management_races COMMAND test_workflow_management_races)
+set_tests_properties(workflow_management_races PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+
+add_executable(test_workflow_tcp tst_workflow_tcp.cpp)
+target_link_libraries(test_workflow_tcp PRIVATE ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Network Qt6::Sql Qt6::Test)
+add_test(NAME workflow_tcp COMMAND test_workflow_tcp)
+set_tests_properties(workflow_tcp PROPERTIES TIMEOUT 60)
+
+add_executable(test_workflow_bridge tst_workflow_bridge.cpp ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp)
+target_include_directories(test_workflow_bridge PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_link_libraries(test_workflow_bridge PRIVATE ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientNetwork Qt6::Test)
+add_test(NAME workflow_bridge COMMAND test_workflow_bridge)
+set_tests_properties(workflow_bridge PROPERTIES TIMEOUT 30)
+
+add_executable(test_city_demo_seed tst_city_demo_seed.cpp)
+target_link_libraries(test_city_demo_seed PRIVATE ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME city_demo_seed COMMAND test_city_demo_seed)
+set_tests_properties(city_demo_seed PROPERTIES TIMEOUT 40)
+
+add_executable(test_admin_ui_presentation tst_admin_ui_presentation.cpp)
+target_link_libraries(test_admin_ui_presentation PRIVATE
+    ChargingPlatform::ServerPages ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME admin_ui_presentation COMMAND test_admin_ui_presentation)
+set_tests_properties(admin_ui_presentation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+
+add_executable(test_delivery_admin_pages tst_delivery_admin_pages.cpp)
+target_link_libraries(test_delivery_admin_pages PRIVATE
+    ChargingPlatform::ServerPages
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME delivery_admin_pages COMMAND test_delivery_admin_pages)
+# 2026-09-08 merge：上游给交付页接入 Qt Charts（QChartView 实建 QPA 面），
+# 无 DISPLAY 机器裸跑撞 xcb abort——补 offscreen（admin_login 同口径）。
+set_tests_properties(delivery_admin_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+
+add_executable(test_delivery_data_contract tst_delivery_data_contract.cpp)
+target_link_libraries(test_delivery_data_contract PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME delivery_data_contract COMMAND test_delivery_data_contract)
+
+add_executable(test_admin_service tst_admin_service.cpp)
+target_link_libraries(test_admin_service PRIVATE
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME admin_service COMMAND test_admin_service)
+
+add_executable(test_admin_gateway tst_admin_gateway.cpp)
+target_link_libraries(test_admin_gateway PRIVATE
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME admin_gateway COMMAND test_admin_gateway)
+add_executable(test_admin_login tst_admin_login.cpp)
+target_link_libraries(test_admin_login PRIVATE ChargingPlatform::ServerPages
+    ChargingPlatform::DatabaseResources Qt6::Test)
+add_test(NAME admin_login COMMAND test_admin_login)
+
+add_executable(test_admin_management_pages tst_admin_management_pages.cpp)
+target_link_libraries(test_admin_management_pages PRIVATE
+    ChargingPlatform::ServerPages
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME admin_management_pages COMMAND test_admin_management_pages)
+set_tests_properties(admin_management_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 40
+)
+set_tests_properties(admin_service admin_gateway admin_login PROPERTIES TIMEOUT 40)
+# admin_login 建 QWidget 页，无 DISPLAY 机器上裸跑会因 xcb 直接 abort
+# （与 station_map_panel 等同一注入口径）。
+set_tests_properties(admin_login PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 add_executable(test_qt_baseline tst_qt_baseline.cpp)
 target_link_libraries(test_qt_baseline PRIVATE
     ChargingPlatform::ProjectOptions
@@ -17,6 +127,16 @@ target_link_libraries(test_server_smoke PRIVATE
 )
 add_test(NAME server_smoke COMMAND test_server_smoke)
 
+add_executable(test_server_runtime tst_server_runtime.cpp)
+target_link_libraries(test_server_runtime PRIVATE
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME server_runtime COMMAND test_server_runtime)
+set_tests_properties(server_runtime PROPERTIES TIMEOUT 40)
+
 add_executable(test_database_resources tst_database_resources.cpp)
 target_link_libraries(test_database_resources PRIVATE
     ChargingPlatform::DatabaseResources
@@ -26,6 +146,65 @@ target_link_libraries(test_database_resources PRIVATE
 )
 add_test(NAME database_resources COMMAND test_database_resources)
 
+add_executable(test_station_charger_repositories tst_station_charger_repositories.cpp)
+target_link_libraries(test_station_charger_repositories PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME station_charger_repositories COMMAND test_station_charger_repositories)
+
+add_executable(test_user_order_recharge_queries tst_user_order_recharge_queries.cpp)
+target_link_libraries(test_user_order_recharge_queries PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME user_order_recharge_queries COMMAND test_user_order_recharge_queries)
+
+add_executable(test_reservation_operation_logs tst_reservation_operation_logs.cpp)
+target_link_libraries(test_reservation_operation_logs PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_operation_logs COMMAND test_reservation_operation_logs)
+
+add_executable(test_dashboard_repository tst_dashboard_repository.cpp)
+target_link_libraries(test_dashboard_repository PRIVATE
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME dashboard_repository COMMAND test_dashboard_repository)
+
+add_executable(test_database_maintenance tst_database_maintenance.cpp)
+target_link_libraries(test_database_maintenance PRIVATE
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME database_maintenance COMMAND test_database_maintenance)
+
 add_executable(test_protocol tst_protocol.cpp)
 target_link_libraries(test_protocol PRIVATE
     ChargingPlatform::Common
@@ -33,6 +212,30 @@ target_link_libraries(test_protocol PRIVATE
     Qt6::Test
 )
 add_test(NAME protocol COMMAND test_protocol)
+
+add_executable(test_user_api_contract tst_user_api_contract.cpp)
+target_link_libraries(test_user_api_contract PRIVATE
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+target_compile_definitions(test_user_api_contract PRIVATE
+    USER_API_EXAMPLES_PATH="${PROJECT_SOURCE_DIR}/docs/api/user_api_examples.json"
+)
+add_test(NAME user_api_contract COMMAND test_user_api_contract)
+
+add_executable(test_user_api_integration tst_user_api_integration.cpp)
+target_link_libraries(test_user_api_integration PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    Qt6::Test
+)
+add_test(NAME user_api_integration COMMAND test_user_api_integration)
+set_tests_properties(user_api_integration PROPERTIES TIMEOUT 60)
 
 add_executable(test_model_json tst_model_json.cpp)
 target_link_libraries(test_model_json PRIVATE
@@ -42,6 +245,288 @@ target_link_libraries(test_model_json PRIVATE
 )
 add_test(NAME model_json COMMAND test_model_json)
 
+add_executable(test_login_integration tst_login_integration.cpp)
+target_link_libraries(test_login_integration PRIVATE
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME login_integration COMMAND test_login_integration)
+set_tests_properties(login_integration PROPERTIES TIMEOUT 20)
+
+add_executable(test_billing_service tst_billing_service.cpp)
+target_link_libraries(test_billing_service PRIVATE
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME billing_service COMMAND test_billing_service)
+
+add_executable(test_charging_workflow tst_charging_workflow.cpp)
+target_link_libraries(test_charging_workflow PRIVATE
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME charging_workflow COMMAND test_charging_workflow)
+set_tests_properties(charging_workflow PROPERTIES TIMEOUT 20)
+
+add_executable(test_charging_tcp_integration tst_charging_tcp_integration.cpp)
+target_link_libraries(test_charging_tcp_integration PRIVATE
+    ChargingPlatform::ClientNetwork
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME charging_tcp_integration COMMAND test_charging_tcp_integration)
+set_tests_properties(charging_tcp_integration PROPERTIES TIMEOUT 20)
+
+add_executable(test_network_resilience tst_network_resilience.cpp)
+target_link_libraries(test_network_resilience PRIVATE
+    ChargingPlatform::ClientNetwork
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME network_resilience COMMAND test_network_resilience)
+set_tests_properties(network_resilience PROPERTIES TIMEOUT 20)
+
+add_executable(test_wallet_service tst_wallet_service.cpp)
+target_link_libraries(test_wallet_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME wallet_service COMMAND test_wallet_service)
+
+add_executable(test_order_service tst_order_service.cpp)
+target_link_libraries(test_order_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME order_service COMMAND test_order_service)
+
+add_executable(test_point_service tst_point_service.cpp)
+target_link_libraries(test_point_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME point_service COMMAND test_point_service)
+
+add_executable(test_progress_service tst_progress_service.cpp)
+target_link_libraries(test_progress_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME progress_service COMMAND test_progress_service)
+
+add_executable(test_rating_service tst_rating_service.cpp)
+target_link_libraries(test_rating_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME rating_service COMMAND test_rating_service)
+
+# sendFor lifetime guard for the four user-domain services (PR review P1-1).
+add_executable(test_service_lifecycle tst_service_lifecycle.cpp)
+target_link_libraries(test_service_lifecycle PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME service_lifecycle COMMAND test_service_lifecycle)
+set_tests_properties(service_lifecycle PROPERTIES TIMEOUT 60)
+
+add_executable(test_charging_service tst_charging_service.cpp)
+target_link_libraries(test_charging_service PRIVATE
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME charging_service COMMAND test_charging_service)
+
+add_executable(test_home_shell tst_home_shell.cpp)
+target_link_libraries(test_home_shell PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME home_shell COMMAND test_home_shell)
+set_tests_properties(home_shell PROPERTIES
+    # 2026-09-08 key 入库批："已定义且空"= env 权威无 key → 壳内 MapGeoService
+    # 绝不读 client/config/map_services.json 兜底 key，测试永不发真实请求。
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_station_map_panel tst_station_map_panel.cpp)
+target_link_libraries(test_station_map_panel PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ProjectOptions
+    Qt6::Test
+)
+add_test(NAME station_map_panel COMMAND test_station_map_panel)
+set_tests_properties(station_map_panel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_pull_to_refresh tst_pull_to_refresh.cpp)
+target_link_libraries(test_pull_to_refresh PRIVATE
+    ChargingPlatform::ClientWidgets
+    Qt6::Test
+)
+add_test(NAME pull_to_refresh COMMAND test_pull_to_refresh)
+set_tests_properties(pull_to_refresh PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_map_geo_service tst_map_geo_service.cpp)
+target_link_libraries(test_map_geo_service PRIVATE
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ProjectOptions
+    Qt6::Network
+    Qt6::Test
+)
+add_test(NAME map_geo_service COMMAND test_map_geo_service)
+set_tests_properties(map_geo_service PROPERTIES
+    TIMEOUT 30
+)
+
+add_executable(test_station_query_service tst_station_query_service.cpp)
+target_link_libraries(test_station_query_service PRIVATE
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME station_query_service COMMAND test_station_query_service)
+# 2026-09-08 merge 补：同 delivery_admin_pages——QTEST_MAIN 链到 Qt6::Gui 时建
+# QGuiApplication，无 DISPLAY 裸跑撞 xcb（直挂 offscreen 复测 11/11 全绿）。
+set_tests_properties(station_query_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 30
+)
+
+add_executable(test_reservation_service tst_reservation_service.cpp)
+target_link_libraries(test_reservation_service PRIVATE
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientNetwork
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::Common
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::ServerRepositories
+    ChargingPlatform::ServerDatabase
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Test
+)
+add_test(NAME reservation_service COMMAND test_reservation_service)
+# 2026-09-08 merge 补：同 station_query_service——QPA 面裸跑撞 xcb，offscreen 直挂。
+set_tests_properties(reservation_service PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 60
+)
+
+add_executable(test_settings_service tst_settings_service.cpp)
+target_link_libraries(test_settings_service PRIVATE
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME settings_service COMMAND test_settings_service)
+
+add_executable(test_favorites_service tst_favorites_service.cpp)
+target_link_libraries(test_favorites_service PRIVATE
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME favorites_service COMMAND test_favorites_service)
+
+add_executable(test_notification_service tst_notification_service.cpp)
+target_link_libraries(test_notification_service PRIVATE
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::Common
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Test
+)
+add_test(NAME notification_service COMMAND test_notification_service)
+
+add_executable(test_client_navigation
+    tst_client_navigation.cpp
+    ../client/app/main_window.cpp
+    ../client/app/main_window.h
+)
+target_include_directories(test_client_navigation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../client/app
+)
+target_link_libraries(test_client_navigation PRIVATE
+    ChargingPlatform::ClientStationPages
+    ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices
+    ChargingPlatform::DatabaseResources
+    ChargingPlatform::ProjectOptions
+    Qt6::Core
+    Qt6::Network
+    Qt6::Sql
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME client_navigation COMMAND test_client_navigation)
+set_tests_properties(client_navigation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 20
+)
+
+
 find_program(CHARGING_BASH_EXECUTABLE NAMES bash)
 find_program(CHARGING_SQLITE3_EXECUTABLE NAMES sqlite3)
 if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)
@@ -50,4 +535,207 @@ if(CHARGING_BASH_EXECUTABLE AND CHARGING_SQLITE3_EXECUTABLE)
         COMMAND ${CHARGING_BASH_EXECUTABLE}
                 ${PROJECT_SOURCE_DIR}/scripts/verify_database.sh
     )
+endif()
+
+add_executable(test_qml_map_bridge tst_qml_map_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_map_bridge PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_link_libraries(test_qml_map_bridge PRIVATE
+    ChargingPlatform::ClientMapServices Qt6::Core Qt6::Gui Qt6::Test)
+add_test(NAME qml_map_bridge COMMAND test_qml_map_bridge)
+# 空 env 权威无 key：杜绝测试进程读取 git 配置文件密钥。
+set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_map_geocoding_recovery tst_map_geocoding_recovery.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_map_geocoding_recovery PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_link_libraries(test_map_geocoding_recovery PRIVATE
+    ChargingPlatform::ClientMapServices ChargingPlatform::ProjectOptions
+    Qt6::Core Qt6::Gui Qt6::Network Qt6::Test)
+add_test(NAME map_geocoding_recovery COMMAND test_map_geocoding_recovery)
+set_tests_properties(map_geocoding_recovery PROPERTIES TIMEOUT 30
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=")
+
+# QML page interaction regression (PR #33 second-round review follow-ups).
+# Same gate as client/qml — configure stays byte-identical without the Qt
+# Quick declarative packages, so the existing CI is unaffected either way.
+if(CHARGING_HAS_QML)
+add_executable(test_qml_charging_unified tst_qml_charging_unified.cpp)
+target_compile_definitions(test_qml_charging_unified PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_charging_unified PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_charging_unified COMMAND test_qml_charging_unified)
+set_tests_properties(qml_charging_unified PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_map_views tst_qml_map_views.cpp)
+target_compile_definitions(test_qml_map_views PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_map_views PRIVATE
+    Qt6::Test Qt6::Quick Qt6::QuickControls2 Qt6::WebEngineQuick)
+add_test(NAME qml_map_views COMMAND test_qml_map_views)
+set_tests_properties(qml_map_views PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
+
+add_executable(test_qml_navigation_page tst_qml_navigation_page.cpp)
+target_compile_definitions(test_qml_navigation_page PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_navigation_page PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_navigation_page COMMAND test_qml_navigation_page)
+set_tests_properties(qml_navigation_page PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_platform_controls tst_qml_platform_controls.cpp)
+target_compile_definitions(test_qml_platform_controls PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_platform_controls PRIVATE Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME qml_platform_controls COMMAND test_qml_platform_controls)
+set_tests_properties(qml_platform_controls PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_qml_client_pages tst_qml_client_pages.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/glyph_provider.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
+)
+# 页面 emoji→glyph 替换后，Image 源需要母版资源与 provider 双在位（createPage
+# 注册 GlyphProvider；母版与 charging_client 的 qrc 同源）。FILES 用绝对路径：
+# qt_add_resources 把相对 FILES 解析到当前源目录（tests/）而非 BASE。
+file(GLOB charging_glyph_assets ${CMAKE_SOURCE_DIR}/client/qml/assets/glyphs/*.png)
+qt_add_resources(test_qml_client_pages "charging_glyph_assets"
+    PREFIX "/charging" BASE "${CMAKE_SOURCE_DIR}/client/qml"
+    FILES ${charging_glyph_assets})
+target_include_directories(test_qml_client_pages PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/qml
+)
+target_compile_definitions(test_qml_client_pages PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml"
+)
+target_link_libraries(test_qml_client_pages PRIVATE
+    ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME qml_client_pages COMMAND test_qml_client_pages)
+set_tests_properties(qml_client_pages PROPERTIES
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 60
+)
+
+# station 域真点击链回归（收藏星被 ClickableCard 盖层吞事件 / 顶栏铃铛→消息页）。
+# 与 qml_client_pages 同门（CHARGING_HAS_QML）；真鼠标事件穿完整命中栈。
+add_executable(test_qml_station_interactions tst_qml_station_interactions.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/glyph_provider.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    # 2026-09-08 merge：上游 app_bridge 构造引用 MapBridge，随同列入源。
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp
+)
+# glyph 染色面（image://glyphs）需要母版资源与 provider 双在位，同源注释见
+# test_qml_client_pages。
+qt_add_resources(test_qml_station_interactions "charging_glyph_assets_station"
+    PREFIX "/charging" BASE "${CMAKE_SOURCE_DIR}/client/qml"
+    FILES ${charging_glyph_assets})
+target_include_directories(test_qml_station_interactions PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/qml
+)
+target_compile_definitions(test_qml_station_interactions PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml"
+)
+target_link_libraries(test_qml_station_interactions PRIVATE
+    ChargingPlatform::ProjectOptions
+    ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices
+    ChargingPlatform::ClientProfileChargingPages
+    ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices
+    ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices
+    ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+)
+add_test(NAME qml_station_interactions COMMAND test_qml_station_interactions)
+set_tests_properties(qml_station_interactions PROPERTIES
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 90
+)
+add_executable(test_qml_tcp_delivery tst_qml_tcp_delivery.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_tcp_delivery PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_compile_definitions(test_qml_tcp_delivery PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_tcp_delivery PRIVATE
+    ChargingPlatform::ProjectOptions ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
+    Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
+add_test(NAME qml_tcp_delivery COMMAND test_qml_tcp_delivery)
+add_executable(test_qml_reservation_cancel tst_qml_reservation_cancel.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_reservation_cancel PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_compile_definitions(test_qml_reservation_cancel PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_reservation_cancel PRIVATE
+    ChargingPlatform::ProjectOptions ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
+    Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
+add_test(NAME qml_reservation_cancel COMMAND test_qml_reservation_cancel)
+set_tests_properties(qml_reservation_cancel PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
+add_executable(test_qml_workflow_pages tst_qml_workflow_pages.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/workflow_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/app_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/service_bridges.cpp
+    ${CMAKE_SOURCE_DIR}/client/qml/map_bridge.cpp)
+target_include_directories(test_qml_workflow_pages PRIVATE ${CMAKE_SOURCE_DIR}/client/qml)
+target_compile_definitions(test_qml_workflow_pages PRIVATE
+    CHARGING_QML_SOURCE_DIR="${CMAKE_SOURCE_DIR}/client/qml")
+target_link_libraries(test_qml_workflow_pages PRIVATE
+    ChargingPlatform::ProjectOptions ChargingPlatform::Common
+    ChargingPlatform::ClientProfileChargingServices ChargingPlatform::ClientStationServices
+    ChargingPlatform::ClientReservationServices ChargingPlatform::ClientSettingsServices
+    ChargingPlatform::ClientMapServices ChargingPlatform::ClientFavoritesServices
+    ChargingPlatform::ClientNetwork ChargingPlatform::ServerCore
+    ChargingPlatform::ServerServices ChargingPlatform::DatabaseResources
+    Qt6::Quick Qt6::Widgets Qt6::Test Qt6::Sql)
+add_test(NAME qml_workflow_pages COMMAND test_qml_workflow_pages)
+set_tests_properties(qml_workflow_pages PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
+set_tests_properties(qml_tcp_delivery PROPERTIES
+    # 2026-09-08 merge 补：本分支 key 三级解析含 git 配置文件兜底，上游此测试写于
+    # 兜底入库之前未加空 env 隔离；并入后按全仓 QML 套件同口径撤防真实外网。
+    ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
 endif()

@@ -256,6 +256,7 @@ QJsonObject toJson(const Charger& value)
     object.insert(QStringLiteral("type"), toString(value.type));
     object.insert(QStringLiteral("powerWatts"), value.powerWatts);
     object.insert(QStringLiteral("status"), toString(value.status));
+    object.insert(QStringLiteral("maintenance"), value.maintenance);
     object.insert(QStringLiteral("totalChargeCount"), value.totalChargeCount);
     putInteger(&object, "totalChargeSeconds", value.totalChargeSeconds);
     putDateTime(&object, "createdAt", value.createdAtUtc);
@@ -279,6 +280,8 @@ QJsonObject toJson(const Reservation& value)
 QJsonObject toJson(const Order& value)
 {
     QJsonObject object;
+    if (!value.target.isEmpty()) object.insert(QStringLiteral("target"), value.target);
+    if (!value.stopReason.isEmpty()) object.insert(QStringLiteral("stopReason"), value.stopReason);
     putId(&object, "id", value.id);
     object.insert(QStringLiteral("orderNo"), value.orderNo);
     putId(&object, "userId", value.userId);
@@ -415,6 +418,11 @@ bool fromJson(const QJsonObject& object, Charger* outValue, QString* errorMessag
     if (value.powerWatts <= 0 || value.totalChargeCount < 0 || value.totalChargeSeconds < 0) {
         return fail(errorMessage, QStringLiteral("Charger contains an out-of-range value"));
     }
+    if (object.contains(QStringLiteral("maintenance"))) {
+        if (!object.value(QStringLiteral("maintenance")).isBool())
+            return fail(errorMessage, QStringLiteral("Charger maintenance must be a boolean"));
+        value.maintenance = object.value(QStringLiteral("maintenance")).toBool();
+    }
     *outValue = value;
     return true;
 }
@@ -446,6 +454,16 @@ bool fromJson(const QJsonObject& object, Order* outValue, QString* errorMessage)
         return fail(errorMessage, QStringLiteral("Order output pointer is null"));
     }
     Order value;
+    if (object.contains(QStringLiteral("target")) && !object.value(QStringLiteral("target")).isNull()) {
+        if (!object.value(QStringLiteral("target")).isObject())
+            return fail(errorMessage, QStringLiteral("Order target must be an object"));
+        value.target = object.value(QStringLiteral("target")).toObject();
+    }
+    if (object.contains(QStringLiteral("stopReason")) && !object.value(QStringLiteral("stopReason")).isNull()) {
+        if (!object.value(QStringLiteral("stopReason")).isString())
+            return fail(errorMessage, QStringLiteral("Order stopReason must be a string"));
+        value.stopReason = object.value(QStringLiteral("stopReason")).toString();
+    }
     if (!requireId(object, "id", &value.id, errorMessage) ||
         !requireString(object, "orderNo", &value.orderNo, errorMessage, false) ||
         !requireId(object, "userId", &value.userId, errorMessage) ||

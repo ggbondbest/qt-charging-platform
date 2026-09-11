@@ -1,114 +1,510 @@
 #include "main_window.h"
+#include "workflow_management_page.h"
 
-#include "charging_server.h"
+#include "admin_login_page.h"
+#include "admin_request_gateway.h"
+#include "activity_records_page.h"
+#include "charger_management_page.h"
+#include "server_runtime.h"
+#include "dashboard_page.h"
+#include "order_management_page.h"
+#include "management_page_widgets.h"
+#include "station_management_page.h"
+#include "user_management_page.h"
 
+#include <QAction>
+#include <QButtonGroup>
+#include <QColor>
 #include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QStatusBar>
+#include <QMenu>
+#include <QPainter>
+#include <QPalette>
+#include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QtMath>
 
 namespace charging::server {
 
 namespace {
 
-QFrame* createSummaryCard(const QString& title, const QString& value, QLabel** valueLabel,
-                          QWidget* parent)
+// The sidebar does not depend on an icon font or external asset.  Drawing the
+// small icons keeps their appearance stable on the Ubuntu presentation VM.
+class NavigationButton final : public QPushButton
 {
-    auto* card = new QFrame(parent);
-    card->setFrameShape(QFrame::StyledPanel);
-    card->setMinimumWidth(190);
-
-    auto* layout = new QVBoxLayout(card);
-    auto* titleLabel = new QLabel(title, card);
-    auto* summaryLabel = new QLabel(value, card);
-    QFont valueFont = summaryLabel->font();
-    valueFont.setBold(true);
-    valueFont.setPointSize(18);
-    summaryLabel->setFont(valueFont);
-
-    layout->addWidget(titleLabel);
-    layout->addWidget(summaryLabel);
-    if (valueLabel != nullptr) {
-        *valueLabel = summaryLabel;
+public:
+    NavigationButton(const QString& text, int iconType, QWidget* parent)
+        : QPushButton(text, parent), iconType_(iconType)
+    {
+        setCheckable(true);
+        setCursor(Qt::PointingHandCursor);
+        setMinimumHeight(48);
     }
-    return card;
-}
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF buttonRect = QRectF(rect()).adjusted(0.5, 1.0, -0.5, -1.0);
+        const bool selected = isChecked();
+        const bool hovered = underMouse();
+        if (selected || hovered) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(selected ? QColor("#edf4ff") : QColor("#f6f8fc"));
+            painter.drawRoundedRect(buttonRect, 9, 9);
+        }
+
+        const QColor color = selected ? QColor("#2878f0") : QColor("#243653");
+        painter.setPen(QPen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        const QRectF iconRect(27, height() / 2.0 - 9, 18, 18);
+        switch (iconType_) {
+        case 0: // dashboard
+            painter.setBrush(color);
+            painter.setPen(Qt::NoPen);
+            painter.drawRoundedRect(QRectF(iconRect.left(), iconRect.top() + 5, 7, 13), 1.5, 1.5);
+            painter.drawRoundedRect(QRectF(iconRect.left() + 10, iconRect.top(), 7, 18), 1.5, 1.5);
+            break;
+        case 1: // charger
+            painter.drawRoundedRect(iconRect.adjusted(4, 0, -4, 0), 2, 2);
+            painter.drawLine(iconRect.center().x(), iconRect.top() + 4, iconRect.center().x(), iconRect.bottom() - 4);
+            painter.drawLine(iconRect.right() - 3, iconRect.top() + 5, iconRect.right() + 1, iconRect.top() + 5);
+            painter.drawLine(iconRect.right() + 1, iconRect.top() + 5, iconRect.right() + 1, iconRect.top() + 11);
+            break;
+        case 2: // station
+            painter.drawRect(iconRect.adjusted(2, 2, -2, 0));
+            painter.drawLine(iconRect.left(), iconRect.bottom(), iconRect.right(), iconRect.bottom());
+            painter.drawLine(iconRect.left() + 5, iconRect.top() + 7, iconRect.left() + 5, iconRect.top() + 11);
+            painter.drawLine(iconRect.left() + 11, iconRect.top() + 7, iconRect.left() + 11, iconRect.top() + 11);
+            break;
+        case 3: // user
+            painter.drawEllipse(QRectF(iconRect.left() + 5, iconRect.top(), 8, 8));
+            painter.drawArc(QRectF(iconRect.left() + 2, iconRect.top() + 8, 14, 12), 25 * 16, 130 * 16);
+            break;
+        case 4: // order
+            painter.drawRoundedRect(iconRect.adjusted(3, 1, -3, 0), 2, 2);
+            painter.drawLine(iconRect.left() + 7, iconRect.top() - 1, iconRect.left() + 11, iconRect.top() - 1);
+            painter.drawLine(iconRect.left() + 6, iconRect.top() + 7, iconRect.right() - 5, iconRect.top() + 7);
+            painter.drawLine(iconRect.left() + 6, iconRect.top() + 12, iconRect.right() - 5, iconRect.top() + 12);
+            break;
+        case 5: // recharge
+            painter.drawRoundedRect(iconRect.adjusted(1, 4, -1, -4), 3, 3);
+            painter.drawLine(iconRect.left() + 5, iconRect.center().y(), iconRect.right() - 5, iconRect.center().y());
+            painter.drawLine(iconRect.center().x(), iconRect.top() + 7, iconRect.center().x(), iconRect.bottom() - 7);
+            break;
+        default: // operation log
+            painter.drawRoundedRect(iconRect.adjusted(3, 1, -3, 0), 2, 2);
+            painter.drawLine(iconRect.left() + 6, iconRect.top() + 6, iconRect.right() - 4, iconRect.top() + 6);
+            painter.drawLine(iconRect.left() + 6, iconRect.top() + 11, iconRect.right() - 4, iconRect.top() + 11);
+            painter.drawLine(iconRect.left() + 6, iconRect.top() + 16, iconRect.right() - 7, iconRect.top() + 16);
+            break;
+        }
+
+        painter.setPen(color);
+        QFont font = painter.font();
+        font.setPixelSize(15);
+        font.setWeight(selected ? QFont::DemiBold : QFont::Medium);
+        painter.setFont(font);
+        painter.drawText(QRectF(65, 0, width() - 72, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
+    }
+
+private:
+    int iconType_ = 0;
+};
+
+// Qt's scroll optimization can leave stale backing-store pixels on VMware's
+// virtual display driver.  Pages use this container to repaint the full
+// viewport after a scroll event instead of reusing a partially scrolled frame.
+class ManagementScrollArea final : public QScrollArea
+{
+public:
+    explicit ManagementScrollArea(QWidget* parent) : QScrollArea(parent)
+    {
+        setFrameShape(QFrame::NoFrame);
+        setWidgetResizable(true);
+        // Compact presentation windows still need a discoverable way to reach
+        // all rows and the right-hand detail panel, including with a mouse.
+        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setStyleSheet(QStringLiteral(
+            // A softly tinted canvas makes the white cards visibly float above
+            // the page without introducing a dark or distracting backdrop.
+            "QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {"
+            " background: #f5f7fb; }"));
+
+        QPalette viewportPalette = viewport()->palette();
+        viewportPalette.setColor(QPalette::Window, QColor("#f5f7fb"));
+        viewport()->setPalette(viewportPalette);
+        viewport()->setAutoFillBackground(true);
+        viewport()->setAttribute(Qt::WA_StyledBackground, true);
+
+        connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
+                &ManagementScrollArea::requestFullRepaint);
+        connect(horizontalScrollBar(), &QScrollBar::valueChanged, this,
+                &ManagementScrollArea::requestFullRepaint);
+    }
+
+    void setContentWidget(QWidget* content)
+    {
+        Q_ASSERT(content != nullptr);
+        content->setAutoFillBackground(true);
+        content->setAttribute(Qt::WA_StyledBackground, true);
+        setWidget(content);
+    }
+
+protected:
+    void scrollContentsBy(int dx, int dy) override
+    {
+        QScrollArea::scrollContentsBy(dx, dy);
+        requestFullRepaint();
+    }
+
+private:
+    void requestFullRepaint()
+    {
+        if (repaintPending_) {
+            return;
+        }
+        repaintPending_ = true;
+        QTimer::singleShot(0, this, [this]() {
+            repaintPending_ = false;
+            if (auto* content = widget(); content != nullptr) {
+                content->update(content->rect());
+            }
+            viewport()->update(viewport()->rect());
+        });
+    }
+
+    bool repaintPending_ = false;
+};
 
 } // namespace
 
-MainWindow::MainWindow(ChargingServer* server, QWidget* parent) : QMainWindow(parent)
+MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
+    : QMainWindow(parent), server_(server)
 {
     Q_ASSERT(server != nullptr);
+    applyManagementLightPalette(this);
+    adminGateway_ = new AdminRequestGateway(server, this);
 
-    setWindowTitle(tr("充电平台 - PC 运营管理端"));
-    resize(1200, 760);
+    setWindowTitle(tr("充电平台运营管理系统"));
+    resize(1600, 990);
+    setMinimumSize(1024, 720);
 
-    auto* centralWidget = new QWidget(this);
-    auto* rootLayout = new QHBoxLayout(centralWidget);
+    rootStackedWidget_ = new QStackedWidget(this);
+    loginPage_ = new AdminLoginPage(rootStackedWidget_);
+    rootStackedWidget_->addWidget(loginPage_);
+    rootStackedWidget_->addWidget(createManagementPage());
+    setCentralWidget(rootStackedWidget_);
+
+    connect(loginPage_, &AdminLoginPage::loginSubmitted, this, &MainWindow::handleLoginSubmitted);
+    connect(adminGateway_, &AdminRequestGateway::finished, this,
+            [this](const QString& id, const QJsonObject& response) {
+        if (id != loginRequestId_) return;
+        loginRequestId_.clear();
+        loginPage_->setBusy(false);
+        loginPage_->resetForm();
+        if (response.value(QStringLiteral("success")).toBool()) showManagementShell();
+        else loginPage_->showError(response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString());
+    });
+    connect(adminGateway_, &AdminRequestGateway::authenticationChanged, this, [this](bool authenticated) {
+        if (!authenticated) { loginPage_->setBusy(false); showLoginPage(); }
+    });
+    // Ten seconds keeps the current page reasonably fresh without repeatedly
+    // competing with normal filtering and detail actions.
+    autoRefreshTimer_.setInterval(10000);
+    connect(&autoRefreshTimer_, &QTimer::timeout, this, &MainWindow::refreshActivePage);
+    showLoginPage();
+}
+
+QWidget* MainWindow::createManagementPage()
+{
+    auto* managementPage = new QWidget(rootStackedWidget_);
+    managementPage->setObjectName(QStringLiteral("managementPage"));
+    managementPage->setStyleSheet(QStringLiteral(
+        "QWidget#managementPage, QWidget#contentWidget { background: #f5f7fb; color: #1d2c46;"
+        " font-size: 14px; }"
+        "QLabel { color: #1d2c46; }"
+        "QDialog, QMessageBox { background: #f5f7fb; color: #1d2c46; }"
+        "QFrame#sidebar { background: #ffffff; border-right: 1px solid #e7edf5; }"
+        "QFrame#contentCard, QFrame#summaryCard { background: #ffffff; border: 1px solid #e8eef6; border-radius: 14px; }"
+        "QLineEdit, QComboBox, QAbstractSpinBox { background: white; color: #1d2c46;"
+        " selection-background-color: #eaf3ff; selection-color: #1d2c46;"
+        " border: 1px solid #dfe6f0; border-radius: 9px;"
+        " min-height: 40px; padding: 0 12px; font-size: 14px; }"
+        "QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {"
+        " background: #f2f5f9; color: #8995a7; border-color: #e4e9f1; }"
+        "QAbstractSpinBox QLineEdit { border: none; min-height: 30px; padding: 0; }"
+        "QTextEdit, QPlainTextEdit { background: #ffffff; color: #1d2c46;"
+        " border: 1px solid #dfe6f0; border-radius: 8px; padding: 8px; }"
+        "QComboBox { padding: 0 34px 0 12px; }"
+        "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 30px;"
+        " border: none; background: transparent; }"
+        "QComboBox::drop-down:hover { background: #f4f7fb; border-radius: 7px; }"
+        "QComboBox::drop-down:pressed { background: #eaf3ff; }"
+        "QComboBox::down-arrow { width: 0; height: 0; margin-right: 11px;"
+        " border-left: 4px solid transparent; border-right: 4px solid transparent;"
+        " border-top: 5px solid #718098; }"
+        "QLineEdit:focus, QComboBox:focus { border: 2px solid #2878d4; }"
+        "QComboBox QAbstractItemView { background: #ffffff; color: #1d2c46;"
+        " border: 1px solid #dfe6f0; outline: 0; font-size: 14px; }"
+        "QComboBox QAbstractItemView::item { min-height: 38px; padding: 0 12px; }"
+        "QComboBox QAbstractItemView::item:hover { background: #f7f9fc; color: #1d2c46; }"
+        "QComboBox QAbstractItemView::item:selected { background: #eaf3ff; color: #2878d4;"
+        " font-weight: 600; }"
+        "QPushButton#primaryButton { background: #2878f0; border: none; border-radius: 8px;"
+        " color: white; min-height: 42px; padding: 0 16px; font-size: 15px;"
+        " font-weight: 600; }"
+        "QPushButton#primaryButton:hover { background: #1769e8; }"
+        "QPushButton#primaryButton:disabled { background: #b6ccef; color: #ffffff; }"
+        "QPushButton#secondaryButton, QPushButton#tableActionButton { background: white;"
+        " border: 1px solid #e1e7f0; border-radius: 8px; color: #2878f0; min-height: 38px;"
+        " padding: 0 12px; font-size: 15px; }"
+        "QPushButton#tableActionButton { min-height: 26px; max-height: 26px; min-width: 0;"
+        " padding: 0 8px; font-size: 12px; }"
+        "QPushButton#secondaryButton:hover, QPushButton#tableActionButton:hover { background: #edf4ff; }"
+        "QPushButton#secondaryButton:disabled, QPushButton#tableActionButton:disabled {"
+        " background: #f2f5f9; color: #8995a7; border-color: #e4e9f1; }"
+        "QDialogButtonBox QPushButton { background: #ffffff; color: #2878f0; border: 1px solid #dfe6f0;"
+        " border-radius: 8px; min-height: 36px; min-width: 70px; padding: 0 14px; }"
+        "QPushButton#sessionButton { background: transparent; border: none; border-radius: 8px;"
+        " color: #34435b; min-height: 38px; padding: 0 10px; font-size: 14px; font-weight: 600; }"
+        "QPushButton#sessionButton:hover { background: #f7f9fc; }"
+        "QPushButton#sessionButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center;"
+        " width: 0; height: 0; margin-right: 3px; border-left: 4px solid transparent;"
+        " border-right: 4px solid transparent; border-top: 5px solid #718098; }"
+        "QTableWidget { background: white; color: #1d2c46; alternate-background-color: #f8fafd;"
+        " border: none; gridline-color: #edf1f7;"
+        " selection-background-color: #eaf3ff; selection-color: #1d2c46; font-size: 14px; }"
+        "QTableWidget::item { border: none; padding: 0 8px; }"
+        "QTableWidget::item:selected, QTableWidget::item:selected:active,"
+        " QTableWidget::item:selected:!active, QTableWidget::item:selected:focus {"
+        " background: #eaf3ff; color: #1d2c46; border: none; outline: 0; }"
+        "QTableWidget::item:focus { border: none; outline: 0; }"
+        "QHeaderView::section { background: #ffffff; border: none; border-bottom: 1px solid #edf1f7;"
+        " color: #68758a; font-size: 13px; font-weight: 600; min-height: 46px; padding: 0 6px;"
+        " text-align: center; }"
+        "QLabel#pageIntroductionLabel, QLabel#sectionHintLabel, QLabel#summaryHintLabel {"
+        " color: #656d76; font-size: 13px; }"
+        "QLabel#summaryValueLabel { color: #17233b; font-size: 26px; font-weight: 700; }"
+        "QLabel#sectionTitleLabel { color: #1d2c46; font-size: 18px; font-weight: 700; }"
+        "QLabel#deviceStatusLabel { color: #41506a; padding: 6px 0; font-size: 14px; }"
+        "QLabel#emptyStateLabel { color: #656d76; min-height: 80px; font-size: 14px; }"));
+
+    auto* rootLayout = new QHBoxLayout(managementPage);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
-    auto* sidebar = new QFrame(centralWidget);
-    sidebar->setFrameShape(QFrame::StyledPanel);
-    sidebar->setFixedWidth(220);
-    auto* sidebarLayout = new QVBoxLayout(sidebar);
-    sidebarLayout->setContentsMargins(24, 28, 24, 28);
-    auto* brandLabel = new QLabel(tr("充电平台"), sidebar);
-    QFont brandFont = brandLabel->font();
-    brandFont.setBold(true);
-    brandFont.setPointSize(16);
-    brandLabel->setFont(brandFont);
-    sidebarLayout->addWidget(brandLabel);
-    sidebarLayout->addSpacing(24);
-    sidebarLayout->addWidget(new QLabel(tr("运营概览"), sidebar));
-    sidebarLayout->addWidget(new QLabel(tr("充电桩管理"), sidebar));
-    sidebarLayout->addWidget(new QLabel(tr("充电站管理"), sidebar));
-    sidebarLayout->addWidget(new QLabel(tr("用户与订单"), sidebar));
+    sidebar_ = new QFrame(managementPage);
+    sidebar_->setObjectName(QStringLiteral("sidebar"));
+    auto* sidebarLayout = new QVBoxLayout(sidebar_);
+    sidebarLayout->setContentsMargins(10, 30, 8, 22);
+
+    const QList<QString> navigationTitles = {tr("运营概览"), tr("电桩管理"),
+                                             tr("电站管理"), tr("用户管理"), tr("订单管理"),
+                                             tr("充值记录"), tr("操作日志"), tr("排队与维修")};
+    auto* navigationGroup = new QButtonGroup(managementPage);
+    navigationGroup->setExclusive(true);
+    const int navigationCount = navigationTitles.size();
+    for (int index = 0; index < navigationCount; ++index) {
+        auto* button = new NavigationButton(navigationTitles.at(index), index, sidebar_);
+        button->setAccessibleName(navigationTitles.at(index));
+        navigationGroup->addButton(button, index);
+        sidebarLayout->addWidget(button);
+    }
     sidebarLayout->addStretch();
 
-    auto* contentWidget = new QWidget(centralWidget);
+    auto* contentWidget = new QWidget(managementPage);
+    contentWidget->setObjectName(QStringLiteral("contentWidget"));
     auto* contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setContentsMargins(32, 28, 32, 28);
-    contentLayout->setSpacing(20);
+    contentLayout->setContentsMargins(31, 24, 31, 30);
+    contentLayout->setSpacing(18);
 
-    auto* titleLabel = new QLabel(tr("服务端基础框架"), contentWidget);
-    QFont titleFont = titleLabel->font();
+    auto* topBar = new QWidget(contentWidget);
+    auto* topBarLayout = new QHBoxLayout(topBar);
+    topBarLayout->setContentsMargins(0, 0, 0, 0);
+    pageTitleLabel_ = new QLabel(tr("运营概览"), topBar);
+    pageTitleLabel_->setStyleSheet(QStringLiteral("color: #1d2c46;"));
+    QFont titleFont = pageTitleLabel_->font();
     titleFont.setBold(true);
-    titleFont.setPointSize(20);
-    titleLabel->setFont(titleFont);
-    contentLayout->addWidget(titleLabel);
+    titleFont.setPixelSize(24);
+    pageTitleLabel_->setFont(titleFont);
+    auto* titleLayout = new QVBoxLayout();
+    titleLayout->setSpacing(2);
+    pageSubtitleLabel_ = new QLabel(tr("全局数据实时监控，掌握运营核心指标"), topBar);
+    pageSubtitleLabel_->setStyleSheet(QStringLiteral("color: #77849a; font-size: 13px;"));
+    pageSubtitleLabel_->setWordWrap(true);
+    titleLayout->addWidget(pageTitleLabel_);
+    titleLayout->addWidget(pageSubtitleLabel_);
+    auto* userBadge = new QLabel(tr("A"), topBar);
+    userBadge->setAlignment(Qt::AlignCenter);
+    userBadge->setFixedSize(34, 34);
+    userBadge->setStyleSheet(QStringLiteral(
+        "background: #2878d4; color: white; border-radius: 17px; font-size: 14px; font-weight: 600;"));
+    auto* userMenuButton = new QPushButton(tr("管理员"), topBar);
+    userMenuButton->setObjectName(QStringLiteral("sessionButton"));
+    userMenuButton->setAccessibleName(tr("管理员会话菜单"));
+    auto* sessionMenu = new QMenu(userMenuButton);
+    sessionMenu->setStyleSheet(QStringLiteral(
+        "QMenu { background: #ffffff; border: 1px solid #e1e7f0; border-radius: 8px; padding: 5px; }"
+        "QMenu::item { color: #34435b; min-height: 34px; padding: 0 24px 0 12px; border-radius: 6px; }"
+        "QMenu::item:selected { background: #f7f9fc; }"));
+    auto* signOutAction = sessionMenu->addAction(tr("退出登录"));
+    // Revoke the shared management session before returning to the login page.
+    connect(signOutAction, &QAction::triggered, adminGateway_, &AdminRequestGateway::logout);
+    userMenuButton->setMenu(sessionMenu);
+    topBarLayout->addLayout(titleLayout, 1);
+    topBarLayout->addWidget(userBadge);
+    topBarLayout->addWidget(userMenuButton);
+    contentLayout->addWidget(topBar);
 
-    auto* cardLayout = new QHBoxLayout();
-    cardLayout->setSpacing(16);
-    cardLayout->addWidget(createSummaryCard(tr("TCP 服务"), tr("已启动"), nullptr, contentWidget));
-    cardLayout->addWidget(createSummaryCard(tr("监听端口"), QString::number(server->serverPort()),
-                                            nullptr, contentWidget));
-    cardLayout->addWidget(createSummaryCard(tr("当前连接"), QString::number(server->clientCount()),
-                                            &clientCountValue_, contentWidget));
-    cardLayout->addStretch();
-    contentLayout->addLayout(cardLayout);
+    pageStackedWidget_ = new QStackedWidget(contentWidget);
+    auto* dashboardScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    dashboardPage_ = new DashboardPage(dashboardScrollArea);
+    dashboardPage_->setAdminGateway(adminGateway_);
+    dashboardScrollArea->setContentWidget(dashboardPage_);
+    pageStackedWidget_->addWidget(dashboardScrollArea);
+    auto* chargerScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    chargerManagementPage_ = new ChargerManagementPage(chargerScrollArea);
+    chargerManagementPage_->setAdminGateway(adminGateway_);
+    chargerScrollArea->setContentWidget(chargerManagementPage_);
+    pageStackedWidget_->addWidget(chargerScrollArea);
+    auto* stationScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    stationManagementPage_ = new StationManagementPage(stationScrollArea);
+    stationManagementPage_->setAdminGateway(adminGateway_);
+    stationScrollArea->setContentWidget(stationManagementPage_);
+    pageStackedWidget_->addWidget(stationScrollArea);
+    auto* userScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    userManagementPage_ = new UserManagementPage(userScrollArea);
+    userManagementPage_->setAdminGateway(adminGateway_);
+    userScrollArea->setContentWidget(userManagementPage_);
+    pageStackedWidget_->addWidget(userScrollArea);
+    auto* orderScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    orderManagementPage_ = new OrderManagementPage(orderScrollArea);
+    orderManagementPage_->setAdminGateway(adminGateway_);
+    orderScrollArea->setContentWidget(orderManagementPage_);
+    pageStackedWidget_->addWidget(orderScrollArea);
+    auto* rechargeScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    rechargeRecordsPage_ = new ActivityRecordsPage(ActivityRecordsMode::Recharge, rechargeScrollArea);
+    rechargeRecordsPage_->setAdminGateway(adminGateway_);
+    rechargeScrollArea->setContentWidget(rechargeRecordsPage_);
+    pageStackedWidget_->addWidget(rechargeScrollArea);
+    auto* operationLogScrollArea = new ManagementScrollArea(pageStackedWidget_);
+    operationLogPage_ = new ActivityRecordsPage(ActivityRecordsMode::OperationLog, operationLogScrollArea);
+    operationLogPage_->setAdminGateway(adminGateway_);
+    operationLogScrollArea->setContentWidget(operationLogPage_);
+    pageStackedWidget_->addWidget(operationLogScrollArea);
+    workflowPage_ = new WorkflowManagementPage(adminGateway_, pageStackedWidget_);
+    pageStackedWidget_->addWidget(workflowPage_);
+    contentLayout->addWidget(pageStackedWidget_, 1);
 
-    auto* noticeLabel = new QLabel(
-        tr("阶段 0/1 骨架已就绪。后续 Dashboard、服务层和 Repository 请按架构文档分模块接入。"),
-        contentWidget);
-    noticeLabel->setWordWrap(true);
-    contentLayout->addWidget(noticeLabel);
-    contentLayout->addStretch();
+    const QList<QString> navigationDescriptions = {
+        tr("全局数据实时监控，掌握运营核心指标"),
+        tr("查询设备状态，完成受控的运营操作"),
+        tr("查看站点聚合状态并维护基础信息"),
+        tr("查询账户状态，处理受控的冻结与解冻"),
+        tr("筛选订单，查看关键计量与状态信息"),
+        tr("查询用户余额变更与充值渠道处理状态"),
+        tr("查询服务端记录的安全审计元数据"),
+        tr("查看各站队列与叫号，核实报障并跟踪模拟维修"),
+    };
+    const auto showPage = [this, navigationGroup, navigationTitles, navigationDescriptions](int index) {
+        Q_ASSERT(index >= 0 && index < navigationTitles.size());
+        pageStackedWidget_->setCurrentIndex(index);
+        pageTitleLabel_->setText(navigationTitles.at(index));
+        pageSubtitleLabel_->setText(navigationDescriptions.at(index));
+        navigationGroup->button(index)->setChecked(true);
+        refreshActivePage();
+    };
+    connect(navigationGroup, &QButtonGroup::idClicked, this,
+            [showPage](int index) { showPage(index); });
+    connect(dashboardPage_, &DashboardPage::exceptionListRequested, this, [this, showPage]() {
+        chargerManagementPage_->showExceptionRecords();
+        showPage(1);
+    });
+    connect(dashboardPage_, &DashboardPage::latestOrdersRequested, this, [this, showPage]() {
+        orderManagementPage_->showLatestOrders();
+        showPage(4);
+    });
+    connect(stationManagementPage_, &StationManagementPage::stationChargersRequested, this,
+            [this, showPage](const QString& stationId) {
+                chargerManagementPage_->showStationRecords(stationId);
+                showPage(1);
+            });
+    navigationGroup->button(0)->setChecked(true);
 
-    rootLayout->addWidget(sidebar);
+
+    rootLayout->addWidget(sidebar_);
     rootLayout->addWidget(contentWidget, 1);
-    setCentralWidget(centralWidget);
-    statusBar()->showMessage(tr("TCP 服务正在等待客户端连接"));
-
-    connect(server, &ChargingServer::clientCountChanged, this, &MainWindow::updateClientCount);
+    updateSidebarWidth();
+    return managementPage;
 }
 
-void MainWindow::updateClientCount(int count)
+void MainWindow::resizeEvent(QResizeEvent* event)
 {
-    clientCountValue_->setText(QString::number(count));
+    QMainWindow::resizeEvent(event);
+    updateSidebarWidth();
+}
+
+void MainWindow::showManagementShell()
+{
+    rootStackedWidget_->setCurrentIndex(1);
+    dashboardPage_->refresh();
+    autoRefreshTimer_.start();
+}
+
+void MainWindow::showLoginPage()
+{
+    autoRefreshTimer_.stop();
+    rootStackedWidget_->setCurrentIndex(0);
+    loginPage_->resetForm();
+}
+
+void MainWindow::refreshActivePage()
+{
+    if (!adminGateway_->isAuthenticated() || pageStackedWidget_ == nullptr) {
+        return;
+    }
+    switch (pageStackedWidget_->currentIndex()) {
+    case 0: dashboardPage_->refreshCurrent(); break;
+    case 1: chargerManagementPage_->refreshData(); break;
+    case 2: stationManagementPage_->refreshData(); break;
+    case 3: userManagementPage_->refreshData(); break;
+    case 4: orderManagementPage_->refreshData(); break;
+    case 5: rechargeRecordsPage_->refreshData(); break;
+    case 6: operationLogPage_->refreshData(); break;
+    case 7: workflowPage_->refreshData(); break;
+    default: break;
+    }
+}
+
+void MainWindow::handleLoginSubmitted(const QString& username, const QString& password)
+{
+    loginRequestId_ = adminGateway_->request(QStringLiteral("auth.login"),
+        {{QStringLiteral("username"), username}, {QStringLiteral("password"), password}},
+        loginPage_, QStringLiteral("login"));
+    loginPage_->setBusy(!loginRequestId_.isEmpty());
+}
+
+void MainWindow::updateSidebarWidth()
+{
+    if (sidebar_ == nullptr) {
+        return;
+    }
+
+    // Keep the navigation readable on compact windows while allowing it to
+    // proportionally breathe on large desktop displays.
+    const int width = qBound(220, qRound(this->width() * 0.16), 360);
+    sidebar_->setFixedWidth(width);
 }
 
 } // namespace charging::server

@@ -1,0 +1,88 @@
+# QML 客户端契约
+
+## 正式交付约定（2026-09-08，优先于下方历史迁移记录）
+
+- 正式入口为 `charging-client`，默认真实 TCP；`--host HOST --port PORT` 或
+  `CHARGING_SERVER_HOST` / `CHARGING_SERVER_PORT` 设置服务器地址。仅显式
+  `CHARGING_CHANNEL=mock` 启用测试演示，生产不能自动回退 Mock。
+- QML/JS/qmldir 资源内嵌；运行时从 `qrc:/charging/Shell.qml` 加载，不依赖源码目录。
+- `authService` 是 QmlApp 的认证入口：`login(phone)` 异步认证，
+  `loginSucceeded(userMap, created)` / `loginFailed(message)` 回报结果；`logout()`
+  断开会话。每次登录重建服务图，`servicesChanged` 更新上下文，旧用户页面和缓存销毁。
+- 所有业务 ID 为十进制**字符串**，页面不得用 Number/parseInt 转成 JS 数字。
+  数据中的 UTC 时间为完整 ISO8601（含毫秒与 Z）；仅展示时转换为北京时间，
+  `App.displayTime(isoUtc)` 可用于显示，倒计时直接解析带 Z 的时间。
+- `App.checkBeforeReservation(draft)` 在真实查询未完成订单后才能进入确认页；
+  `App.recoverUnfinishedOrder()` 恢复充电中、待支付或已有预约。提交时的并发冲突
+  通过 `reservationService.submitRejected(code, details, message)` 返回；
+  `details.reason == "UNFINISHED_ORDER"` 时重新恢复已有订单。
+- 真实预约立即生效、15分钟保留；不支持未来时段和车辆绑定。扣费只认服务器账单。
+- 本地头像通过 `App.chooseAvatar()` / `prepareAvatar(localFile)` 压缩为128像素PNG，
+  使用 `walletService.updateAvatar(dataUri)` 持久化；服务端复核PNG大小、尺寸和内容。
+- 腾讯地图由独立 `mapBridge` 暴露地址正向编码、用户位置、真实驾驶/步行路线及HTML。
+  页面使用WebEngine呈现地图；没有Key或API失败时明确报错，不显示伪造路线。
+- 端到端验收见 `qml_tcp_delivery`：QML页面→TCP→业务→SQLite→管理端查询，
+  覆盖充值、头像、充电/支付、重登录恢复、冻结、超时和跨用户隔离。
+
+以下为历史迁移约定；涉及默认入口、Mock与正式数据通道的描述以上述交付约定为准。
+
+**基线**：`feature/client-ui-modernization`。改本文件须走会签 PR。以下名字**逐字使用**，不许改名、不许发明；后端没定的字段写 `TODO(contract)`。
+
+## 0. 目录所有权（铁律）
+| 路径 | 属主 | 对方 |
+|---|---|---|
+| `client/qml/platform/**`、`client/qml/*.qml`、`main.cpp`、`CMakeLists.txt` | 成员3 | 只读 |
+| `client/qml/pages/profile_charging/**` | 成员3 | 只读 |
+| `client/qml/pages/station/**` | **成员2** | 只读 |
+| `tests/qml/**`（各自 smoke 放各自子目录） | 各管各 | — |
+
+页面新增文件=只往**自己**目录的 `CMakeLists.txt` 里追一行，父级/CMake 挂载点已预建，永远不用碰共享文件。旧 `client/widgets`、`client/pages`(widgets 版)、`resources/qss`、server/DB/协议 = 全体冻结，迁移期**只新增不修改**。
+
+## 1. 服务注入（context properties，不包壳不改名）
+C++ 服务对象直接以 context property 注入根作用域，名字=类名首字母小写；其 **全部 public slot / signal / Q_PROPERTY 原样透传**，QML 里 `on<Signal名>` 直接接：
+
+`authService` `walletService` `orderService` `chargingService` `reservationService` `stationQueryService` `mapGeoService` `settingsService` `favoritesService` `notificationService` `statsService` `couponService` `pointsService` `ratingsService`
+
+另有 `App` 对象：`App.currentUser`（登录态，`loginStateChanged()` 信号）、`App.navigate(route[, arg])` / `App.back()`（`arg` 可选路由参数，如 order_detail 的订单 map，页面用 `property var arg` 接收）、`App.showToast(text, tone)`（tone 同 §2 StatusTag）。通道选择 `CHARGING_CHANNEL=mock|tcp`，默认 mock。
+
+> **说明（2026-09-06 立，2026-09-07 补全）**：C++ 服务方法是普通成员函数（非 slot）且信号载荷是裸 struct——QML 两头都不可见。故上下文注入的全部是**同名转发桥**（`service_bridges.h`）：方法名/信号名逐字不变，仅载荷改为 map/list、枚举参数改为小写字符串。**`fetchOrders` 的 filter 取 `"all" | "charging" | "waiting_payment" | "completed"`**。station/reservation/settings/favorites/notification 五域已于 09-07 按同模式补桥落地。三个桥侧口径特例：
+> - **`fetchDetailById(stationId, distanceMeters)`**（新增桥方法）：裸服务 `fetchDetail(Station,int)` 的 struct 参数 QML 传不动，桥按 id 从上次 `querySucceeded` 缓存重建 Station 再转发；缓存缺失时以占位 Station（仅 id）转发，mock 服务按 id 查自有数据。
+> - **`reservationService.submit(map)`**：`startMinutes`/`endMinutes` 为**当日分钟位**（本地，与推荐时段同基准），桥据今日重建 QDateTime 再转 UTC；`end < start` 视作跨零点顺延一天（与 widgets `QDateTimeEdit` 口径一致）。
+> - **`settingsService` 的 `second*` 别名**（`hasSecondPassword`/`setSecondPassword`/`verifySecondPassword`）→ 裸服务 `protection*`，语义同一（二级保护密码）；`notificationEnabled(key)` 的 key ∈ `"expiry" | "success" | "cancel"`。
+>
+> **数据域桥批（2026-09-08）**：①`statsService`（StatsBridge）——`fetchStats(months=6)`、`isFetchingStats()`；信号 `statsLoaded([{monthKey,orderCount,energyWh,amountCents,durationSeconds,co2Grams}])` 新→旧 + `operationFailed` 三参（GET_USER_STATS 单飞口径同 OrderBridge：页面记在途身份）。②`couponService`（CouponBridge）——**同步缓存型**：`coupons()` 返回全量缓存（`[{id,kind,valueCents,discountTenths,thresholdCents,condition,expiresAtUtc(ms),status,source,…}]`）、`fetchCoupons()`、`couponCount()`；信号 `couponsChanged`/`operationFailed`。`QmlApp` 接线时自动拉一次（CouponPage 只读缓存不触发请求）；`redeem` 不提供（TODO(contract) 抵扣二期）。③`notificationService.notifications()` 的 `type` 词表扩 `charging_stopped`/`order_paid`（服务端通道，`NotificationService::refresh()` 拉 GET_NOTIFICATIONS 与本地段合并）；settings 通知开关枚举尾部同步扩两值，`notificationEnabled` 的 UI key 三值不变。
+>
+> **签到积分与评价桥批（2026-09-08 批次C/E）**：①`pointsService`（PointBridge）——`fetchPoints(page=1,pageSize=20)`、`checkIn()`、`isBusy()`；信号 `pointsLoaded(points:int64, entries:[{id,amount,reason,createdAtUtc}], total)`（新→旧）、`checkInCompleted(day,points,gained,alreadyCheckedIn)`、`operationFailed` 三参。单飞口径同 OrderBridge（页面自记在途身份，`isBusy()` 只读服务通道占用）。mock 带注册礼包 seed 与 CHECK_IN 幂等重放。②`ratingsService`（RatingBridge）——`fetchMyRatings(page=1,pageSize=20)`、`submitRating(orderId,rating,comment)`、`isBusy()`；信号 `ratingsLoaded(ratings:[{id,orderId,chargerId,chargerCode,stationName,rating,comment,createdAtUtc}], total)`、`ratingSubmitted(row, alreadyRated)`、`operationFailed` 三参。一单一评幂等：重放 `alreadyRated=true` 且返回首评原值。消费面两个：RatingsPage 流水 + OrderDetailPage 完成态评价卡（后者进入时 `fetchMyRatings(1,20)` 查存量，首页外老单靠提交幂等回原值，不重拉分页）。③批次F 扫码页（ScanPage，route "scan"）**不新增桥**——复用 `stationQueryService`（search 缓存 + `fetchDetailById`）与 `settingsService.vehicles()`，产 `reservation_confirm` 同款 8 字段 arg；真扫码通道 TODO(contract)，页内 `scanSource` 为接缝。
+>
+> **OrderBridge 增补（2026-09-06 PR #33 两轮评审后）**：①补 `operationFailed(type, code, message)` 信号（与 wallet/charging 桥同型）——查询失败恢复必须接它，且**按 type 过滤**（计数类失败别动列表在途状态）。②补 `isFetchingOrders()`：服务层对在途重复提交**静默丢弃且无回执**，响应也不携带请求参数——因此**页面必须单飞并记住在途身份** `(filter, page, first)`：在途时新指令只登记意图（切筛选→落定判过期丢弃+重查；他页占用通道→queuedReload），**绝不允许清掉在途请求的状态或应用过期响应**。③分页口径：`loadedPage`（已成功页）与 `reqPage`（在途页）分离，加载更多永远发 `loadedPage+1`，失败只置重试态、页码不漂移；接 `ordersLoaded` 第三参 `hasMore`。④头像键双源治理：`ProfileEditPage.avatarChoices` 是 widgets `AvatarLibrary::all()` 的 QML 镜像，`test_qml_client_pages` 逐键对拍（同三方字面量+测试钉死模式）；展示 glyph 与提交 key 分离，`""`=默认昵称首字头像。⑤余额同步矩阵：改 `balanceCents` 的三事件 `profileLoaded` / `rechargeCompleted` / `paymentCompleted` 都必须在 `QmlApp` 回写并 `userChanged`，顶栏才不滞后。
+
+## 2. 平台组件（`client/qml/platform/`，import "../../platform"）
+| 类型名 | 关键 API（=旧 C++ 类语义） |
+|---|---|
+| `Style`（单例） | 颜色/字号/圆角/间距/时长/下拉参数令牌，页面里**禁止字面量** |
+| `ActionButton` | `variant` ∈ `primary secondary danger ghost chip`；`text`；`onClicked` |
+| `Card` / `ClickableCard` | 默认内容项；后者加 `onClicked` |
+| `StatusTag` | `tone` ∈ `neutral success warning danger info`；`text` |
+| `ActionBar` | `variant` ∈ `primary danger`；`actionText`、`caption`；`onClicked` |
+| `NoticePanel` | `glyph` `title` `description` `actionText`；`onActionTriggered` |
+| `Toast` | `show(text, tone)`（Popup 型，全局单例 `App.showToast` 转发到这里） |
+| `LoadingOverlay` | `running` 属性（=showFor/hideFor） |
+| `BottomTabBar` | `tabs: [{id,text},…]`；`currentTab`；`onTabChanged(id)`；`setCurrentTab(id)` |
+| `TopNavBar` | `user`、`backVisible`、`searchVisible`、`clearSearch()`；`onSearchSubmitted(keyword)` `onLoginRequested` `onProfileRequested` |
+| `PullToRefreshArea` | 默认属性=内容 Item；`pullEnabled`；`onRefreshRequested()`；`setRefreshing(bool)`。语义钉死：8px 激活 / 56px 触发 / 44px 停留（`Style.pull*`），顶部才可用，刷新中不再触发 |
+
+## 3. 路由与锚点
+顶栏四 tab id 不变：`station` `order` `charging` `profile`。页面文件=页名（`StationHomePage.qml` 等）。**每页根 Item 的 `objectName` 必须等于旧 widget 版 objectName**（如 `"homeShell"`、`"walletPage"`），明天测试平移靠它。
+
+## 4. 动效
+只用 `Behavior`/`NumberAnimation`/`Transition` + `Style.dur*` 令牌（micro 80 / enter 180 / exit 120 / value 140 / breathe 1600，错峰 40×≤8）。无障碍降级：`Style.motionEnabled`（`MOTION_REDUCED=1` 或 offscreen 时 false，动画时长一律 `motionEnabled ? Style.durX : 0`）。
+
+## 5. 验收（冲刺日）
+mock 通道下 `charging-qml-preview --view=<路由> --screenshot=<png>` 出非空截图；旧 ctest 34 套保持全绿（证明没碰旧东西）。像素 diff、测试移植、删旧=明天的事。
+
+### 已知问题与解决方式（实测验证，勿再踩）
+- offscreen 下 `QQuickWindow::grabWindow()` **永远返回 null**（GL /software 后端都救不了）；截图走 `contentItem()->grabToImage()`。
+- 推论：**每个页面根节点必须自绘背景**（`Rectangle { anchors.fill: parent; color: Style.bg }`），否则截图区是黑色。
+- 进程退出时 context property 变 null 会触发绑定重算——绑定里用 `App && App.xxx` 守一下，避免 teardown 噪音。
+- Controls 只有 `Basic` 样式可用（`QQuickStyle::setStyle("Basic")` 已在 main.cpp 设好，勿改）。
+- **offscreen 下 Repeater 的 delegate 对 C++ `findChildren` 不可见**：画面（grabToImage 走场景图）渲染正常，但 delegate 对象何时挂进 QObject 树取决于 delegate 组件的异步编译时序，窗口宿主/等待事件循环都救不了（实测挂窗口 + 2s 轮询仍为空）。交互测试因此**不得** `findChild(delegate objectName)`：改断页面根上的公开状态与函数（`setProperty` / `invokeMethod("load", …)`，与 delegate onClicked 同一代码路径），模型行数走挂过 `objectName` 的 ListModel（如 `uiOrdersModel.count`）。

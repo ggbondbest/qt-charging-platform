@@ -64,6 +64,8 @@ struct Charger
     qint64 totalChargeSeconds = 0;
     QDateTime createdAtUtc;
     QDateTime updatedAtUtc;
+    // Derived from an accepted/in-progress repair, not a new hardware state.
+    bool maintenance = false;
 };
 
 struct Reservation
@@ -94,6 +96,8 @@ struct Order
     QDateTime stoppedAtUtc;
     QDateTime paidAtUtc;
     QDateTime updatedAtUtc;
+    QJsonObject target;
+    QString stopReason;
 };
 
 struct RechargeRecord

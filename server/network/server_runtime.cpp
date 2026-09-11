@@ -1,0 +1,249 @@
+#include "server_runtime.h"
+#include "admin_repository.h"
+#include "admin_service.h"
+
+#include "billing_service.h"
+#include "charging_repository.h"
+#include "charging_server.h"
+#include "charging_service.h"
+#include "queue_repository.h"
+#include "queue_service.h"
+#include "repair_repository.h"
+#include "repair_service.h"
+#include "database_connection.h"
+#include "order_repository.h"
+#include "order_service.h"
+#include "request_dispatcher.h"
+#include "user_api_repository.h"
+#include "user_api_service.h"
+#include "user_repository.h"
+#include "user_service.h"
+
+#include <QThread>
+#include <QDateTime>
+#include <QTimer>
+#include <QDebug>
+#include <QSqlQuery>
+
+namespace charging::server {
+
+// The QThread object belongs to the GUI thread; only run() executes in the
+// worker. No business slots are placed on this QThread object.
+class ServerThread final : public QThread
+{
+    Q_OBJECT
+public:
+    using QThread::QThread;
+    QString databasePath;
+    bool demoSeed = false;
+    QHostAddress address;
+    quint16 port = 0;
+
+signals:
+    void ready(quint16 port);
+    void countChanged(int count);
+    void failed(const QString& message);
+    void adminRequest(const QString& requestId, const QString& action,
+                      const QJsonObject& data, const QString& token, qint64 deadlineMs);
+    void adminResult(const QString& requestId, const QJsonObject& result);
+
+protected:
+    void run() override
+    {
+        try {
+            if (isInterruptionRequested()) return;
+            // Declaration order is intentional: sockets/sessions die first,
+            // then dispatcher/services/repositories, finally the SQL connection.
+            DatabaseConnection database;
+            QString diagnostic;
+            if (!database.open(databasePath, demoSeed, &diagnostic)) {
+                emit failed(QStringLiteral("无法初始化服务端数据库"));
+                return;
+            }
+            if (demoSeed && !database.applyCityDemoSeed(&diagnostic)) {
+                emit failed(QStringLiteral("无法加载城市示范电站，请检查数据库后重试"));
+                return;
+            }
+            if (isInterruptionRequested()) return;
+            UserRepository users(database.database());
+            ChargingRepository charging(database.database());
+            QueueRepository queues(database.database());
+            RepairRepository repairs(database.database());
+            QueueService queueService(&queues);
+            RepairService repairService(&repairs);
+            BillingService billing;
+            ChargingService chargingService(&charging, &billing);
+            const auto expireReservations = [&] {
+                const auto now = QDateTime::currentDateTimeUtc();
+                if (charging.expireReservations(now) && chargingService.advanceTargets()
+                    && queueService.tick(now)) return true;
+                qWarning() << "Workflow maintenance failed; operation rolled back";
+                return false;
+            };
+            if (!expireReservations()) {
+                emit failed(QStringLiteral("无法清理到期预约，请稍后重新启动"));
+                return;
+            }
+            QTimer expiryTimer; // lives on the same worker/SQL connection
+            expiryTimer.setInterval(1000);
+            connect(&expiryTimer, &QTimer::timeout, &expiryTimer, expireReservations);
+            expiryTimer.start();
+            AdminRepository adminRepository(database.database());
+            AdminService adminService(&adminRepository);
+            adminService.setWorkflowServices(&queueService, &repairService);
+            QObject adminContext; // constructed and destroyed in this worker
+            connect(this, &ServerThread::adminRequest, &adminContext,
+                    [this, &adminService, &expireReservations](const QString& id, const QString& action,
+                                         const QJsonObject& data, const QString& token, qint64 deadline) {
+                if (isInterruptionRequested()) return;
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close") && QDateTime::currentMSecsSinceEpoch() >= deadline) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
+                    return;
+                }
+                // Timer delivery may be delayed by a preceding request. Make
+                // expiry visible before admin reads and state-changing actions.
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close")
+                    && !expireReservations()) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("DATABASE_ERROR")));
+                    return;
+                }
+                if (action != QStringLiteral("auth.logout") && action != QStringLiteral("auth.close")
+                    && QDateTime::currentMSecsSinceEpoch() >= deadline) {
+                    emit adminResult(id, AdminService::failure(QStringLiteral("TIMEOUT")));
+                    return;
+                }
+                const QString channel = id.contains(QLatin1Char(':')) ? id.section(QLatin1Char(':'), 0, 0) : QString();
+                emit adminResult(id, adminService.handle(action, data, token, channel));
+            }, Qt::QueuedConnection);
+            OrderRepository orders(database.database());
+            UserApiRepository userApi(database.database());
+            UserService userService(&users);
+            OrderService orderService(&orders);
+            UserApiService userApiService(&userApi);
+            RequestDispatcher dispatcher(&userService, &chargingService, &orderService,
+                                         &userApiService);
+            dispatcher.setWorkflowServices(&queueService, &repairService, expireReservations);
+            ChargingServer server;
+            server.setRequestDispatcher(&dispatcher);
+            // Coalesce state invalidations once per second. Clients re-read
+            // their own authorized DTOs; no user/report data is broadcast.
+            qint64 previousChanges = -1;
+            quint64 revision = 0;
+            connect(&expiryTimer, &QTimer::timeout, &server, [&] {
+                QSqlQuery changes(database.database());
+                if (!changes.exec(QStringLiteral("SELECT total_changes()")) || !changes.next()) return;
+                const qint64 current = changes.value(0).toLongLong();
+                if (current == previousChanges) return;
+                previousChanges = current;
+                server.broadcastWorkflowChanged(QJsonObject{
+                    {QStringLiteral("revision"), QString::number(++revision)},
+                    {QStringLiteral("observedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+            });
+            // Signal forwarding only: this direct lambda runs in the worker and
+            // never reads or writes GUI-owned state. Facade connections are queued.
+            connect(&server, &ChargingServer::clientCountChanged, &server,
+                    [this](int count) { emit countChanged(count); });
+            if (!server.listen(address, port)) {
+                emit failed(QStringLiteral("无法监听服务端地址或端口"));
+                return;
+            }
+            if (isInterruptionRequested()) return;
+            emit ready(server.serverPort());
+            exec();
+        } catch (...) {
+            // Do not expose exception text, SQL, credentials or filesystem paths.
+            emit failed(QStringLiteral("服务工作线程发生内部错误"));
+        }
+    }
+};
+
+ServerRuntime::ServerRuntime(QObject* parent) : QObject(parent), thread_(new ServerThread(this))
+{
+    thread_->setObjectName(QStringLiteral("charging-service-worker"));
+    connect(thread_, &ServerThread::adminResult, this, &ServerRuntime::adminResponse,
+            Qt::QueuedConnection);
+    connect(thread_, &ServerThread::ready, this, [this](quint16 port) {
+        if (state_ != State::Starting) return;
+        state_ = State::Running;
+        port_ = port;
+        emit listening(port);
+    }, Qt::QueuedConnection);
+    connect(thread_, &ServerThread::countChanged, this, [this](int count) {
+        if (state_ != State::Running) return;
+        clients_ = count;
+        emit clientCountChanged(count);
+    }, Qt::QueuedConnection);
+    connect(thread_, &ServerThread::failed, this, [this](const QString& message) {
+        if (state_ == State::Starting || state_ == State::Running) {
+            state_ = State::Stopping;
+            emit startupFailed(message);
+        }
+    }, Qt::QueuedConnection);
+    connect(thread_, &QThread::finished, this, [this]() {
+        state_ = State::Stopped;
+        port_ = 0;
+        clients_ = 0;
+        emit clientCountChanged(0);
+        emit stopped();
+    }, Qt::QueuedConnection);
+}
+
+ServerRuntime::~ServerRuntime()
+{
+    // Fallback for owners destroyed without observing stopped(). Normal UI exit
+    // is asynchronous. Never terminate a thread during a SQLite transaction.
+    thread_->requestInterruption();
+    thread_->quit();
+    thread_->wait();
+}
+
+bool ServerRuntime::start(const QString& databasePath, bool demoSeed,
+                          const QHostAddress& address, quint16 port)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (state_ != State::Idle) return false;
+    state_ = State::Starting;
+    thread_->databasePath = databasePath;
+    thread_->demoSeed = demoSeed;
+    thread_->address = address;
+    thread_->port = port;
+    thread_->start();
+    return true;
+}
+
+void ServerRuntime::stop()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (state_ == State::Stopping || state_ == State::Stopped) return;
+    if (state_ == State::Idle) {
+        state_ = State::Stopped;
+        emit stopped();
+        return;
+    }
+    state_ = State::Stopping;
+    port_ = 0;
+    thread_->requestInterruption();
+    thread_->quit(); // thread-safe; current request completes before stack cleanup
+}
+
+bool ServerRuntime::isListening() const { return state_ == State::Running; }
+quint16 ServerRuntime::serverPort() const { return port_; }
+int ServerRuntime::clientCount() const { return clients_; }
+
+void ServerRuntime::submitAdminRequest(const QString& id, const QString& action,
+                                       const QJsonObject& data, const QString& token,
+                                       qint64 deadlineMs)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (state_ != State::Running) {
+        QTimer::singleShot(0, this, [this, id] {
+            emit adminResponse(id, AdminService::failure(QStringLiteral("UNAVAILABLE")));
+        });
+        return;
+    }
+    emit thread_->adminRequest(id, action, data, token, deadlineMs);
+}
+
+} // namespace charging::server
+
+#include "server_runtime.moc"

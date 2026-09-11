@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/station">
+        <file alias="tencent_map.html">map/tencent_map.html</file>
+    </qresource>
+</RCC>

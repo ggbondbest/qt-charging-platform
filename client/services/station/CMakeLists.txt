@@ -1,9 +1,20 @@
-add_library(charging_client_station_services INTERFACE)
+add_library(charging_client_station_services STATIC
+    auth_service.cpp
+    auth_service.h
+    station_query_service.cpp
+    station_query_service.h
+)
 add_library(ChargingPlatform::ClientStationServices ALIAS charging_client_station_services)
 
-target_link_libraries(charging_client_station_services INTERFACE
+target_include_directories(charging_client_station_services PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..
+)
+
+target_link_libraries(charging_client_station_services
+    PUBLIC
     ChargingPlatform::ClientNetwork
     ChargingPlatform::Common
-    ChargingPlatform::ProjectOptions
     Qt6::Core
+    PRIVATE
+    ChargingPlatform::ProjectOptions
 )

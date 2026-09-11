@@ -1,0 +1,116 @@
+#pragma once
+
+#include <QString>
+#include <QtGlobal>
+#include <QVector>
+#include <QWidget>
+#include <QJsonObject>
+
+class QComboBox;
+class QLabel;
+class QLineEdit;
+class QPushButton;
+class QTableWidget;
+
+namespace charging::server {
+
+class ManagementStatePanel;
+
+class StationManagementPage final : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit StationManagementPage(QWidget* parent = nullptr);
+    void setAdminGateway(class AdminRequestGateway* gateway);
+    void refreshData() { if (realMode_) requestList(); }
+
+signals:
+    void stationChargersRequested(const QString& stationId);
+
+private slots:
+    void applyFilters();
+    void resetFilters();
+    void showAddStationDialog();
+    void showEditStationDialog();
+    void toggleSelectedStationStatus();
+    void showPreviousPage();
+    void showNextPage();
+
+private:
+    struct StationRecord {
+        QString code;
+        QString name;
+        QString city;
+        QString district;
+        QString address;
+        double latitude = 0.0;
+        double longitude = 0.0;
+        qint64 priceCentsPerKwh = 0;
+        QString status;
+        int chargerCount = 0;
+        int fastChargerCount = 0;
+        int slowChargerCount = 0;
+        int todayOrders = 0;
+        int utilizationPercent = 0;
+        QString contactName;
+        QString contactPhone;
+        QString serverId{};
+        QString expectedUpdatedAt{};
+        int availableChargerCount = -1;
+        int onlineChargerCount = -1;
+        double onlineRatePercent = -1.0;
+        bool contactDetailsLoaded = false;
+    };
+
+    void createMockRecords();
+    void rebuildTable();
+    void updateEmptyState();
+    void showStationDetails(int recordIndex, bool requestDetails = true);
+    void updateDetailActions();
+    void showStationDialog(int recordIndex);
+    void setFeedback(const QString& text);
+    bool recordMatchesFilters(const StationRecord& record) const;
+    void requestList();
+    void handleListResponse(const QJsonObject& response);
+    void handleSummaryResponse(const QJsonObject& response);
+    void handleDetailResponse(const QJsonObject& response);
+    void handleWriteResponse(const QJsonObject& response);
+    QString statusCode(const QString& display) const;
+
+    QVector<StationRecord> records_;
+    QVector<int> filteredRecordIndexes_;
+    int selectedRecordIndex_ = -1;
+    int currentPage_ = 0;
+    int totalRecords_ = 0;
+    bool realMode_ = false;
+    bool hasRealSnapshot_ = false;
+    QString listRequestId_;
+    QString summaryRequestId_;
+    QString writeRequestId_;
+    QString detailRequestId_;
+    QString detailExpectedServerId_;
+    class AdminRequestGateway* gateway_ = nullptr;
+
+    QLineEdit* keywordLineEdit_ = nullptr;
+    QComboBox* statusComboBox_ = nullptr;
+    QTableWidget* tableWidget_ = nullptr;
+    QLabel* tableTitleLabel_ = nullptr;
+    ManagementStatePanel* statePanel_ = nullptr;
+    QLabel* feedbackLabel_ = nullptr;
+    QLabel* paginationLabel_ = nullptr;
+    QLabel* detailNameLabel_ = nullptr;
+    QLabel* detailIdLabel_ = nullptr;
+    QLabel* detailStatusLabel_ = nullptr;
+    QLabel* detailAddressLabel_ = nullptr;
+    QLabel* detailContactLabel_ = nullptr;
+    QLabel* detailConfigurationLabel_ = nullptr;
+    QLabel* detailRealtimeLabel_ = nullptr;
+    QPushButton* previousPageButton_ = nullptr;
+    QPushButton* nextPageButton_ = nullptr;
+    QPushButton* editButton_ = nullptr;
+    QPushButton* toggleStatusButton_ = nullptr;
+    QPushButton* viewChargersButton_ = nullptr;
+};
+
+} // namespace charging::server

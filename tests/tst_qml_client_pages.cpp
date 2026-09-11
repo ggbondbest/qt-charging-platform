@@ -1,0 +1,1898 @@
+// test_qml_client_pages — QML 页面交互回归（PR #33 二轮评审 5 项 P2 的钉死用例）。
+//
+// 两层策略：
+//   * 脚本控制的 Fake 桥（与真桥同名 signal/invokable）确定性驱动竞态窗口——
+//     真 mock 通道 450ms 延迟 + 在途静默丢弃无回执，无法观测"过期响应被丢弃"、
+//     "翻页在途下拉后重试仍请求同页"这类只在落定前存在的状态。
+//   * 真服务链（QmlApp 自带 MockRequestTransport）走端到端写路径：双改顺序保存、
+//     头像键白名单准入、支付 → 顶栏余额同步。
+//
+// offscreen 下 QQmlComponent 按 file:// 加载页面（与 charging-qml-preview 同机制）。
+#include <QtTest>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
+#include <QScopedPointer>
+// QSettings/QTemporaryDir：经验等级批起本二进制会真写等级档（ProgressService
+// 经 App 落盘），须把配置域钉进 temp dir——见 initTestCase 的说明。
+#include <QSettings>
+#include <QTemporaryDir>
+
+#include "charging/client/profile_charging/avatar_library.h"
+// 真等级引擎（非 fake）：任务页/等级页用例直读 ProgressService 属性对拍。
+#include "charging/client/profile_charging/progress_service.h"
+#include "charging/common/protocol/user_api_contract.h"
+#include "services/station/station_query_service.h"
+
+#include "app_bridge.h"
+#include "glyph_provider.h"
+#include "service_bridges.h"
+
+using charging::qml::ChargingBridge;
+using charging::qml::CouponBridge;
+using charging::qml::NotificationBridge;
+using charging::qml::OrderBridge;
+using charging::qml::PointBridge;
+using charging::qml::QmlApp;
+using charging::qml::RatingBridge;
+using charging::qml::StatsBridge;
+using charging::qml::WalletBridge;
+
+namespace {
+
+QVariantMap fakeOrder(qint64 id, const QString& status)
+{
+    return QVariantMap{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("orderNo"), QStringLiteral("MOCKORDT%1").arg(id, 4, 10, QChar('0'))},
+        {QStringLiteral("status"), status},
+        {QStringLiteral("stationName"), QStringLiteral("测试电站")},
+        {QStringLiteral("chargerCode"), QStringLiteral("TC-%1").arg(id)},
+        {QStringLiteral("energyWh"), 1000},
+        {QStringLiteral("durationSeconds"), 600},
+        {QStringLiteral("amountCents"), 132},
+        {QStringLiteral("unitPriceCentsPerKwh"), 132},
+        {QStringLiteral("createdAt"), QStringLiteral("2026-09-01 10:00")},
+    };
+}
+
+// —— 脚本桥：镜像 OrderBridge 的 QML 可见面（同名方法/信号） ——
+class FakeOrderBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    struct Call { QString filter; int page; };
+    QList<Call> calls;
+    int statusCountsCalls = 0;
+
+    Q_INVOKABLE void fetchOrders(const QString& filter, int page)
+    {
+        if (busy_)
+            return; // 真服务同款：在途重复提交静默丢弃
+        busy_ = true;
+        calls.append({filter, page});
+    }
+    Q_INVOKABLE void fetchStatusCounts() { ++statusCountsCalls; }
+    Q_INVOKABLE bool isFetchingOrders() const { return busy_; }
+
+    void respond(const QVariantList& orders, int total, bool hasMore)
+    {
+        busy_ = false;
+        emit ordersLoaded(orders, total, hasMore);
+    }
+    void respondFailure()
+    {
+        busy_ = false;
+        emit operationFailed(QStringLiteral("GET_ORDERS"), QStringLiteral("NETWORK"),
+                             QStringLiteral("模拟网络故障"));
+    }
+
+signals:
+    void ordersLoaded(const QVariantList& orders, int total, bool hasMore);
+    void statusCountsUpdated(int chargingCount, int waitingPaymentCount, int completedCount);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+private:
+    bool busy_ = false;
+};
+
+// —— 脚本桥：镜像 WalletBridge 的 QML 可见面 ——
+class FakeWalletBridge final : public QObject
+{
+    Q_OBJECT
+public:
+    QStringList calls; // "nick:<v>" / "avatar:<k>"
+
+    Q_INVOKABLE void fetchProfile() {}
+    Q_INVOKABLE bool isUpdatingProfile() const { return false; }
+    Q_INVOKABLE void updateNickname(const QString& nickname)
+    {
+        calls << (QStringLiteral("nick:") + nickname);
+    }
+    Q_INVOKABLE void updateAvatar(const QString& avatarKey)
+    {
+        calls << (QStringLiteral("avatar:") + avatarKey);
+    }
+
+    void emitProfileLoaded()
+    {
+        emit profileLoaded(QVariantMap{});
+        emit profileUpdated(calls.last().startsWith("nick:") ? "nickname" : "avatar", {});
+    }
+    void emitReadProfile() { emit profileLoaded(QVariantMap{}); }
+    void emitFailure()
+    {
+        emit operationFailed(QStringLiteral("UPDATE_USER_INFO"), QStringLiteral("MOCK"),
+                             QStringLiteral("模拟资料保存失败"));
+    }
+
+signals:
+    void profileLoaded(const QVariantMap& user);
+    void profileUpdated(const QString& field, const QVariantMap& user);
+    void rechargeCompleted(qint64 amountCents, qint64 balanceAfterCents);
+    void rechargeRecordsLoaded(const QVariantList& records, bool hasMore);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+};
+
+// 假月报桥：与 StatsBridge 同名（CONTRACT §1），页面对它无感知。
+class FakeStatsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE void fetchStats(int months = 6,
+                                const QString& period = QStringLiteral("month"))
+    {
+        ++calls;
+        lastMonths = months;
+        lastPeriod = period;
+    }
+    Q_INVOKABLE bool isFetchingStats() const { return false; }
+
+    void emitRows(const QVariantList& rows) { emit statsLoaded(rows); }
+    void emitFailure()
+    {
+        emit operationFailed(QStringLiteral("GET_USER_STATS"), QStringLiteral("MOCK"),
+                             QStringLiteral("模拟月报加载失败"));
+    }
+
+signals:
+    void statsLoaded(const QVariantList& months);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int calls = 0;
+    int lastMonths = 0;
+    QString lastPeriod;
+};
+
+// 批次C 签到/积分桥替身：镜像 PointBridge 的 QML 可见接口。checkIn 不自动回
+// 执（由测试显式 emitCheckIn 驱动），fetchPoints 记账参数供断言。
+class FakePointsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE bool isBusy() const { return false; }
+    Q_INVOKABLE void fetchPoints(int page = 1, int pageSize = 20)
+    {
+        ++fetchCalls;
+        lastPage = page;
+        lastPageSize = pageSize;
+    }
+    Q_INVOKABLE void checkIn() { ++checkInCalls; }
+
+    void emitPoints(qint64 points, const QVariantList& entries, int total)
+    {
+        emit pointsLoaded(points, entries, total);
+    }
+    void emitCheckIn(const QString& day, qint64 points, qint64 gained, bool already)
+    {
+        emit checkInCompleted(day, points, gained, already);
+    }
+    void emitFailure(const QString& type)
+    {
+        emit operationFailed(type, QStringLiteral("MOCK"), QStringLiteral("模拟积分失败"));
+    }
+
+signals:
+    void pointsLoaded(qint64 points, const QVariantList& entries, int total);
+    void checkInCompleted(const QString& day, qint64 points, qint64 gained,
+                          bool alreadyCheckedIn);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int fetchCalls = 0;
+    int checkInCalls = 0;
+    int lastPage = 0;
+    int lastPageSize = 0;
+};
+
+// 批次E 评价桥替身：镜像 RatingBridge 的 QML 可见面。两请求都记账参数、回执
+// 由测试显式驱动（FakePointsBridge 同款约定）。
+class FakeRatingsBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE bool isBusy() const { return false; }
+    Q_INVOKABLE void fetchMyRatings(int page = 1, int pageSize = 20)
+    {
+        ++fetchCalls;
+        lastPage = page;
+        lastPageSize = pageSize;
+    }
+    Q_INVOKABLE void submitRating(const QString& orderId, int rating, const QString& comment)
+    {
+        ++submitCalls;
+        lastOrderId = orderId;
+        lastRating = rating;
+        lastComment = comment;
+    }
+
+    void emitRatings(const QVariantList& rows, int total) { emit ratingsLoaded(rows, total); }
+    void emitSubmitted(const QVariantMap& row, bool already) { emit ratingSubmitted(row, already); }
+    void emitFailure(const QString& type)
+    {
+        emit operationFailed(type, QStringLiteral("MOCK"), QStringLiteral("模拟评价失败"));
+    }
+
+signals:
+    void ratingsLoaded(const QVariantList& ratings, int total);
+    void ratingSubmitted(const QVariantMap& ratingRow, bool alreadyRated);
+    void operationFailed(const QString& type, const QString& code, const QString& message);
+
+public:
+    int fetchCalls = 0;
+    int submitCalls = 0;
+    int lastPage = 0;
+    int lastPageSize = 0;
+    QString lastOrderId;
+    int lastRating = 0;
+    QString lastComment;
+};
+
+// 批次F 扫码页的站点查询桥替身：镜像 StationQueryBridge 的 QML 可见面（请求
+// 记账、回执由测试显式驱动；detail 回执 = stationDetailToMap 同形——站字段
+// 平铺 + chargers 列表）。
+class FakeStationQueryBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE void search(const QString& keyword = QString())
+    {
+        ++searchCalls;
+        lastKeyword = keyword;
+    }
+    Q_INVOKABLE void fetchDetailById(qint64 stationId, int distanceMeters = -1)
+    {
+        ++detailCalls;
+        lastDetailStationId = stationId;
+        lastDetailDistance = distanceMeters;
+    }
+    Q_INVOKABLE bool isQueryPending() const { return false; }
+
+    void emitStations(const QVariantList& rows) { emit querySucceeded(rows); }
+    void emitQueryFailure(const QString& message) { emit queryFailed(message); }
+    void emitDetail(const QVariantMap& detail) { emit detailSucceeded(detail); }
+    void emitDetailFailure(const QString& message) { emit detailFailed(message); }
+
+signals:
+    void queryStarted();
+    void querySucceeded(const QVariantList& stations);
+    void queryFailed(const QString& message);
+    void detailStarted();
+    void detailSucceeded(const QVariantMap& detail);
+    void detailFailed(const QString& message);
+
+public:
+    int searchCalls = 0;
+    int detailCalls = 0;
+    QString lastKeyword;
+    qint64 lastDetailStationId = 0;
+    int lastDetailDistance = 0;
+};
+
+// 批次F 车辆桥替身：vehicles() 可控列表（准入门第一读数）。无
+// activeReservationCount 法 → 页面 call() 失败返回 -1，名额门放行。
+class FakeVehicleBridge final : public QObject
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE QVariantList vehicles() const { return vehicles_; }
+    void setVehicleCount(int n)
+    {
+        vehicles_.clear();
+        for (int i = 0; i < n; ++i) {
+            vehicles_.push_back(QVariantMap{
+                {QStringLiteral("id"), i + 1},
+                {QStringLiteral("plate"), QStringLiteral("粤B·1000%1").arg(i + 1)}});
+        }
+    }
+
+private:
+    QVariantList vehicles_;
+};
+
+} // namespace
+
+class QmlClientPagesTest final : public QObject
+{
+    Q_OBJECT
+
+    QQuickWindow* window_ = nullptr;
+    QTemporaryDir settingsDir_;   // 经验等级批：QSettings 域隔离（真用户配置零污染）
+
+private slots:
+    // ProgressService/SettingsService 都落 QSettings；不设隔离域的话
+    // mock 登录号（=演示账号 13800138000）会写进真实配置文件。
+    void initTestCase()
+    {
+        QVERIFY(settingsDir_.isValid());
+        QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatformTests"));
+        QCoreApplication::setApplicationName(QStringLiteral("qml-client-pages"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir_.path());
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir_.path());
+    }
+    void init()
+    {
+        qputenv("CHARGING_CHANNEL", "mock"); // Preview tests opt in; production defaults to TCP.
+        if (window_ == nullptr) {
+            window_ = new QQuickWindow;
+            window_->resize(420, 860);
+            window_->show(); // offscreen 下即可：页面与真机同处窗口宿主
+        }
+    }
+    void cleanup()
+    {
+        delete window_;
+        window_ = nullptr;
+    }
+
+    QQuickItem* createPage(QQmlEngine& engine, const QString& fileName, QObject* holder,
+                           const QString& subdir = QStringLiteral("profile_charging"))
+    {
+        // glyph 染色 provider 与 main.cpp 同名注册（emoji→Image 的页面缺它会
+        // 报 transfer 告警）；engine property 做幂等，同 engine 二次 createPage
+        // 不重复注册（addImageProvider 重名既有告警又泄漏）。
+        if (!engine.property("__glyphsProvider").isValid()) {
+            engine.addImageProvider(QStringLiteral("glyphs"),
+                                    new charging::qml::GlyphProvider);
+            engine.setProperty("__glyphsProvider", true);
+        }
+        QQmlComponent component(&engine);
+        component.loadUrl(QUrl::fromLocalFile(QStringLiteral(CHARGING_QML_SOURCE_DIR)
+                                              + QStringLiteral("/pages/") + subdir + QStringLiteral("/")
+                                              + fileName));
+        if (component.isError())
+            qWarning().noquote() << component.errorString();
+        if (!component.isReady())
+            return nullptr;
+        // 与真机同构：页面挂进 QQuickWindow 的 contentItem（Shell 里页面就在
+        // 窗口下）。注意：offscreen 下 Repeater 的 delegate 何时挂进 QObject 树
+        // 取决于 delegate 组件的异步编译时序（实测：画面已渲染、树里仍查无——
+        // grab 走的是场景图快照），因此断言一律不依赖 delegate，只操作页面根
+        // 的公开状态（= delegate onClicked 所改写的同一批属性/函数）。
+        // holder 声明在最后——槽函数局部变量逆序析构：holder 先亡（带走页面），
+        // 再到 window_/engine/app，页面永远死在宿主之前。
+        auto* item = qobject_cast<QQuickItem*>(component.create());
+        if (item) {
+            item->setParent(holder);
+            item->setParentItem(window_->contentItem());
+            item->setWidth(window_->width());
+            item->setHeight(window_->height());
+        }
+        return item;
+    }
+
+    static void click(QObject* target)
+    {
+        if (target == nullptr) {
+            qWarning() << "click target missing";
+            return;
+        }
+        QMetaObject::invokeMethod(target, "clicked"); // 信号发射 = 用户点击语义
+    }
+
+    // —— delegate 无关的交互入口 ——
+    // 各 delegate 的 onClicked 本质是「改页面根的公开状态 + 调页面函数」；
+    // 直接执行同一动作即等价于点击（offscreen 下 delegate 不进 QObject 树）。
+
+    // OrderListPage 筛选胶囊 onClicked: { page.filter = id; load(true) }
+    static void selectFilter(QQuickItem* page, const QString& id)
+    {
+        page->setProperty("filter", id);
+        QMetaObject::invokeMethod(page, "load", Q_ARG(QVariant, true));
+    }
+
+    // ProfileEditPage 头像格 onClicked: page.avatarKey = key
+    static void selectAvatar(QQuickItem* page, const QString& key)
+    {
+        page->setProperty("avatarKey", key);
+    }
+
+    static int cardCount(QQuickItem* page)
+    {
+        auto* model = page->findChild<QObject*>("uiOrdersModel");
+        return model ? model->property("count").toInt() : -1;
+    }
+
+private slots:
+    void shellBottomBarFollowsLoginState()
+    {
+        // Exercise the real shell and authentication state; mock is explicit
+        // because this regression concerns layout, not TCP authentication.
+        QmlApp app(QStringLiteral("127.0.0.1"), 9527, true);
+        QQmlEngine engine;
+        auto* context = engine.rootContext();
+        context->setContextObject(&app); // Service properties retain NOTIFY bindings.
+        context->setContextProperty(QStringLiteral("App"), &app);
+        context->setContextProperty(QStringLiteral("chargingView"), QStringLiteral("station"));
+        context->setContextProperty(QStringLiteral("CHARGING_CHANNEL"), QStringLiteral("mock"));
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(CHARGING_QML_SOURCE_DIR) + QStringLiteral("/Shell.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        // The window and all pages are destroyed before their engine/services.
+        QScopedPointer<QQuickWindow> shell(qobject_cast<QQuickWindow*>(component.create()));
+        QVERIFY(shell);
+        auto* tabs = shell->findChild<QQuickItem*>(QStringLiteral("bottomTabBar"));
+        auto* stack = shell->findChild<QQuickItem*>(QStringLiteral("pageStack"));
+        auto* nav = shell->findChild<QQuickItem*>(QStringLiteral("topNavBar"));
+        QVERIFY(tabs); QVERIFY(stack); QVERIFY(nav);
+        const auto currentRoute = [stack]() {
+            auto* current = stack->property("currentItem").value<QQuickItem*>();
+            return current ? current->property("route").toString() : QString();
+        };
+
+        QVERIFY(!app.loggedIn());
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QSignalSpy rejected(&app, &QmlApp::loginFailed);
+        QVERIFY(!app.login(QStringLiteral("123")));
+        QCOMPARE(rejected.size(), 1);
+        QVERIFY(!app.loggedIn());
+        QVERIFY(!tabs->isVisible());
+        QCOMPARE(stack->y() + stack->height(), qreal(shell->height()));
+
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+        QVERIFY(tabs->implicitHeight() > 0);
+        QCOMPARE(tabs->height(), tabs->implicitHeight());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height() - tabs->height());
+        QTRY_COMPARE(tabs->y() + tabs->height(), qreal(shell->height()));
+
+        // Even an authenticated session must not show navigation on the login route.
+        app.navigate(QStringLiteral("login"));
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+        app.navigate(QStringLiteral("station"));
+        QTRY_VERIFY(tabs->isVisible());
+
+        app.logout();
+        QTRY_COMPARE(currentRoute(), QStringLiteral("login"));
+        QVERIFY(!app.loggedIn());
+        QTRY_VERIFY(!tabs->isVisible());
+        QTRY_COMPARE(stack->height(), shell->height() - nav->height());
+        QTRY_COMPARE(stack->y() + stack->height(), qreal(shell->height()));
+    }
+
+    // P2·复审①：请求中切换筛选——旧("全部")响应不得落到"已完成"列表，
+    // 且必须按当前筛选补查（此前按钮改了 filter、请求被吞，旧结果显示）。
+    void orderListIgnoresStaleFilterResponse()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeOrderBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("OrderListPage.qml"), &holder);
+        QVERIFY(page);
+
+        QCOMPARE(fake.calls.size(), 1);
+        QCOMPARE(fake.calls.at(0).filter, QStringLiteral("all"));
+        QCOMPARE(fake.calls.at(0).page, 1);
+
+        // "全部"在途 → 点「已完成」：只登记意图，不再盲发第二条（会被服务层吞）。
+        selectFilter(page, QStringLiteral("completed"));
+        QCOMPARE(page->property("filter").toString(), QStringLiteral("completed"));
+        QCOMPARE(fake.calls.size(), 1);
+
+        // 过期响应（混着充电中订单的"全部"数据）：不得应用，须立刻重查当前筛选。
+        fake.respond({fakeOrder(1, QStringLiteral("charging")),
+                      fakeOrder(2, QStringLiteral("completed"))},
+                     20, false);
+
+        QCOMPARE(cardCount(page), 0);
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1).filter, QStringLiteral("completed"));
+        QCOMPARE(fake.calls.at(1).page, 1);
+
+        // 新筛选的响应才允许上屏。
+        fake.respond({fakeOrder(2, QStringLiteral("completed"))}, 1, false);
+        QCOMPARE(cardCount(page), 1);
+
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // P2·复审②：第 2 页在途时下拉——不得清掉翻页在途态；随后失败，重试仍请求第 2 页。
+    void orderListKeepsPagingRetryPageAfterPullFailure()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeOrderBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("OrderListPage.qml"), &holder);
+        QVERIFY(page);
+        fake.respond({fakeOrder(1, QStringLiteral("charging")),
+                      fakeOrder(2, QStringLiteral("completed"))},
+                     20, true); // 第一页 + hasMore
+        QCOMPARE(cardCount(page), 2);
+        QCOMPARE(page->property("loadedPage").toInt(), 1);
+
+        auto* more = page->findChild<QQuickItem*>("uiOrderLoadMore");
+        QVERIFY(more);
+        click(more);
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1).page, 2);
+        QVERIFY(page->property("loadingMore").toBool());
+
+        // 第 2 页在途中下拉：不发第三条（会被吞），也绝不碰在途翻页的状态。
+        auto* pull = page->findChild<QQuickItem*>("uiOrderListStack");
+        QVERIFY(pull);
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls.size(), 2);
+        QVERIFY(page->property("loadingMore").toBool()); // 原 bug：这里被清成 false，回退失效
+
+        fake.respondFailure(); // 第 2 页失败 → 错误态，但 loadedPage 仍是成功页 1
+        QVERIFY(page->property("loadMoreError").toBool());
+        QCOMPARE(page->property("loadedPage").toInt(), 1);
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(!pull->property("refreshing").toBool());
+
+        // 重试：仍请求第 2 页（原 bug 会跳到第 3 页，漏掉第 2 页）。
+        click(more);
+        QCOMPARE(fake.calls.size(), 3);
+        QCOMPARE(fake.calls.at(2).page, 2);
+        fake.respond({fakeOrder(3, QStringLiteral("completed"))}, 3, false);
+        QCOMPARE(cardCount(page), 3);
+        QCOMPARE(page->property("loadedPage").toInt(), 2);
+        QVERIFY(!page->property("loadMoreError").toBool());
+    }
+
+    // P2·复审④：同时改昵称+头像 → 串行两步（服务层单飞），全部落定才退出。
+    void profileEditSavesBothFieldsSequentially()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeWalletBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        QCOMPARE(page->property("avatarKey").toString(), QStringLiteral("cat"));
+
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+        QCOMPARE(fake.calls, QStringList{QStringLiteral("nick:小荷")}); // 头像只登记不抢发
+        QCOMPARE(backSpy.count(), 0);
+
+        // An earlier GET_USER_INFO completes while nickname saving is in flight.
+        // It must not send avatar prematurely or mark the write as successful.
+        fake.emitReadProfile();
+        QCOMPARE(fake.calls.size(), 1);
+        QCOMPARE(backSpy.count(), 0);
+        QVERIFY(page->property("sending").toBool());
+
+        fake.emitProfileLoaded(); // 昵称落定 → 自动补发头像
+        QCOMPARE(fake.calls.size(), 2);
+        QCOMPARE(fake.calls.at(1), QStringLiteral("avatar:cat"));
+        QCOMPARE(backSpy.count(), 0); // 原 bug：第一步成功就退出，头像丢失
+
+        fake.emitReadProfile(); // Reads during the second write are not ACKs either.
+        QCOMPARE(backSpy.count(), 0);
+
+        fake.emitProfileLoaded(); // 头像也落定 → 才许退出
+        QCOMPARE(backSpy.count(), 1);
+        QVERIFY(!page->property("sending").toBool());
+    }
+
+    // P2·复审④伴生：任一步失败不得退出，页面留着重试。
+    void profileEditStaysWhenSecondStepFails()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeWalletBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+        QSignalSpy toastSpy(&app, &QmlApp::toastRequested);
+
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+        fake.emitProfileLoaded();
+        QCOMPARE(fake.calls.size(), 2);
+        fake.emitFailure();
+
+        QCOMPARE(backSpy.count(), 0);
+        QVERIFY(!page->property("sending").toBool());          // 保存按钮恢复可点
+        QCOMPARE(toastSpy.last().at(1).toString(), QStringLiteral("danger"));
+    }
+
+    void chargingStartFailureClearsPendingAndExplainsWhy()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("App", &app);
+        engine.rootContext()->setContextProperty("walletService", app.walletService());
+        engine.rootContext()->setContextProperty("orderService", app.orderService());
+        engine.rootContext()->setContextProperty("chargingService", app.chargingService());
+        engine.rootContext()->setContextProperty("reservationService", app.reservationService());
+        QObject holder;
+        auto* page = createPage(engine, "ChargingHomePage.qml", &holder);
+        QVERIFY(page);
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QSignalSpy failures(charging, &ChargingBridge::operationFailed);
+        QSignalSpy toasts(&app, &QmlApp::toastRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QVERIFY(!page->property("startPending").toBool()); // Selecting a target does not start a request yet.
+        auto* targetDialog = page->findChild<QObject*>("chargingTargetDialog");
+        QVERIFY(targetDialog);
+        QTRY_VERIFY(targetDialog->property("visible").toBool());
+        QCOMPARE(targetDialog->property("normalized").toDouble(), 2000.0);
+        auto* confirm = targetDialog->findChild<QObject*>("confirmChargingTargetButton");
+        QVERIFY(confirm && confirm->property("enabled").toBool());
+        click(confirm);
+        QVERIFY(page->property("startPending").toBool());
+        QVERIFY(QMetaObject::invokeMethod(page, "startReservation", Q_ARG(QVariant, "99999999")));
+        QTRY_VERIFY(!page->property("startPending").toBool());
+        QVERIFY(!page->property("loadError").toString().isEmpty());
+        QVERIFY(!toasts.isEmpty());
+        int startFailures = 0;
+        for (const auto& failure : failures)
+            if (failure.at(0).toString() == "START_CHARGING") ++startFailures;
+        QCOMPARE(startFailures, 1); // The duplicate click did not submit another request.
+    }
+
+    // P2·复审③：QML 头像清单与 widgets AvatarLibrary 逐键对拍（双源治理）。
+    void avatarChoicesStayInSyncWithAvatarLibrary()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                 app.walletService());
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        const QVariantList choices = page->property("avatarChoices").toList();
+        QStringList keys;
+        QStringList glyphs;
+        for (const QVariant& choice : choices) {
+            const QVariantMap map = choice.toMap();
+            QVERIFY(charging::client::AvatarLibrary::contains(
+                map.value(QStringLiteral("key")).toString()));
+            keys << map.value(QStringLiteral("key")).toString();
+            glyphs << map.value(QStringLiteral("glyph")).toString();
+            QVERIFY(!map.value(QStringLiteral("color")).toString().isEmpty());
+        }
+        QStringList expected;
+        for (const charging::client::AvatarSpec& spec : charging::client::AvatarLibrary::all())
+            expected << spec.key;
+        QCOMPARE(keys, expected);
+        QCOMPARE(glyphs.size(), expected.size());
+    }
+
+    // 真服务端到端：双改全链（UPDATE_USER_INFO×2 串行）→ 头像键过白名单、
+    // currentUser 一致、重开编辑页选中态=持久化键（评审③④要求的"重新加载后一致性"）。
+    void profileEditRealMockSavesBothFields()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                 app.walletService());
+        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
+        QVERIFY(wallet);
+        QSignalSpy failSpy(wallet, &WalletBridge::operationFailed);
+        QSignalSpy backSpy(&app, &QmlApp::backRequested);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("ProfileEditPage.qml"), &holder);
+        QVERIFY(page);
+        QSignalSpy loadedSpy(wallet, &WalletBridge::profileLoaded);
+        page->setProperty("nickname", QStringLiteral("小荷"));
+        selectAvatar(page, QStringLiteral("cat"));
+        click(page->findChild<QQuickItem*>("profileSaveButton"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(loadedSpy.count() >= 2, 6000); // 两次 450ms mock 往返
+        if (!failSpy.isEmpty())
+            qWarning().noquote() << "bridge operationFailed:" << failSpy.at(0);
+        QCOMPARE(backSpy.count(), 1); // 两步全落定才退出
+        QCOMPARE(failSpy.count(), 0); // 头像键不在契约白名单会在此报 INVALID_ARGUMENT
+        QCOMPARE(app.currentUser().value(QStringLiteral("nickname")).toString(),
+                 QStringLiteral("小荷"));
+        QCOMPARE(app.currentUser().value(QStringLiteral("avatarKey")).toString(),
+                 QStringLiteral("cat"));
+        QVERIFY(charging::client::AvatarLibrary::contains(
+            app.currentUser().value(QStringLiteral("avatarKey")).toString()));
+
+        // 重开编辑页：选中态来自持久化的 key，而不是展示字形。
+        QQmlEngine engine2;
+        engine2.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine2.rootContext()->setContextProperty(QStringLiteral("walletService"),
+                                                  app.walletService());
+        QObject holder2;
+        auto* page2 = createPage(engine2, QStringLiteral("ProfileEditPage.qml"), &holder2);
+        QVERIFY(page2);
+        QCOMPARE(page2->property("avatarKey").toString(), QStringLiteral("cat"));
+    }
+
+    // P2·复审⑤：支付成功 → QmlApp 用 paymentCompleted 的余额回写并广播 userChanged。
+    // 月报页 × 假桥：进页即拉 6 个月；响应落 ListModel、hero 总计重算、
+    // 空态在数据落定后现身；失败回执清在途。
+    void statsPageRendersBridgeMonths()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStatsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("statsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构：页面死在 app/engine 之前
+        auto* page = createPage(engine, QStringLiteral("StatsPage.qml"), &holder);
+        QVERIFY(page);
+
+        QCOMPARE(fake.calls, 1);
+        QCOMPARE(fake.lastMonths, 6);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitRows({QVariantMap{{QStringLiteral("monthKey"), QStringLiteral("2026-09")},
+                                   {QStringLiteral("orderCount"), 2},
+                                   {QStringLiteral("energyWh"), 20000},
+                                   {QStringLiteral("amountCents"), 3000},
+                                   {QStringLiteral("durationSeconds"), 3600},
+                                   {QStringLiteral("co2Grams"), 11136}}});
+
+        auto* model = page->findChild<QObject*>("uiStatsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        const QVariantMap totals = page->property("totals").toMap();
+        QCOMPARE(totals.value(QStringLiteral("wh")).toInt(), 20000);
+        QCOMPARE(totals.value(QStringLiteral("cents")).toInt(), 3000);
+        QCOMPARE(totals.value(QStringLiteral("count")).toInt(), 2);
+        QCOMPARE(totals.value(QStringLiteral("hours")).toDouble(), 1.0);
+        QCOMPARE(totals.value(QStringLiteral("co2Kg")).toDouble(), 11.136);
+
+        // 下拉：刷新请求再发一路；空响应 → 空态可见。
+        auto* pull = page->findChild<QQuickItem*>("uiStatsListStack");
+        QVERIFY(pull);
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls, 2);
+        fake.emitRows({});
+        auto* notice = page->findChild<QQuickItem*>("uiStatsEmptyNotice");
+        QVERIFY(notice);
+        QVERIFY(notice->isVisible());
+
+        // 失败回执：在途清空、页面保留上一次数据（不清屏）。
+        QMetaObject::invokeMethod(pull, "refreshRequested");
+        QCOMPARE(fake.calls, 3);
+        fake.emitFailure();
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(page->property("loadedOnce").toBool()); // 失败不回滚已落定状态
+        QVERIFY(notice->isVisible());                   // 保留上一次数据（仍空态）
+
+        // 档位切换（批次B）：周报=近 8 周；period 透传给桥；标题联动。
+        // delegate 在 offscreen 不可 findChild（CONTRACT.md 已知问题），
+        // 走页面级 switchPeriod——与 chip onClicked 同一代码路径。
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("week")));
+        QCOMPARE(fake.calls, 4);
+        QCOMPARE(fake.lastMonths, 8);
+        QCOMPARE(fake.lastPeriod, QStringLiteral("week"));
+        auto* title = page->findChild<QQuickItem*>("uiStatsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("充电报告"));
+    }
+
+    // 审查 P2#5 回归：响应在途时切档——陈旧档位响应必须被丢弃（不入模型、
+    // caption 不动），并在在途收口后立即补发最后选中的档位；失败回执同款。
+    void statsPageIgnoresStalePeriodResponse()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStatsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("statsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("StatsPage.qml"), &holder);
+        QVERIFY(page);
+        auto* model = page->findChild<QObject*>("uiStatsModel");
+        QVERIFY(model);
+
+        QCOMPARE(fake.calls, 1);                       // 进页自动发月档（在途）
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("week")));
+        QCOMPARE(fake.calls, 1);                       // 在途不发第二条
+        QVERIFY(page->property("reqActive").toBool());
+
+        QVariantMap monthRow;
+        monthRow.insert(QStringLiteral("monthKey"), QStringLiteral("2026-09"));
+        monthRow.insert(QStringLiteral("orderCount"), 5);
+        fake.emitRows({monthRow});                     // 月档陈旧响应到达
+        QCOMPARE(model->property("count").toInt(), 0); // 丢弃：不入模型
+        QVERIFY(!page->property("loadedOnce").toBool());
+        QCOMPARE(page->property("periodCaption").toString(),
+                 QStringLiteral("近 6 个月 · 已完成订单"));  // 未接受不动 caption
+        QCOMPARE(fake.calls, 2);                       // 立即补发周档
+        QCOMPARE(fake.lastPeriod, QStringLiteral("week"));
+        QCOMPARE(fake.lastMonths, 8);
+
+        QVariantMap weekRow;
+        weekRow.insert(QStringLiteral("monthKey"), QStringLiteral("2026-W36"));
+        weekRow.insert(QStringLiteral("orderCount"), 2);
+        fake.emitRows({weekRow});
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QCOMPARE(page->property("periodCaption").toString(),
+                 QStringLiteral("近 8 周 · 已完成订单"));
+
+        // 失败归属同款：年档在途时切回月档，年档失败不得弹错、不得清屏，
+        // 只静默补发当前（月）档位，已落定数据保留。
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("year")));
+        QCOMPARE(fake.calls, 3);                       // 周档已落定：年档即发
+        QMetaObject::invokeMethod(page, "switchPeriod",
+                                  Q_ARG(QVariant, QStringLiteral("month")));
+        QCOMPARE(fake.calls, 3);                       // 年档在途：不发第二条
+        fake.emitFailure();                            // 年档失败回执
+        QCOMPARE(fake.calls, 4);                       // 静默补发月档
+        QCOMPARE(fake.lastPeriod, QStringLiteral("month"));
+        QCOMPARE(model->property("count").toInt(), 1); // 已落定数据未被清屏
+        QVERIFY(page->property("loadedOnce").toBool());
+        fake.emitRows({monthRow});                     // 月档响应落定
+        QCOMPARE(model->property("count").toInt(), 1);
+        QVERIFY(page->property("loadedOnce").toBool());
+    }
+
+    // 月报桥 × 真 mock 通道：端到端有当月聚合，碳排公式对拍；越界月份 INVALID。
+    void statsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* stats = qobject_cast<StatsBridge*>(app.statsService());
+        QVERIFY(stats);
+
+        QSignalSpy spy(stats, &StatsBridge::statsLoaded);
+        stats->fetchStats(6);
+        QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 4000);
+        const QVariantList months = spy.at(0).at(0).toList();
+        QVERIFY(!months.isEmpty()); // mock 种子含当月已完成订单
+        const QVariantMap first = months.first().toMap();
+        QCOMPARE(first.value(QStringLiteral("monthKey")).toString().size(), 7);
+        const double expectedCo2 =
+            qRound64(first.value(QStringLiteral("energyWh")).toLongLong() * 0.5568);
+        QCOMPARE(first.value(QStringLiteral("co2Grams")).toDouble(), expectedCo2);
+
+        QSignalSpy failSpy(stats, &StatsBridge::operationFailed);
+        stats->fetchStats(13); // 越界：contract 层拒
+        QTRY_VERIFY_WITH_TIMEOUT(failSpy.count() >= 1, 4000);
+        QCOMPARE(failSpy.at(0).at(0).toString(), QStringLiteral("GET_USER_STATS"));
+        QCOMPARE(failSpy.at(0).at(1).toString(), QStringLiteral("INVALID_ARGUMENT"));
+    }
+
+    // 券桥 × 真 mock 通道：app 接线即拉满缓存（CouponPage 只同步读缓存），
+    // 5 张种子券、3 张可用，页面契约字段形态齐。
+    void couponBridgeServesMockWallet()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* coupons = qobject_cast<CouponBridge*>(app.couponService());
+        QVERIFY(coupons);
+
+        // mock 回执经事件循环延迟派发：QmlApp ctor 的 fetchCoupons 要等一圈
+        // 事件才落缓存（QTRY 兼作“接线时自动拉一次”契约本身的验证）。
+        QTRY_VERIFY_WITH_TIMEOUT(coupons->couponCount() == 5, 4000);
+        const QVariantList rows = coupons->coupons();
+        QCOMPARE(rows.size(), 5);
+        int available = 0;
+        for (const QVariant& row : rows) {
+            const QVariantMap item = row.toMap();
+            if (item.value(QStringLiteral("status")).toString() == QLatin1String("available"))
+                ++available;
+            QVERIFY(!item.value(QStringLiteral("id")).toString().isEmpty());
+            QVERIFY(item.value(QStringLiteral("expiresAtUtc")).toDouble() > 0.0);
+        }
+        QCOMPARE(available, 3);
+    }
+
+    // 积分页 × 桥替身：进页自拉流水、流水卡入模（含结算返点行）、GET_POINTS
+    // 失败解锁在途。2026-09-09 去签到化：本页不得再暴露任何签到面
+    //（签到入口唯一在 ProfilePage hero 胶囊，守卫用例见
+    //  profileCheckInPillGuardsRepeatedTaps）。
+    void pointsPageRendersBridgeLedger()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构（Stats 用例同款时序约定）
+        auto* page = createPage(engine, QStringLiteral("PointsPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPage, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitPoints(70, {QVariantMap{{QStringLiteral("id"), QStringLiteral("3")},
+                                         {QStringLiteral("amount"), 10},
+                                         {QStringLiteral("reason"), QStringLiteral("消费返积分")},
+                                         {QStringLiteral("createdAtUtc"),
+                                          QStringLiteral("2026-09-08T09:00:00.000Z")}},
+                             QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+                                        {QStringLiteral("amount"), 10},
+                                        {QStringLiteral("reason"), QStringLiteral("每日签到")},
+                                        {QStringLiteral("createdAtUtc"),
+                                         QStringLiteral("2026-09-08T08:00:00.000Z")}},
+                             QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                                        {QStringLiteral("amount"), 50},
+                                        {QStringLiteral("reason"), QStringLiteral("注册礼包")},
+                                        {QStringLiteral("createdAtUtc"),
+                                         QStringLiteral("2026-09-05T08:00:00.000Z")}}}, 3);
+        auto* model = page->findChild<QObject*>("uiPointsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 3);
+        QCOMPARE(page->property("points").toInt(), 70);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        auto* title = page->findChild<QQuickItem*>("uiPointsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("积分"));
+
+        // 去签到化钉子：签到面（属性/入口函数）不得回流本页。
+        QVERIFY(!page->property("todayCheckedIn").isValid());
+        QVERIFY(!page->property("checkingIn").isValid());
+        QVERIFY(!QMetaObject::invokeMethod(page, "checkInNow"));
+
+        // 失败回执（GET_POINTS 在途挂掉）：reqActive 解锁。
+        fake.emitFailure(QStringLiteral("GET_POINTS"));
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // ProfilePage hero 签到胶囊 × 桥替身：连点守卫——在途至多一笔 checkIn，
+    // 失败回执解锁可重发，成功回执进已签态后再点只 toast 不发请求。
+    //（服务端日粒度幂等只保"分数不重发"，不保"不连发请求/不连弹 toast"，
+    //  审查反馈 2026-09-09：幂等是底线不是首闸。）
+    void profileCheckInPillGuardsRepeatedTaps()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        // 本页其余桥面与本用例无关：空指针注入，调用全落页内 try/catch。
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("couponService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("notificationService"), nullptr);
+
+        QObject holder; // 最后声明最先析构：页面死在宿主之前（createPage 时序约定）
+        auto* page = createPage(engine, QStringLiteral("ProfilePage.qml"), &holder,
+                                QStringLiteral("station"));
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);   // 进页补拉积分角标+签到态推导 fetchPoints(1,20)
+
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+        QVERIFY(page->property("checkingIn").toBool());
+        QMetaObject::invokeMethod(page, "checkInNow");   // 在途吞连点
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+
+        fake.emitFailure(QStringLiteral("CHECK_IN"));    // 失败解锁、不误进已签态
+        QVERIFY(!page->property("checkingIn").toBool());
+        QVERIFY(!page->property("checkedToday").toBool());
+
+        QMetaObject::invokeMethod(page, "checkInNow");   // 解锁后可重发
+        QCOMPARE(fake.checkInCalls, 2);
+        fake.emitCheckIn(QStringLiteral("2026-09-09"), 60, 10, false);
+        QVERIFY(page->property("checkedToday").toBool());
+        QCOMPARE(page->property("pointsTotal").toInt(), 60);
+        QVERIFY(!page->property("checkingIn").toBool());
+
+        QMetaObject::invokeMethod(page, "checkInNow");   // 已签拦路：只 toast 不发请求
+        QCOMPARE(fake.checkInCalls, 2);
+    }
+
+    // 用户反馈回归（2026-09-09）：页面被 Tab 切换销毁重建后 checkedToday 属性
+    // 丢失——胶囊"已签到"复亮还能点。修=进页流水推导：首页里存在今日（UTC）
+    // "每日签到"行即恢复已签态。负例：今日"消费返积分"行、昨日签到行都不算。
+    void profileCheckedTodayRestoredFromLedger()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("couponService"), nullptr);
+        engine.rootContext()->setContextProperty(QStringLiteral("notificationService"), nullptr);
+
+        const QString today =
+            QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd"));
+        const QString yesterday = QDateTime::currentDateTimeUtc().addDays(-1)
+                                      .toString(QStringLiteral("yyyy-MM-dd"));
+        auto ledgerRow = [](const QString& reason, const QString& day) {
+            return QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                               {QStringLiteral("amount"), 10},
+                               {QStringLiteral("reason"), reason},
+                               {QStringLiteral("createdAtUtc"),
+                                day + QStringLiteral("T03:00:00.000Z")}};
+        };
+
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ProfilePage.qml"), &holder,
+                                QStringLiteral("station"));
+        QVERIFY(page);
+        QVERIFY(!page->property("checkedToday").toBool());   // 重建即失忆（病灶起点）
+
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("消费返积分"), today)}, 1);
+        QVERIFY(!page->property("checkedToday").toBool());   // 返点行不是签到证据
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("每日签到"), yesterday)}, 2);
+        QVERIFY(!page->property("checkedToday").toBool());   // 昨天的签不算今天
+
+        fake.emitPoints(60, {ledgerRow(QStringLiteral("每日签到"), today),
+                             ledgerRow(QStringLiteral("注册礼包"), yesterday)}, 3);
+        QVERIFY(page->property("checkedToday").toBool());    // 今日签到行 → 恢复已签
+        QMetaObject::invokeMethod(page, "checkInNow");       // 恢复后照样拦请求
+        QCOMPARE(fake.checkInCalls, 0);
+    }
+
+    // 签到桥 × 真 mock 通道端到端：种子礼包 50 → 签到 +10 → 流水两行新在前。
+    void pointsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* points = qobject_cast<PointBridge*>(app.pointsService());
+        QVERIFY(points);
+
+        QSignalSpy loaded(points, &PointBridge::pointsLoaded);
+        points->fetchPoints();
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toLongLong(), 50);   // 注册礼包 seed
+        QCOMPARE(loaded.at(0).at(2).toInt(), 1);
+
+        QSignalSpy done(points, &PointBridge::checkInCompleted);
+        points->checkIn();
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 1, 4000);
+        QCOMPARE(done.at(0).at(1).toLongLong(), 60);
+        QCOMPARE(done.at(0).at(2).toLongLong(), 10);
+        QCOMPARE(done.at(0).at(3).toBool(), false);
+        QCOMPARE(done.at(0).at(0).toString().size(), 10);  // "YYYY-MM-DD"
+
+        // 同日重放：already=true、gained=0（幂等镜像）。
+        points->checkIn();
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 2, 4000);
+        QCOMPARE(done.at(1).at(2).toLongLong(), 0);
+        QCOMPARE(done.at(1).at(3).toBool(), true);
+
+        loaded.clear();
+        points->fetchPoints(1, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(1).toList().size(), 2);
+        QCOMPARE(loaded.at(0).at(1).toList().first().toMap()
+                     .value(QStringLiteral("reason")).toString(),
+                 QStringLiteral("每日签到"));              // 新→旧
+    }
+
+    // 批次E 我的评价页 × 桥替身：进页自拉列表、评价卡入模、失败回执解锁在途。
+    void ratingsPageRendersBridgeRows()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+
+        QObject holder; // 最后声明 → 最先析构（积分页用例同款时序约定）
+        auto* page = createPage(engine, QStringLiteral("RatingsPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPage, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+        QVERIFY(!page->property("loadedOnce").toBool());
+
+        fake.emitRatings({QVariantMap{{QStringLiteral("id"), QStringLiteral("2")},
+                                      {QStringLiteral("orderId"), QStringLiteral("3")},
+                                      {QStringLiteral("chargerId"), QStringLiteral("12")},
+                                      {QStringLiteral("chargerCode"), QStringLiteral("B07")},
+                                      {QStringLiteral("stationName"),
+                                       QStringLiteral("云杉科技园区充电站")},
+                                      {QStringLiteral("rating"), 5},
+                                      {QStringLiteral("comment"),
+                                       QStringLiteral("充电很快，环境不错。")},
+                                      {QStringLiteral("createdAtUtc"),
+                                       QStringLiteral("2026-09-08T08:00:00.000Z")}},
+                          QVariantMap{{QStringLiteral("id"), QStringLiteral("1")},
+                                      {QStringLiteral("orderId"), QStringLiteral("2")},
+                                      {QStringLiteral("chargerId"), QStringLiteral("11")},
+                                      {QStringLiteral("chargerCode"), QStringLiteral("A03")},
+                                      {QStringLiteral("stationName"),
+                                       QStringLiteral("云杉科技园区充电站")},
+                                      {QStringLiteral("rating"), 4},
+                                      {QStringLiteral("comment"), QString()},
+                                      {QStringLiteral("createdAtUtc"),
+                                       QStringLiteral("2026-09-07T08:00:00.000Z")}}}, 2);
+        auto* model = page->findChild<QObject*>("uiRatingsModel");
+        QVERIFY(model);
+        QCOMPARE(model->property("count").toInt(), 2);
+        QVERIFY(page->property("loadedOnce").toBool());
+        QVERIFY(!page->property("reqActive").toBool());
+
+        auto* title = page->findChild<QQuickItem*>("uiRatingsTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("我的评价"));
+
+        // 失败回执解锁在途；无关类型的失败不碰本页状态。
+        fake.emitFailure(QStringLiteral("GET_POINTS"));
+        fake.emitFailure(QStringLiteral("GET_MY_RATINGS"));
+        QVERIFY(!page->property("reqActive").toBool());
+    }
+
+    // 批次E 订单详情页完成态评价卡 × 桥替身：arg 补完成单自拉存量、未命中保
+    // 持可编辑形态、星级门槛拦提交、成功回执切"已评价"只读、已评价后不重拉。
+    void orderDetailCompletedRatingCardFlow()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        FakeOrderBridge orders;   // ensureData 兜底拉单会打这里（只记账，不应答）
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &orders);
+        engine.rootContext()->setContextProperty(QStringLiteral("chargingService"),
+                                                 app.chargingService());
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("OrderDetailPage.qml"), &holder);
+        QVERIFY(page);
+
+        const QVariantMap completed{
+            {QStringLiteral("id"), QStringLiteral("77")},
+            {QStringLiteral("orderNo"), QStringLiteral("TEST-77")},
+            {QStringLiteral("status"), QStringLiteral("completed")},
+            {QStringLiteral("amountCents"), 2400},
+            {QStringLiteral("chargerCode"), QStringLiteral("B07")},
+            {QStringLiteral("stationName"), QStringLiteral("云杉科技园区充电站")}};
+        page->setProperty("arg", completed);     // onArgChanged → loadRating
+        QCOMPARE(fake.fetchCalls, 1);
+        QCOMPARE(fake.lastPageSize, 20);
+
+        QVariantMap other;                       // 非命中行（别的订单）
+        other.insert(QStringLiteral("orderId"), QStringLiteral("9"));
+        fake.emitRatings({other}, 1);
+        QVERIFY(page->property("myRating").isNull());
+        QVERIFY(!page->property("ratingReqActive").toBool());
+
+        QMetaObject::invokeMethod(page, "submitRatingNow");   // 未选星：门槛拦截
+        QCOMPARE(fake.submitCalls, 0);
+        page->setProperty("pickedStars", 4);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 1);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("77"));
+        QCOMPARE(fake.lastRating, 4);
+        QVERIFY(page->property("ratingSubmitting").toBool());
+
+        QVariantMap mine;
+        mine.insert(QStringLiteral("orderId"), QStringLiteral("77"));
+        mine.insert(QStringLiteral("rating"), 4);
+        fake.emitSubmitted(mine, false);
+        QVERIFY(!page->property("ratingSubmitting").toBool());
+        QVERIFY(!page->property("myRating").isNull());
+
+        fake.emitFailure(QStringLiteral("SUBMIT_CHARGER_RATING"));  // 解锁不悔已评态
+        QVERIFY(!page->property("myRating").isNull());
+
+        const int fetchBefore = fake.fetchCalls;   // 已评后幂等不重拉
+        QMetaObject::invokeMethod(page, "loadRating");
+        QCOMPARE(fake.fetchCalls, fetchBefore);
+    }
+
+    // 审查 P2#6 回归：提交 A 在途 → 切到订单 B → A 的迟到响应不得写入 B 页
+    // （不污染 myRating、不误弹 toast），且不得卡死 B 的提交入口。
+    void orderDetailIgnoresRatingResponseForStaleOrder()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeRatingsBridge fake;
+        FakeOrderBridge orders;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("orderService"), &orders);
+        engine.rootContext()->setContextProperty(QStringLiteral("chargingService"),
+                                                 app.chargingService());
+        engine.rootContext()->setContextProperty(QStringLiteral("ratingsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("OrderDetailPage.qml"), &holder);
+        QVERIFY(page);
+
+        QVariantMap orderA;
+        orderA.insert(QStringLiteral("id"), QStringLiteral("77"));
+        orderA.insert(QStringLiteral("status"), QStringLiteral("completed"));
+        orderA.insert(QStringLiteral("amountCents"), 2400);
+        page->setProperty("arg", orderA);
+
+        // 提交 A（响应留在在途窗口）。
+        page->setProperty("pickedStars", 4);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 1);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("77"));
+        QVERIFY(page->property("ratingSubmitting").toBool());
+
+        // 用户切到订单 B：页面实例复用，展示态必须清零。
+        QVariantMap orderB = orderA;
+        orderB.insert(QStringLiteral("id"), QStringLiteral("88"));
+        page->setProperty("arg", orderB);
+        QVERIFY(page->property("myRating").isNull());
+        QCOMPARE(page->property("pickedStars").toInt(), 0);
+
+        // A 的迟到响应：归属不匹配 → 只收口在途标志，不写 B 页。
+        QVariantMap rowA;
+        rowA.insert(QStringLiteral("orderId"), QStringLiteral("77"));
+        rowA.insert(QStringLiteral("rating"), 4);
+        fake.emitSubmitted(rowA, false);
+        QVERIFY(page->property("myRating").isNull());             // 未污染
+        QVERIFY(!page->property("ratingSubmitting").toBool());    // 未卡死
+
+        // B 自身提交正常：成功响应归属匹配 → 正常落页。
+        page->setProperty("pickedStars", 5);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 2);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("88"));
+        QVariantMap rowB;
+        rowB.insert(QStringLiteral("orderId"), QStringLiteral("88"));
+        rowB.insert(QStringLiteral("rating"), 5);
+        fake.emitSubmitted(rowB, false);
+        QVERIFY(!page->property("myRating").isNull());
+        QCOMPARE(page->property("myRating").toMap()
+                     .value(QStringLiteral("rating")).toInt(), 5);
+
+        // 失败回执同款：提交 B（响应在途）→ 切到 C → B 的失败迟到：
+        // 只收口在途标志，不误弹到 C 页，更不卡 C 的提交入口。
+        QVariantMap orderC = orderA;
+        orderC.insert(QStringLiteral("id"), QStringLiteral("99"));
+        page->setProperty("pickedStars", 3);
+        QMetaObject::invokeMethod(page, "submitRatingNow");
+        QCOMPARE(fake.submitCalls, 3);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("88"));
+        page->setProperty("arg", orderC);
+        fake.emitFailure(QStringLiteral("SUBMIT_CHARGER_RATING"));  // B 的失败迟到
+        QVERIFY(!page->property("ratingSubmitting").toBool());      // 在途收口
+        QVERIFY(page->property("myRating").isNull());               // 失败不写状态
+        page->setProperty("pickedStars", 2);
+        QMetaObject::invokeMethod(page, "submitRatingNow");         // C 正常提交
+        QCOMPARE(fake.submitCalls, 4);
+        QCOMPARE(fake.lastOrderId, QStringLiteral("99"));
+    }
+
+    // 评价桥 × 真 mock 通道端到端：种子 1 行（id=3 完成单）→ 订单 2 首评 →
+    // 重放幂等 → 列表两行新在前（trim 在链路上生效）。
+    void ratingsBridgeEndToEndOnMockChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* ratings = qobject_cast<RatingBridge*>(app.ratingsService());
+        QVERIFY(ratings);
+
+        QSignalSpy loaded(ratings, &RatingBridge::ratingsLoaded);
+        ratings->fetchMyRatings();
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toList().size(), 1);
+        QCOMPARE(loaded.at(0).at(0).toList().first().toMap()
+                     .value(QStringLiteral("orderId")).toString(), QStringLiteral("3"));
+        QCOMPARE(loaded.at(0).at(1).toInt(), 1);
+
+        QSignalSpy done(ratings, &RatingBridge::ratingSubmitted);
+        ratings->submitRating(QStringLiteral("2"), 4, QStringLiteral("  还行  "));
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 1, 4000);
+        QCOMPARE(done.at(0).at(1).toBool(), false);
+        QCOMPARE(done.at(0).at(0).toMap().value(QStringLiteral("comment")).toString(),
+                 QStringLiteral("还行"));
+        QCOMPARE(done.at(0).at(0).toMap().value(QStringLiteral("chargerCode")).toString(),
+                 QStringLiteral("A03"));
+
+        // 重放：alreadyRated=true、首评原值（幂等镜像）。
+        ratings->submitRating(QStringLiteral("2"), 1, QString());
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() >= 2, 4000);
+        QCOMPARE(done.at(1).at(1).toBool(), true);
+        QCOMPARE(done.at(1).at(0).toMap().value(QStringLiteral("rating")).toInt(), 4);
+
+        loaded.clear();
+        ratings->fetchMyRatings(1, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(loaded.count() >= 1, 4000);
+        QCOMPARE(loaded.at(0).at(0).toList().size(), 2);
+        QCOMPARE(loaded.at(0).at(0).toList().first().toMap()
+                     .value(QStringLiteral("orderId")).toString(), QStringLiteral("2"));
+    }
+
+    void paymentSyncsTopBarBalance()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* orders = qobject_cast<OrderBridge*>(app.orderService());
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QVERIFY(orders && charging);
+
+        QSignalSpy ordersSpy(orders, &OrderBridge::ordersLoaded);
+        orders->fetchOrders(QStringLiteral("waiting_payment"), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(ordersSpy.count() >= 1, 4000);
+        const QVariantList page1 = ordersSpy.at(0).at(0).toList();
+        QVERIFY(!page1.isEmpty());
+        const qint64 orderId = page1.first().toMap().value(QStringLiteral("id")).toLongLong();
+        const qint64 balanceBefore =
+            app.currentUser().value(QStringLiteral("balanceCents")).toLongLong();
+        QVERIFY(balanceBefore > 0);
+
+        QSignalSpy paySpy(charging, &ChargingBridge::paymentCompleted);
+        QSignalSpy userSpy(&app, &QmlApp::userChanged);
+        charging->payOrder(orderId);
+        QTRY_VERIFY_WITH_TIMEOUT(paySpy.count() >= 1, 4000);
+
+        const qint64 paidAfter = paySpy.at(0).at(1).toLongLong();
+        QVERIFY(paidAfter < balanceBefore); // 真实扣款，非幂等重放
+        QCOMPARE(app.currentUser().value(QStringLiteral("balanceCents")).toLongLong(),
+                 paidAfter);                 // 顶栏绑定源立即一致
+        QVERIFY(userSpy.count() >= 1);        // userChanged 已广播（TopNavBar 重绑）
+    }
+
+    // 审查 P2#3 回归（券侧）：同会话充值 ≥¥50 → mock 按服务端规则发券，
+    // 但桥缓存停在 boot 拉取形态；navigate("coupon") 进页强制补拉后到账。
+    void couponWalletRefetchesOnEntryAfterRecharge()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* coupons = qobject_cast<CouponBridge*>(app.couponService());
+        auto* wallet = qobject_cast<WalletBridge*>(app.walletService());
+        QVERIFY(coupons && wallet);
+
+        // boot 拉取落定 = 种子 5 张（此前用例已钉过形态，这里只取基线）。
+        QTRY_COMPARE_WITH_TIMEOUT(coupons->coupons().size(), 5, 4000);
+
+        QSignalSpy rechargeSpy(wallet, &WalletBridge::rechargeCompleted);
+        wallet->recharge(6000);                       // ¥60 ≥ ¥50 门槛
+        QTRY_VERIFY_WITH_TIMEOUT(rechargeSpy.count() >= 1, 4000);
+        QCOMPARE(coupons->coupons().size(), 5);       // 病灶：缓存未感知新券
+
+        app.navigate(QStringLiteral("coupon"));       // 进页 → 强制补拉
+        QTRY_COMPARE_WITH_TIMEOUT(coupons->coupons().size(), 6, 4000);
+        QCOMPARE(coupons->coupons().first().toMap()
+                     .value(QStringLiteral("title")).toString(),
+                 QStringLiteral("充值回馈 ¥5 充电券"));   // 新在前（prepend 口径）
+    }
+
+    // 审查 P2#3 回归（通知侧）：同会话支付成功 → mock payOrder 落 order_paid
+    // 通知；navigate("notifications") 进页强制补拉后新行到账。尾部顺带钉
+    // 结算返积分（2026-09-09）：mock 与服务端同事务口径的镜像行。
+    void notificationsRefetchOnEntryAfterPayment()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* notifications = qobject_cast<NotificationBridge*>(app.notificationService());
+        auto* orders = qobject_cast<OrderBridge*>(app.orderService());
+        auto* charging = qobject_cast<ChargingBridge*>(app.chargingService());
+        QVERIFY(notifications && orders && charging);
+
+        QSignalSpy ordersSpy(orders, &OrderBridge::ordersLoaded);
+        orders->fetchOrders(QStringLiteral("waiting_payment"), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(ordersSpy.count() >= 1, 4000);
+        const QVariantList page1 = ordersSpy.at(0).at(0).toList();
+        QVERIFY(!page1.isEmpty());
+        const qint64 orderId = page1.first().toMap().value(QStringLiteral("id")).toLongLong();
+
+        QSignalSpy paySpy(charging, &ChargingBridge::paymentCompleted);
+        charging->payOrder(orderId);
+        QTRY_VERIFY_WITH_TIMEOUT(paySpy.count() >= 1, 4000);
+        const int before = notifications->notifications().size();  // 仍为 boot 形态
+
+        QSignalSpy notifSpy(notifications, &NotificationBridge::notificationsChanged);
+        app.navigate(QStringLiteral("notifications"));             // 进页 → 强制补拉
+        QTRY_VERIFY_WITH_TIMEOUT(notifSpy.count() >= 1, 4000);
+        QCOMPARE(notifications->notifications().size(), before + 1);
+        QCOMPARE(notifications->notifications().first().toMap()
+                     .value(QStringLiteral("type")).toString(),
+                 QStringLiteral("order_paid"));
+
+        // 结算返积分镜像：payOrder 同一动作落账——满 1 元部分返 1 分/元，
+        // 返点行 prepend 在种子"欢迎礼包"之上；不足 1 元无行（条件断言自洽）。
+        const qint64 paidCents = page1.first().toMap()
+            .value(QStringLiteral("amountCents")).toLongLong();
+        const qint64 expectedPoints = paidCents / 100;
+        auto* points = qobject_cast<PointBridge*>(app.pointsService());
+        QVERIFY(points);
+        QSignalSpy pointsSpy(points, &PointBridge::pointsLoaded);
+        points->fetchPoints(1, 10);
+        QTRY_VERIFY_WITH_TIMEOUT(pointsSpy.count() >= 1, 4000);
+        const QVariantList ledger = pointsSpy.at(0).at(1).toList();
+        if (expectedPoints > 0) {
+            QCOMPARE(ledger.first().toMap()
+                         .value(QStringLiteral("reason")).toString(),
+                     QStringLiteral("消费返积分"));
+            QCOMPARE(ledger.first().toMap()
+                         .value(QStringLiteral("amount")).toLongLong(),
+                     expectedPoints);
+            QCOMPARE(pointsSpy.at(0).at(0).toLongLong(), 50 + expectedPoints);
+        } else {
+            QCOMPARE(ledger.size(), 1);   // 仅种子欢迎行
+        }
+    }
+
+    // 批次F 扫码页 × 桥替身全状态机：入场拉站、速选码→detail 取首台空闲桩、
+    // 手输 CHG://站/桩 精确匹配、零车辆也交给统一订单准入门、导航坐标完整透传、
+    // 非法码本地判 miss 不发请求。
+    void scanPageReserveFlowOnBridgeFake()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        app.clearUnfinishedOrdersForTesting(); // Only the explicit mock transport is changed.
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QObject reservations;   // No local vehicle/reservation-count bridge is required.
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        engine.rootContext()->setContextProperty(QStringLiteral("reservationService"),
+                                                 &reservations);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        QCOMPARE(query.searchCalls, 1);
+
+        query.emitStations({
+            QVariantMap{{QStringLiteral("id"), 5LL},
+                        {QStringLiteral("name"), QStringLiteral("后海城市广场站")},
+                        {QStringLiteral("priceCentsPerKwh"), 105},
+                        {QStringLiteral("distanceMeters"), 3200}},
+            QVariantMap{{QStringLiteral("id"), 6LL},
+                        {QStringLiteral("name"), QStringLiteral("西丽湖临时站")},
+                        {QStringLiteral("priceCentsPerKwh"), 92},
+                        {QStringLiteral("distanceMeters"), 3800}}});
+        QCOMPARE(page->property("stations").toList().size(), 2);
+
+        // 速选第二站（index 1）→ detail 平铺形 + chargers（首台故障、次台空闲）
+        QMetaObject::invokeMethod(page, "scanStation", Q_ARG(QVariant, 1));
+        QCOMPARE(query.detailCalls, 1);
+        QCOMPARE(query.lastDetailStationId, 6LL);
+        QCOMPARE(query.lastDetailDistance, 3800);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("searching"));
+        query.emitDetail(QVariantMap{
+            {QStringLiteral("id"), 6LL},
+            {QStringLiteral("name"), QStringLiteral("西丽湖临时站")},
+            {QStringLiteral("priceCentsPerKwh"), 92},
+            {QStringLiteral("distanceMeters"), 3800},
+            {QStringLiteral("latitude"), 38.88},
+            {QStringLiteral("longitude"), 121.53},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 61}, {QStringLiteral("code"), QStringLiteral("L01")},
+                            {QStringLiteral("type"), QStringLiteral("slow")},
+                            {QStringLiteral("powerWatts"), 7000}, {QStringLiteral("status"), QStringLiteral("fault")}},
+                QVariantMap{{QStringLiteral("id"), 62}, {QStringLiteral("code"), QStringLiteral("L02")},
+                            {QStringLiteral("type"), QStringLiteral("fast")},
+                            {QStringLiteral("powerWatts"), 120000}, {QStringLiteral("status"), QStringLiteral("available")}}}}});
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("found"));
+        QVERIFY(!page->property("reqActive").toBool());
+        QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("code")).toString(),
+                 QStringLiteral("L02"));   // 跳过故障桩取首台空闲
+
+        // 零车辆不挡预约；先查未完成订单，不能直接跳确认页或要求去设置加车。
+        QVERIFY(vehicles.vehicles().isEmpty());
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow"));
+        QVERIFY(app.checkingOrders());
+        QCOMPARE(routes.size(), 0);
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow")); // rapid second submit is ignored
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QVERIFY(!app.checkingOrders());
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("reservation_confirm"));
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("6"));
+        QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
+                 QStringLiteral("西丽湖临时站"));
+        QCOMPARE(arg.value(QStringLiteral("chargerCode")).toString(), QStringLiteral("L02"));
+        QCOMPARE(arg.value(QStringLiteral("chargerType")).toString(), QStringLiteral("fast"));
+        QCOMPARE(arg.value(QStringLiteral("chargerPowerWatts")).toInt(), 120000);
+        QCOMPARE(arg.value(QStringLiteral("priceCentsPerKwh")).toInt(), 92);
+        QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), 3800);
+        QCOMPARE(arg.value(QStringLiteral("chargerId")).toString(), QStringLiteral("62"));
+        QCOMPARE(arg.value(QStringLiteral("stationId")).metaType().id(), QMetaType::QString);
+        QCOMPARE(arg.value(QStringLiteral("chargerId")).metaType().id(), QMetaType::QString);
+        QCOMPARE(arg.value(QStringLiteral("stationLatitude")).toDouble(), 38.88);
+        QCOMPARE(arg.value(QStringLiteral("stationLongitude")).toDouble(), 121.53);
+        QVERIFY(arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QCOMPARE(routes.first().at(1).toMap(), arg);
+
+        // 手输：非法码本地 miss 不发请求；CHG://站/桩 精确取桩（不走"首台空闲"）。
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("abc")));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QCOMPARE(query.detailCalls, 1);
+
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("CHG://1/7")));
+        QCOMPARE(query.detailCalls, 2);
+        QCOMPARE(query.lastDetailStationId, 1LL);
+        query.emitDetail(QVariantMap{
+            {QStringLiteral("id"), 1LL},
+            {QStringLiteral("name"), QStringLiteral("科技园充电驿站")},
+            {QStringLiteral("priceCentsPerKwh"), 120},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 7}, {QStringLiteral("code"), QStringLiteral("K07")},
+                            {QStringLiteral("type"), QStringLiteral("fast")},
+                            {QStringLiteral("powerWatts"), 180000}, {QStringLiteral("status"), QStringLiteral("charging")}}}}});
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("found"));
+        // 码上桩占用中：可展示但预约门拦下（arg 不更新——保留上一份 6/L02）。
+        QMetaObject::invokeMethod(page, "reserveNow");
+        QCOMPARE(page->property("reserveArg").toMap().value(QStringLiteral("chargerCode")).toString(),
+                 QStringLiteral("L02"));
+        QCOMPARE(routes.size(), 1); // occupied charger did not submit another order check
+    }
+
+    void scanPageZeroVehiclesCannotBypassUnfinishedOrder()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        // Keep the seeded charging order. The page must delegate rather than
+        // deciding that no vehicle/no local reservation means it can reserve.
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        query.emitStations({});
+        QVERIFY(page->setProperty("phase", QStringLiteral("found")));
+        QVERIFY(page->setProperty("foundStation", QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("1")},
+            {QStringLiteral("name"), QStringLiteral("测试站")},
+            {QStringLiteral("priceCentsPerKwh"), 120}}));
+        QVERIFY(page->setProperty("foundCharger", QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("7")},
+            {QStringLiteral("code"), QStringLiteral("TEST-7")},
+            {QStringLiteral("type"), QStringLiteral("fast")},
+            {QStringLiteral("powerWatts"), 120000},
+            {QStringLiteral("status"), QStringLiteral("available")}}));
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
+        QVERIFY(vehicles.vehicles().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(page, "reserveNow"));
+        QVERIFY(app.checkingOrders());
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QVERIFY(!arg.isEmpty());
+        QVERIFY(!arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QCOMPARE(arg.value(QStringLiteral("distanceMeters")).toInt(), -1);
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("charging"));
+        QVERIFY(!app.checkingOrders());
+    }
+
+    // 批次F 扫码页失败面：查询失败解锁、detail 失败 miss、站无空闲桩 miss、
+    // 码上桩不存在 miss。
+    void scanPageMissPaths()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakeStationQueryBridge query;
+        FakeVehicleBridge vehicles;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &query);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+
+        query.emitQueryFailure(QStringLiteral("站点查询服务暂时不可用"));
+        QVERIFY(!page->property("reqActive").toBool());
+        QVERIFY(page->property("loadedOnce").toBool());
+
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("99")));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("searching"));
+        query.emitDetailFailure(QStringLiteral("未找到该站点信息"));
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QCOMPARE(page->property("failMessage").toString(),
+                 QStringLiteral("未找到该站点信息"));
+
+        // 全占用站 + 未指定桩 → "暂无空闲"；指定不存在的桩 → "不存在或已下线"。
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("2")));
+        const QVariantMap busyOnly{
+            {QStringLiteral("id"), 2LL},
+            {QStringLiteral("name"), QStringLiteral("深大北门超充站")},
+            {QStringLiteral("chargers"), QVariantList{
+                QVariantMap{{QStringLiteral("id"), 21}, {QStringLiteral("status"), QStringLiteral("charging")}}}}};
+        query.emitDetail(busyOnly);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QVERIFY(page->property("failMessage").toString().contains(
+            QStringLiteral("暂无空闲")));
+
+        page->setProperty("phase", QStringLiteral("idle"));
+        QMetaObject::invokeMethod(page, "scanCode", Q_ARG(QVariant, QStringLiteral("CHG://2/99")));
+        query.emitDetail(busyOnly);
+        QCOMPARE(page->property("phase").toString(), QStringLiteral("miss"));
+        QVERIFY(page->property("failMessage").toString().contains(
+            QStringLiteral("不存在")));
+    }
+
+    // 批次F 真桥端到端：真 StationQueryService(mock 站表) + 真 StationQueryBridge
+    // 挂 ScanPage——入场自拉 6 站，速选科技园站命中空闲桩并组成预约 arg。
+    void scanPageEndToEndOnMockStationChannel()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        app.clearUnfinishedOrdersForTesting();
+        charging::client::services::station::StationQueryService service;
+        charging::qml::StationQueryBridge bridge(&service);
+        FakeVehicleBridge vehicles;
+        QObject reservations;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("stationQueryService"), &bridge);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsService"), &vehicles);
+        engine.rootContext()->setContextProperty(QStringLiteral("reservationService"),
+                                                 &reservations);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("ScanPage.qml"), &holder);
+        QVERIFY(page);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            page->property("stations").toList().size(), 6, 4000);
+
+        QMetaObject::invokeMethod(page, "scanStation", Q_ARG(QVariant, 0));  // 站1：3 空闲
+        QTRY_COMPARE_WITH_TIMEOUT(page->property("phase").toString(),
+                                  QStringLiteral("found"), 4000);
+        QCOMPARE(page->property("foundCharger").toMap().value(QStringLiteral("status")).toString(),
+                 QStringLiteral("available"));
+        QSignalSpy routes(&app, &QmlApp::navigateRequested);
+        QMetaObject::invokeMethod(page, "reserveNow");
+        const QVariantMap arg = page->property("reserveArg").toMap();
+        QCOMPARE(arg.value(QStringLiteral("stationId")).toString(), QStringLiteral("1"));
+        QCOMPARE(arg.value(QStringLiteral("stationName")).toString(),
+                 QStringLiteral("科技园充电驿站"));
+        QVERIFY(!arg.value(QStringLiteral("chargerCode")).toString().isEmpty());
+        QVERIFY(arg.value(QStringLiteral("hasStationLocation")).toBool());
+        QTRY_COMPARE_WITH_TIMEOUT(routes.size(), 1, 4000);
+        QCOMPARE(routes.first().at(0).toString(), QStringLiteral("reservation_confirm"));
+    }
+
+    // —— 经验等级/每日任务批（2026-09-09）——
+    // 任务页 × 真等级引擎（本用例是隔离域内第一个写 XP 的用例）：
+    // 签到回执转经验、当日幂等、全勤奖励、跨档礼包一条链钉死。
+    // 2026-09-09 拍板批：升级 toast 不再 levelUp 瞬间预支"已记入等级账目"，
+    // 而是等 bridge 的 CREDIT_LEVEL_REWARD（mock 通道）回执后播"已到账"。
+    void tasksPageConvertsCheckInToExperience()
+    {
+        { QSettings fresh; fresh.remove(QStringLiteral("progress")); }  // 前面 PointsPage 用例已记签到经验
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QCOMPARE(prog->xp(), qint64(0));               // 隔离域内首写，基线确定
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        QObject holder; // 最后声明 → 最先析构
+        auto* page = createPage(engine, QStringLiteral("TasksPage.qml"), &holder);
+        QVERIFY(page);
+        auto* title = page->findChild<QQuickItem*>("uiTasksTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QStringLiteral("每日任务"));
+
+        // 签到任务：页面函数发真实积分请求，积分回执回调记等级经验。
+        QMetaObject::invokeMethod(page, "checkInNow");
+        QCOMPARE(fake.checkInCalls, 1);
+        QVERIFY(page->property("checkingIn").toBool());
+        fake.emitCheckIn(QStringLiteral("2026-09-09"), 60, 10, false);
+        QVERIFY(!page->property("checkingIn").toBool());
+        QCOMPARE(prog->xp(), qint64(30));
+        QCOMPARE(prog->doneTaskCount(), 1);
+
+        // 浏览型任务事件（navigate 漏斗在真机走同一入口）：重复上报当日幂等。
+        prog->reportEvent(QStringLiteral("detail"));
+        prog->reportEvent(QStringLiteral("detail"));
+        QCOMPARE(prog->xp(), qint64(50));
+        prog->reportEvent(QStringLiteral("unknown-event"));
+        QCOMPARE(prog->xp(), qint64(50));
+
+        // 打满当天：50+search20+route20+stats20=110 +全勤30 =140 → 跨白银(60)
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        prog->reportEvent(QStringLiteral("search"));
+        prog->reportEvent(QStringLiteral("route"));
+        prog->reportEvent(QStringLiteral("stats"));
+        QCOMPARE(prog->xp(), qint64(140));
+        QVERIFY(prog->allTasksDone());
+        QCOMPARE(prog->level(), 2);
+        QCOMPARE(prog->gifts().size(), 1);             // 白银礼包入账
+        // 一致性镜像钉（契约文档 CREDIT_LEVEL_REWARD 节承诺）：客户端 kTiers
+        // 礼包额 == 服务端单点表 levelRewardPoints(2)，改动任一侧必撞此。
+        QCOMPARE(prog->gifts().at(0).toMap().value("points").toLongLong(),
+                 charging::protocol::user_api::levelRewardPoints(2));
+        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 4000);   // 入账回执后庆祝 toast
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("白银会员")));
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("已到账")));
+    }
+
+    // 等级页 × 同域状态续场：hero 文案与 tiers 属性一致、阶梯 5 档、
+    // 礼包记录 = 已升档位数（黑金无礼包口径），页面对无 pointsService 上下文健壮。
+    // 声明序依赖：level()>=2 断言要求前一任务页用例先跑（同 temp 域、同登录号
+    // 13800138000 累计 XP）——单跑本用例该项必红，是故意而非缺陷。
+    void levelPageMirrorsEngineState()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QQmlEngine engine;   // 不给 pointsService：LevelPage 只用等级引擎
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("LevelPage.qml"), &holder);
+        QVERIFY(page);
+        auto* heroTier = page->findChild<QQuickItem*>("uiLevelHeroTier");
+        QVERIFY(heroTier);
+        // 2026-09-09 emoji→glyph 批：奖牌图形由 Image 行首承担，
+        // 文字行不再拼 tierGlyph（图形与文字单表意）。
+        const QString expectedHero = prog->tierName()
+            + QStringLiteral(" · Lv.") + QString::number(prog->level());
+        QCOMPARE(heroTier->property("text").toString(), expectedHero);
+        QVERIFY(prog->level() >= 2);                   // 上一用例已推到白银+
+        const QVariantList tiers = prog->tierTable();
+        QCOMPARE(tiers.size(), 5);
+        int currentCount = 0;
+        for (const QVariant& row : tiers)
+            currentCount += row.toMap().value("state").toString() == QLatin1String("current") ? 1 : 0;
+        QCOMPARE(currentCount, 1);
+        QCOMPARE(prog->gifts().size(), prog->level() - 1);   // 每次跨档一份礼包
+        // 会员中心批：每日任务区块嵌进等级页（TaskSection 直子对象，非 delegate）。
+        QVERIFY(page->findChild<QQuickItem*>("uiTaskSection") != nullptr);
+    }
+
+    // 积分商城（会员中心批 2026-09-09）：真余额读取 + 分类过滤 + 本机演示兑换。
+    // 服务端契约无 REDEEM → 兑换只写本机记录模型；余额不足必须拒绝。断言全钉
+    // 页根公开状态（offscreen delegate 约定），records 模型是直子对象可 findChild。
+    void pointsMallPageFiltersCatalogAndRedeemsLocally()
+    {
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        FakePointsBridge fake;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), &fake);
+        QObject holder;
+        auto* page = createPage(engine, QStringLiteral("PointsMallPage.qml"), &holder);
+        QVERIFY(page);
+        QVERIFY(page->findChild<QQuickItem*>("uiMallTitle") != nullptr);
+        QCOMPARE(fake.fetchCalls, 1);                     // 进页即拉真积分余额
+        QCOMPARE(page->property("listCount").toInt(), 6);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("coupon")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("card")));
+        QCOMPARE(page->property("listCount").toInt(), 2);
+        QMetaObject::invokeMethod(page, "setCategory", Q_ARG(QVariant, QStringLiteral("all")));
+        QCOMPARE(page->property("listCount").toInt(), 6);
+
+        auto* records = page->findChild<QObject*>("uiMallRecords");
+        QVERIFY(records != nullptr);
+        fake.emitPoints(150, {}, 0);                       // 余额 150
+        QCOMPARE(page->property("points").toInt(), 150);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("k2")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 2200 分 > 150 → 拒兑
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 200 分 > 150 → 仍拒
+        fake.emitPoints(500, {}, 0);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("nope")));
+        QCOMPARE(records->property("count").toInt(), 0);   // 未知 id 静默拒绝
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c1")));
+        QCOMPARE(records->property("count").toInt(), 1);   // 演示兑换成功：本机记录 +1
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        QMetaObject::invokeMethod(page, "redeem", Q_ARG(QVariant, QStringLiteral("c2")));
+        // 文案必含「演示」= 三套账诚实口径：兑换只写本机记录模型（服务端契约
+        // 无 REDEEM，points_ledger 仅 CHECK_IN/RECHARGE），不冒充真实到账。
+        QCOMPARE(toast.count(), 1);                        // 500 ≥ 500：兑换回执带 toast
+        QVERIFY(toast.at(0).at(0).toString().contains(QStringLiteral("演示")));
+    }
+
+    // 升级礼包真到账——mock 通道端到端（2026-09-09 用户拍板批）：升级 →
+    // bridge 自动发 CREDIT_LEVEL_REWARD（金额服务端单点表推导）→ 积分页
+    //（真桥非替身）见"等级礼包"流水与总分（种子注册礼包 50 + 礼包 100）。
+    // 再登一次触发登录对账全量重放：服务端幂等（integration 钉）+ toast 静默
+    //（levelRewardCredited 无挂起上下文即不重播庆祝）。
+    void levelGiftArrivesInLedgerThroughMock()
+    {
+        { QSettings fresh; fresh.remove(QStringLiteral("progress")); }
+        QmlApp app;
+        QVERIFY(app.login(QStringLiteral("13800138000")));
+        auto* prog = qobject_cast<charging::client::ProgressService*>(app.progressService());
+        QVERIFY(prog);
+        QCOMPARE(prog->xp(), qint64(0));                     // 隔离域内首写，基线确定
+        QSignalSpy toast(&app, &QmlApp::toastRequested);
+        prog->reportEvent(QStringLiteral("search"));
+        prog->reportEvent(QStringLiteral("route"));
+        prog->reportEvent(QStringLiteral("stats"));          // 60 XP 恰达白银门槛
+        QCOMPARE(prog->level(), 2);
+        // 先等庆祝回执=礼包已落 mock 账本（消除与页内首拉的竞态）。
+        QTRY_COMPARE_WITH_TIMEOUT(toast.count(), 1, 4000);
+        QObject* bridge = app.pointsService();
+        auto* pointBridge = qobject_cast<charging::qml::PointBridge*>(bridge);
+        QVERIFY(pointBridge);
+        QSignalSpy loaded(pointBridge, &charging::qml::PointBridge::pointsLoaded);
+
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("App"), &app);
+        engine.rootContext()->setContextProperty(QStringLiteral("pointsService"), bridge);
+        QObject holder;                                       // 最后声明 → 最先析构
+        auto* page = createPage(engine, QStringLiteral("PointsPage.qml"), &holder);
+        QVERIFY(page);
+        auto* model = page->findChild<QObject*>("uiPointsModel");
+        QVERIFY(model);
+        QTRY_COMPARE_WITH_TIMEOUT(model->property("count").toInt(), 2, 4000);
+        QTRY_COMPARE_WITH_TIMEOUT(page->property("points").toInt(), 150, 4000);
+        // 桥信号面取证（无窗口 delegate 不实例化）：新→旧首行=礼包行，
+        // 金额与词映射和服务端单点表对拍。
+        QCOMPARE(loaded.size(), 1);
+        const QVariantList entries = loaded.at(0).at(1).toList();
+        QCOMPARE(entries.size(), 2);
+        const QVariantMap giftRow = entries.first().toMap();
+        QCOMPARE(giftRow.value(QStringLiteral("reason")).toString(),
+                 QStringLiteral("等级礼包"));
+        QCOMPARE(giftRow.value(QStringLiteral("amount")).toLongLong(),
+                 charging::protocol::user_api::levelRewardPoints(2));
+    }
+};
+
+QTEST_MAIN(QmlClientPagesTest)
+
+#include "tst_qml_client_pages.moc"

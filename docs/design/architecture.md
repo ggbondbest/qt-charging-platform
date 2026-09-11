@@ -1,6 +1,7 @@
-# 充电平台阶段 0/1 架构基线
+# 充电平台架构基线
 
-状态：`candidate-v1`（待五人确认、严格 CI 和最小登录闭环验证后冻结）
+状态：`candidate-v1`（登录和核心充电闭环已通过 Ubuntu 22.04 / Qt 6.2.4 严格 CI，
+待五人确认后冻结）
 
 ## 1. 范围与约束
 
@@ -51,8 +52,8 @@ charging_server
 - Client 不得链接 QtSql、不得直接打开平台数据库；
 - 页面不得包含 SQL，不得直接读写 `QTcpSocket`；
 - Dispatcher 只做协议校验、鉴权和路由，不承载业务事务；
-- Service 负责业务状态机和事务边界；
-- Repository 只负责查询与持久化，不弹窗、不拼协议响应；
+- Service 负责业务用例、状态规则和对外错误映射；
+- Repository 负责查询、持久化和 SQLite 原子事务，不弹窗、不拼协议响应；
 - Server 管理页面也必须经过 Service/Repository，不能绕过业务规则；
 - `database/schema.sql` 和 `database/seed.sql` 通过资源 target 编译进 Server，不能依赖启动时的当前目录。
 
@@ -196,19 +197,37 @@ Charger:     RESERVED -> AVAILABLE
 - 同一用户最多一个未完成订单；
 - 同一电桩最多一个 `RESERVED` / `CHARGING` 订单。
 
+### 6.4 当前实现入口
+
+- `ChargingStateMachine` 提供预约、订单和电桩的显式迁移表；Repository 的旧状态
+  `WHERE` 条件和影响行数检查是并发写入时的最终约束；
+- `ChargingService` 提供预约、取消、开始、实时状态和停止；
+- `ChargingService` 根据服务端 UTC 时间计算充电时长，`BillingService` 使用额定功率、
+  时长和订单电价快照执行纯整数计费；
+- `OrderService` 提供待支付订单结算；
+- `ChargingRepository` 和 `OrderRepository` 以 `BEGIN IMMEDIATE` 执行多表事务和旧状态条件更新。
+
+实时状态是派生快照，只在停止时固化计量值。重复停止和重复支付返回已有结果，
+不重复累计或扣款。预约有效期为 15 分钟；当前采用服务端惰性扫描，下一次预约、取消、
+开始或状态查询会原子将到期业务改为 `EXPIRED` / `CANCELLED` / `AVAILABLE`，尚无定时推送。
+
 ## 7. 线程模型
 
-阶段 1 推荐使用“异步 Socket + 单业务工作线程”作为最小安全实现：
+生产入口现使用 `ServerRuntime` 分离界面和服务线程：
 
-- GUI 线程拥有管理界面、`QTcpServer` 和 `QTcpSocket`，只做非阻塞收发和轻量解析；
-- 一个专用 `QThread` 拥有 Service、Repository 和 SQLite connection；
-- 请求以 queued signal 投递到业务线程，结果以 queued signal 返回；
-- 只有拥有 `QTcpSocket` 的线程能调用其读写函数；
-- 采用 worker-object 模式，不通过覆写 `QThread::run()` 塞入业务；
-- 禁止在不同线程共享同一个 `QSqlDatabase` connection；创建、查询、关闭都在所属线程完成；
-- 所有 `QSqlQuery` 销毁后才能 `removeDatabase()`。
+- GUI 线程拥有管理页面与 ServerRuntime 门面，只接收监听状态、连接数量和安全错误；
+- 专用 QThread 在 `run()` 内创建完整服务对象图，然后进入 `exec()` 事件循环；
+- 工作线程拥有 QTcpServer、QTcpSocket、ClientSession、Dispatcher、Service、Repository 和 SQLite；
+- 网络收发、Session 身份更新、业务及 SQL 在同一工作线程执行，保持原有请求顺序和事务接口；
+- 工作线程通过显式 queued signal 通知 GUI，不向 GUI 传递 Socket、Repository 或 SQL handle；
+- QThread 对象本身仍属于 GUI，不在其槽中处理业务；`run()` 仅负责装配、事件循环和栈式释放；
+- 关闭时请求 interruption/quit，让当前操作结束，再依次销毁网络、业务、Repository、数据库；不调用 terminate；
+- SQLite 连接的创建、查询、关闭、removeDatabase 都在服务工作线程，且晚于 Repository 销毁。
 
-该结构已经满足 GUI/网络事件循环与数据库业务分离。需要扩大并发时可以将业务层替换成受控线程池，但 Service/Repository 接口和协议无需变化。
+这取代原先“Socket 留在 GUI、仅移动数据库”的候选方案，避免引入跨线程 Session 请求排队和
+身份竞争。当前是 GUI + 单服务线程，不是线程池；慢 SQL 不阻塞界面，但会延迟其他客户端请求。
+既有 ChargingServer 仍可在同线程测试夹具中使用；生产程序统一使用 ServerRuntime。
+具体生命周期、测试及后续管理端接入边界见 `docs/development/server_threading.md`。
 
 ## 8. SQLite 生命周期
 
@@ -216,7 +235,7 @@ Charger:     RESERVED -> AVAILABLE
 - 测试使用 `QTemporaryDir` 下的真实文件，不使用跨连接不可共享的 `:memory:`；
 - 每个新 connection 执行 `foreign_keys=ON` 和 `busy_timeout=5000`；
 - 新数据库执行 `schema.sql`；仅 demo/测试模式执行 `seed.sql`；
-- 通过 `PRAGMA user_version` 管理迁移，当前版本是 1；
+- 通过 `PRAGMA user_version` 管理迁移，当前版本是 3；
 - `QSqlQuery::exec()` 不应直接传入含多个语句的整个文件。脚本执行器需逐条执行受控 SQL，并在任一失败时回滚；
 - 所有动态值使用 prepared query + bind，不拼接 SQL；
 - Repository 对外返回领域错误，不向 Client 暴露原始 SQLite 错误或文件路径。
@@ -253,7 +272,7 @@ Login page
 
 ## 10. 五人并行边界
 
-阶段 0/1 候选公共契约形成后，建议分支边界为：
+候选公共契约形成后，五人分支边界为：
 
 - 组长：`feature/socket-core` / 核心状态机与集成；
 - 成员 2：`feature/client-station` / 登录、找站、找桩、地图入口；
@@ -261,10 +280,10 @@ Login page
 - 成员 4：`feature/server-dashboard-management` / 管理登录、Dashboard、用户/站/桩管理；
 - 成员 5：`feature/database-repositories` / 初始化、Repository、事务和 DB 测试。
 
-候选契约经五人确认、Ubuntu 22.04 + Qt 6.2.4 严格 CI 和手机号登录最小闭环验证前，
-成员可以使用 mock service、准备数据库实现，或基于候选接口在隔离模块内开发，但不能
-自己创建并接入 Socket、SQL 或复制公共 Model。跨模块 PR 先更新相应设计文档，经组长
-review 后再改公共接口。
+登录和核心充电闭环已经提供可复用的 Socket、Session、Service、Repository 和数据库运行
+时边界。成员可以在各自目录基于候选接口并行开发，但在五人确认前，不宣布公共
+契约冻结，也不各自重复创建 Socket/SQL 基础层或复制公共 Model。跨模块 PR 先更新相应
+设计文档，经组长 review 并通过严格 CI 后再改公共接口，五人确认后记录冻结结论。
 
 ## 11. Qt 6.2.4 兼容红线
 
@@ -277,7 +296,7 @@ review 后再改公共接口。
 - Socket 长度头手动按大端编码，不使用可能受 `QDataStream::Version` 影响的对象序列化；
 - 不得提交操作系统元数据、构建目录、用户 Kit 文件或本机绝对路径。
 
-## 12. 真实接口并行放行门槛（阶段 1/2）
+## 12. 真实接口并行放行门槛
 
 - `charging_common` 能在 Qt 6.2.4/C++17 编译；
 - enum 的字符串往返及未知值拒绝测试通过；
