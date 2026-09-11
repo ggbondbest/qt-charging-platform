@@ -17,6 +17,7 @@
 #include "glyph_provider.h"
 #include "map_bridge.h"
 #include "service_bridges.h"
+// 真等级引擎：文末 XP 漏斗端到端用例直读 App 内 ProgressService 属性。
 #include "charging/client/profile_charging/progress_service.h"
 
 using charging::qml::QmlApp;
@@ -24,6 +25,8 @@ using charging::qml::MapBridge;
 using charging::qml::SettingsBridge;
 
 namespace {
+// 按 objectName 深搜可视树（只走 childItems）：Popup 里的非可视 QObject 子对象会漏，
+// 那类控件要另用 findChild（见 mapStationPopup 用例）。
 QQuickItem* findItem(QQuickItem* root, const QString& name)
 {
     if (!root) return nullptr;
@@ -33,10 +36,13 @@ QQuickItem* findItem(QQuickItem* root, const QString& name)
     }
     return nullptr;
 }
+// QML 绑定属性可能以 QJSValue 形态回传：不脱壳成普通 QVariant，toList()/toMap() 恒空。
 QVariant plainVariant(const QVariant& value)
 {
     return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
 }
+// 真鼠标点击：向 item 中心投递 QTest 事件而非直接 emit clicked()——后者的旁路恰恰
+// 跳过本二进制要钉的 MouseArea 命中与嵌套事件过滤；不可见/禁用/中心出窗即拒点（返回 false 让用例红）。
 bool realClick(QQuickWindow* window, QQuickItem* item)
 {
     if (!window || !item || !item->isVisible() || !item->isEnabled()) return false;
@@ -83,6 +89,9 @@ class QmlStationInteractionsTest final : public QObject
     QTemporaryDir preferences_;
     QStringList qmlWarnings_;
 
+    // 每用例全新 boot：新建 engine + 真 QmlApp（9527 mock 通道）+ 整页 Shell.qml，
+    // load/create 失败硬红并带 errorString；view 选初始 Tab、width 供窄屏档；
+    // qmlWarnings_ 开局清零、cleanup 末以其为空断言收尾（binding warning 即判负）。
     void bootShell(const QString& view = QStringLiteral("station"), int width = 420)
     {
         qmlWarnings_.clear();
@@ -104,6 +113,9 @@ class QmlStationInteractionsTest final : public QObject
         QVERIFY(settings != nullptr);
         settings->setTheme(QStringLiteral("light"));
         settings->setFontScale(QStringLiteral("standard"));
+        // 上下文全量装配：Shell 下任何页取不到的 context property 只报 binding
+        // warning、页面照常渲染——会被 cleanup 的 qmlWarnings 断言判负，漏注入
+        // 一个就伪装成"页面坏了"，经验/商城链的页级断言全靠这批键喂进去。
         auto* ctx = engine_->rootContext();
         ctx->setContextProperty(QStringLiteral("chargingView"), view);
         ctx->setContextProperty(QStringLiteral("chargingArg"), QVariant());
@@ -215,6 +227,7 @@ private slots:
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
 
+    // ---- 星星只翻 ☆/★、不开详情（嵌套按钮事件吞点击的回归钉）；修复后卡片表面照常可进详情 ----
     void stationStarClickTogglesFavoriteWithoutOpeningDetails()
     {
         bootShell();
@@ -249,6 +262,7 @@ private slots:
         QTRY_VERIFY(findItem(window_->contentItem(), QStringLiteral("notificationPage")) != nullptr);
     }
 
+    // ---- 两档窗宽（420/360）：电价标签与三个操作按钮矩形都须含于卡片边界（窄屏溢出回归钉） ----
     void cardPriceStaysInsideCard_data()
     {
         QTest::addColumn<int>("windowWidth");
@@ -389,10 +403,86 @@ private slots:
         QVERIFY(findItem(window_->contentItem(), QStringLiteral("reservationConfirmPage")) == nullptr);
     }
 
+    // 车辆管理批（缺陷修复 2026-09-10）：设置页「添加车辆」点了没反应——根因是
+    // vehicleDialog.openFor() 引用 defaultCheck.checked，而该 CheckBox 只有
+    // objectName 没有 id，ReferenceError 令弹窗直接开不出来（同文件二级密码
+    // protection*/second* 名错位是同一类「QML 引用静默断裂」病灶，call() 吞
+    // 异常/引擎报错只进 stderr，UI 表现为"按钮失灵"）。本用例把添加→编辑→删除
+    // 全链钉成真事件回归：添加按钮用真点击钉命中区，delegate 按钮按本文件
+    // 约定 click() 直调（offscreen delegate 命中时序不稳）。
+    void settingsVehicleAddEditDeleteThroughDialog()
+    {
+        bootShell(QStringLiteral("settings"));
+        QVERIFY(window_ != nullptr);
+        auto* settings = qobject_cast<SettingsBridge*>(app_->settingsService());
+        QVERIFY(settings != nullptr);
+        for (const auto& vehicle : settings->vehicles())
+            settings->removeVehicle(vehicle.toMap().value("id"));
+        QCOMPARE(settings->vehicleCount(), 0);
+
+        auto* page = findItem(window_->contentItem(), QStringLiteral("settingsPage"));
+        QVERIFY2(page != nullptr, "settings 页未挂载");
+        auto* add = findItem(window_->contentItem(), QStringLiteral("addVehicleButton"));
+        QVERIFY2(add != nullptr, "添加按钮未挂载");
+        // Popup 是非可视 QObject 包装（同 mapStationPopup 约定）：只能 findChild 取本体，
+        // 其内容控件在 open 后才并入 overlay 可视树，故内部字段/按钮走 findItem。
+        auto* dialog = page->findChild<QObject*>(QStringLiteral("vehicleDialog"));
+        QVERIFY2(dialog != nullptr, "车辆弹窗未实例化");
+        QVERIFY(!dialog->property("opened").toBool());
+
+        // ① 添加：真点击入口按钮 → 弹窗必须开出来（修复前 defaultCheck 缺 id
+        // 令 openFor 抛 ReferenceError，这里永远开不出来）。
+        QVERIFY(realClick(window_, add));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        auto* plate = findItem(window_->contentItem(), QStringLiteral("vehiclePlateEdit"));
+        QVERIFY2(plate != nullptr, "车牌输入未挂载");
+        auto* save = findItem(window_->contentItem(), QStringLiteral("vehicleSaveButton"));
+        QVERIFY2(save != nullptr, "保存按钮未挂载");
+        plate->setProperty("text", QStringLiteral("粤B·T3579"));
+        findItem(window_->contentItem(), QStringLiteral("vehicleBatterySpin"))
+            ->setProperty("text", QStringLiteral("65"));
+        QVERIFY(realClick(window_, save));
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+        QCOMPARE(settings->vehicleCount(), 1);
+        auto saved = settings->vehicles().first().toMap();
+        QCOMPARE(saved.value("plate").toString(), QStringLiteral("粤B·T3579"));
+        QCOMPARE(saved.value("batteryKwh").toInt(), 65);
+        QCOMPARE(saved.value("connectorType").toString(), QStringLiteral("fast"));
+        QCOMPARE(saved.value("isDefault").toBool(), true);   // 首辆自动置默认
+
+        // ② 编辑：弹窗回填旧值 → 改车牌+切慢充 → 保存回读。
+        auto* edit = findItem(window_->contentItem(), QStringLiteral("vehicleEditButton"));
+        QVERIFY2(edit != nullptr, "编辑按钮未挂载");
+        QVERIFY(realClick(window_, edit));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QCOMPARE(plate->property("text").toString(), QStringLiteral("粤B·T3579"));
+        plate->setProperty("text", QStringLiteral("粤B·T8642"));
+        auto* slow = findItem(window_->contentItem(), QStringLiteral("vehicleSlowConnectorRadio"));
+        QVERIFY2(slow != nullptr, "慢充单选未挂载");
+        QVERIFY(realClick(window_, slow));
+        QVERIFY(realClick(window_, save));
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+        auto edited = settings->vehicles().first().toMap();
+        QCOMPARE(edited.value("plate").toString(), QStringLiteral("粤B·T8642"));
+        QCOMPARE(edited.value("connectorType").toString(), QStringLiteral("slow"));
+        QCOMPARE(settings->vehicleCount(), 1);                // 编辑不加车
+
+        // ③ 删除：清场，行数归零。
+        auto* remove = findItem(window_->contentItem(), QStringLiteral("vehicleDeleteButton"));
+        QVERIFY2(remove != nullptr, "删除按钮未挂载");
+        QVERIFY(realClick(window_, remove));
+        QTRY_COMPARE(settings->vehicleCount(), 0);
+    }
+
     // 经验等级批（2026-09-09）真壳端到端 + 会员中心批（同日）改版：等级三件套
     // 从 hero 搬进昵称框与余额框之间的独立「会员等级卡」（uiLevelCard），点卡进
     // 会员中心页（等级阶梯+每日任务区块+礼包记录）；行列表撤任务/等级两行、与
     // 设置并列新增「积分商城」；App.navigate 漏斗与 tasks 深链路由不变。
+    // 测：四条入口路由（卡→等级页→商城→任务深链）+ navigate 单点 XP 漏斗。
+    // 钉：真壳（MockRequestTransport + preferences temp 域）下三件套确实渲染、
+    // XP 恰好 +20 且当日幂等——用 before 增量断言，不依赖其它用例留档。
+    // 取物只用 findItem 按 objectName 找页根/直子对象并 QTRY 等挂载，不点
+    // Repeater delegate（offscreen 时序不可靠，同 tst_qml_client_pages 约定）。
     void profileLevelBarTasksPageAndXpFunnel()
     {
         bootShell(QStringLiteral("profile"));

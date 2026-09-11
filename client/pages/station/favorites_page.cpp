@@ -1,3 +1,7 @@
+// FavoritesPage 实现（成员 2，迭代 3 批）。数据流：收藏 ID 来自 HomeShell 注入的
+// FavoritesService（QSettings 按用户持久化），站点资料来自本页自建模拟查询
+// 通道；「收藏 ∩ 查询 → 筛选投影」的拼接全部发生在 refresh()。
+// QML 孪生页口径对照见 docs/design/qml-station-mapping.md。
 #include "pages/station/favorites_page.h"
 
 #include "charging/client/widgets/clickable_card.h"
@@ -61,6 +65,8 @@ QLabel#favoritesEmptyHint {
 }
 )";
 
+// 展示助手与 station_detail_page 同名同值（匿名 namespace 页私有，不共享
+// 头文件——为两行格式化引入跨页耦合不值，口径一致性由测试钉住）。
 QString formatPrice(qint64 centsPerKwh)
 {
     return QStringLiteral("¥%1/度").arg(QString::number(centsPerKwh / 100.0, 'f', 2));
@@ -96,6 +102,9 @@ FavoritesPage::FavoritesPage(QWidget* parent) : QWidget(parent)
     setObjectName(QStringLiteral("favoritesPage"));
     setStyleSheet(QString::fromLatin1(kFavoritesPageStyleSheet));
 
+    // 本页自建全量查询通道：独立实例 = 独立信号——若复用找站页的共享实例，
+    // 其关键词 search() 同样会打进本页 querySucceeded 槽，把搜索中间结果
+    // 污染成收藏候选池。
     service_ = new services::station::StationQueryService(this);
 
     auto* rootLayout = new QVBoxLayout(this);
@@ -152,6 +161,8 @@ FavoritesPage::FavoritesPage(QWidget* parent) : QWidget(parent)
     scroll->setWidget(listPage_);
     stack_->addWidget(scroll);
 
+    // 查询三态 → 状态门：started 关门、succeeded 开门、failed 置异常门
+    // （context 传 this：页毁连接断）。
     connect(service_, &services::station::StationQueryService::queryStarted, this,
             &FavoritesPage::handleQueryStarted);
     connect(service_, &services::station::StationQueryService::querySucceeded, this,
@@ -162,9 +173,13 @@ FavoritesPage::FavoritesPage(QWidget* parent) : QWidget(parent)
     setFavoritesService(nullptr); // 自建兜底实例（HomeShell 注入同实例时替换）
 
     stack_->setCurrentWidget(loadingPage_);
+    // 构造期预取一次全量候选（空关键词）：收藏列表 = 收藏 ID ∩ 该结果，
+    // 不等用户操作首屏即出。
     service_->search(QString());
 }
 
+// 收藏服务注入（HomeShell 与首页星星同实例；空参 = 自建兜底，访客内存态）。
+// 换实例必须先通配断旧再接新：漏断会出现「首页一个 toggle 触发两次 refresh」。
 void FavoritesPage::setFavoritesService(FavoritesService* service)
 {
     FavoritesService* target = service;
@@ -174,9 +189,11 @@ void FavoritesPage::setFavoritesService(FavoritesService* service)
         }
         target = new FavoritesService(this); // 未注入：访客内存态口径
     }
+    // 幂等闸：同实例重复注入不重接信号、不额外 refresh。
     if (target == favorites_) {
         return;
     }
+    // 通配断旧实例全部信号（不只 favoritesChanged）：换绑前旧源仍会触发刷新。
     if (favorites_ != nullptr) {
         disconnect(favorites_, nullptr, this, nullptr);
     }
@@ -193,6 +210,8 @@ void FavoritesPage::handleQueryStarted()
     stack_->setCurrentWidget(loadingPage_);
 }
 
+// 唯一正常落定通道：开状态门（queryLoaded_）+ 缓存候选池，随后 refresh()
+// 拼接渲染——空收藏也要走到这里才能出空态，而不是永远停在 loading。
 void FavoritesPage::handleQuerySucceeded(const StationList& stations)
 {
     queryFailed_ = false;
@@ -201,6 +220,10 @@ void FavoritesPage::handleQuerySucceeded(const StationList& stations)
     refresh();
 }
 
+// 失败落异常态：queryFailed_ 让状态门知道该保持错误页——旧候选池不清空，
+// 但重试成功前不得被 refresh() 渲染出来（验收缺陷 4 的错误态分支）。
+// 失败落异常态并保持：queryFailed_ 让状态门知道错误页不可被 refresh() 覆盖
+// 成空态——否则「重试」入口永久丢失（验收缺陷 4 的另一半）。
 void FavoritesPage::handleQueryFailed(const QString& message)
 {
     queryLoaded_ = false;
@@ -215,12 +238,16 @@ void FavoritesPage::handleFavoritesChanged()
     refresh();
 }
 
+// 重试 = 重发查询；loading 视图由 queryStarted 回调统一置态，本函数不手动
+// 抢切页面——保证状态门只有回调一个写入方，避免两处切页口径漂移。
 void FavoritesPage::retryQuery()
 {
     stack_->setCurrentWidget(loadingPage_);
     service_->search(QString());
 }
 
+// 收藏/站点资料两个数据源都要走这条重建路径：星星注入、查询落定、筛选应用、
+// 重试成功后统一在此重拼列表。
 void FavoritesPage::refresh()
 {
     // 状态门（验收缺陷 4）：查询在途/失败时保持对应视图——壳层入口的无条件
@@ -245,12 +272,17 @@ void FavoritesPage::refresh()
             }
         }
     }
+    // 筛选投影复用找站页同一纯函数 applyStationFilter：同条件模型保证两页
+    // 命中口径一致（组内 OR / 组间 AND）。
     StationList visible = services::station::applyStationFilter(joined, filterCriteria_);
 
+    // 整清重建（与找站页同款）：收藏/筛选变更低频，逐卡 diff 不值当；
+    // item deleteLater 回收，在途信号栈里同步调用无悬空风险。
     clearLayoutItems(listLayout_);
     for (const StationListItem& item : visible) {
         listLayout_->addWidget(createFavoriteCard(item));
     }
+    // 尾部弹性项：卡片顶部对齐，数量少时不被 layout 纵向拉散。
     listLayout_->addStretch();
 
     if (visible.isEmpty()) {
@@ -264,6 +296,7 @@ void FavoritesPage::refresh()
             QString());
         stack_->setCurrentWidget(emptyNotice_);
     } else {
+        // stack_ 页 3 = 列表滚动页（0 loading/1 空/2 异常）。
         stack_->setCurrentIndex(3);
     }
 }
@@ -308,6 +341,8 @@ QWidget* FavoritesPage::createFavoriteCard(const StationListItem& item)
     // 按钮自身 deleteLater，clicked 发射栈内安全）。真按钮消费事件防误触详情。
     const qint64 stationId = item.station.id;
     auto* starButton = new QPushButton(QStringLiteral("★"), card);
+    // objectName 内嵌站点 ID：探针按名定位特定站点的星星直接点击取消收藏
+    // （整页星星无法按文本区分）。
     starButton->setObjectName(QStringLiteral("favoriteCardStar_%1").arg(stationId));
     starButton->setProperty("isStationStar", true);
     starButton->setCursor(Qt::PointingHandCursor);
@@ -326,6 +361,8 @@ QWidget* FavoritesPage::createFavoriteCard(const StationListItem& item)
     detailRow->addWidget(starButton);
     body->addLayout(detailRow);
 
+    // 取行数据本地副本再值捕获：卡片点击远晚于 lastResults_ 下一次整清重建，
+    // 直接捕获 item 引用会悬空。
     const charging::model::Station station = item.station;
     const int distanceMeters = item.distanceMeters;
     connect(card, &ClickableCard::clicked, this,
@@ -334,6 +371,8 @@ QWidget* FavoritesPage::createFavoriteCard(const StationListItem& item)
     return card;
 }
 
+// QPointer 去重：弹窗 WA_DeleteOnClose 关闭即自毁、QPointer 自动置空，
+// 因此重复进入只需把在开的弹窗提前台——不会出现第二个条件编辑窗。
 void FavoritesPage::openFilterDialog()
 {
     if (filterDialog_ != nullptr) {
@@ -350,6 +389,8 @@ void FavoritesPage::openFilterDialog()
 void FavoritesPage::setFilterCriteria(const StationFilterCriteria& criteria)
 {
     filterCriteria_ = criteria;
+    // 筛选按钮是构造期局部变量、未留成员：按 objectName 找回改高亮属性，
+    // 为一个引用专门加成员不划算。
     auto* button = findChild<QPushButton*>(QStringLiteral("favoritesFilterButton"));
     if (button != nullptr) {
         button->setProperty("filterActive", !criteria.isEmpty());
@@ -361,6 +402,7 @@ void FavoritesPage::setFilterCriteria(const StationFilterCriteria& criteria)
 
 int FavoritesPage::favoriteCardCount() const
 {
+    // 按 isFavoriteCard 属性计数：排除尾部弹性项与占位，属性即页面-测试契约。
     int count = 0;
     for (int i = 0; i < listLayout_->count(); ++i) {
         const QLayoutItem* item = listLayout_->itemAt(i);
@@ -374,11 +416,14 @@ int FavoritesPage::favoriteCardCount() const
 
 bool FavoritesPage::emptyStateVisible() const
 {
+    // 双门断言：当前页是空提示 且 提示自身可见——整页未上屏时不误报可见。
     return stack_->currentWidget() == emptyNotice_ && emptyNotice_->isVisible();
 }
 
 FavoritesPage::ViewState FavoritesPage::viewState() const
 {
+    // 探针由状态门字段推导而非 stack_ 当前页：Loading/Error 的语义本就住在
+    // queryLoaded_/queryFailed_ 两 flag 里，读当前页反而绕。
     if (!queryLoaded_) {
         return queryFailed_ ? ViewState::Error : ViewState::Loading;
     }

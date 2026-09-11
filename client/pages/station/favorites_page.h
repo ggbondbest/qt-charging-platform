@@ -30,6 +30,14 @@ class StationFilterDialog;
 // 页面零改动。
 //
 // 四态与找站页同构：加载 / 空（“暂无收藏的充电站”）/ 异常（重试）/ 列表。
+//
+// 数据流（无 TCP 契约）：收藏 ID = FavoritesService（HomeShell 注入、与首页
+// 星星同实例——落 QSettings 本机持久化，按登录用户分键，键名
+// favorites/＜userKey＞/stationIds，未登录仅内存态）；站点资料 = 本页自建
+// StationQueryService 模拟通道取全量候选再求交。
+//
+// 被谁用：HomeShell「我的页 → 收藏」路由（openFavorites）；卡片点击发
+// stationSelected 交宿主统一路由站点详情。
 class FavoritesPage final : public QWidget
 {
     Q_OBJECT
@@ -45,6 +53,7 @@ public:
 
     // 打开高级筛选弹窗（QPointer 去重，组件与找站页共用）。
     void openFilterDialog();
+    // 应用筛选（与找站页同口径）：存条件 → 筛选按钮高亮态 → 重投影列表。
     void setFilterCriteria(const charging::client::services::station::StationFilterCriteria& criteria);
 
     // 测试探针。
@@ -62,15 +71,21 @@ signals:
     void stationSelected(const charging::model::Station& station, int distanceMeters);
 
 private slots:
+    // 查询三态 = 状态门的三次开关（见上方 ViewState 注释）：started 关门、
+    // succeeded 开门并缓存候选、failed 置异常门保留重试入口。
     void handleQueryStarted();
     void handleQuerySucceeded(const charging::client::services::station::StationList& stations);
     void handleQueryFailed(const QString& message);
+    // 收藏变更是同步数据源（无在途请求），直接触发重建。
     void handleFavoritesChanged();
+    // 异常态「重试」：先手动回 loading 再重发查询（门由回调统一重开）。
     void retryQuery();
 
 private:
+    // 收藏站点卡：站名 + 空闲标签 / 地址 / 价格·距离·★（★点击即取消收藏）。
     QWidget* createFavoriteCard(const charging::client::services::station::StationListItem& item);
 
+    // owned：本页自建全量查询通道（与找站页各持实例，信号互不串扰）。
     services::station::StationQueryService* service_ = nullptr; // owned（本页独立通道）
     services::favorites::FavoritesService* favorites_ = nullptr; // not owned
     QPointer<StationFilterDialog> filterDialog_;

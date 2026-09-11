@@ -1,3 +1,4 @@
+// platform_theme.cpp —— installPlatformTheme 的实现（主题装载底座，详见头注释）。
 #include "pages/station/platform_theme.h"
 
 #include <QApplication>
@@ -18,6 +19,8 @@ void installPlatformTheme()
     ensureClientPlatformResourceRegistered();
 
     QFile styleFile(QStringLiteral(":/qss/client_platform.qss"));
+    // 资源缺失即静默放弃：不装样式页面照常运行，各页局部 QSS 仍生效；
+    // 重复调用只是把同一份样式表再设一遍（setStyleSheet 全量替换），无副作用。
     if (!styleFile.open(QIODevice::ReadOnly)) {
         return;
     }

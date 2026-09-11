@@ -1,3 +1,12 @@
+// 文件职责：widgets 用户端“通道总壳”HomeShell 声明——顶栏/内容栈/底部 Tab
+// 三段式骨架 + 全部路由页与服务的装配处（成员 2 初建，任务 #2/#7/#12/#17；
+// 成员 3 整合订单/充电/钱包；迭代 3 追加收藏/通知，批次演进见下方类注释）。
+// 被谁用：MainWindow 登录成功后换入本页栈；集成测试（tst_home_shell 等）经
+// 公开路由方法与探针访问器直接驱动。
+// 数据流向：页面事件 → 壳路由/登录闸 → 各服务 → IRequestTransport（真实连接
+// = 契约 v1 TCP，无连接预览 = mock）；预约/找站服务为双通道（live 走 TCP 契约、
+// 预览走本机模拟），设置/收藏落 QSettings、通知为桥接内存源——均不越层直连网络。
+// QML 孪生：client/qml/Shell.qml + app_bridge（同语义另一实现，共用服务端契约）。
 #pragma once
 
 #include "charging/client/profile_charging/order_service.h"
@@ -10,6 +19,8 @@
 
 #include <optional>
 
+// 前向声明（成员 2 的块）：内容栈容器与顶部导航——壳只持指针，
+// 全部重依赖收在 .cpp，头文件保持编译防火墙。
 class QStackedWidget;
 
 namespace charging::client {
@@ -27,6 +38,8 @@ class ChargingHomePage;
 class SettlementPage;
 class RechargePage;
 class ProfileEditPage;
+// 服务前置声明组（成员 2 的块）：真实 TCP 连接 + 地图/收藏/通知/预约/设置，
+// 壳构造统一 new 出来再注入各页（装配顺序见 .cpp 构造开头的注释）。
 namespace network {
 class ClientConnection;
 }
@@ -97,6 +110,7 @@ class HomeShell final : public QWidget
     Q_OBJECT
 
 public:
+    // 构造族：公开重载全部委托到文件尾私有主构造（User* 为空 = 未登录壳）。
     // 已登录：user 透传给导航组件。
     explicit HomeShell(const charging::model::User& user, QWidget* parent = nullptr);
     HomeShell(const charging::model::User& user,
@@ -126,6 +140,7 @@ public:
     void openNotifications();
     void openFavorites();
 
+    // ---- 与宿主（MainWindow）的边界：壳只做“要去登录/要退出”，切页由宿主完成 ----
 signals:
     // 已登录时用户点击“退出登录”，请求返回登录页。
     void logoutRequested();
@@ -144,6 +159,7 @@ private:
         QString tabId;
     };
 
+    // ---- 路由内核（成员 2）：Tab 落栈 / 压栈返回 / 各路由入口 ----
     void showTab(const QString& id);
     void openStationDetail(const charging::model::Station& station, int distanceMeters);
     void openReservationConfirm(const charging::model::Station& station,
@@ -155,10 +171,14 @@ private:
     void openRecharge();
     void openWallet();
     void openProfileEdit();
+    // 导航路由入口（返回链固定）+ 统一“返回”出口：顶部导航按钮与路由页内
+    // 返回共用 leaveRoute，返回语义只在这一处实现。
     void openNavigation(const services::reservation::ReservationRecord& record);
     void leaveRoute();
     // 顶栏态与路由栈/当前 Tab 同步：返回按钮跟随路由栈，搜索框只留在「找站」。
     void syncTopBar();
+    // ---- 拦截/引导弹窗组（成员 2）：登录闸 / 名额闸 / 无车闸 / 去充电引导 ----
+    // 全部非模态 open()，objectName 是宿主测试锚点（改名即断链）。
     void showReservationLoginPrompt();
     // 迭代 3：通用登录拦截提示（通知/收藏入口复用；文案随功能定制，
     // 对象名与预约拦截一致，宿主“去登录”同走 loginRequested）。
@@ -166,10 +186,13 @@ private:
     void showUnfinishedReservationPrompt();
     void showNoVehiclePrompt();
     void showGoChargePrompt(const services::reservation::ReservationRecord& record);
+    // 未登录占位页工厂（成员 2）：登录态下这三个 Tab 挂成员 3 真实页面。
     QWidget* createOrderPage();
     QWidget* createChargingPage();
     QWidget* createProfilePage();
 
+    // ---- 装配成员（成员 2 的块）：创建时即挂 parent（页面挂内容栈），
+    // 随 Qt 父子树统一析构，壳外不单独释放 ----
     charging::client::TopNavBar* topBar_ = nullptr;
     QStackedWidget* pageStack_ = nullptr;
     charging::client::BottomTabBar* tabBar_ = nullptr;
@@ -205,6 +228,8 @@ private:
     charging::client::OrderSummary currentSummary_;                // 详情/结算路由上下文
     qint64 lastKnownBalanceCents_ = 0;
     std::optional<charging::client::OrderService::Filter> pendingOrderFilter_;
+    // 登录态唯一事实源：hasUser_ 决定 Tab 真身/占位、入口拦截与传输装配分支；
+    // 壳内不做登录切换，退出经 logoutRequested 交宿主重建。
     charging::model::User user_;
     bool hasUser_ = false;
 };

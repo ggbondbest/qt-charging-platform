@@ -1,3 +1,7 @@
+// NavigationPage 实现（任务 #17 二次迭代 + 地图接入迭代 + 迭代 3 瘦身批）。
+// 口径总览见下方构造函数前的大注释块：模拟先行渲染永不空页、requestId 代际
+// 闸防竞态、WebEngine 不可用降级占位。QML 孪生页（NavigationPage.qml）口径
+// 对照见 docs/design/qml-station-mapping.md。
 #include "pages/station/navigation_page.h"
 
 #include "charging/client/widgets/card.h"
@@ -171,6 +175,10 @@ NavigationPage::NavigationPage(QWidget* parent) : QWidget(parent)
     rootLayout->addWidget(navSplitter, 1);
 }
 
+// 地图服务注入（HomeShell 统一装配）。幂等闸防重复 connect（一次 API 响应
+// 多次进槽）；允许注入空指针 = 无密钥降级口径，只不接线、页面恒模拟。
+// lambda 转发到成员：信号签名带 MapError 等枚举参数，成员函数保持单一口径，
+// 测试可直接调 handleRouteResult/handleRouteFailure 驱动代际闸分支。
 void NavigationPage::setMapService(services::map::MapGeoService* mapService)
 {
     if (mapService_ == mapService) {
@@ -201,6 +209,8 @@ void NavigationPage::openRoute(const ReservationRecord& record)
     targetLabel_->setText(tr("前往：%1 · %2（%3）")
                               .arg(record_.stationName, record_.chargerCode, record_.chargerSpec));
 
+    // 距离口径统一（见上方总览第 4 条）：消费确认页写入的 distanceMeters
+    // （虚拟测距）；qMax 防负值脏数据渲染成“-300 m”，真实路线到达后原地覆盖。
     const int distance = qMax(0, record_.distanceMeters);
     distanceLabel_->setText(distance >= 1000
                                 ? tr("全程约 %1 km").arg(distance / 1000.0, 0, 'f', 1)
@@ -211,6 +221,8 @@ void NavigationPage::openRoute(const ReservationRecord& record)
     const int travelMinutes =
         ReservationService::recommendSlot(record_.distanceMeters).travelMinutes;
     QString etaText = tr("预计行驶约 %1 分钟").arg(travelMinutes);
+    // +5 分钟缓冲是固定展示常量：建议出发时刻 = 预约时刻 − 行驶分钟 − 5min
+    // （纯模拟口径，无 API 来源；真实路线到达后在 handleRouteResult 同式重算）。
     if (record_.startAtUtc.isValid()) {
         etaText += tr(" · 建议 %1 前出发（预约 %2 开始）")
                        .arg(record_.startAtUtc.addSecs(-(travelMinutes + 5) * 60)
@@ -226,8 +238,12 @@ void NavigationPage::openRoute(const ReservationRecord& record)
     usingRealRoute_ = false;
     realPolyline_.clear();
     captionLabel_->setText(defaultCaptionText_);
+    // 先把两道门清零：上一个站点在途的路线/逆地理响应即刻作废（requestId
+    // 不复用，只有新值能命中），再发起本轮请求并记录新代际。
     routeGeneration_ = 0;
     geocodeGeneration_ = 0;
+    // 三条件齐备才请求真实路线：服务已注入 + key 可用 + 记录带坐标；
+    // 任一缺失 = 纯模拟口径（未注入服务保持原行为）。
     if (mapService_ != nullptr && mapService_->hasUsableKey() && record_.hasStationLocation) {
         routeGeneration_ = mapService_->requestDrivingRoute(
             mapService_->userLocation(),
@@ -247,9 +263,12 @@ void NavigationPage::handleRouteResult(quint64 requestId,
     if (requestId != routeGeneration_) {
         return; // 已切页/重复请求：旧响应作废
     }
+    // 一次性消费：匹配后即关门，同 requestId 的重复投递不再翻口径。
     routeGeneration_ = 0;
 
     if (route.distanceMeters >= 0) {
+        // -1 = 接口缺该字段（RouteResult 默认口径）：保留模拟距离，不用 -1
+        // 覆盖成负数文案；时长同理（下方 >0 才覆盖）。
         const int meters = route.distanceMeters;
         distanceLabel_->setText(meters >= 1000
                                     ? tr("全程约 %1 km").arg(meters / 1000.0, 0, 'f', 1)
@@ -269,6 +288,8 @@ void NavigationPage::handleRouteResult(quint64 requestId,
     }
 
     usingRealRoute_ = true;
+    // 路线到达即算真实口径（个别字段缺失上面已各自防御）：探针与 caption
+    // 同步翻转，折线解码失败也不回退口径（保持模拟折线由上方注释说明）。
     captionLabel_->setText(tr("真实导航路线 · 腾讯地图"));
     // 真实折线（解码失败为空则保持模拟折线口径）。
     realPolyline_.clear();
@@ -281,6 +302,7 @@ void NavigationPage::handleRouteResult(quint64 requestId,
 void NavigationPage::handleRouteFailure(quint64 requestId, const QString& message)
 {
     if (requestId != routeGeneration_) {
+        // 过期失败响应同样过门：迟到的失败不得把已成功的真实口径打回模拟。
         return;
     }
     routeGeneration_ = 0;
@@ -297,8 +319,10 @@ void NavigationPage::handleGeocodeResult(quint64 requestId, const QString& addre
     if (requestId != geocodeGeneration_) {
         return; // 已切页：过期地址响应作废
     }
+    // 一次性消费：关门，同 requestId 的重复投递不再翻“前往”行。
     geocodeGeneration_ = 0;
     if (address.isEmpty()) {
+        // 空结果视为未命中：保持“站名·桩编号”口径，不算失败。
         return;
     }
     // “前往”行追加真实地址（逆地理失败则保持站名模拟口径）。
@@ -332,10 +356,12 @@ void NavigationPage::updateRouteMap()
         ? mapService_->userLocation()
         : LatLng{22.541, 113.943}; // 与地图面板默认中心同口径
     LatLng to{from.latitude + 0.020, from.longitude + 0.012};
+    // 无站点坐标时以上述固定偏移综合模拟终点：地图始终有一条线可画，不空。
     if (record_.hasStationLocation) {
         to = {record_.stationLatitude, record_.stationLongitude};
     }
 
+    // 复用站点结构承载折线点：第三字段（名称）对折线点无意义，留空初始化。
     QVector<MapStationPoint> line;
     if (!realPolyline_.isEmpty()) {
         line.reserve(realPolyline_.size());
@@ -350,6 +376,8 @@ void NavigationPage::updateRouteMap()
         const double dx = to.longitude - from.longitude;
         const double dy = to.latitude - from.latitude;
         const double length = std::hypot(dx, dy);
+        // (px,py) = 弦向的垂直单位法向：正弦偏移只沿此方向甩出（两端偏差为
+        // 0，折线首尾钉死在起终点；中段 sin=1 时约 0.0018° ≈ 200 米弦高）。
         const double px = length > 0.0 ? -dy / length : 0.0;
         const double py = length > 0.0 ? dx / length : 0.0;
         for (int i = 0; i <= kSegments; ++i) {

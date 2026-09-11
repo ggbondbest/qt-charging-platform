@@ -4,6 +4,12 @@ import QtQuick.Layouts
 import QtWebEngine
 import "../../platform" as P
 
+// 导航详情页（route "navigation"）：从找站页站点卡/地图泡「导航」经
+// App.navigate("navigation", {站名+经纬度…}) 进入，目的地唯一、随 arg 传入。
+// 数据流：requestRoute→mapBridge（TCP→腾讯路线规划）→routeHtml→WebEngineView；
+// 本页 5e2ed1b 批创建（双输入/目的地更换弹窗/点击导航），09-09 起路线编排
+// 与网页装载由队友接管改版（e8546fa 移除更换弹窗，b792ff1 修 Qt6.2 布局）；
+// 我的现存块=root 骨架、目的地行与守卫短路，见各注。
 Item {
     id: page
     objectName: "navigationPage"
@@ -39,6 +45,7 @@ Item {
         webError = ""
         if (!mapBridge.hasLocation) {
             localError = "请填写城市和起始地址，点击定位后再规划路线"
+            // 未定位即短路：不臆测起点、不绘模拟路线（地图空态文案同口径）
             return
         }
         const latitude = targetCoordinate("stationLatitude", "latitude")
@@ -175,6 +182,8 @@ Item {
                 width: parent.width
                 spacing: 4
                 Text { text: "路线导航"; font.pixelSize: P.Style.fontXs; color: P.Style.muted }
+                // 目的地行（navigationPageTitle）：arg 站名→「前往 X」。入口收敛在
+                // 找站页「导航」（stationArg 带坐标），本页不再自带更换目的地
                 Text {
                     objectName: "navigationPageTitle"
                     Layout.fillWidth: true

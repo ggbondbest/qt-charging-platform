@@ -10,6 +10,8 @@ import "../../platform/Glyphs.js" as Glyphs
 // 本地；签到积分仍走 pointsService 真实入账，升级礼包由 bridge 收 levelUp
 // 后发 CREDIT_LEVEL_REWARD 入账——2026-09-09 拍板批）。
 // 裸引擎/无桥场景 prog 为 null：渲染空态提示，页面不炸（成员3 页测试口径）。
+// 答辩补注：route="tasks"；「我的」页任务行已被等级卡吸收（ProfilePage 注释），本页靠路由深链与
+// 测试入口存活。任务形态与逻辑已全在 TaskSection，本页只剩壳：头部计数、等级 hero（点击进 level 页）、区块挂载、脚注。
 Item {
     id: page
     objectName: "tasksPage"
@@ -18,9 +20,11 @@ Item {
     width: parent ? parent.width : 420
     height: parent ? parent.height : 600
 
+    // 桥守卫与任务区块同一口径：prog=null 时 hero/区块隐、空态显，页面零裸引擎依赖。
     readonly property var prog: (typeof App !== "undefined" && App && App.progressService)
                                 ? App.progressService : null
     // 测试/外层消费位保持原样（别名转发进区块）：签到在途镜像 + 手动触发。
+    // 测试缝（tst_qml_client_pages）：用例在页根调 checkInNow()、读 checkingIn——抽区块时特意保接口不保实现，alias 撤了旧钉即断。
     property alias checkingIn: taskSection.checkingIn
     function checkInNow() { taskSection.checkInNow() }
 
@@ -65,6 +69,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     objectName: "uiTasksCaption"
+                    // "/5" 与 "+30" 是引擎任务数/全勤值的页侧镜像字面量：调档需两处同步（演示文案不进契约的已知取舍）。
                     text: page.prog ? ("今日 " + page.prog.doneTaskCount + "/5 · 全勤 +30") : ""
                     font.pixelSize: P.Style.fontSm; color: P.Style.muted
                 }
@@ -82,6 +87,7 @@ Item {
                     GradientStop { position: 0.0; color: P.Style.heroFrom }
                     GradientStop { position: 1.0; color: P.Style.heroTo }
                 }
+                // 整块热区：MouseArea 先声明垫底，文字子项不吃鼠标，点 hero 任意处进等级页。
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
@@ -119,6 +125,7 @@ Item {
                         }
                         Text {
                             objectName: "uiTasksXpLine"
+                            // xpToNext==0 即黑金封顶信号，与等级页 hero 同一分支语义。
                             text: page.prog
                                   ? (page.prog.xpToNext > 0
                                      ? "升级还需 " + page.prog.xpToNext + " XP · 点任务攒经验"
@@ -145,6 +152,8 @@ Item {
             }
 
             // ---- 口径说明（经验本地、积分入账）----
+            // 一句话版：XP/等级=本机成长账（QSettings），签到积分与升级礼包积分=
+            // 服务端真账（「积分」页流水讲细）。
             Text {
                 objectName: "uiTasksFootnote"
                 width: parent.width

@@ -1,3 +1,13 @@
+// reservation_completed_page.cpp —— 已完成的预约页（归档列表）的实现
+// （成员 2，任务 #17 预约改版批：预约模块二级 Tab 之二）。
+//
+// 职责：把模块分发来的全部“已结束”记录（已完成/已取消/已过期，含迟到
+// 自动取消的特殊文案）渲染为可点击历史卡片，点击弹出只读详情对话框；
+// 外加 加载中/空态/错误(可重试) 三种边界视图（QStackedWidget 四页切换）。
+//
+// 数据流向：本页面不直连任何服务——纯“视图从模型”：ReservationModulePage
+// 一次 fetchList 后按状态过滤，经 setHistory 注入整份列表；错误态“重试”
+// 只发 retryRequested 信号由模块重新拉取。
 #include "pages/station/reservation_completed_page.h"
 
 #include "charging/client/widgets/clickable_card.h"
@@ -72,6 +82,9 @@ QString slotText(const services::reservation::ReservationRecord& record, const Q
              record.reservation.expiresAtUtc.toLocalTime().toString(format));
 }
 
+// 清空布局内所有控件：deleteLater 而非直接 delete——清列表可能发生在某卡片
+// 的 clicked 信号栈内（点卡片→重拉→setHistory），立即析构正在发信号的控件
+// 会悬空；takeAt 只摘不删，QLayoutItem 本身需手动 delete。
 void clearLayoutItems(QLayout* layout)
 {
     while (QLayoutItem* item = layout->takeAt(0)) {
@@ -154,6 +167,8 @@ void ReservationCompletedPage::showError(const QString& message)
     setState(PageState::Error);
 }
 
+// setHistory：整表重建而非增量对账——历史列表量小、重建幂等且免去 diff
+// 逻辑出错的可能；空表自然落到 Empty 态（无需模块另行调用别的接口）。
 void ReservationCompletedPage::setHistory(
     const services::reservation::ReservationList& records)
 {
@@ -162,6 +177,7 @@ void ReservationCompletedPage::setHistory(
     for (const auto& record : records_) {
         listLayout_->addWidget(createHistoryCard(record));
     }
+    // 尾部弹簧：记录少时卡片保持自然高度贴在顶部，不被拉伸铺满视口。
     listLayout_->addStretch();
     setState(records_.isEmpty() ? PageState::Empty : PageState::List);
 }
@@ -226,6 +242,8 @@ void ReservationCompletedPage::clearRows()
 QWidget* ReservationCompletedPage::createHistoryCard(
     const services::reservation::ReservationRecord& record)
 {
+    // isHistoryReservationCard 供 recordCardCount 统计；id/status 动态属性
+    // 让单测能按语义定位某张卡片，不必解析展示文案（文案属 UI，会变）。
     auto* card = new ClickableCard(listPage_);
     card->setProperty("isHistoryReservationCard", true);
     card->setProperty("reservationId", record.reservation.id);
@@ -275,6 +293,8 @@ QWidget* ReservationCompletedPage::createHistoryCard(
     hintLabel->setProperty("role", QStringLiteral("caption"));
     body->addWidget(hintLabel, 0, Qt::AlignRight);
 
+    // 按值快照再捕获：record 是模块列表存储里的引用，卡片存活期间列表随时
+    // 会被 setHistory 整份重建——若捕获引用/地址，点击时必然悬空。
     const services::reservation::ReservationRecord copy = record;
     connect(card, &ClickableCard::clicked, this,
             [this, copy]() { openDetailDialog(copy); });
@@ -282,6 +302,9 @@ QWidget* ReservationCompletedPage::createHistoryCard(
     return card;
 }
 
+// openDetailDialog：每次新开前先 close 旧弹窗——WA_DeleteOnClose 下用户可
+// 连点不同卡片，不关就会叠出多个详情框；detailDialog_ 用 QPointer 追踪，
+// 弹窗自毁后自动置空，探针（detailDialogVisible/Text）读它永不会悬空。
 void ReservationCompletedPage::openDetailDialog(
     const services::reservation::ReservationRecord& record)
 {

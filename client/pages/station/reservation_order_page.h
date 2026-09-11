@@ -70,7 +70,9 @@ private:
     charging::client::services::reservation::ReservationService* service_ = nullptr;
     QTimer* countdownTimer_ = nullptr;
     charging::client::services::reservation::ReservationRecord active_;
+    // 中栏是否持有有效进行中预约（Empty/Active 切换的真相源，定时器据此自停）。
     bool hasActive_ = false;
+    // 取消提交中标志：防重入闸，并保证 cancelFailed 只恢复“本页发起过取消”的按钮态。
     bool cancelling_ = false;
     PageState viewState_ = PageState::Loading;
 

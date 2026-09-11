@@ -1,3 +1,11 @@
+// 文件职责：StationMapPanel 实现（成员 2，需求 #22）——腾讯地图 WebEngine
+// HTML 壳与一行式降级横幅的双通道渲染面板。
+// 被谁用：StationHomePage（找站分栏上半区）与 NavigationPage（路线地图），
+// 经 attachToSplitter 统一分栏口径；测试 tst_station_map_panel 直接构造。
+// 数据流向：页面 → setStations/setRoutePoints（先缓存、可用时才渲染）→
+// buildMapHtml 填 qrc 模板 :/station/tencent_map.html 的占位符 →
+// QWebEngineView::setHtml 注入内存页；Key 运行时读环境变量，全程不触 TCP 契约。
+// 构建宏 CHARGING_PLATFORM_HAS_WEBENGINE 决定真图通道是否存在（无则恒降级）。
 #include "pages/station/station_map_panel.h"
 
 #include <QFile>
@@ -31,6 +39,8 @@ namespace {
 constexpr double kDefaultCenterLatitude = 22.541;
 constexpr double kDefaultCenterLongitude = 113.943;
 
+// 中心点占位符专用：定点 6 位小数（约 0.1m 精度）输出字面量；站点/路线
+// 点位则走 JSON 序列化直出 double——两条注入通道格式不同，模板各按己所需消费。
 QString formatCoordinate(double value)
 {
     return QString::number(value, 'f', 6);
@@ -84,6 +94,9 @@ QPushButton#mapRetryButton {
     retryButton->setObjectName(QStringLiteral("mapRetryButton"));
     retryButton->setCursor(Qt::PointingHandCursor);
     connect(retryButton, &QPushButton::clicked, this, [this]() {
+        // 一次点击两件事：本地先重建视图（配好 Key 即直接换真图，无需外层
+        // 参与）；retryRequested 是留给外层的契约信号（由外层决定是否另有
+        // 页面级补救），当前仓库内暂无接线方。
         tryBuildMapView();
         emit retryRequested();
     });
@@ -93,6 +106,9 @@ QPushButton#mapRetryButton {
     layout->addWidget(degradedBanner_);
     layout->addStretch();
 
+    // 构造尾部即尝试建图：面板进入页面时要么已在加载真图、要么已挂出降级
+    // 横幅，不留“未决”空窗；异步 loadFinished 成功只是进一步 mapReady 升档
+    // （degraded_ 初值 true，见 attachToSplitter 起步口径）。
     tryBuildMapView();
 }
 
@@ -101,6 +117,8 @@ bool StationMapPanel::isDegraded() const
     return degraded_;
 }
 
+// 刷新口径 = 整页重注入：无增量 JS 协议，数据一变即 setHtml 重建内存页
+// （站点量小，代价可接受）；降级/无 WebEngine 构建时本方法退化为纯缓存写。
 void StationMapPanel::setStations(const QVector<MapStationPoint>& stations)
 {
     stations_ = stations;
@@ -127,6 +145,8 @@ void StationMapPanel::attachToSplitter(QSplitter* splitter, int listPaneInitial)
     constexpr int kDegradedSplitHeight = 56; // 一行降级横幅的贴合高度
     splitter->setSizes({degraded_ ? kDegradedSplitHeight : kPreferredInitialHeight,
                         listPaneInitial});
+    // 手动拖动标记：shared_ptr 让 splitterMoved/mapReady 两个 lambda 共享
+    // 同一份状态；用户一旦拖过分栏，后续 mapReady 升档永久作废。
     auto dragged = std::make_shared<bool>(false);
     connect(splitter, &QSplitter::splitterMoved, splitter,
             [dragged]() { *dragged = true; });
@@ -139,6 +159,8 @@ void StationMapPanel::attachToSplitter(QSplitter* splitter, int listPaneInitial)
                 if (sizes.size() != 2) {
                     return;
                 }
+                // 升档增量从列表半区等量扣除（保底一行横幅高），分栏总高
+                // 不变——地图变大不是挤压窗口，而是从列表让渡。
                 const int grow = kPreferredInitialHeight - sizes.at(0);
                 if (grow > 0) {
                     splitter->setSizes({kPreferredInitialHeight,
@@ -152,6 +174,8 @@ QString StationMapPanel::mapKey()
     return qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
 }
 
+// 降级统一落点（三条出口共用）：置降级位 → 移除并销毁已建视图（若有）→
+// 亮横幅。横幅构造期常驻、只做显隐切换，这里不重建它。
 void StationMapPanel::showDegraded(const QString& title, const QString& description)
 {
     degraded_ = true;
@@ -159,6 +183,8 @@ void StationMapPanel::showDegraded(const QString& title, const QString& descript
         if (auto* panelLayout = static_cast<QVBoxLayout*>(layout())) {
             panelLayout->removeWidget(mapView_);
         }
+        // deleteLater 而非 delete：调用链可能正处在视图自身 loadFinished 的
+        // 信号栈上，同步析构会在返回途中踩到已销毁对象。
         mapView_->deleteLater();
         mapView_ = nullptr;
     }
@@ -168,6 +194,8 @@ void StationMapPanel::showDegraded(const QString& title, const QString& descript
     degradedBanner_->setVisible(true);
 }
 
+// 建图/降级的唯一总闸（构造与“重试”共用）：判定顺序 = 环境 Key 在前、
+// 构建宏与实例复用其次、加载结果兜底；三条降级出口全部汇到 showDegraded。
 void StationMapPanel::tryBuildMapView()
 {
     const QString key = mapKey();
@@ -180,6 +208,8 @@ void StationMapPanel::tryBuildMapView()
     }
 
 #ifdef CHARGING_PLATFORM_HAS_WEBENGINE
+    // 幂等复用闸：已有视图（在途加载或已建成）时直接返回——重试不会造出
+    // 第二个 WebEngine 实例，也不会重发 setHtml 打断在途加载。
     if (mapView_ != nullptr) {
         return;
     }
@@ -219,6 +249,9 @@ void StationMapPanel::tryBuildMapView()
 #endif
 }
 
+// 地图 HTML 装配单点：qrc 模板读不到直接返回空 HTML（setHtml 收到空串即
+// 空白页）；否则把缓存的站点/路线点位序列化成紧凑 JSON，连同环境 Key 与
+// 默认中心点一起替换进模板的 5 个 %占位符%。
 QString StationMapPanel::buildMapHtml() const
 {
     QFile templateFile(QStringLiteral(":/station/tencent_map.html"));

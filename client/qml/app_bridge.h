@@ -7,6 +7,7 @@
 namespace charging::client {
 class WalletService; class OrderService; class ChargingService;
 class StatsService; class CouponService; class PointService; class RatingService;
+// 经验等级批：前向声明——QmlApp 仅持裸指针并按 QObject* 透传，无需包含完整头文件。
 class ProgressService;
 class IRequestTransport;
 namespace network { class ClientConnection; }
@@ -46,6 +47,8 @@ class QmlApp final : public QObject
     Q_PROPERTY(QObject* couponService READ couponService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* pointsService READ pointsService NOTIFY servicesChanged)
     Q_PROPERTY(QObject* ratingsService READ ratingsService NOTIFY servicesChanged)
+    // 经验等级批（2026-09-09 新增功能批）·唯一暴露面：引擎进 QML 只经此属性
+    //（原委见下两行）。
     // 经验等级/每日任务引擎（2026-09-09）：session 级 QSettings 持久化，
     // 直接透传（无桥——全 QML 友好签名），QML 侧经 App.progressService 取用。
     Q_PROPERTY(QObject* progressService READ progressService NOTIFY servicesChanged)
@@ -73,6 +76,7 @@ public:
     QObject* couponService() const;
     QObject* pointsService() const;
     QObject* ratingsService() const;
+    // 经验等级批：上述 progressService 属性的 READ 函数声明。
     QObject* progressService() const;
     QObject* authService() const;
     QVariantMap currentUser() const;
@@ -87,6 +91,8 @@ public:
     Q_INVOKABLE void logout();
     Q_INVOKABLE void checkBeforeReservation(const QVariantMap& draft);
     Q_INVOKABLE void recoverUnfinishedOrder();
+    // 合并后全绿批（2026-09-08）：预约前置检查的测试缝声明，供 mock 通道清空非
+    // 终态订单后从空态测闸（英文说明照抄如下，即本批原注释）。
     // Test seam (setApiKeyForTesting precedent, mock channel only): cancel all
     // non-terminal seeded orders so unfinished-check-gated flows can be
     // exercised from the empty state. No-op on the live transport.
@@ -137,6 +143,7 @@ private:
     charging::client::CouponService* couponService_ = nullptr;
     charging::client::PointService* pointService_ = nullptr;
     charging::client::RatingService* ratingService_ = nullptr;
+    // 经验等级批：会话级引擎实例指针，createSession 重建、随 session_ 生灭。
     charging::client::ProgressService* progressService_ = nullptr;
     // 2026-09-09 需求批：升级礼包入账的挂起上下文——toast 不再在 levelUp 瞬间
     // 喊"已记入等级账目"（那是分账时代的旧词），而是等 CREDIT_LEVEL_REWARD

@@ -1,3 +1,8 @@
+// StationQueryService 实现（类职责、双通道口径与批史见同名头文件）。
+// 出口一览：search()/fetchDetail() 两条命令线各自分叉——live 且有连接走
+// TCP 契约 GET_STATIONS / GET_CHARGERS（readPage 校验分页、续发至收齐），
+// 否则回落模拟通道内置演示数据集 + 400ms 延迟；筛选投影 applyStationFilter
+// 为纯函数，页面在最近一次结果上即时应用、不重发请求。
 #include "services/station/station_query_service.h"
 
 #include "charging/common/model/model_json.h"
@@ -9,6 +14,8 @@
 #include <QTimer>
 
 namespace charging::client::services::station {
+
+// ---- 匿名命名空间：模拟通道演示数据与关键字/运营状态小工具 ----
 
 namespace {
 
@@ -57,6 +64,9 @@ StationList mockStations()
     // 覆盖 8 组选项的全部组合，保证任意筛选条件都有“命中/不命中”两种站点，
     // 演示与测试都能观察到过滤生效。TODO(contract)：GET_STATIONS 扩展字段
     // 后改由服务端响应填充，本函数只保留真实字段解析。
+    // 逐字一致是设计口径：匹配按字符串原样比较、弹窗选项直接取
+    // station_filter::xxxOptions()，此处字面量必须与其逐字相等——任何
+    // 一侧单独改动，对应筛选项会静默零命中（三处同源、无第二字符串）。
     auto attrs = [&stations](qint64 id) -> StationListItem* {
         for (StationListItem& item : stations) {
             if (item.station.id == id) {
@@ -177,6 +187,8 @@ QVector<charging::model::Charger> mockChargersForStation(const charging::model::
         for (int i = 0; i < group.count; ++i) {
             ++serial;
             Charger charger;
+            // 桩 ID = 站号*1000+站内序号：每次生成都稳定（跨调用一致），
+            // 才能充当覆盖表 mockChargerOverrides_ 的键、且站间不撞号。
             charger.id = station.id * 1000 + serial;
             charger.stationId = station.id;
             charger.code =
@@ -191,6 +203,8 @@ QVector<charging::model::Charger> mockChargersForStation(const charging::model::
     return chargers;
 }
 
+// 关键字匹配口径：站名或地址任一“不区分大小写包含”即命中；空检索词
+// 直通不过滤（承载“初始拉全量列表”场景，与 search() 的默认调用同语义）。
 bool matchesKeyword(const StationListItem& item, const QString& keyword)
 {
     if (keyword.isEmpty()) {
@@ -218,6 +232,8 @@ StationList applyStationFilter(const StationList& results,
     if (criteria.isEmpty()) {
         return results;
     }
+    // 单选属性（运营状态/运营商/电站类型/停车费）也构造成单元素列表走
+    // intersects：与多选组共用同一套“组内 OR”判定，空选择恒放行。
     auto intersects = [](const QStringList& options, const QStringList& selected) {
         if (selected.isEmpty()) {
             return true; // 组内未选 = 不限制
@@ -233,6 +249,8 @@ StationList applyStationFilter(const StationList& results,
     StationList filtered;
     filtered.reserve(results.size());
     for (const StationListItem& item : results) {
+        // distanceMeters<0（真实通道缺距离）无法证明在圈内：距离档位激活时
+        // 与超圈同等排除，宁可少展示也不伪造命中（口径见头文件）。
         if (criteria.maxDistanceKm > 0
             && (item.distanceMeters < 0
                 || item.distanceMeters > criteria.maxDistanceKm * 1000)) {
@@ -246,6 +264,8 @@ StationList applyStationFilter(const StationList& results,
             || !intersects(item.chargerTypes, criteria.chargerTypes)) {
             continue;
         }
+        // 电压档特殊展开：判定对象是条目的两个存在性 bool（可与下方
+        // intersects 的“选项列表求交”形状不同），命中=所选档位任一在站内存在。
         if (!criteria.voltageBands.isEmpty()) {
             const bool wantLow = criteria.voltageBands.contains(
                 QStringLiteral("低于700V"));
@@ -261,14 +281,19 @@ StationList applyStationFilter(const StationList& results,
     return filtered;
 }
 
+// ---- 服务实现：构造/装配 → 命令发起 → 模拟完成 → 真实通道路由 ----
+
 StationQueryService::StationQueryService(QObject* parent) : QObject(parent)
 {
+    // 登记元类型：信号携带 StationList/StationDetail 经排队连接
+    // （QML bridge 转接）传参的前提。
     qRegisterMetaType<StationList>("charging::client::services::station::StationList");
     qRegisterMetaType<StationDetail>("charging::client::services::station::StationDetail");
 }
 
 void StationQueryService::setConnection(charging::client::network::ClientConnection* connection)
 {
+    // 同对象早退：防止重复 connect 让一次响应多次进 handleResponse。
     if (connection_ == connection) {
         return;
     }
@@ -281,6 +306,9 @@ void StationQueryService::setConnection(charging::client::network::ClientConnect
     }
 }
 
+// 通道开关（getter 供页面/桥接判当前形态）：各命令分叉统一按
+// `liveMode_ && connection_` 双条件判定——开关置真但未注入连接时回落
+// 模拟通道（宁回退本地、不向页面报假失败）。
 void StationQueryService::setLiveMode(bool enabled)
 {
     liveMode_ = enabled;
@@ -291,11 +319,15 @@ bool StationQueryService::liveMode() const
     return liveMode_;
 }
 
+// 演示失败开关为电平式：置位后每次查询/详情都走 failed，直到调用方显式
+// 解除——与 ReservationService 的“发出即消费”一次性语义不同，注意区分。
 void StationQueryService::setSimulateFailure(bool simulate)
 {
     simulateFailure_ = simulate;
 }
 
+// 列表请求在途判定（详情另有 pendingDetailRequestId_，不在此列）：
+// search() 防重入闸据此忽略重复触发；另经 QML bridge 透传给页面备用。
 bool StationQueryService::isQueryPending() const
 {
     return !pendingRequestId_.isEmpty();
@@ -307,6 +339,8 @@ void StationQueryService::search(const QString& keyword)
         // 真实通道在途：不叠加请求（页面筛选是本地投影，不会走到这里）。
         return;
     }
+    // 检索词先落暂存：模拟完成与真实通道翻页续发共用同一上下文
+    // （续页必须带原词，否则第二页命中比检索词更宽的结果）。
     pendingKeyword_ = keyword.trimmed();
     emit queryStarted();
 
@@ -329,6 +363,9 @@ void StationQueryService::search(const QString& keyword)
 void StationQueryService::fetchDetail(const charging::model::Station& station,
                                       int distanceMeters)
 {
+    // 详情上下文预先组装：站点与距离沿用列表页路由带入值（服务不查表、
+    // 不重算），完成回调只补桩列表；非法 ID 也走 started→failed 同序，
+    // 页面加载态总能正常退出。
     pendingDetail_.station = station;
     pendingDetail_.distanceMeters = distanceMeters;
     pendingDetail_.chargers.clear();
@@ -346,6 +383,7 @@ void StationQueryService::fetchDetail(const charging::model::Station& station,
     if (liveMode_ && connection_ != nullptr) {
         chargerPage_ = 1;
         QJsonObject data;
+        // 契约内 64 位 ID 走字符串传输（与预约通道同一口径），防精度截断。
         data.insert(QStringLiteral("stationId"), QString::number(station.id));
         data.insert("page", chargerPage_);
         data.insert("pageSize", 100);
@@ -357,8 +395,11 @@ void StationQueryService::fetchDetail(const charging::model::Station& station,
     QTimer::singleShot(kMockLatencyMs, this, &StationQueryService::finishMockDetail);
 }
 
+// ---- 模拟通道完成（QTimer 延迟回调；live 切换后到达即作废）----
+
 void StationQueryService::finishMockQuery()
 {
+    // 护栏：延迟窗口内宿主壳切到真实通道，本次完成不得覆盖 live 结果。
     if (liveMode_) return;
     const QString keyword = pendingKeyword_;
     pendingKeyword_.clear();
@@ -379,11 +420,14 @@ void StationQueryService::finishMockQuery()
 
 void StationQueryService::setMockChargerReserved(qint64 chargerId)
 {
+    // 记入覆盖表而非直接改 mock 桩数据：后者每次调用现生成、改了立刻丢；
+    // 完成回调（finishMockDetail）应用覆盖并重算空位数。
     mockChargerOverrides_.insert(chargerId, charging::model::ChargerStatus::Reserved);
 }
 
 void StationQueryService::finishMockDetail()
 {
+    // 同 finishMockQuery 护栏：通道切换后迟到的延迟回调作废。
     if (liveMode_) return;
     const StationDetail requested = pendingDetail_;
 
@@ -418,6 +462,9 @@ void StationQueryService::finishMockDetail()
     emit detailFailed(tr("未找到该站点信息，可能已下线，请返回找站页重新选择"));
 }
 
+// ---- 真实通道响应/故障路由（连接广播给全部服务，按 requestId+命令类型
+// 双匹配认领列表或详情，与预约服务同构）----
+
 void StationQueryService::handleResponse(const charging::protocol::ResponseEnvelope& response)
 {
     const bool isStationQuery = response.requestId == pendingRequestId_
@@ -443,6 +490,8 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
         if (!network::readPage(response.data, "chargers", chargerPage_, 100, &more)) {
             emit detailFailed(tr("电桩分页响应无效")); return;
         }
+        // 本页桩并入跨页上下文后写回：续发只换 stationId/page 参数，
+        // 已收桩列表一直累加在 pendingDetail_ 内（中间态不外发）。
         StationDetail result = pendingDetail_;
         const QJsonArray chargers = response.data.value(QStringLiteral("chargers")).toArray();
         for (const auto& value : chargers) {
@@ -460,6 +509,7 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
                 {{"stationId", QString::number(result.station.id)}, {"page", ++chargerPage_}, {"pageSize", 100}});
             return;
         }
+        // 收齐全部页才置 hasChargerData（区分“真无桩”与“未收齐”，见 .h 字段注）。
         result.hasChargerData = true;
         emit detailSucceeded(result);
         return;
@@ -479,6 +529,7 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
     if (!network::readPage(response.data, "stations", stationPage_, 100, &more)) {
         emit queryFailed(tr("站点分页响应无效")); return;
     }
+    // 并入前序页累加结果；more 时换新在途键续发并带原检索词（search 注释）。
     StationList results = accumulatedStations_;
     const QJsonArray stations = response.data.value(QStringLiteral("stations")).toArray();
     for (const auto& value : stations) {
@@ -500,9 +551,12 @@ void StationQueryService::handleResponse(const charging::protocol::ResponseEnvel
             {{"keyword", pendingKeyword_}, {"page", ++stationPage_}, {"pageSize", 100}});
         return;
     }
+    // 全部页收齐后一次性发成功：页面只见完整列表，不见翻页中间态。
     emit querySucceeded(results);
 }
 
+// 传输层失败（超时/断线）广播：按在途 requestId 归位到列表或详情的
+// failed；message 空则兜底网络文案，保证加载态总能退出。
 void StationQueryService::handleRequestFailure(const QString& requestId, const QString& errorCode,
                                                const QString& message)
 {

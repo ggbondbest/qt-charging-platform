@@ -1,3 +1,10 @@
+// 文件职责：腾讯地图面板声明（成员 2，需求 #22）——WebEngine 承载本地 HTML
+// 模板的地图视图 + 双条件（WebEngine 构建期、Key 运行期）降级横幅。
+// 被谁用：StationHomePage（找站分栏上半区）与 NavigationPage（导航路线），
+// 测试 tst_station_map_panel 直接构造。
+// 数据流向：页面 → setStations/setRoutePoints（缓存）→ buildMapHtml 把占位符
+// 填入 qrc 模板 :/station/tencent_map.html → QWebEngineView::setHtml 注入内存页；
+// Key 仅读环境变量 CHARGING_TENCENT_MAP_KEY，全程不触 TCP 契约、不落仓库。
 #pragma once
 
 #include <QVector>
@@ -57,6 +64,9 @@ signals:
     void mapReady();
 
 private:
+    // 渲染工具组：mapKey = 环境变量读取口；tryBuildMapView = 建图/降级总闸
+    // （构造与“重试”共用一条路径）；buildMapHtml = 模板占位符填充；
+    // showDegraded = 降级态统一落点（销毁视图、收文案进 tooltip）。
     static QString mapKey(); // 仅从环境读取；不硬编码进仓库
 
     QString buildMapHtml() const;
@@ -66,6 +76,8 @@ private:
     QWidget* degradedBanner_ = nullptr; // 一行式降级横幅（不再占用整块地图高度）
     QLabel* degradedBannerLabel_ = nullptr;
     QWidget* mapView_ = nullptr; // 可用时为 QWebEngineView，否则为空
+    // 最新数据集缓存：降级/未建成时只存不画，重试建成后随重注入一并渲染
+    // （渲染输入永远取自这里，见 buildMapHtml）。
     QVector<MapStationPoint> stations_;
     QVector<MapStationPoint> routePoints_; // 导航路线折线（空=首页口径）
     bool degraded_ = true;

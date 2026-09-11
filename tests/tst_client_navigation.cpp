@@ -1,3 +1,10 @@
+// ---- 文件说明：客户端导航端到端冒烟（真壳 MainWindow + 真 TCP/SQLite 后端，不 mock 页面）----
+// boot：QTEST_MAIN —— 需要 GUI 事件循环：真实窗口 show()/离屏布局、控件点击、
+//   网络回包都在事件循环里推进。
+// 隔离：NavigationServerFixture 用 QTemporaryDir 专属 SQLite（open 第二参 true
+//   即建表灌演示数据）+ 端口 0 随机监听，不依赖外部服务，用例结束自动清理。
+// UI 定位：一律 findChild(objectName)，页面改名/丢件即断言失败，防静默漏测。
+// 截图证据：设 CHARGING_SNAPSHOT_DIR 时保存 PNG 供 PR 评审，CI 不设则跳过。
 #include "main_window.h"
 
 #include "charging_server.h"
@@ -37,6 +44,7 @@ void saveSnapshotIfRequested(QWidget& widget, const QString& fileName)
     widget.grab().save(directory + QStringLiteral("/") + fileName);
 }
 
+// ---- 登录域最小服务端：UserService（真实登录）+ UserApiService（昵称/余额透传）----
 class NavigationServerFixture final
 {
 public:
@@ -92,6 +100,7 @@ private slots:
     void loginSuccessShowsHomeShell();
 };
 
+// ---- 测：登录→首页外壳→头像进“我的”→退出回登录全链路；钉：页面栈切换、导航壳组件、真实站点列表渲染与登出复位回归 ----
 void ClientNavigationTest::loginSuccessShowsHomeShell()
 {
     NavigationServerFixture fixture;
@@ -118,6 +127,7 @@ void ClientNavigationTest::loginSuccessShowsHomeShell()
     auto* homeShell = window.findChild<charging::client::pages::station::HomeShell*>();
     QVERIFY(homeShell->findChild<charging::client::NetworkRequestTransport*>() != nullptr);
 
+    // 取 mainPageStack（退出登录断言还要复用）：钉当前页恰为 HomeShell 本体——登录是"切换"不是"压栈"。
     auto* pageStack = window.findChild<QStackedWidget*>(QStringLiteral("mainPageStack"));
     QVERIFY(pageStack != nullptr);
     QCOMPARE(pageStack->currentWidget(), homeShell);

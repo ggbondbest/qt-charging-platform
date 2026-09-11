@@ -9,6 +9,9 @@ import "../../platform/Glyphs.js" as Glyphs
 // 升级礼包积分 2026-09-09 拍板改真入账（推翻原"分账"设计）：bridge 发
 // CREDIT_LEVEL_REWARD 落服务端 points_ledger，「积分」页流水可见"等级礼包"行；
 // 本页「升级记录」为展示镜像。
+// 答辩补注：route="level"；入口=「我的」页等级卡（点卡任意处）与任务页 hero。数据流单向：
+// 页面 → App.progressService（纯客户端引擎、QSettings 持久化），本页自身零写入；
+// 经验写入单点在共享 TaskSection（签到回执）与 QmlApp::navigate()（浏览型任务）。
 Item {
     id: page
     objectName: "levelPage"
@@ -17,10 +20,13 @@ Item {
     width: parent ? parent.width : 420
     height: parent ? parent.height : 600
 
+    // 桥守卫：offscreen 测试裸引擎（App/progressService 缺位）或桥未就绪时 prog=null；
+    // 全页各块以 visible/三元跟随，只留空态面板，页面不炸（成员3 页测试口径）。
     readonly property var prog: (typeof App !== "undefined" && App && App.progressService)
                                 ? App.progressService : null
 
     // 档位主题色：青铜/白银/黄金/铂金/黑金（页内字面量，同 ProfilePage chevron 口径）
+    // Math.max/min 夹取 1..5：桥侧异常等级值落到最近档色，永不越界 undefined。
     function tierColor(lv) {
         const c = ["#B0764A", "#8E9AAF", "#D9A32B", "#5FA8D3", "#3B3A52"]
         return c[Math.max(0, Math.min(4, (lv || 1) - 1))]
@@ -60,6 +66,7 @@ Item {
             }
 
             // ---- hero：当前档位 ----
+            // 渐变主色=tierColor(当前档)，与阶梯卡配色同源；visible 由 prog 守卫，缺位整块隐身。
             Rectangle {
                 objectName: "uiLevelHero"
                 visible: !!page.prog
@@ -100,6 +107,7 @@ Item {
                             }
                         }
                         Text {
+                            // xpToNext==0 即引擎"黑金封顶"信号（已无更高档门槛），换全权益文案。
                             objectName: "uiLevelHeroXp"
                             text: page.prog
                                   ? (page.prog.xpToNext > 0
@@ -113,6 +121,8 @@ Item {
                         }
                     }
                     // 进度条压在 hero 底部
+                    // 条宽直接读引擎单一派生值 progress（0..1），页面不做任何除法；
+                    // 动画受 motionEnabled 总闸控制，无障碍/测试场景可整体关闭。
                     Rectangle {
                         objectName: "uiLevelHeroBar"
                         anchors.left: parent.left; anchors.right: parent.right
@@ -141,6 +151,8 @@ Item {
                 text: "等级阶梯与权益"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
+            // 五档阶梯由引擎单点定义（累计 XP 门槛 0/60/150/350/700），tiers 自带
+            // state=locked/reached/current 三态；卡上 giftPoints 是"未领礼包预告"，达成才入账。
             Repeater {
                 model: page.prog ? page.prog.tiers : []
                 delegate: Rectangle {
@@ -215,6 +227,7 @@ Item {
                 text: "每日任务 · 攒经验升等级"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
+            // 与任务页同一组件、同一数据源：一份形态一份逻辑，签到/XP 写入也全收敛在区块内。
             TaskSection {
                 id: levelTasks
                 width: parent.width
@@ -227,6 +240,8 @@ Item {
                 text: "升级礼包记录"
                 font.pixelSize: P.Style.fontSm; color: P.Style.muted
             }
+            // 礼包账=引擎本机账（QSettings gifts 键，跨档逐条入账），旧→新排列；
+            // 这里的积分从未进服务端 points_ledger，与下方分账脚注同一口径。
             Repeater {
                 model: page.prog ? page.prog.gifts : []
                 delegate: Rectangle {
@@ -271,6 +286,7 @@ Item {
                     }
                 }
             }
+            // 与礼包列表互斥：引擎就绪且零记录才显示（引导去每日任务攒经验）。
             P.NoticePanel {
                 objectName: "uiGiftsEmptyNotice"
                 width: parent.width
@@ -283,6 +299,9 @@ Item {
             }
 
             // ---- 到账口径说明（诚实标注）----
+            // 升级礼包自 2026-09-09 拍板起为真入账（服务端 points_ledger 流水），
+            // 脚注点破"礼包进账本、经验档位为客户端成长体系"两件事，答辩时先讲
+            // 这里，再讲页面上方各段的取数来源。
             Text {
                 objectName: "uiLevelFootnote"
                 width: parent.width

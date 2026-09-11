@@ -3,6 +3,12 @@ import "../../platform" as P
 
 // Coordinate overview only; it plots real station points without pretending to
 // be a geographic basemap. NavigationPage owns the actual Tencent WebEngine map.
+// 职责：零网络/零 key 的"坐标示意"绘图组件——markers（站点圆点）与 route
+// （[lat,lng] 折线）按经纬度线性映射铺满画布（x/y 独立缩放，不锁纵横比），
+// 只画真点位、绝不伪造底图路网，画不出内容就直说"等待真实点位"。
+// 进用：曾嵌于 StationHomePage 的 map⇄list 分段（e8546fa 换腾讯真图后撤下）；
+// 真底图归 StationMapView（WebEngine 壳），本组件留作无 key/断网降级示意。
+// 数据流：纯 props 进（markers/route）、markerClicked(index) 信号出，无桥无服务。
 Item {
     id: mapItem
     objectName: "stationMapItem"
@@ -19,6 +25,8 @@ Item {
 
     signal markerClicked(int index)
 
+    // Canvas 内容不参与属性绑定：外部数据变了不会自动重画，必须手动 requestPaint
+    // 排一帧 onPaint（Qt6.2 Canvas 语义，漏调就"数据对、画面旧"）。
     onMarkersChanged: canvas.requestPaint()
     onRouteChanged: canvas.requestPaint()
 
@@ -37,6 +45,7 @@ Item {
             const ctx = getContext("2d")
             ctx.reset()
             const W = width, H = height, PAD = 14
+            // 首帧/隐藏态尺寸可能为 0：直接返回，否则后面除法变 0 除产生 NaN 点。
             if (W <= 0 || H <= 0) return
 
             // Fit bounds over markers ∪ route.
@@ -49,12 +58,16 @@ Item {
             }
             for (const m of (markers || [])) bump(+m.lat, +m.lng)
             // Route points are [lat,lng] pairs.
+            // 坏元素跳过而非画歪：路线来自桥侧，形状不保证全是二元数组。
             for (const p of (route || [])) {
                 if (Array.isArray(p) && p.length >= 2) bump(+p[0], +p[1])
             }
+            // 三行退化保护：没有任何点位→以默认中心撑 0.01° 小框；所有点同纬/同经→
+            // 边界撑开 0.005°。否则 (hi-lo) 为 0，缩放除法出 NaN/Inf，整幅画布画空。
             if (!isFinite(loLa)) { bump(centerLat, centerLng); bump(centerLat + 0.01, centerLng + 0.01) }
             if (hiLa - loLa < 1e-6) { loLa -= 0.005; hiLa += 0.005 }
             if (hiLn - loLn < 1e-6) { loLn -= 0.005; hiLn += 0.005 }
+            // 经纬→屏幕：y 轴翻转（屏幕 y 向下、纬度向上），保持"北在上"的地图直觉。
             const sx = ln => PAD + (ln - loLn) / (hiLn - loLn) * (W - 2 * PAD)
             const sy = la => H - PAD - (la - loLa) / (hiLa - loLa) * (H - 2 * PAD)
 
@@ -73,6 +86,8 @@ Item {
                 ctx.moveTo(sx(+route[0][1]), sy(+route[0][0]))
                 for (let i = 1; i < route.length; ++i) ctx.lineTo(sx(+route[i][1]), sy(+route[i][0]))
                 ctx.stroke()
+                // 同一 path 连描两遍（先宽白后窄品牌色）即"白描光晕"，省一次路径重建；
+                // Canvas 的 current path 在 beginPath 前持续有效。
                 ctx.strokeStyle = P.Style.brand
                 ctx.lineWidth = 4
                 ctx.stroke()
@@ -96,6 +111,7 @@ Item {
                 ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2 * Math.PI); ctx.fill()
             }
 
+            // 没内容只写提示、不落一个假点——"示意"页的诚实口径。
             if (!hasContent) {
                 ctx.fillStyle = P.Style.muted
                 ctx.font = P.Style.fontSm + 'px sans-serif'
@@ -129,15 +145,18 @@ Item {
             for (const p of (mapItem.route || [])) {
                 if (Array.isArray(p) && p.length >= 2) bump(+p[0], +p[1])
             }
+            // 无 markers 或边界仍未撑起（全坏点）时直接短路：纯折线/空图不发明中信号。
             if (!isFinite(loLa) || !mapItem.markers || mapItem.markers.length === 0) return
             if (hiLa - loLa < 1e-6) { loLa -= 0.005; hiLa += 0.005 }
             if (hiLn - loLn < 1e-6) { loLn -= 0.005; hiLn += 0.005 }
+            // 倒序遍历=后画的点压在上面，命中按"顶层先"，与视觉层序一致。
             for (let i = (mapItem.markers || []).length - 1; i >= 0; --i) {
                 const m = mapItem.markers[i]
                 const la = +m.lat, ln = +m.lng
                 if (!isFinite(la) || !isFinite(ln)) continue   // 坐标坏点不参与点击
                 const x = PAD + (ln - loLn) / (hiLn - loLn) * (W - 2 * PAD)
                 const y = H - PAD - (la - loLa) / (hiLa - loLa) * (H - 2 * PAD)
+                // 命中容差半径 12 > 视觉半径 6：手指戳小圆点也点得中。
                 if (Math.hypot(mouse.x - x, mouse.y - y) <= 12) { mapItem.markerClicked(i); return }
             }
         }

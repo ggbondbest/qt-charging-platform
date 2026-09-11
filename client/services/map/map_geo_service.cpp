@@ -1,3 +1,8 @@
+// MapGeoService 实现（腾讯地图 WebService 接入批，任务 #17）；类职责与设计
+// 口径（环境唯一密钥源、零打印、代际 id、测试缝）见头文件类注释。
+// 文件结构：错误分类与文案 → 配置读取（仅环境变量）→ 请求发起（startRequest /
+// startAddressRequest）→ 单点发送 sendRequest（拼参/签名/超时看门狗/限流退避）
+// → 响应解析（按 Kind 分支回报）→ 签名算法。
 #include "map_geo_service.h"
 
 #include <QCryptographicHash>
@@ -17,6 +22,7 @@
 
 namespace charging::client::services::map {
 
+// ---- 匿名命名空间：业务 status 常量与坐标工具（仅本文件可见，避免污染头文件）----
 namespace {
 
 constexpr int kHttpRateLimitStatus1 = 120; // 触发并发/限流
@@ -41,6 +47,8 @@ bool validPoint(const LatLng& point)
         && point.longitude >= -180 && point.longitude <= 180;
 }
 
+// 业务 status → MapError 唯一映射点：HTTP 错误体、成功体非 0 status、静态图
+// JSON 错误体三处调用共用同一分类，新增 status 码只改这里。
 MapError errorFromBusinessStatus(int status)
 {
     switch (status) {
@@ -61,10 +69,13 @@ MapError errorFromBusinessStatus(int status)
     }
 }
 
+// 端点基址是常量而非配置项：凭证随 URL 出网，允许配置文件重定向基址
+// 等于把 key/sig 送给任意主机——生产恒为官方域名，仅测试缝可改成员变量。
 const QString kDefaultEndpointBase = QStringLiteral("https://apis.map.qq.com/ws");
 
 } // namespace
 
+// ---- 错误枚举 → 页面短文案（固定措辞，绝不混入 URL/响应 message/密钥）----
 QString mapErrorMessage(MapError error)
 {
     switch (error) {
@@ -127,6 +138,10 @@ QString MapGeoService::apiKeyFromConfigFile(const QString& configPath)
     return {}; // Retained for source compatibility; file-based credentials are disabled.
 }
 
+// "配置文件"桩函数族（本段四个，含紧邻其上的 apiKeyFromConfigFile）：曾经
+// 支持从入库 JSON 读 key/baseUrl，该机制已被成员提交 e8546fa 回退（凭证不随
+// git 入库、本地文件不得重定向带凭证请求）。函数保留仅为旧调用方源码兼容：
+// 一律不读文件，Key 唯一来源是环境变量。
 QString MapGeoService::baseUrlFromConfigFile(const QString& configPath)
 {
     Q_UNUSED(configPath);
@@ -160,17 +175,22 @@ LatLng MapGeoService::userLocation() const
     return userLocation_;
 }
 
+// 切换端点（仅测试缝）：必须连地址缓存一起清——缓存可能装着真端点的结果，
+// 换到假服务器后不得命中串台，保证每条用例零缓存起步。
 void MapGeoService::setEndpointBaseForTesting(const QString& base)
 {
     addressCache_.clear();
     endpointBase_ = base;
 }
 
+// 测试缝：压缩看门狗超时阈值（生产默认 5000ms），让超时分支用例毫秒级收敛。
 void MapGeoService::setRequestTimeoutForTesting(int msec)
 {
     timeoutMsec_ = msec;
 }
 
+// 矩阵/驾车/步行入口：只是 startRequest 公共漏斗的 Kind 薄包装、负责整形参数——
+// requestId 分配与本地闸门（无 key/空目的地/非法坐标）的异步回报口径统一在漏斗内。
 quint64 MapGeoService::requestDistanceMatrix(const QVector<LatLng>& destinations)
 {
     return startRequest(Kind::Matrix, destinations, userLocation_);
@@ -287,11 +307,15 @@ quint64 MapGeoService::requestIpLocation()
     return requestId;
 }
 
+// QML 面地址正编：与 requestForwardGeocode 共用 startAddressRequest（同地址在途
+// 合流、5 分钟缓存在漏斗里），区别仅在回报走 qmlGeocode* 信号面。
 quint64 MapGeoService::requestAddressGeocode(const QString& address)
 {
     return startAddressRequest(Kind::GeocodeAddress, address);
 }
 
+// 静态出图：本地拼 v2 参数（path/markers 语法细节见下方活体二分注记）后单次
+// GET；无 key 闸门与 startRequest 同构——仍返回 requestId、异步回 NoApiKey。
 quint64 MapGeoService::requestStaticMap(double centerLat, double centerLng, int zoom,
                                         int width, int height,
                                         const QVariantList& routePairs,
@@ -373,6 +397,7 @@ quint64 MapGeoService::requestStaticMap(double centerLat, double centerLng, int 
     return requestId;
 }
 
+// 导航"地图 APP"跳链：URI API 纯本地拼串，不发任何网络请求、无失败回报路径。
 QString MapGeoService::navigationUriUrl(double fromLat, double fromLng, const QString& fromName,
                                         double toLat, double toLng, const QString& toName) const
 {
@@ -416,6 +441,9 @@ void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error,
     case Kind::Matrix:
         emit distanceMatrixFailed(requestId, error, message);
         break;
+    // Kind → 失败信号分面：C++ 面带类型化 error（消费方按 MapError 分支决策），
+    // QML 转发面只送固定文案；逆地理与地址正编共汇 qmlGeocodeError，
+    // IpLocation/StaticMap/GeocodeAddress 为 QML 面独有族（无 C++ 对应信号）。
     case Kind::Route:
     case Kind::WalkingRoute:
         emit routeFailed(requestId, error, message);
@@ -440,6 +468,9 @@ void MapGeoService::emitFailure(quint64 requestId, Kind kind, MapError error,
     }
 }
 
+// ---- 请求发起：矩阵/驾车/步行/逆地理的公共漏斗（QML 标量重载亦汇入）----
+// 本地闸门（无 key / 空目的地 / 非法坐标）与网络失败同构：一律 0ms
+// singleShot 异步回报——调用方能无条件"先记 requestId、后收回调"。
 quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinations,
                                     LatLng origin)
 {
@@ -483,6 +514,8 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
     } else {
         params.insert(QStringLiteral("from"), formatLatLng(origin));
         params.insert(QStringLiteral("to"), destinationParts.first());
+        // mode 是矩阵专属参数：驾车/步行端点以 URL 路径区分出行方式，契约里
+        // 没有 mode，多传会偏离官方参数集（它还参与签名拼串），故发送前移除。
         params.remove(QStringLiteral("mode"));
         sendRequest(requestId, kind, kind == Kind::WalkingRoute
                         ? QStringLiteral("/direction/v1/walking/")
@@ -491,6 +524,9 @@ quint64 MapGeoService::startRequest(Kind kind, const QVector<LatLng>& destinatio
     return requestId;
 }
 
+// ---- 单点发送：全部出口（矩阵/路线/地理编码/IP 定位/静态图）汇聚于此 ----
+// 职责：手工拼百分号编码查询串（保 sig 口径）、可选签名、超时看门狗、
+// 响应分类（传输层/业务码两级）、限流一次性退避，再按 Kind 分发解析。
 void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& path,
                                 const QMap<QString, QString>& params, int attempt)
 {
@@ -530,11 +566,16 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
     });
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, requestId, kind, path, params, attempt] {
+        // reply 唯一回收点：看门狗 abort() 同样触发 finished 进到这里；
+        // deleteLater 排到事件循环下一轮才析构，本回调内仍可安全读 reply 状态。
         reply->deleteLater();
         const QByteArray body = reply->isOpen() ? reply->readAll() : QByteArray{};
         const QJsonDocument document = QJsonDocument::fromJson(body);
         const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
         const int status = root.value(QStringLiteral("status")).toInt(-1);
+        // 传输层判定漏斗：None=无传输层问题；下面的 else-if 顺序即优先级——
+        // 自打超时标记最先（区分自发 abort 与网络错），其次信任业务 status
+        // （4xx 也可能带可解析错误体），再看 HTTP 状态码，最后才是传输错误。
         MapError transportError = MapError::None;
         const int httpStatus =
             reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -623,6 +664,7 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             elements.reserve(items.size());
             for (const auto& item : items) {
                 const QJsonObject object = item.toObject();
+                // 缺字段回退 -1 = 未知（真实读数可为 0），消费方判负值再使用。
                 elements.append(DistanceElement{
                     object.value(QStringLiteral("distance")).toInt(-1),
                     object.value(QStringLiteral("duration")).toInt(-1)});
@@ -646,6 +688,8 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
                 result.value(QStringLiteral("address")).toString(), 0});
         } else if (kind == Kind::Geocoder) {
             const QString address = result.value(QStringLiteral("address")).toString();
+            // 空 address = 未命中：报 BadResponse 让消费方回落站点名等模拟口径，
+            // 不发空文本成功信号。
             if (address.isEmpty()) {
                 emitFailure(requestId, kind, MapError::BadResponse);
                 return;
@@ -658,6 +702,8 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
             const QJsonObject location = result.value(QStringLiteral("location")).toObject();
             const double latitude = location.value(QStringLiteral("lat")).toDouble();
             const double longitude = location.value(QStringLiteral("lng")).toDouble();
+            // (0,0) 双闸：字段缺失（toDouble 默认 0）与接口定位不到返回的
+            // 零坐标一并拦下——按"定位失败"回报，页面自决文案。
             if (qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude)) {
                 emitFailure(requestId, kind, MapError::BadResponse);
                 return;
@@ -755,6 +801,9 @@ void MapGeoService::sendRequest(quint64 requestId, Kind kind, const QString& pat
     });
 }
 
+// ---- 签名：官方规则 MD5(path + "?" + key 升序原文参数拼串 + SK) ----
+// 两处口径钉死：QMap 迭代天然按 key 升序（拼串免排序）；用编码前原值
+//（与查询串各自独立计算，测试逐字节锚见 tst requestQueryMatchesTencentContract）。
 QString MapGeoService::makeSignature(const QString& path, const QMap<QString, QString>& params,
                                      const QString& secretKey) const
 {
