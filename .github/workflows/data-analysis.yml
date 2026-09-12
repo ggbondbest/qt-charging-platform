@@ -3,9 +3,13 @@ name: Data analysis checks
 on:
   push:
     branches: [develop, master]
-    paths: ['data_analysis/**', '.github/workflows/data-analysis.yml']
   pull_request:
-    paths: ['data_analysis/**', '.github/workflows/data-analysis.yml']
+
+# Every PR must report all required checks. Workflow-level path filters would
+# leave documentation-only PRs permanently waiting for branch protection.
+concurrency:
+  group: data-analysis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

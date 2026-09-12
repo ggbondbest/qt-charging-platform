@@ -354,7 +354,11 @@ def publish_dataset(input_root, output_db):
             raise ValueError("SQLite integrity check failed")
         connection.close()
         connection = None
-        with temporary.open("rb") as stream:
+        # Windows fsync/_commit requires a writable handle. This is still our
+        # private temporary file: r+b preserves its bytes and is closed before
+        # linking it into place or making the final publication read-only.
+        with temporary.open("r+b") as stream:
+            stream.flush()
             os.fsync(stream.fileno())
         report = {"status": "PUBLISHED", "schemaVersion": CONTRACT_VERSION,
             "datasetId": inspected["manifest"]["datasetId"], "publishedBatchId": inspected["manifest"]["publishedBatchId"],
@@ -377,6 +381,9 @@ def publish_dataset(input_root, output_db):
         report_linked = True
         os.link(temporary, output)
         database_linked = True
+        # Hard links share permissions/read-only attributes. Remove both
+        # temporary aliases while writable; Windows cannot unlink them after
+        # the final names have been marked read-only.
         temporary.unlink()
         temporary_report.unlink()
         os.chmod(output, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)

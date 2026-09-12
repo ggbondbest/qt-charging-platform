@@ -144,4 +144,5 @@ python -m unittest discover -s data_analysis/tests -v
 ```
 
 未安装 API 依赖会明确跳过其测试；真实 Spark 测试还需 `RUN_SPARK_TESTS=1`。CI 分别运行基础、API/发布/契约和 Spark 套件，避免“跳过”当成“验证通过”。
+9 项检查的具体分工、第一阶段工作流移除及合并规则说明见 [第二阶段 CI](docs/ci_checks.md)。
 网页、模型两组可并行使用同一发布批次；整合时依照 source hash、版本和 ID 核对，不需要再等待字段设计。

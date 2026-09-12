@@ -23,12 +23,15 @@ SQLite
 
 第二阶段在独立的 [data_analysis](data_analysis/README.md) 中开发：已提供五城市、180 天、
 23 类关联数据：有来源依据的模拟充电、带署名的气象背景、Python 生成校验与 PySpark 清洗统计；不改动一期 Qt 业务。
-Vue 大屏、查询 API 与机器学习模型沿用该目录的数据契约继续开发。
+数据清洗、经营统计、查询 API、ML 特征/标签和公共契约已实现；Vue 大屏与真实模型继续开发。
+当前自动 CI 已切换为第二阶段的 9 项检查，说明见 [第二阶段 CI](data_analysis/docs/ci_checks.md)。
+第一阶段 Ubuntu/Qt 自动工作流已移除，Qt 6.2.4 兼容要求、测试代码和下面的手工验收命令仍保留。
+一期历史文档中“必须通过 Qt CI”的描述是原阶段流程，不再代表当前 PR 的自动合并检查。
 
 ## 已建立的基线
 
 - CMake + C++17 的 `charging_client`、`charging_server`、`charging_common` target。
-- Qt 6.2.4 兼容基线；Ubuntu CI 严格限定 Framework 版本为 6.2.4。
+- Qt 6.2.4 兼容基线；第一阶段手工验收仍严格限定 Framework 版本为 6.2.4。
 - 公共 User/Station/Charger/Reservation/Order 等候选模型、状态和 JSON 转换。
 - TCP 4 字节大端长度帧、JSON v1 envelope、稳定动作名与错误码。
 - SQLite schema v1：8 张表、外键、CHECK、索引、活动业务唯一约束和可重复 seed。
@@ -39,7 +42,7 @@ Vue 大屏、查询 API 与机器学习模型沿用该目录的数据契约继�
   15 分钟预约过期和整数安全计费。
 - 预约、取消、开始、停止和支付的 SQLite 多表事务；重复停止/支付不会
   重复累计或扣款。
-- QtTest、数据库完整性验证、Ubuntu 22.04 / Qt 6.2.4 GitHub Actions。
+- QtTest、数据库完整性验证及保留的 Ubuntu 22.04 / Qt 6.2.4 手工验收流程。
 - 五人分工、分支、Commit、PR、Code Review、命名和 Qt 兼容规范。
 
 ## 环境基线

@@ -1,7 +1,9 @@
 """No-Spark handoff checks: corrupt exports must never replace a publication."""
 
 import copy
+from contextlib import closing
 import csv
+import errno
 import gzip
 import hashlib
 import io
@@ -9,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -128,7 +131,7 @@ class PublishingTests(unittest.TestCase):
         self.assertEqual(report["validatedTargetRows"], 1)
         self.assertEqual(report["databaseSha256"], sha(self.output))
         self.assertEqual(report["servingManifestSha256"], sha(self.fixture.root / "serving_manifest.json"))
-        with sqlite3.connect(self.output.as_uri() + "?mode=ro", uri=True) as database:
+        with closing(sqlite3.connect(self.output.as_uri() + "?mode=ro", uri=True)) as database:
             tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertEqual(tables, SERVING_TABLES | {"__metadata"})
             self.assertEqual(database.execute("SELECT net_paid_cents FROM city_daily").fetchone()[0], -50)
@@ -315,6 +318,65 @@ class PublishingTests(unittest.TestCase):
                 self.publish()
         self.assertEqual(self.output.read_bytes(), b"concurrent user database")
         self.assertEqual(list(self.output.parent.iterdir()), [self.output])
+
+    def test_database_and_report_fsync_use_writable_descriptors_before_publication(self):
+        real_fsync = os.fsync
+        flushed_sizes = []
+        report_path = self.output.with_name(self.output.name + ".publication_report.json")
+        def require_writable_descriptor(descriptor):
+            # A zero-length write checks descriptor access without changing the
+            # database/report. The old rb database handle raises EBADF here.
+            self.assertEqual(os.write(descriptor, b""), 0)
+            self.assertFalse(self.output.exists())
+            self.assertFalse(report_path.exists())
+            flushed_sizes.append(os.fstat(descriptor).st_size)
+            real_fsync(descriptor)
+        with patch("data_analysis.publishing.publish.os.fsync", side_effect=require_writable_descriptor):
+            report = self.publish()
+        self.assertEqual(len(flushed_sizes), 2)
+        self.assertEqual(flushed_sizes[0], report["databaseBytes"])
+        self.assertGreater(flushed_sizes[1], 0)
+        self.assertEqual(sha(self.output), report["databaseSha256"])
+        with closing(sqlite3.connect(self.output.as_uri() + "?mode=ro", uri=True)) as connection:
+            self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_database_or_report_fsync_failure_never_publishes_partial_output(self):
+        real_fsync = os.fsync
+        for failure_at in [1, 2]:
+            with self.subTest(failure_at=failure_at):
+                calls = 0
+                def fail_one_flush(descriptor):
+                    nonlocal calls
+                    calls += 1
+                    if calls == failure_at:
+                        raise OSError(errno.EIO, "injected fsync failure")
+                    real_fsync(descriptor)
+                with patch("data_analysis.publishing.publish.os.fsync", side_effect=fail_one_flush):
+                    with self.assertRaisesRegex(OSError, "injected fsync failure"):
+                        self.publish()
+                self.assertEqual(calls, failure_at)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(list(self.output.parent.iterdir()), [])
+
+    def test_temporary_hardlinks_are_removed_before_readonly_attributes(self):
+        real_unlink, real_chmod = Path.unlink, os.chmod
+        protected = []
+        def windows_unlink(path, *args, **kwargs):
+            if path.is_file() and not path.stat().st_mode & stat.S_IWRITE:
+                raise PermissionError("Windows refuses to delete a read-only hardlink")
+            return real_unlink(path, *args, **kwargs)
+        def protect_after_cleanup(path, mode):
+            self.assertEqual(list(self.output.parent.glob(".analytics-*")), [])
+            protected.append(Path(path))
+            return real_chmod(path, mode)
+        with patch.object(Path, "unlink", new=windows_unlink), \
+                patch("data_analysis.publishing.publish.os.chmod", side_effect=protect_after_cleanup):
+            self.publish()
+        report_path = self.output.with_name(self.output.name + ".publication_report.json")
+        self.assertEqual(set(protected), {self.output.resolve(), report_path.resolve()})
+        self.assertFalse(self.output.stat().st_mode & stat.S_IWRITE)
+        self.assertFalse(report_path.stat().st_mode & stat.S_IWRITE)
+        self.assertEqual(list(self.output.parent.glob(".analytics-*")), [])
 
     def test_inspection_is_read_only_and_cli_publishes_without_spark(self):
         inspected = inspect_export(self.fixture.root)

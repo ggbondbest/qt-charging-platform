@@ -1,5 +1,6 @@
 """Portable handoff tests use small typed exports, not a Spark installation."""
 
+from contextlib import closing
 import json
 from pathlib import Path
 import shutil
@@ -46,7 +47,7 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(before, {path: sha(path) for path in self.fixture.root.rglob("*") if path.is_file()})
         database = self.root / "analytics.sqlite3"
         self.assertFalse(publish_dataset(self.output, database)["targetLabelsImported"])
-        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
             self.assertIsNone(connection.execute("SELECT name FROM sqlite_master WHERE name='ml_targets_hourly'").fetchone())
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM cities").fetchone()[0], 1)
 
