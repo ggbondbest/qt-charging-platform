@@ -1,6 +1,34 @@
+find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED COMPONENTS Charts)
+
 add_library(charging_server_pages STATIC
+    workflow_management_page.cpp workflow_management_page.h
+    admin_option_loader.cpp
+    admin_option_loader.h
+    admin_mock_data.cpp
+    admin_mock_data.h
+    activity_records_page.cpp
+    activity_records_page.h
+    admin_login_page.cpp
+    admin_login_page.h
+    charger_management_page.cpp
+    charger_management_page.h
+    dashboard_page.cpp
+    dashboard_page.h
+    dashboard_visual_widgets.cpp
+    dashboard_visual_widgets.h
+    delivery_dashboard_widgets.cpp
+    delivery_dashboard_widgets.h
     main_window.cpp
     main_window.h
+    management_page_widgets.cpp
+    management_page_widgets.h
+    management_time_format.h
+    order_management_page.cpp
+    order_management_page.h
+    station_management_page.cpp
+    station_management_page.h
+    user_management_page.cpp
+    user_management_page.h
 )
 add_library(ChargingPlatform::ServerPages ALIAS charging_server_pages)
 
@@ -12,4 +40,5 @@ target_link_libraries(charging_server_pages
         ChargingPlatform::ServerCore
         ChargingPlatform::ProjectOptions
         Qt6::Widgets
+        Qt6::Charts
 )

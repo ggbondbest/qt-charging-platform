@@ -4,7 +4,7 @@
 
 状态：`candidate-v1`（待五人确认与最小登录闭环验证）
 
-当前 `PRAGMA user_version = 1`。字段、单位、状态值或约束变化必须先评审；已交付数据库后不得直接覆盖旧表，应增加迁移。
+当前 `PRAGMA user_version = 3`。版本 2 会在服务启动时重建旧版管理查询索引并移除废弃索引，同时保留已有业务数据；版本 3 新增用户域五表（notifications、coupons、points_ledger、user_checkins、charger_ratings），旧 v1/v2 备份由恢复流程在临时副本上补齐缺表缺索引后升级，原始备份文件不被改写。字段、单位、状态值或约束变化必须先评审；已交付数据库后不得直接覆盖旧表，应增加迁移。
 
 ## 1. 全局约定
 
@@ -198,11 +198,19 @@ Partial unique indexes 保证一个用户最多有一个 `RESERVED` / `CHARGING`
 主要索引：
 
 - `idx_chargers_station_status`：站内状态表和状态统计；
+- `idx_chargers_abnormal_updated_at`：异常电桩集合按更新时间和 ID 稳定倒序分页；
+- `idx_chargers_updated_at`：管理端电桩全局更新时间倒序分页；
 - `idx_reservations_*`：用户/桩有效预约及过期扫描；
 - `idx_orders_user_created_at`：用户订单历史；
 - `idx_orders_status_created_at`：后台订单和营收筛选；
+- `idx_orders_created_at`：管理端订单全局时间倒序分页；
+- `idx_users_status_id`：管理端用户状态筛选及稳定分页；
 - `idx_recharge_records_user_created_at`：充值记录；
+- `idx_recharge_records_status_created_at`：管理端充值状态和时间倒序查询；
+- `idx_recharge_records_created_at`：管理端充值全局时间倒序分页；
 - `idx_operation_logs_admin_created_at`：管理员审计。
+- `idx_operation_logs_action_created_at`：管理操作类型和时间倒序查询。
+- `idx_operation_logs_created_at`：管理操作日志全局时间倒序分页。
 
 每次 schema/seed 变更至少运行：
 
@@ -212,7 +220,7 @@ PRAGMA foreign_key_check;
 PRAGMA integrity_check;
 ```
 
-期望分别为 `1`、无行、`ok`。还应断言：
+期望分别为 `2`、无行、`ok`。还应断言：
 
 - seed 可重复执行且行数不增长；
 - seed 有 1 个管理员、1 个演示用户、3 个站、7 个桩、1 条充值流水；

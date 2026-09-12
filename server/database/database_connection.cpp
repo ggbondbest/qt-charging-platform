@@ -1,0 +1,452 @@
+#include "database_connection.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QUuid>
+
+namespace charging::server {
+
+namespace {
+
+void clearError(QString* errorMessage)
+{
+    if (errorMessage != nullptr) {
+        errorMessage->clear();
+    }
+}
+
+bool fail(QString* errorMessage, const QString& message)
+{
+    if (errorMessage != nullptr) {
+        *errorMessage = message;
+    }
+    return false;
+}
+
+QString normalizedSql(const QString& sql)
+{
+    QString normalized;
+    normalized.reserve(sql.size());
+    for (const QChar character : sql) {
+        if (!character.isSpace() && character != QLatin1Char('"') &&
+            character != QLatin1Char('`') && character != QLatin1Char('[') &&
+            character != QLatin1Char(']') && character != QLatin1Char(';')) {
+            normalized.append(character.toLower());
+        }
+    }
+    return normalized;
+}
+
+// Splits the repository-controlled SQL resources at semicolons while respecting
+// quoted strings and SQL comments. QSqlQuery intentionally receives one
+// statement at a time because the SQLite driver does not accept whole scripts.
+QStringList splitSqlStatements(const QString& script)
+{
+    QStringList statements;
+    QString current;
+    bool inSingleQuote = false;
+    bool inDoubleQuote = false;
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    for (qsizetype index = 0; index < script.size(); ++index) {
+        const QChar character = script.at(index);
+        const QChar next = index + 1 < script.size() ? script.at(index + 1) : QChar();
+
+        if (inLineComment) {
+            current.append(character);
+            if (character == QLatin1Char('\n')) {
+                inLineComment = false;
+            }
+            continue;
+        }
+        if (inBlockComment) {
+            current.append(character);
+            if (character == QLatin1Char('*') && next == QLatin1Char('/')) {
+                current.append(next);
+                ++index;
+                inBlockComment = false;
+            }
+            continue;
+        }
+
+        if (!inSingleQuote && !inDoubleQuote && character == QLatin1Char('-') &&
+            next == QLatin1Char('-')) {
+            current.append(character);
+            current.append(next);
+            ++index;
+            inLineComment = true;
+            continue;
+        }
+        if (!inSingleQuote && !inDoubleQuote && character == QLatin1Char('/') &&
+            next == QLatin1Char('*')) {
+            current.append(character);
+            current.append(next);
+            ++index;
+            inBlockComment = true;
+            continue;
+        }
+
+        if (!inDoubleQuote && character == QLatin1Char('\'')) {
+            current.append(character);
+            if (inSingleQuote && next == QLatin1Char('\'')) {
+                current.append(next);
+                ++index;
+            } else {
+                inSingleQuote = !inSingleQuote;
+            }
+            continue;
+        }
+        if (!inSingleQuote && character == QLatin1Char('"')) {
+            current.append(character);
+            if (inDoubleQuote && next == QLatin1Char('"')) {
+                current.append(next);
+                ++index;
+            } else {
+                inDoubleQuote = !inDoubleQuote;
+            }
+            continue;
+        }
+
+        if (!inSingleQuote && !inDoubleQuote && character == QLatin1Char(';')) {
+            const QString statement = current.trimmed();
+            if (!statement.isEmpty()) {
+                statements.append(statement);
+            }
+            current.clear();
+            continue;
+        }
+        current.append(character);
+    }
+
+    const QString finalStatement = current.trimmed();
+    if (!finalStatement.isEmpty()) {
+        statements.append(finalStatement);
+    }
+    return statements;
+}
+
+} // namespace
+
+DatabaseConnection::DatabaseConnection()
+    : connectionName_(QStringLiteral("charging-server-%1").arg(
+          QUuid::createUuid().toString(QUuid::WithoutBraces)))
+{
+}
+
+DatabaseConnection::~DatabaseConnection()
+{
+    close();
+}
+
+bool DatabaseConnection::open(const QString& databasePath, bool loadDemoSeed,
+                              QString* errorMessage)
+{
+    clearError(errorMessage);
+    close();
+
+    if (databasePath.trimmed().isEmpty()) {
+        return fail(errorMessage, QStringLiteral("Database path must not be empty"));
+    }
+    if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
+        return fail(errorMessage, QStringLiteral("Qt SQLite driver QSQLITE is not available"));
+    }
+
+    QString resolvedPath = databasePath;
+    bool isNewDatabase = databasePath == QStringLiteral(":memory:");
+    if (databasePath != QStringLiteral(":memory:")) {
+        const QFileInfo fileInfo(databasePath);
+        isNewDatabase = !fileInfo.exists() || fileInfo.size() == 0;
+        resolvedPath = fileInfo.absoluteFilePath();
+        QDir parentDirectory = fileInfo.absoluteDir();
+        if (!parentDirectory.exists() && !parentDirectory.mkpath(QStringLiteral("."))) {
+            return fail(errorMessage,
+                        QStringLiteral("Unable to create the database directory: %1")
+                            .arg(parentDirectory.absolutePath()));
+        }
+    }
+
+    int schemaVersion = 0;
+    if (!isNewDatabase) {
+        const QString versionConnectionName = QStringLiteral("%1-version-check").arg(connectionName_);
+        QString versionError;
+        {
+            QSqlDatabase versionDatabase =
+                QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), versionConnectionName);
+            versionDatabase.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+            versionDatabase.setDatabaseName(resolvedPath);
+            if (!versionDatabase.open()) {
+                versionError = versionDatabase.lastError().text();
+            } else {
+                QSqlQuery versionQuery(versionDatabase);
+                if (!versionQuery.exec(QStringLiteral("PRAGMA user_version")) ||
+                    !versionQuery.next()) {
+                    versionError = versionQuery.lastError().text();
+                } else {
+                    schemaVersion = versionQuery.value(0).toInt();
+                }
+                versionDatabase.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(versionConnectionName);
+        if (!versionError.isEmpty()) {
+            return fail(errorMessage, QStringLiteral("Unable to read database schema version: %1")
+                                          .arg(versionError));
+        }
+    }
+    // Supported legacy versions 1..4 are migrated in one atomic transaction.
+    if ((!isNewDatabase && schemaVersion == 0) || schemaVersion < 0 || schemaVersion > 5) {
+        return fail(errorMessage, QStringLiteral("Unsupported database schema version: %1")
+                                      .arg(schemaVersion));
+    }
+
+    database_ = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName_);
+    database_.setDatabaseName(resolvedPath);
+    // 2026-09-08 merge 批：驱动级 busy 等待须早于 schema.sql——脚本首段
+    // journal_mode=WAL 等 PRAGMA 就要拿锁，而脚本内的 PRAGMA busy_timeout
+    // 要到执行那一行才生效；两线程并发 open 时先跑的 PRAGMA 撞 BUSY 即整开
+    // 失败。open 前挂选项，锁竞争一律排队（5s ≫ 毫秒级迁移）。
+    database_.setConnectOptions(QStringLiteral("QSQLITE_BUSY_TIMEOUT=5000"));
+    if (!database_.open()) {
+        const QString message = QStringLiteral("Unable to open SQLite database: %1")
+                                    .arg(database_.lastError().text());
+        close();
+        return fail(errorMessage, message);
+    }
+    databasePath_ = resolvedPath;
+
+    if (!initializeSchema(errorMessage) ||
+        (loadDemoSeed &&
+         !executeResourceScript(QStringLiteral(":/database/seed.sql"), errorMessage))) {
+        close();
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseConnection::applyCityDemoSeed(QString* errorMessage)
+{
+    clearError(errorMessage);
+    if (!isOpen()) {
+        return fail(errorMessage, QStringLiteral("Database must be open before loading demo data"));
+    }
+    return executeResourceScript(QStringLiteral(":/database/city_demo_seed.sql"), errorMessage);
+}
+
+bool DatabaseConnection::initializeSchema(QString* errorMessage)
+{
+    QSqlQuery query(database_);
+    for (const auto* pragma : {"PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL",
+                               "PRAGMA synchronous = NORMAL", "PRAGMA busy_timeout = 5000"}) {
+        if (!query.exec(QString::fromLatin1(pragma)))
+            return fail(errorMessage, query.lastError().text());
+    }
+    if (!query.exec(QStringLiteral("BEGIN IMMEDIATE")))
+        return fail(errorMessage, query.lastError().text());
+    const auto rollback = [this, errorMessage](const QString& error) {
+        QSqlQuery cleanup(database_);
+        cleanup.exec(QStringLiteral("ROLLBACK"));
+        return fail(errorMessage, error);
+    };
+    if (!executeResourceScript(QStringLiteral(":/database/schema.sql"), errorMessage, true))
+        return rollback(errorMessage ? *errorMessage : QStringLiteral("Schema migration failed"));
+
+    const QList<QStringList> columns = {
+        {QStringLiteral("stations"), QStringLiteral("city"),
+         QStringLiteral("TEXT CHECK (city IS NULL OR length(trim(city)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("district"),
+         QStringLiteral("TEXT CHECK (district IS NULL OR length(trim(district)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("contact_name"),
+         QStringLiteral("TEXT CHECK (contact_name IS NULL OR length(trim(contact_name)) BETWEEN 1 AND 64)")},
+        {QStringLiteral("stations"), QStringLiteral("contact_phone"),
+         QStringLiteral("TEXT CHECK (contact_phone IS NULL OR (length(contact_phone) = 11 "
+                        "AND contact_phone GLOB '1[3-9]*' AND contact_phone NOT GLOB '*[^0-9]*'))")},
+        {QStringLiteral("orders"), QStringLiteral("telemetry_captured_at"), QStringLiteral("TEXT")},
+        {QStringLiteral("orders"), QStringLiteral("telemetry_power_watts"),
+         QStringLiteral("INTEGER CHECK (telemetry_power_watts IS NULL OR "
+                        "(typeof(telemetry_power_watts) = 'integer' AND telemetry_power_watts > 0))")},
+        {QStringLiteral("orders"), QStringLiteral("stop_reason"),
+         QStringLiteral("TEXT CHECK (stop_reason IS NULL OR stop_reason IN "
+                        "('TARGET_AMOUNT','TARGET_ENERGY','TARGET_DURATION','MANUAL'))")}
+    };
+    for (const auto& column : columns) {
+        if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(column.at(0))))
+            return rollback(query.lastError().text());
+        bool found = false;
+        while (query.next())
+            found = found || query.value(1).toString() == column.at(1);
+        query.finish();
+        if (!found && !query.exec(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
+                                     .arg(column.at(0), column.at(1), column.at(2))))
+            return rollback(query.lastError().text());
+    }
+    // SQLite cannot ALTER an existing CHECK. Rebuild only the notifications
+    // table inside this same transaction; retain IDs, read state, sequence,
+    // and every existing index/trigger. No other table references its IDs.
+    if (!query.exec(QStringLiteral("SELECT sql FROM sqlite_master WHERE type='table' AND name='notifications'")) || !query.next())
+        return rollback(query.lastError().text());
+    const bool legacyNotifications = !query.value(0).toString().contains(QStringLiteral("QUEUE_CALLED"));
+    query.finish();
+    if (legacyNotifications) {
+        QStringList dependentSql;
+        if (!query.exec(QStringLiteral("SELECT sql FROM sqlite_master WHERE tbl_name='notifications' "
+                                       "AND type IN ('index','trigger') AND sql IS NOT NULL")))
+            return rollback(query.lastError().text());
+        while (query.next()) dependentSql << query.value(0).toString();
+        query.finish();
+        if (!query.exec(QStringLiteral("SELECT seq FROM sqlite_sequence WHERE name='notifications'")))
+            return rollback(query.lastError().text());
+        const qint64 oldSequence = query.next() ? query.value(0).toLongLong() : 0;
+        query.finish();
+        QFile schema(QStringLiteral(":/database/schema.sql"));
+        if (!schema.open(QIODevice::ReadOnly | QIODevice::Text))
+            return rollback(QStringLiteral("Unable to read notification migration schema"));
+        QString create;
+        for (const auto& statement : splitSqlStatements(QString::fromUtf8(schema.readAll()))) {
+            if (normalizedSql(statement).startsWith(QStringLiteral("createtableifnotexistsnotifications("))) {
+                create = statement;
+                create.replace(QStringLiteral("IF NOT EXISTS notifications"), QStringLiteral("notifications_v5_upgrade"));
+                break;
+            }
+        }
+        if (create.isEmpty() || !query.exec(create) ||
+            !query.exec(QStringLiteral("INSERT INTO notifications_v5_upgrade(id,user_id,type,title,body,created_at,read_at) "
+                                       "SELECT id,user_id,type,title,body,created_at,read_at FROM notifications")) ||
+            !query.exec(QStringLiteral("DROP TABLE notifications")) ||
+            !query.exec(QStringLiteral("ALTER TABLE notifications_v5_upgrade RENAME TO notifications")))
+            return rollback(QStringLiteral("Unable to migrate notification types"));
+        query.prepare(QStringLiteral("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='notifications'"));
+        query.addBindValue(oldSequence);
+        if (!query.exec()) return rollback(query.lastError().text());
+        for (const auto& sql : dependentSql)
+            if (!query.exec(sql)) return rollback(query.lastError().text());
+    }
+    if (!migrateManagedIndexes(errorMessage))
+        return rollback(errorMessage ? *errorMessage : QStringLiteral("Index migration failed"));
+    if (!query.exec(QStringLiteral("COMMIT")))
+        return rollback(query.lastError().text());
+    return true;
+}
+
+bool DatabaseConnection::migrateManagedIndexes(QString* errorMessage)
+{
+    const QList<QPair<QString, QString>> managedIndexes = {
+        {QStringLiteral("idx_orders_status_created_at"),
+         QStringLiteral("CREATE INDEX idx_orders_status_created_at "
+                        "ON orders(status, created_at DESC, id DESC)")},
+        {QStringLiteral("idx_operation_logs_admin_created_at"),
+         QStringLiteral("CREATE INDEX idx_operation_logs_admin_created_at "
+                        "ON operation_logs(admin_id, created_at DESC, id DESC)")}
+    };
+
+    // initializeSchema already holds BEGIN IMMEDIATE. Do not open a nested
+    // transaction or commit indexes separately from the column/schema upgrade.
+    const auto rollbackWithError = [errorMessage](const QString& message) {
+        return fail(errorMessage, message);
+    };
+
+    for (const auto& managedIndex : managedIndexes) {
+        QSqlQuery definitionQuery(database_);
+        definitionQuery.prepare(QStringLiteral(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?"));
+        definitionQuery.addBindValue(managedIndex.first);
+        if (!definitionQuery.exec()) {
+            return rollbackWithError(QStringLiteral("Unable to inspect database index %1: %2")
+                                         .arg(managedIndex.first,
+                                              definitionQuery.lastError().text()));
+        }
+
+        const bool matches = definitionQuery.next() &&
+                             normalizedSql(definitionQuery.value(0).toString()) ==
+                                 normalizedSql(managedIndex.second);
+        definitionQuery.finish();
+        if (matches) {
+            continue;
+        }
+
+        QSqlQuery migrationQuery(database_);
+        if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS %1")
+                                     .arg(managedIndex.first)) ||
+            !migrationQuery.exec(managedIndex.second)) {
+            return rollbackWithError(QStringLiteral("Unable to rebuild database index %1: %2")
+                                         .arg(managedIndex.first,
+                                              migrationQuery.lastError().text()));
+        }
+    }
+
+    QSqlQuery migrationQuery(database_);
+    if (!migrationQuery.exec(QStringLiteral("DROP INDEX IF EXISTS "
+                                            "idx_chargers_status_updated_at")) ||
+        !migrationQuery.exec(QStringLiteral("PRAGMA user_version = 5"))) {
+        return rollbackWithError(QStringLiteral("Unable to finish database migration: %1")
+                                     .arg(migrationQuery.lastError().text()));
+    }
+    return true;
+}
+
+void DatabaseConnection::close()
+{
+    databasePath_.clear();
+    if (!database_.isValid()) {
+        return;
+    }
+
+    database_.close();
+    database_ = QSqlDatabase();
+    QSqlDatabase::removeDatabase(connectionName_);
+}
+
+bool DatabaseConnection::isOpen() const
+{
+    return database_.isValid() && database_.isOpen();
+}
+
+QString DatabaseConnection::databasePath() const
+{
+    return databasePath_;
+}
+
+QSqlDatabase DatabaseConnection::database() const
+{
+    return database_;
+}
+
+bool DatabaseConnection::executeResourceScript(const QString& resourcePath,
+                                               QString* errorMessage, bool insideTransaction)
+{
+    QFile resource(resourcePath);
+    if (!resource.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return fail(errorMessage,
+                    QStringLiteral("Unable to read database resource %1").arg(resourcePath));
+    }
+
+    const QString script = QString::fromUtf8(resource.readAll());
+    const QStringList statements = splitSqlStatements(script);
+    for (const QString& statement : statements) {
+        // initializeSchema owns the transaction and connection PRAGMAs. Keep
+        // CREATE/INDEX/user_version changes in that same rollback boundary.
+        const QString normalized = normalizedSql(statement);
+        if (insideTransaction &&
+            (normalized == QStringLiteral("beginimmediate") ||
+             normalized == QStringLiteral("commit") ||
+             normalized.startsWith(QStringLiteral("pragmaforeign_keys=")) ||
+             normalized.startsWith(QStringLiteral("pragmajournal_mode=")) ||
+             normalized.startsWith(QStringLiteral("pragmasynchronous=")) ||
+             normalized.startsWith(QStringLiteral("pragmabusy_timeout="))))
+            continue;
+        QSqlQuery query(database_);
+        if (!query.exec(statement)) {
+            const QString message = QStringLiteral("Database initialization failed: %1")
+                                        .arg(query.lastError().text());
+            QSqlQuery rollbackQuery(database_);
+            rollbackQuery.exec(QStringLiteral("ROLLBACK"));
+            return fail(errorMessage, message);
+        }
+    }
+    return true;
+}
+
+} // namespace charging::server

@@ -1,0 +1,561 @@
+/* 充电用户端平台样式（成员3，候选 token —— 合入前需组长评审）
+ *
+ * 设计 token（单一事实来源，与 C++ 代码保持一致）：
+ *   页面底色   #F4F6F8      卡片     #FFFFFF  边框 #E5E9EF  圆角 16
+ *   主色(电动绿) #00B578    按下     #009A66  禁用 #B7E5D2
+ *   「我的」头图渐变 #00A46C → #2BC98A（按下 #00905F → #20B27A）
+ *   「充电」无任务 hero 浅渐变 #EAF9F2 → #E8F3FE
+ *   文本主 #1F2937  次 #6B7280  淡 #9CA3AF
+ *
+ * 状态色 token（语义 × 三形态，全站唯一定义，页面不得另调色值）：
+ *   success 空闲/成功   text #00A76D  soft #EAF9F2  solid #00B578
+ *   warning 占用/待支付 text #D97706  soft #FFF4E0  solid #D97706
+ *   danger  故障/失败   text #DC2626  soft #FDEBEB  solid #DC2626（按下 #B91C1C）
+ *   info    已预约      text #1971C2  soft #E8F3FE  solid #1971C2
+ *   neutral 离线/已完成 text #6B7280  soft #EEF2F6  solid #9CA3AF
+ *   语义映射（桩位）：空闲=success 占用充电中=warning 占用已预约=info
+ *                     故障=danger  离线=neutral。
+ *   刻意区分的双义"充电中"：桩的充电中=占用（warning）；自己订单的充电中
+ *   =进行中的正常会话（success）。两域语义不同，不算不一致。
+ *   soft 用于标签/横幅底色，text 用于浅底深字，solid 用于实心按钮/Toast/徽标
+ *   （配 #FFFFFF 文字）。
+ */
+
+/* ---------- 页面容器 ---------- */
+QWidget#appRoot {
+    background: #F4F6F8;
+}
+
+/* ---------- 文字角色 ---------- */
+QLabel[role="pageTitle"] {
+    font-size: 21px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel[role="sectionTitle"] {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1F2937;
+}
+QLabel[role="subtitle"] {
+    font-size: 14px;
+    color: #1F2937;
+}
+QLabel[role="secondary"] {
+    font-size: 12px;
+    color: #6B7280;
+}
+QLabel[role="caption"] {
+    font-size: 11px;
+    color: #9CA3AF;
+}
+QLabel[role="balance"] {
+    font-size: 34px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel[role="balanceUnit"] {
+    font-size: 16px;
+    font-weight: 600;
+    color: #6B7280;
+}
+QLabel[role="amountPositive"] {
+    font-size: 15px;
+    font-weight: 700;
+    color: #00B578;
+}
+QLabel[role="amountStrong"] {
+    font-size: 16px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel[role="infoValue"] {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1F2937;
+}
+QLabel[role="powerValue"] {
+    font-size: 34px;
+    font-weight: 800;
+    color: #00B578;
+}
+QLabel[role="statValue"] {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel[role="hintWarn"] {
+    font-size: 12px;
+    font-weight: 600;
+    color: #D97706;
+}
+QLabel[role="successCheck"] {
+    font-size: 40px;
+    font-weight: 800;
+    color: #00B578;
+}
+QLabel#uiAvatar {
+    font-size: 28px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #00B578;
+    border-radius: 32px;
+}
+/* 内置头像库渲染为带透明角的圆形 pixmap，此时字母底色必须让位。 */
+QLabel#uiAvatar[hasAvatar="true"] {
+    background: transparent;
+}
+/* 编辑资料页：头像库选择网格 */
+QPushButton#uiAvatarChoice {
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 26px;
+    padding: 0;
+}
+QPushButton#uiAvatarChoice:checked {
+    border-color: #00B578;
+    background: #EAF9F2;
+}
+QPushButton#uiAvatarChoice[defaultAvatar="true"] {
+    background: #00B578;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 800;
+}
+/* 个人中心头图：头像（64 圆）压深色渐变底，文字由头图内规则覆写 */
+QLabel#uiAvatarHub {
+    font-size: 26px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #00B578;
+    border-radius: 32px;
+}
+QLabel#uiAvatarHub[hasAvatar="true"] {
+    background: transparent;
+}
+/* 钱包浮卡内的余额数字：白卡深字（旧版绿底白字横幅已移除） */
+QLabel#balanceLabel {
+    font-size: 22px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLabel#uiBadge[tone="danger"] {
+    background: #DC2626;
+}
+QLabel#uiBadge[tone="warning"] {
+    background: #D97706;
+}
+QLabel#uiBadge[tone="success"] {
+    background: #00B578;
+}
+QLabel#uiBadge[tone="neutral"] {
+    background: #9CA3AF;
+}
+QLabel#uiBadge {
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 9px;
+    padding: 0px;
+}
+QLabel#nicknameLabel {
+    font-size: 17px;
+    font-weight: 800;
+    color: #1F2937;
+}
+QLineEdit#uiNicknameEdit {
+    font-size: 15px;
+    color: #1F2937;
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 10px;
+    padding: 8px 10px;
+    selection-background-color: #00B578;
+}
+QLabel[role="noticeGlyph"] {
+    color: #9CA3AF;
+}
+QLabel#uiNoticeTitle {
+    color: #1F2937;
+}
+QLabel#uiNoticeDescription {
+    color: #6B7280;
+}
+
+/* ---------- 卡片 ---------- */
+QFrame#uiCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+
+/* ---------- 底部操作条（ActionBar：主操作钉底，白底 + 顶部细分割线） ---------- */
+QWidget#uiActionBar {
+    background: #FFFFFF;
+    border-top: 1px solid #E5E9EF;
+}
+QLabel#uiActionCaption {
+    font-size: 12px;
+    color: #6B7280;
+}
+QWidget#uiActionBar QPushButton#uiActionButton {
+    border-radius: 14px;
+    padding: 14px 22px;
+}
+
+/* ---------- 钱包流水：合并为一张记录卡（行间细线，不再一行一卡） ---------- */
+QScrollArea#uiWalletRecords {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QScrollArea#uiWalletRecords > QWidget,
+QScrollArea#uiWalletRecords > QWidget > QWidget {
+    background: transparent;
+}
+QFrame#uiRecordRow {
+    background: transparent;
+    border: none;
+}
+QFrame#uiRecordSeparator {
+    background: #EEF2F6;
+    border: none;
+}
+
+/* ---------- 「我的」页：渐变头图 + 钱包浮卡 + 双格 + 分组列表 ---------- */
+/* 头图整块是一个透明内容的大按钮：电动绿对角渐变，按下加深 */
+QPushButton#uiProfileHeroButton {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #00A46C, stop: 1 #2BC98A);
+    border: none;
+    border-radius: 0px;
+    text-align: left;
+}
+QPushButton#uiProfileHeroButton:pressed {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #00905F, stop: 1 #20B27A);
+}
+/* 头图内文字覆写（白字系，层次靠透明度拉开） */
+QPushButton#uiProfileHeroButton QLabel#nicknameLabel {
+    color: #FFFFFF;
+    font-size: 19px;
+    font-weight: 800;
+}
+QLabel[role="heroPhone"] {
+    color: #D9F3E7;
+    font-size: 12px;
+}
+QLabel[role="heroHint"] {
+    color: #EAFBF3;
+    font-size: 12px;
+    font-weight: 600;
+}
+/* 钱包卡：白底圆角紧贴头图下沿（投影在 C++ 侧用效果完成） */
+QWidget#uiWalletCard {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QPushButton[role="walletStat"] {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    padding: 6px 4px;
+    /* 样式表按钮的 sizeHint 不算子布局：用 min-height 顶起请求高度 */
+    min-height: 64px;
+}
+QPushButton[role="walletStat"]:pressed {
+    background: #F2F5F8;
+}
+QLabel[role="walletGlyph"] {
+    font-size: 21px;
+}
+QLabel[role="walletStatCaption"] {
+    font-size: 12px;
+    color: #6B7280;
+}
+QFrame[role="walletDivider"] {
+    background: #EEF2F6;
+    border: none;
+}
+/* 双格入口卡（我的订单 / 我的预约） */
+QPushButton[role="profileCell"] {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+    text-align: left;
+    /* 样式表按钮的 sizeHint 不算子布局：用 min-height 顶起请求高度 */
+    min-height: 76px;
+}
+QPushButton[role="profileCell"]:pressed {
+    background: #F2F5F8;
+}
+QLabel[role="cellIcon"] {
+    font-size: 26px;
+}
+QLabel[role="cellTitle"] {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1F2937;
+}
+QLabel[role="cellCaption"] {
+    font-size: 12px;
+    color: #9CA3AF;
+}
+QLabel[role="cellChevron"] {
+    font-size: 18px;
+    font-weight: 600;
+    color: #C3CBD6;
+}
+/* 分组列表行：收藏 / 设置（单行成卡，对应路由页由壳承接；迭代 3 收藏行
+   与设置行共用同一选择器组，保证圆角/边距/配色完全一致） */
+QPushButton#openSettingsButton,
+QPushButton#openFavoritesButton {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+    text-align: left;
+    color: #1F2937;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 2px 16px;
+}
+QPushButton#openSettingsButton:pressed,
+QPushButton#openFavoritesButton:pressed {
+    background: #F2F5F8;
+}
+/* 退出登录：置底独立白卡行，全页唯一危险动作 */
+QPushButton#logoutButton {
+    background: #FFFFFF;
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+    color: #DC2626;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton#logoutButton:pressed {
+    background: #FDEBEB;
+    color: #B91C1C;
+}
+
+/* ---------- 「充电」Tab 状态首页：无任务引导（浅渐变 hero） ---------- */
+QWidget#uiChargingHero {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 #EAF9F2, stop: 1 #E8F3FE);
+    border: 1px solid #E5E9EF;
+    border-radius: 16px;
+}
+QLabel#uiHeroGlyph {
+    font-size: 34px;
+}
+QLabel#uiHeroTitle {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1F2937;
+}
+QLabel#uiHeroCaption {
+    font-size: 12px;
+    color: #6B7280;
+}
+
+/* ---------- 按钮 ---------- */
+QPushButton#uiActionButton[variant="primary"] {
+    background: #00B578;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 24px;
+    padding: 12px 22px;
+    font-size: 15px;
+    font-weight: 700;
+}
+QPushButton#uiActionButton[variant="primary"]:pressed {
+    background: #009A66;
+}
+QPushButton#uiActionButton[variant="primary"]:disabled {
+    background: #B7E5D2;
+    color: #F2FBF7;
+}
+
+QPushButton#uiActionButton[variant="secondary"] {
+    background: #FFFFFF;
+    color: #1F2937;
+    border: 1px solid #D5DCE4;
+    border-radius: 24px;
+    padding: 11px 22px;
+    font-size: 14px;
+    font-weight: 600;
+}
+QPushButton#uiActionButton[variant="secondary"]:pressed {
+    background: #EEF2F6;
+}
+QPushButton#uiActionButton[variant="secondary"]:disabled {
+    color: #B7BFC9;
+    border-color: #E5E9EF;
+}
+
+QPushButton#uiActionButton[variant="danger"] {
+    background: #DC2626;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 24px;
+    padding: 12px 22px;
+    font-size: 15px;
+    font-weight: 700;
+}
+QPushButton#uiActionButton[variant="danger"]:pressed {
+    background: #B91C1C;
+}
+QPushButton#uiActionButton[variant="danger"]:disabled {
+    background: #F3B9BC;
+    color: #FDF3F3;
+}
+
+QPushButton#uiActionButton[variant="ghost"] {
+    background: transparent;
+    color: #1F2937;
+    border: none;
+    padding: 8px 12px;
+    font-size: 16px;
+    font-weight: 600;
+}
+QPushButton#uiActionButton[variant="ghost"]:pressed {
+    color: #00B578;
+}
+
+QPushButton#uiActionButton[variant="chip"] {
+    background: #FFFFFF;
+    color: #1F2937;
+    border: 1px solid #D5DCE4;
+    border-radius: 12px;
+    padding: 14px 0px;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton#uiActionButton[variant="chip"]:checked {
+    background: #EAF9F2;
+    color: #00A76D;
+    border: 1px solid #00B578;
+    font-weight: 700;
+}
+QPushButton#uiActionButton[variant="chip"]:pressed {
+    background: #F2F5F8;
+}
+
+/* ---------- 状态标签 ---------- */
+QLabel#uiStatusTag[role="statusTag"] {
+    border-radius: 9px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #EEF2F6;
+    color: #6B7280;
+}
+QLabel#uiStatusTag[tone="success"] {
+    background: #EAF9F2;
+    color: #00A76D;
+}
+QLabel#uiStatusTag[tone="warning"] {
+    background: #FFF4E0;
+    color: #D97706;
+}
+QLabel#uiStatusTag[tone="danger"] {
+    background: #FDEBEB;
+    color: #DC2626;
+}
+QLabel#uiStatusTag[tone="info"] {
+    background: #E8F3FE;
+    color: #1971C2;
+}
+
+/* ---------- 输入框 ---------- */
+QLineEdit {
+    background: #FFFFFF;
+    border: 1px solid #D5DCE4;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 15px;
+    color: #1F2937;
+    selection-background-color: #00B578;
+}
+QLineEdit:focus {
+    border: 1px solid #00B578;
+}
+QLineEdit:disabled {
+    background: #F2F5F8;
+    color: #9CA3AF;
+}
+
+/* ---------- 滚动区 ---------- */
+QScrollArea#uiRecordsScroll {
+    background: transparent;
+    border: none;
+}
+QScrollArea#uiRecordsScroll > QWidget > QWidget {
+    background: transparent;
+}
+
+/* ---------- 订单月度分组表头（token：neutral 系） ---------- */
+QWidget#uiMonthHeader {
+    background: transparent;
+}
+QLabel#uiMonthTitle {
+    color: #6B7280;
+    font-size: 13px;
+    font-weight: 700;
+}
+QLabel#uiMonthSummary {
+    color: #9CA3AF;
+    font-size: 12px;
+}
+QScrollBar:vertical {
+    background: transparent;
+    width: 6px;
+    margin: 4px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #D5DCE4;
+    border-radius: 3px;
+    min-height: 36px;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+    height: 0px;
+}
+
+/* ---------- Toast ---------- */
+QFrame#uiToast {
+    background: #2B3440;
+    border-radius: 10px;
+}
+QFrame#uiToast[tone="success"] {
+    background: #00B578;
+}
+QFrame#uiToast[tone="danger"] {
+    background: #DC2626;
+}
+QFrame#uiToast[tone="warning"] {
+    background: #D97706;
+}
+QLabel#uiToastLabel {
+    color: #FFFFFF;
+    background: transparent;
+}
+
+/* ---------- 加载遮罩 ---------- */
+QBusyIndicator {
+    color: #00B578;
+    background: transparent;
+}
+
+/* ---------- 下拉刷新状态胶囊（PullToRefreshArea） ---------- */
+QLabel#uiPullPill {
+    background: rgba(255, 255, 255, 0.92);
+    color: #4B5563;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 12px;
+}

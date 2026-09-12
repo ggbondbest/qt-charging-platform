@@ -26,6 +26,17 @@ if(BUILD_TESTING)
     list(APPEND _charging_qt_components Test)
 endif()
 
+# The delivered client is QML. Missing runtime/development modules must fail
+# configuration instead of silently producing only the retired Widgets client.
+option(CHARGING_BUILD_QML "Build the production QML client" ON)
+option(CHARGING_BUILD_WIDGETS_CLIENT "Build the legacy Widgets client for regression only" OFF)
+set(CHARGING_HAS_QML OFF)
+if(CHARGING_BUILD_QML)
+    find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
+        COMPONENTS Quick QuickControls2 WebEngineQuick)
+    set(CHARGING_HAS_QML ON)
+endif()
+
 # A minimum version keeps newer local Qt installations usable. The CI build turns
 # CHARGING_PLATFORM_STRICT_QT_VERSION on and therefore compiles with exactly 6.2.4.
 find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED

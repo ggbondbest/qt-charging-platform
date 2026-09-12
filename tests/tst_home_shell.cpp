@@ -1,0 +1,2700 @@
+// ============================================================================
+// tst_home_shell：widgets 壳（HomeShell）级 QtTest 端到端回归二进制。
+// 钉什么：真壳装配（登录态/访客页栈数量）、四 Tab 路由与选中态，以及
+//   「找站→详情→预约确认→预约模块→设置/导航/收藏/消息」全链路的页面状态机。
+// boot 方式：直接构造真实 HomeShell（真服务装配），数据走内置 mock 通道
+//   （带延迟，因此断言普遍用 QTRY_* 轮询而非固定等待）；地图系用例注入
+//   FakeTencentServer 假 HTTP（hold/release 扣包，永不触外网）。
+// 隔离手段：init/cleanup 清四个地图 key 环境变量（无 key = 纯模拟口径）；
+//   收藏（用户键固定 42）与设置持久化经 resetForTesting 清 QSettings，防
+//   跨用例/跨运行泄漏；非模态 QMessageBox 按 objectName 定位，并等
+//   WA_DeleteOnClose 销毁后再走下一步，防陈旧弹窗误命中。
+// 截图：设 CHARGING_SNAPSHOT_DIR 时由 saveSnapshotIfRequested 输出 UI 评审证据。
+// ============================================================================
+#include "charging/client/profile_charging/charging_home_page.h"
+#include "charging/client/profile_charging/charging_page.h"
+#include "charging/client/profile_charging/order_detail_page.h"
+#include "charging/client/profile_charging/order_list_page.h"
+#include "charging/client/profile_charging/profile_edit_page.h"
+#include "charging/client/profile_charging/recharge_page.h"
+#include "charging/client/profile_charging/settlement_page.h"
+#include "charging/client/profile_charging/wallet_service.h"
+#include "charging/client/profile_charging/avatar_library.h"
+#include "charging/client/widgets/action_button.h"
+#include "charging/client/widgets/notice_panel.h"
+#include "charging/client/widgets/top_nav_bar.h"
+#include "pages/station/favorites_page.h"
+#include "pages/station/home_shell.h"
+#include "pages/station/navigation_page.h"
+#include "pages/station/notification_page.h"
+#include "pages/station/reservation_completed_page.h"
+#include "pages/station/reservation_confirm_page.h"
+#include "pages/station/reservation_module_page.h"
+#include "pages/station/reservation_order_page.h"
+#include "pages/station/settings_page.h"
+#include "pages/station/station_detail_page.h"
+#include "pages/station/station_filter_dialog.h"
+#include "pages/station/station_home_page.h"
+#include "services/favorites/favorites_service.h"
+#include "services/favorites/notification_service.h"
+#include "services/map/map_geo_service.h"
+#include "services/reservation/reservation_service.h"
+#include "charging/client/widgets/pull_to_refresh_area.h"
+#include "services/settings/settings_service.h"
+#include "services/station/station_query_service.h"
+#include "fake_tencent_server.h"
+
+#include <QCheckBox>
+#include <QByteArray>
+#include <QComboBox>
+#include <QDateTimeEdit>
+#include <QDialog>
+#include <QDir>
+#include <QFrame>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPointer>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSignalSpy>
+#include <QStackedWidget>
+#include <QtTest>
+
+#include <algorithm>
+
+namespace {
+
+using HomeShell = charging::client::pages::station::HomeShell;
+using FavoritesPage = charging::client::pages::station::FavoritesPage;
+using NavigationPage = charging::client::pages::station::NavigationPage;
+using NotificationPage = charging::client::pages::station::NotificationPage;
+using StationFilterDialog = charging::client::pages::station::StationFilterDialog;
+using ReservationCompletedPage = charging::client::pages::station::ReservationCompletedPage;
+using ReservationConfirmPage = charging::client::pages::station::ReservationConfirmPage;
+using ReservationModulePage = charging::client::pages::station::ReservationModulePage;
+using ReservationOrderPage = charging::client::pages::station::ReservationOrderPage;
+using SettingsPage = charging::client::pages::station::SettingsPage;
+using StationDetailPage = charging::client::pages::station::StationDetailPage;
+using StationHomePage = charging::client::pages::station::StationHomePage;
+using ReservationService = charging::client::services::reservation::ReservationService;
+using ReservationRecord = charging::client::services::reservation::ReservationRecord;
+using FavoritesService = charging::client::services::favorites::FavoritesService;
+using NotificationService = charging::client::services::favorites::NotificationService;
+using StationFilterCriteria = charging::client::services::station::StationFilterCriteria;
+using MapGeoService = charging::client::services::map::MapGeoService;
+using SettingsService = charging::client::services::settings::SettingsService;
+using Vehicle = charging::client::services::settings::Vehicle;
+using charging::testing::FakeTencentServer;
+
+// 供 UI 评审使用的样例用户（新注册用户：昵称 用户+后四位，余额 123.45 元）。
+charging::model::User makeSampleUser()
+{
+    charging::model::User user;
+    user.id = 42;
+    user.phone = QStringLiteral("13912345678");
+    user.nickname = QStringLiteral("用户5678");
+    user.balanceCents = 12345;
+    return user;
+}
+
+// 设置 CHARGING_SNAPSHOT_DIR 时保存页面截图，用于 PR 的 UI 评审证据。
+void saveSnapshotIfRequested(QWidget& widget, const QString& fileName)
+{
+    const QByteArray snapshotDir = qgetenv("CHARGING_SNAPSHOT_DIR");
+    if (snapshotDir.isEmpty()) {
+        return;
+    }
+    const QString directory = QString::fromLocal8Bit(snapshotDir);
+    QDir().mkpath(directory);
+    widget.grab().save(directory + QStringLiteral("/") + fileName);
+}
+
+// 四个底部 Tab 按钮按 objectName 命名约定 "tab_<id>" 查找：widget 侧改名即全线红，顺带钉住命名契约。
+QPushButton* tabButton(QWidget& shell, const QString& id)
+{
+    return shell.findChild<QPushButton*>(QStringLiteral("tab_") + id);
+}
+
+// 等待初始模拟查询完成（模拟通道带延迟，用于驱动加载状态）。
+void waitForStationList(HomeShell& shell)
+{
+    auto* page = shell.findChild<StationHomePage*>();
+    QVERIFY(page != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
+}
+
+// 构造仅带 ID 的站点快照：详情通道会以数据源回查覆盖状态字段。
+charging::model::Station makeStationSnapshot(qint64 id,
+                                             charging::model::StationStatus status
+                                                 = charging::model::StationStatus::Active)
+{
+    charging::model::Station station;
+    station.id = id;
+    station.name = QStringLiteral("测试站点 %1").arg(id);
+    station.address = QStringLiteral("测试地址 %1").arg(id);
+    station.priceCentsPerKwh = 100;
+    station.status = status;
+    return station;
+}
+
+// 下面三个路由页访问器（详情/确认/模块）：页面由 HomeShell 构造期装配、findChild 取回即单例；
+// 缺失走 Q_ASSERT_X 即崩即定位——装配回归要快炸，而不是拖到后面的断言里迷惑地红。
+StationDetailPage* detailPage(HomeShell& shell)
+{
+    auto* detail = shell.findChild<StationDetailPage*>();
+    Q_ASSERT_X(detail != nullptr, "detailPage", "HomeShell must own a StationDetailPage");
+    return detail;
+}
+
+ReservationConfirmPage* confirmPage(HomeShell& shell)
+{
+    auto* page = shell.findChild<ReservationConfirmPage*>();
+    Q_ASSERT_X(page != nullptr, "confirmPage", "HomeShell must own a ReservationConfirmPage");
+    return page;
+}
+
+ReservationModulePage* modulePage(HomeShell& shell)
+{
+    auto* page = shell.reservationModule();
+    Q_ASSERT_X(page != nullptr, "modulePage", "HomeShell must own a ReservationModulePage");
+    return page;
+}
+
+// 非拥有：预约服务经模块页访问器取回（同一实例贯穿详情/确认/模块）。
+ReservationService* reservationService(HomeShell& shell)
+{
+    auto* service = modulePage(shell)->service();
+    Q_ASSERT_X(service != nullptr, "reservationService", "module must hold the injected service");
+    return service;
+}
+
+// 详情页当前全部“预约”按钮（每张充电桩卡一个，非空闲置灰）。
+QList<QPushButton*> reserveButtons(StationDetailPage& detail)
+{
+    QList<QPushButton*> buttons;
+    const auto all = detail.findChildren<QPushButton*>();
+    for (auto* button : all) {
+        if (button->objectName() == QStringLiteral("detailReserveButton")) {
+            buttons.append(button);
+        }
+    }
+    return buttons;
+}
+
+int enabledCount(const QList<QPushButton*>& buttons)
+{
+    int count = 0;
+    for (const auto* button : buttons) {
+        count += button->isEnabled() ? 1 : 0;
+    }
+    return count;
+}
+
+QPushButton* firstEnabledReserveButton(StationDetailPage& detail)
+{
+    for (auto* button : reserveButtons(detail)) {
+        if (button->isEnabled()) {
+            return button;
+        }
+    }
+    return nullptr;
+}
+
+// 打开站点详情并等待桩列表就绪（页面切到详情路由）。
+void openDetailAndWait(HomeShell& shell, qint64 stationId, int distanceMeters)
+{
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+    detail->openStation(makeStationSnapshot(stationId), distanceMeters);
+    pageStack->setCurrentWidget(detail);
+    QTest::qWait(20);
+    QVERIFY(detail->viewState() == StationDetailPage::DetailState::Loading
+            || detail->viewState() == StationDetailPage::DetailState::Ready);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+}
+
+// 从“我的”Tab 入口进入“我的预约”模块路由页（成员 3 ProfilePage
+// “账号与服务”卡片中的按钮行）。
+void openModuleViaProfileTab(HomeShell& shell)
+{
+    tabButton(shell, QStringLiteral("profile"))->click();
+    QTest::qWait(20);
+    auto* button = shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(button != nullptr);
+    button->click();
+}
+
+// 向壳内共享的 SettingsService 添加测试车辆（名额制预约前置条件）。
+qint64 addVehicle(HomeShell& shell, const QString& plate,
+                  charging::model::ChargerType type = charging::model::ChargerType::Fast)
+{
+    Vehicle vehicle;
+    vehicle.plate = plate;
+    vehicle.brandModel = QStringLiteral("测试品牌");
+    vehicle.batteryKwh = 60;
+    vehicle.connectorType = type;
+    return shell.settingsService()->addVehicle(vehicle);
+}
+
+// 非模态提示框按钮查找（按文案）。
+QPushButton* promptButton(QMessageBox* prompt, const QString& text)
+{
+    if (prompt == nullptr) {
+        return nullptr;
+    }
+    const auto buttons = prompt->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->text() == text) {
+            return button;
+        }
+    }
+    return nullptr;
+}
+
+// 清空模拟预约记录：解除名额占用（车辆数 ≥ 1 时），便于演示成功路径。
+void clearReservations(HomeShell& shell)
+{
+    reservationService(shell)->setMockRecords({});
+}
+
+// 点击空闲桩预约按钮，断言路由至独立预约确认页面（满足条件路径）。
+void clickReserveAndWaitConfirm(HomeShell& shell)
+{
+    auto* detail = detailPage(shell);
+    auto* enabledButton = firstEnabledReserveButton(*detail);
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentIndex(), 5);
+}
+
+// —— 腾讯地图接入用例夹具（成员 2）：独立页面 + 假 HTTP 服务，
+//    不动 HomeShell 装配（装配路径已由 goCharge/settings 等用例覆盖）。
+
+charging::model::Station makeMapStation()
+{
+    auto station = makeStationSnapshot(1);
+    station.latitude = 22.55;
+    station.longitude = 113.95;
+    return station;
+}
+
+charging::model::Charger makeMapCharger()
+{
+    charging::model::Charger charger;
+    charger.id = 11;
+    charger.code = QStringLiteral("A01");
+    charger.type = charging::model::ChargerType::Fast;
+    charger.powerWatts = 120000;
+    return charger;
+}
+
+ReservationRecord makeMapRecord()
+{
+    ReservationRecord record;
+    record.stationName = QStringLiteral("测试站点 1");
+    record.chargerCode = QStringLiteral("A01");
+    record.chargerSpec = QStringLiteral("直流快充 · 120kW");
+    record.distanceMeters = 850; // 模拟口径，升级后应变为真实距离
+    record.startAtUtc = QDateTime::currentDateTimeUtc().addSecs(30 * 60);
+    record.hasStationLocation = true;
+    record.stationLatitude = 22.55;
+    record.stationLongitude = 113.95;
+    return record;
+}
+
+// 矩阵成功响应：真实行驶 4321 m / 600 s（= 10 分钟车程 + 5 分钟准备 = 15）。
+const QByteArray kMapMatrixJson = QByteArrayLiteral(R"({
+    "status": 0,
+    "result": {"rows": [{"elements": [{"distance": 4321, "duration": 600}]}]}
+})");
+
+// 路线成功响应（真实接口结构 result.routes[0]）：5120 m / 12 min / 3 段
+//（口径：路线 duration 为分钟）。
+const QByteArray kMapRouteJson = QByteArrayLiteral(R"({
+    "status": 0,
+    "result": {"routes": [{
+        "mode": "DRIVING",
+        "distance": 5120,
+        "duration": 12,
+        "steps": [
+            {"instruction": "沿滨海大道直行约2000米", "distance": 2000},
+            {"instruction": "在路口右转进入科苑北路", "distance": 800},
+            {"instruction": "到达目的地附近", "distance": 10}
+        ]}]}
+})");
+
+// 迭代 3 收藏持久化清场：壳用例登录用户键固定为 "42"（makeSampleUser().id），
+// 用例开始前清掉历史残留（含上一次运行落盘），避免跨用例/跨运行泄漏。
+void favoritesServiceReset()
+{
+    FavoritesService service;
+    service.setCurrentUser(QStringLiteral("42"));
+    service.resetForTesting();
+}
+
+} // namespace
+
+class HomeShellTest final : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    // 地图接入用例会在用例内设置 key，统一在前后清除，保证所有用例
+    // 默认走“无 key = 纯模拟”口径（与 CI 环境一致，防用例间泄漏；
+    // 两个环境变量名都要清，真机开发者通常已导出新名）。
+    void init()
+    {
+        qputenv("TENCENT_MAP_API_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_SECRET", "");
+    }
+    void cleanup()
+    {
+        qputenv("TENCENT_MAP_API_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_KEY", "");
+        qputenv("TENCENT_MAP_SECRET_KEY", "");
+        qputenv("CHARGING_TENCENT_MAP_SECRET", "");
+    }
+
+    // —— 任务 #2：导航外壳 ——
+    void loggedInShellRendersTopBarWithUser();
+    void loggedOutShellShowsLoginButtonAndEmits();
+    void startsOnStationTab();
+    void togglesBetweenTabs();
+    void avatarOpensProfilePage();
+    void profilePageRedesignKeepsUserAndAddsFunctionSlots();
+    // —— 「充电」Tab 状态首页 / 「我的」页新版式（渐变头图+钱包浮卡+双格） ——
+    void chargingTabRendersLiveSessionCard();
+    void chargingTabPullSettlesWhenReservationFails(); // PR #33 评审 P2-1 回归
+    void profileWalletAndReservationCellsRoute();
+    // —— 任务 #7：找站业务 ——
+    void initialSearchGoesThroughLoadingToResultList();
+    void topBarSearchFiltersStationList();
+    void noMatchShowsEmptyState();
+    void errorStateOffersFriendlyRetry();
+    void sortAndPriceFiltersRefreshInstantly();
+    void cardClickOpensDetailRouteAndBackReturns();
+    // —— 任务 #12：站点详情业务 ——
+    void detailPageShowsChargersWithFaultAndReservation();
+    void detailEmptyAndOfflineStates();
+    void detailInvalidRouteShowsErrorAndBackHome();
+    // —— 任务 #17 迭代：预约确认页面 / 预约模块 ——
+    void confirmPageOpensWithReservationContext();
+    void confirmSlotGatingRecommendedAndOverLimit();
+    void confirmCloseReturnsToDetail();
+    void confirmSubmitPromptsGoChargeThenOrderTab();
+    void confirmFailureKeepsPageOpenForRetry();
+    void slotQuotaFollowsVehicleCountWithPerVehicleUniqueness();
+    void fullQuotaBlocksNewConfirmWithPrompt();
+    void reservationWithoutLoginPromptsAndRoutesToLogin();
+    void reservationModuleShowsOrderAndCompletedSubTabs();
+    void cancelReservationSwitchesToCompletedTab();
+    void reservationEmptyAndErrorStates();
+    void countdownPhasesThresholdsAndExpiryTransition();
+    void lateReservationAutoCancelledAndFlaggedInHistory();
+    void moduleRouteBackReturnsToProfile();
+    // —— 全端整合回归：充电中订单路由、支付完成回订单 Tab、充值回跳、空态布局 ——
+    void chargingOrderRoutesToChargingPage();
+    void settlementDoneReturnsToFilteredOrderTab();
+    void rechargeFromSettlementReturnsAndUnlocksPay();
+    void emptyOrderListNoticeFillsListArea();
+    // —— 头像库回归：编辑资料页网格选择 → UPDATE_USER_INFO → 全站渲染 ——
+    void avatarChoicePersistsAndRendersLibraryAvatar();
+    // —— 订单月度分组：时间倒序 + 月表头（单数/金额/电量汇总） ——
+    void orderListGroupsRowsByMonthWithTotals();
+    // —— 任务 #17 二次迭代：设置页 / 车辆管理 / 导航引导 ——
+    void noVehiclePromptRoutesToSettings();
+    void settingsRouteFromProfileCard();
+    void settingsVehicleDialogCrudAndQuota();
+    void protectionSwitchGatedByPasswordDialog();
+    void goChargePromptNavigatesAndBackReturnsToOrderTab();
+    // —— 腾讯地图接入：确认页距离矩阵升级 / 导航页真实路线（模拟兜底） ——
+    void confirmPageUpgradesSlotWithRealMatrix();
+    void confirmPageKeepsUserEditedSlotWhenMatrixArrives();
+    void confirmPageFallsBackWithToastOnMatrixFailure();
+    void navigationPageSwapsToRealRoute();
+    void navigationPageKeepsMockRouteOnFailure();
+    // —— 迭代 3：高级筛选 / 收藏 / 消息通知（壳级接线回归） ——
+    void navFilterAndBellFollowStationContext();
+    void advancedFilterDialogRoundTripAndDedup();
+    void advancedFilterNoMatchShowsDedicatedEmptyState();
+    void emptyStateResetClearsPriceFilterAndKeepsKeyword();
+    void filterProjectionCombinesGroupsAndDistance();
+    void starToggleFeedsFavoritesPageAndPersists();
+    void favoritesPageUnfavoriteEmptyAndBack();
+    void favoritesPageKeepsLoadingWhileQueryInFlight();
+    void notificationPageLinksSettingsSwitches();
+    void reservationCancelBridgesToNotice();
+    void guestShellGatesFavoritesAndNotificationsToLogin();
+};
+
+// ---- 顶栏登录态契约：头像可见、登录按钮隐藏、搜索框在场（任务 #2 壳 ↔ TopNavBar 装配） ----
+void HomeShellTest::loggedInShellRendersTopBarWithUser()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar != nullptr);
+    QVERIFY(topBar->hasUser());
+
+    auto* loginButton = shell.findChild<QPushButton*>(QStringLiteral("navLoginButton"));
+    auto* avatarButton = shell.findChild<QPushButton*>(QStringLiteral("navAvatarButton"));
+    auto* searchLineEdit = shell.findChild<QLineEdit*>(QStringLiteral("navSearchLineEdit"));
+    QVERIFY(loginButton != nullptr);
+    QVERIFY(avatarButton != nullptr);
+    QVERIFY(searchLineEdit != nullptr);
+    // 已登录：右侧显示头像、隐藏登录按钮；搜索框在中间。
+    QVERIFY(loginButton->isHidden());
+    QVERIFY(!avatarButton->isHidden());
+
+    waitForStationList(shell);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_station.png"));
+}
+
+// ---- 顶栏未登录态：登录按钮可见 + 点击发 loginRequested（登录跳转由宿主承担，壳只发信号） ----
+void HomeShellTest::loggedOutShellShowsLoginButtonAndEmits()
+{
+    // 未登录进入首页：右上角必须显示登录按钮（规格异常路径）。
+    HomeShell shell;
+
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar != nullptr);
+    QVERIFY(!topBar->hasUser());
+
+    QSignalSpy loginSpy(&shell, &HomeShell::loginRequested);
+    auto* loginButton = shell.findChild<QPushButton*>(QStringLiteral("navLoginButton"));
+    auto* avatarButton = shell.findChild<QPushButton*>(QStringLiteral("navAvatarButton"));
+    QVERIFY(loginButton != nullptr);
+    QVERIFY(!loginButton->isHidden());
+    QVERIFY(avatarButton->isHidden());
+
+    loginButton->click();
+    QCOMPARE(loginSpy.count(), 1);
+}
+
+// ---- 页栈组成钉死：登录态 homePageStack 必须恰有 17 页（新增路由页不登记即红）；
+//      启动落「找站」且四个 Tab 按钮恰好一个选中 ----
+void HomeShellTest::startsOnStationTab()
+{
+    HomeShell shell(makeSampleUser());
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* stationTab = tabButton(shell, QStringLiteral("station"));
+    auto* orderTab = tabButton(shell, QStringLiteral("order"));
+    auto* chargingTab = tabButton(shell, QStringLiteral("charging"));
+    auto* profileTab = tabButton(shell, QStringLiteral("profile"));
+    QVERIFY(pageStack != nullptr);
+    QVERIFY(stationTab != nullptr);
+    QVERIFY(orderTab != nullptr);
+    QVERIFY(chargingTab != nullptr);
+    QVERIFY(profileTab != nullptr);
+    // 4 个 Tab 页 + 详情/预约确认/预约模块路由页（成员 2）
+    // + 成员 3 整合路由页 5 个（订单详情/结算/充值/编辑资料/充电过程）
+    // + 设置页 + 导航页（任务 #17 二次迭代，登录态索引 12/13）
+    // + 钱包路由页（「我的」钱包卡进入）
+    // + 消息通知页 + 收藏夹页（迭代 3，追加栈尾，登录态索引 15/16）= 17。
+    QCOMPARE(pageStack->count(), 17);
+
+    // 登录后默认落在“找站”（首页）。
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(stationTab->isChecked());
+    QVERIFY(!orderTab->isChecked());
+    QVERIFY(!chargingTab->isChecked());
+    QVERIFY(!profileTab->isChecked());
+}
+
+// ---- 四 Tab 互切：按序点击直达对应栈索引（订单1/充电2/我的3/找站0），被点即选中且任意时刻恰一个选中态 ----
+void HomeShellTest::togglesBetweenTabs()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* stationTab = tabButton(shell, QStringLiteral("station"));
+    auto* orderTab = tabButton(shell, QStringLiteral("order"));
+    auto* chargingTab = tabButton(shell, QStringLiteral("charging"));
+    auto* profileTab = tabButton(shell, QStringLiteral("profile"));
+    QVERIFY(pageStack != nullptr);
+
+    struct Expectation
+    {
+        QPushButton* button;
+        int index;
+    };
+
+    const QList<Expectation> expectations = {
+        {orderTab, 1}, {chargingTab, 2}, {profileTab, 3}, {stationTab, 0}, {orderTab, 1},
+    };
+    for (const auto& expectation : expectations) {
+        expectation.button->click();
+        QCOMPARE(pageStack->currentIndex(), expectation.index);
+        QVERIFY(expectation.button->isChecked());
+        // 同一时刻只允许一个 Tab 处于选中态。
+        const int checkedCount = stationTab->isChecked() + orderTab->isChecked()
+            + chargingTab->isChecked() + profileTab->isChecked();
+        QCOMPARE(checkedCount, 1);
+    }
+
+    orderTab->click();
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order.png"));
+    chargingTab->click();
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_charging.png"));
+    profileTab->click();
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_profile.png"));
+}
+
+void HomeShellTest::avatarOpensProfilePage()
+{
+    // 已登录点击顶部头像 → 跳转个人中心（“我的”Tab）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* avatarButton = shell.findChild<QPushButton*>(QStringLiteral("navAvatarButton"));
+    QVERIFY(avatarButton != nullptr);
+
+    avatarButton->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+}
+
+// ---- 整合回归：“我的”Tab 换成 ProfilePage 中心页后，旧测试锚点（昵称/余额/预约入口/
+//      logoutRequested）语义不变——重构不得静默改 objectName 或断掉退出信号 ----
+void HomeShellTest::profilePageRedesignKeepsUserAndAddsFunctionSlots()
+{
+    // 全端整合：登录态“我的”Tab 由成员 3 的 ProfilePage 中心页承接（取代
+    // 任务 #17 迭代期的临时个人中心）。身份/余额/预约入口/退出登录锚点
+    // 语义保持；占位功能卡片由真实的订单四宫格角标与资料/钱包入口取代。
+    HomeShell shell(makeSampleUser());
+
+    QSignalSpy logoutSpy(&shell, &HomeShell::logoutRequested);
+    tabButton(shell, QStringLiteral("profile"))->click();
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentIndex(), 3);
+
+    auto* nicknameLabel = shell.findChild<QLabel*>(QStringLiteral("nicknameLabel"));
+    auto* balanceLabel = shell.findChild<QLabel*>(QStringLiteral("balanceLabel"));
+    QVERIFY(nicknameLabel != nullptr);
+    QVERIFY(balanceLabel != nullptr);
+    QVERIFY(nicknameLabel->text().contains(QStringLiteral("用户5678")));
+    QVERIFY(balanceLabel->text().contains(QStringLiteral("123.45")));
+
+    // “我的预约”入口保留测试锚点，点击经壳路由至预约模块。
+    auto* reservationsEntry =
+        shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(reservationsEntry != nullptr);
+
+    // 退出登录：红色危险文案（全局 QSS #logoutButton），点击发 logoutRequested。
+    auto* logoutButton = shell.findChild<QPushButton*>(QStringLiteral("logoutButton"));
+    QVERIFY(logoutButton != nullptr);
+    QCOMPARE(logoutButton->text(), QStringLiteral("退出登录"));
+    logoutButton->click();
+    QCOMPARE(logoutSpy.count(), 1);
+}
+
+void HomeShellTest::chargingTabRendersLiveSessionCard()
+{
+    // 「充电」Tab 现为状态首页（ChargingHomePage）：种子数据有一笔充电中
+    // 订单，进入后应渲染实时充电卡（功率/电量/时长/停止充电）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    tabButton(shell, QStringLiteral("charging"))->click();
+    QCOMPARE(pageStack->currentIndex(), 2);
+    auto* homePage = shell.findChild<charging::client::ChargingHomePage*>();
+    QVERIFY(homePage != nullptr);
+    QCOMPARE(pageStack->currentWidget(), homePage);
+
+    // 充电卡异步渲染（mock 450ms 延迟）：等首页自己的“停止充电”出现
+    // （注意限定在 homePage 内搜索——路由页 11 的 ChargingPage 也有同名按钮）。
+    QPushButton* stopButton = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&]() {
+            for (auto* button : homePage->findChildren<QPushButton*>()) {
+                if (button->text() == QStringLiteral("停止充电")) {
+                    stopButton = button;
+                    return true;
+                }
+            }
+            return false;
+        }(),
+        3000);
+    QVERIFY(stopButton != nullptr);
+    QTest::qWait(100); // 布局激活后再截图
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_charging_tab.png"));
+}
+
+void HomeShellTest::chargingTabPullSettlesWhenReservationFails()
+{
+    // PR #33 评审 P2-1 回归：下拉刷新的订单/预约两路各自"落定"（成功或失败）
+    // 才收胶囊。修复前页面未接 ReservationService::listFailed——订单成功 +
+    // 预约失败的组合会让胶囊卡死在 Refreshing（本页不轮询订单，无自愈路径）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    tabButton(shell, QStringLiteral("charging"))->click();
+    auto* homePage = shell.findChild<charging::client::ChargingHomePage*>();
+    QVERIFY(homePage != nullptr);
+    auto* pull = homePage->findChild<charging::client::PullToRefreshArea*>();
+    QVERIFY(pull != nullptr);
+
+    QTest::qWait(1100); // 让进页 showEvent 的两路请求（mock 450ms/路）先落定
+
+    reservationService(shell)->setSimulateFailure(true); // 下一次预约请求走 listFailed
+    pull->setRefreshing(true);                           // 等价于真实手势触发后的组件态
+    QMetaObject::invokeMethod(pull, "refreshRequested"); // 触发页面刷新入口
+
+    QCOMPARE(pull->state(), charging::client::PullToRefreshArea::State::Refreshing);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        pull->state() == charging::client::PullToRefreshArea::State::Collapsed, 4000);
+}
+
+void HomeShellTest::profileWalletAndReservationCellsRoute()
+{
+    // 「我的」页新版式：钱包浮卡余额列 → 钱包路由页（栈尾索引 14），
+    // 我的预约格 → 预约模块页（索引 6）；顶部导航返回回「我的」Tab。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    tabButton(shell, QStringLiteral("profile"))->click();
+    QTest::qWait(150); // 布局激活后再截图/点按钮
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_profile.png"));
+
+    // 余额列是第一个 role=walletStat 按钮（余额/充值/充值记录三列）。
+    QPushButton* balanceStat = nullptr;
+    for (auto* button : shell.findChildren<QPushButton*>()) {
+        if (button->property("role").toString() == QLatin1String("walletStat")) {
+            balanceStat = button;
+            break;
+        }
+    }
+    QVERIFY(balanceStat != nullptr);
+    balanceStat->click();
+    QCOMPARE(pageStack->currentIndex(), 14);
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+
+    // 我的预约格（保留 openReservationsButton 锚点）→ 预约模块路由页。
+    auto* reservationsCell =
+        shell.findChild<QPushButton*>(QStringLiteral("openReservationsButton"));
+    QVERIFY(reservationsCell != nullptr);
+    reservationsCell->click();
+    QCOMPARE(pageStack->currentIndex(), 6);
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+}
+
+// ---- 进页即检索的加载态机：Loading（同步可断言）→ mock 回包 → List 6 站；
+//      站点总数是后续所有筛选/详情用例的口径基准 ----
+void HomeShellTest::initialSearchGoesThroughLoadingToResultList()
+{
+    // 进入页面即发起检索：先加载态，模拟数据返回后展示列表。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+
+    auto* page = shell.findChild<StationHomePage*>();
+    QVERIFY(page != nullptr);
+    // show 后同步读取即可断 Loading（mock 通道自带延迟），落 List 交给 QTRY 轮询。
+    QCOMPARE(page->viewState(), StationHomePage::ViewState::Loading);
+
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
+    // 模拟数据共 6 个站点（含离线站与无桩站，驱动详情页边界状态演示）。
+    QCOMPARE(page->stationCardCount(), 6);
+}
+
+// ---- 关键词检索走顶栏公共搜索框（页内不再私建输入框）：回车触发重查，命中数与 keyword 回显 ----
+void HomeShellTest::topBarSearchFiltersStationList()
+{
+    // 地址搜索走顶部导航公共组件的搜索框，不再另建输入框。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto* page = shell.findChild<StationHomePage*>();
+    auto* searchLineEdit = shell.findChild<QLineEdit*>(QStringLiteral("navSearchLineEdit"));
+    QVERIFY(searchLineEdit != nullptr);
+
+    searchLineEdit->setText(QStringLiteral("科技园"));
+    QTest::keyClick(searchLineEdit, Qt::Key_Return);
+
+    // 触发检索 → 加载态 → 命中 1 条。
+    QCOMPARE(page->viewState(), StationHomePage::ViewState::Loading);
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
+    QCOMPARE(page->stationCardCount(), 1);
+    QCOMPARE(page->currentKeyword(), QStringLiteral("科技园"));
+}
+
+// ---- 关键词无命中 → Empty 态（不是 Error、也不残留旧列表） ----
+void HomeShellTest::noMatchShowsEmptyState()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto* page = shell.findChild<StationHomePage*>();
+    page->search(QStringLiteral("不存在的地方"));
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::Empty, 3000);
+}
+
+// ---- 异常分支：服务层注错（setSimulateFailure）→ Error 态；撤错后 retrySearch 回 List ----
+void HomeShellTest::errorStateOffersFriendlyRetry()
+{
+    // 异常分支：服务报错时列表区展示错误提示；重试成功后回到列表。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto* page = shell.findChild<StationHomePage*>();
+    page->service()->setSimulateFailure(true);
+    page->search(QStringLiteral("充电"));
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::Error, 3000);
+
+    page->service()->setSimulateFailure(false);
+    QMetaObject::invokeMethod(page, "retrySearch");
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
+    QVERIFY(page->stationCardCount() > 0);
+}
+
+// ---- 排序/电价筛选是本地投影：不发请求（点完仍 List、无加载往返），首卡与命中数按 mock 数据钉死 ----
+void HomeShellTest::sortAndPriceFiltersRefreshInstantly()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto* page = shell.findChild<StationHomePage*>();
+    auto* sortAvailable = shell.findChild<QPushButton*>(QStringLiteral("sortAvailableButton"));
+    auto* sortDistance = shell.findChild<QPushButton*>(QStringLiteral("sortDistanceButton"));
+    auto* priceCombo = shell.findChild<QComboBox*>(QStringLiteral("priceFilterComboBox"));
+    QVERIFY(sortAvailable != nullptr);
+    QVERIFY(sortDistance != nullptr);
+    QVERIFY(priceCombo != nullptr);
+
+    // 空闲优先：available 最高的是后海城市广场站（id 5，空 7/12）。
+    sortAvailable->click();
+    QCOMPARE(page->viewState(), StationHomePage::ViewState::List); // 本地投影：即时生效
+    QCOMPARE(page->visibleStationIds().constFirst(), qint64(5));
+
+    // 距离最近：第一张卡应为科技园充电驿站（id 1，850m）。
+    sortDistance->click();
+    QCOMPARE(page->viewState(), StationHomePage::ViewState::List);
+    QCOMPARE(page->visibleStationIds().constFirst(), qint64(1));
+
+    // 电价筛选 ≤ ¥1.00：模拟数据中 98/86/92 三条命中。
+    priceCombo->setCurrentIndex(1);
+    QCOMPARE(page->stationCardCount(), 3);
+
+    priceCombo->setCurrentIndex(0); // 全部电价
+    QCOMPARE(page->stationCardCount(), 6);
+}
+
+// ---- 卡片→详情路由（索引 4）双向契约：路由带快照信息区立即可见、桩列表异步 Ready；
+//      返回按钮仅路由页出现；从详情点当前 Tab 也必须能回列表（重复点击不被去重吞掉） ----
+void HomeShellTest::cardClickOpensDetailRouteAndBackReturns()
+{
+    // 站点卡片点击 → 详情路由页（任务 #12）；顶部导航“返回”回找站列表。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    QTest::qWait(20); // 让窗口完成映射，鼠标事件落在真实几何上。
+    waitForStationList(shell);
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* page = shell.findChild<StationHomePage*>();
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar != nullptr);
+    auto* card = page->stationCardAt(0);
+    QVERIFY(card != nullptr);
+
+    QTest::mouseClick(card, Qt::LeftButton);
+    QCOMPARE(pageStack->currentIndex(), 4);
+
+    // 路由携带站点快照：信息区立即可见，桩列表经加载态后就绪。
+    auto* detail = detailPage(shell);
+    auto* nameLabel = shell.findChild<QLabel*>(QStringLiteral("detailNameLabel"));
+    QVERIFY(nameLabel != nullptr);
+    QVERIFY(!nameLabel->text().isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail.png"));
+
+    // 返回按钮复用全局顶部导航（进入详情显示、返回列表收起）。
+    auto* backButton = shell.findChild<QPushButton*>(QStringLiteral("navBackButton"));
+    QVERIFY(backButton != nullptr);
+    QVERIFY(backButton->isVisible());
+    backButton->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(!topBar->isBackVisible());
+
+    // 详情页内点击“找站”Tab 也应能回列表（重复点击当前 Tab 不被去重吞掉）。
+    QTest::mouseClick(page->stationCardAt(0), Qt::LeftButton);
+    QCOMPARE(pageStack->currentIndex(), 4);
+    QVERIFY(backButton->isVisible());
+    tabButton(shell, QStringLiteral("station"))->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(!topBar->isBackVisible());
+}
+
+// ---- 详情正常态：桩卡数/空闲汇总与列表页口径一致；置灰按钮带 tooltip 且点击无效；
+//      空闲桩点击只发 reservationRequested 信号、不自行跳转（拦截决策归壳） ----
+void HomeShellTest::detailPageShowsChargersWithFaultAndReservation()
+{
+    // 正常态：充电桩卡片列表 + 故障视觉标记 + 预约入口按钮。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    detail->openStation(makeStationSnapshot(1), 850);
+    QCOMPARE(detail->viewState(), StationDetailPage::DetailState::Loading);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    pageStack->setCurrentIndex(4); // 让详情页成为当前页（截图取证）。
+    QTest::qWait(20);
+    // id1：10 桩，空闲 3/共 10（与列表页空位数一致）。
+    QCOMPARE(detail->chargerCardCount(), 10);
+    auto* summary = shell.findChild<QLabel*>(QStringLiteral("detailChargerSummaryLabel"));
+    QVERIFY(summary != nullptr);
+    QVERIFY(summary->text().contains(QStringLiteral("空闲 3")));
+
+    // 故障桩卡片带红色标记属性（页面局部样式驱动视觉）。
+    bool sawFaultCard = false;
+    const auto frames = detail->findChildren<QFrame*>();
+    for (const auto* frame : frames) {
+        if (frame->property("isChargerCard").toBool()
+            && frame->property("chargerFault").toBool()) {
+            sawFaultCard = true;
+            break;
+        }
+    }
+    QVERIFY(sawFaultCard);
+
+    // 预约入口（任务 #17）：所有桩都有按钮，仅空闲可点；非空闲置灰。
+    const auto buttons = reserveButtons(*detail);
+    QCOMPARE(buttons.size(), 10);
+    QCOMPARE(enabledCount(buttons), 3); // id1：空闲 3
+    for (const auto* button : buttons) {
+        if (!button->isEnabled()) {
+            QVERIFY(!button->toolTip().isEmpty()); // 置灰需说明原因
+        }
+    }
+
+    QSignalSpy reservationSpy(detail, &StationDetailPage::reservationRequested);
+    QPushButton* disabledButton = nullptr;
+    QPushButton* enabledButton = nullptr;
+    for (auto* button : buttons) {
+        if (button->isEnabled() && enabledButton == nullptr) {
+            enabledButton = button;
+        } else if (!button->isEnabled() && disabledButton == nullptr) {
+            disabledButton = button;
+        }
+    }
+    QVERIFY(disabledButton != nullptr);
+    disabledButton->click(); // 置灰不可点击：不触发任何交互
+    QCOMPARE(reservationSpy.count(), 0);
+
+    // 空闲桩点击 → 发出预约请求信号（壳内名额/车辆/登录拦截分别由
+    // fullQuotaBlocksNewConfirmWithPrompt 等用例覆盖）。
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+    QCOMPARE(reservationSpy.count(), 1);
+    // 未跳转确认页（仍停留在详情页路由）。
+    QCOMPARE(pageStack->currentIndex(), 4);
+
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_chargers.png"));
+}
+
+// ---- 详情两个边界态：无桩站→页内空提示不留白；离线站→横幅+“已离线”标签（均由数据源驱动） ----
+void HomeShellTest::detailEmptyAndOfflineStates()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    // 空数据：无桩站点 → 列表区“暂无充电桩”，页面不留大片空白。
+    detail->openStation(makeStationSnapshot(6), 3800);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    QCOMPARE(detail->chargerCardCount(), 0);
+    QVERIFY(detail->chargerEmptyVisible());
+    pageStack->setCurrentIndex(4);
+    QTest::qWait(20); // 等待重绘，截图作为 UI 评审证据。
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_empty.png"));
+
+    // 站点离线：信息状态 + 醒目横幅（数据源驱动）。
+    detail->openStation(makeStationSnapshot(4), 2650);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Ready, 3000);
+    QVERIFY(detail->offlineBannerVisible());
+    auto* statusTag = shell.findChild<QLabel*>(QStringLiteral("detailStatusTag"));
+    QVERIFY(statusTag != nullptr);
+    QVERIFY(statusTag->text().contains(QStringLiteral("已离线")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_detail_offline.png"));
+}
+
+// ---- 非法路由入参兜底：站点 id=0 → Error 态 + “返回首页”可回找站（不是白屏或卡死） ----
+void HomeShellTest::detailInvalidRouteShowsErrorAndBackHome()
+{
+    // 无站点 ID / ID 非法：错误提示 + “返回首页”回到找站列表。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* detail = detailPage(shell);
+
+    detail->openStation(makeStationSnapshot(0), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(detail->viewState() == StationDetailPage::DetailState::Error, 3000);
+
+    QPushButton* backHomeButton = nullptr;
+    const auto buttons = detail->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->text() == QStringLiteral("返回首页")) {
+            backHomeButton = button;
+            break;
+        }
+    }
+    QVERIFY(backHomeButton != nullptr);
+    backHomeButton->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+}
+
+// ---- 确认页带上下文开页（成功前置：登录+有车+名额未满）：车辆下拉默认选中、
+//      推荐时段（距离→车程公式）与预估费用（电价×时长）全部预填正确 ----
+void HomeShellTest::confirmPageOpensWithReservationContext()
+{
+    // 任务 #17 二次迭代：满足预约条件（已登录 + 有车辆 + 名额未满）→
+    // 路由至独立预约确认页面，展示站点/桩编号/规格/车辆下拉/起止时间/推荐时段。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+
+    auto* page = confirmPage(shell);
+    auto* stationLabel = shell.findChild<QLabel*>(QStringLiteral("confirmStationNameLabel"));
+    auto* chargerLabel = shell.findChild<QLabel*>(QStringLiteral("confirmChargerCodeLabel"));
+    auto* specLabel = shell.findChild<QLabel*>(QStringLiteral("confirmChargerSpecLabel"));
+    QVERIFY(stationLabel != nullptr && stationLabel->isVisible());
+    QVERIFY(chargerLabel != nullptr && !chargerLabel->text().isEmpty());
+    QVERIFY(specLabel != nullptr && specLabel->text().contains(QStringLiteral("kW")));
+    QVERIFY(page->pageState() == ReservationConfirmPage::PageState::Idle);
+
+    // 车辆下拉：进入即选中默认车（带“（默认）”标记）。
+    auto* vehicleCombo = shell.findChild<QComboBox*>(QStringLiteral("reservationVehicleComboBox"));
+    QVERIFY(vehicleCombo != nullptr);
+    QCOMPARE(vehicleCombo->count(), 1);
+    QVERIFY(vehicleCombo->currentText().contains(QStringLiteral("粤B·D11111")));
+    QVERIFY(vehicleCombo->currentText().contains(QStringLiteral("默认")));
+    QCOMPARE(page->selectedVehicleId(), qint64(1));
+
+    // 默认填入系统推荐时段：850m → 5 分钟准备 + 2 分钟行驶 = 7 分钟，
+    // 时长取上限 45 分钟；推荐按钮文案给出区间与车程。
+    QCOMPARE(page->selectedMinutes(), 45);
+    QVERIFY(page->recommendedSlotText().contains(QStringLiteral("✨ 推荐")));
+    QVERIFY(page->recommendedSlotText().contains(QStringLiteral("7 分钟车程")));
+    // 预估费用 = 电价 × 时长：id1 电价 120 分/度 × 45 / 60 = 90 分。
+    QVERIFY(page->estimatedFeeText().contains(QStringLiteral("¥0.90")));
+
+    // 顶部导航“返回”→ 回站点详情页（不重复开发导航）。
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 4);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_confirm.png"));
+}
+
+// ---- 时间段行内校验：两类非法输入（结束≤开始 / 超 45 分钟）各自红字 + 禁用提交；
+//      推荐时段按钮一键复位回合法态 ----
+void HomeShellTest::confirmSlotGatingRecommendedAndOverLimit()
+{
+    // 时间段行内校验：结束 ≤ 开始 / 超过 45 分钟 → 红字提示 + 禁用提交；
+    // 点“推荐时段”复位为合法区间。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+
+    auto* page = confirmPage(shell);
+    auto* startEdit = shell.findChild<QDateTimeEdit*>(QStringLiteral("reservationStartEdit"));
+    auto* endEdit = shell.findChild<QDateTimeEdit*>(QStringLiteral("reservationEndEdit"));
+    auto* confirmButton = shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"));
+    QVERIFY(startEdit != nullptr && endEdit != nullptr);
+    QVERIFY(confirmButton->isEnabled());
+
+    // 超 45 分钟：结束时间向后推 46 分钟。
+    endEdit->setDateTime(page->startUtc().toLocalTime().addSecs(46 * 60));
+    QCOMPARE(page->selectedMinutes(), 46);
+    QVERIFY(page->messageText().contains(QStringLiteral("不能超过 45 分钟")));
+    QVERIFY(!confirmButton->isEnabled());
+
+    // 结束早于开始。
+    endEdit->setDateTime(page->startUtc().toLocalTime().addSecs(-60));
+    QVERIFY(page->messageText().contains(QStringLiteral("结束时间必须晚于开始时间")));
+    QVERIFY(!confirmButton->isEnabled());
+
+    // 一键回到推荐时段：提示隐藏、按钮恢复。
+    shell.findChild<QPushButton*>(QStringLiteral("useRecommendedSlotButton"))->click();
+    QCOMPARE(page->selectedMinutes(), 45);
+    QVERIFY(shell.findChild<QLabel*>(QStringLiteral("reservationMessageLabel"))->isHidden());
+    QVERIFY(confirmButton->isEnabled());
+}
+
+// ---- “关闭”与“返回”两条出口都回详情页（路由成对，不弹整栈） ----
+void HomeShellTest::confirmCloseReturnsToDetail()
+{
+    // 【关闭】按钮 → 返回站点详情页。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    shell.findChild<QPushButton*>(QStringLiteral("reservationCloseButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 4);
+}
+
+// ---- 提交成功主链路：按钮 loading 防重入 → 非模态引导框（站点文案取详情通道回查）→
+//      “稍后再说”落模块订单 Tab（等待态绿倒计时、名额 1/1、确认页复位 Idle 可幂等再入） ----
+void HomeShellTest::confirmSubmitPromptsGoChargeThenOrderTab()
+{
+    // 确认预约成功（二次迭代）：loading 提交态 → 弹“是否现在前往充电？”
+    // 引导框；选“稍后再说”进入【预约订单】页（模块二级 Tab）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* confirmButton = shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"));
+    QVERIFY(confirmButton != nullptr);
+    confirmButton->click();
+    // 提交中：按钮禁用防重复提交（loading 态）。
+    QVERIFY(!confirmButton->isEnabled());
+    QVERIFY(confirmButton->text().contains(QStringLiteral("提交中")));
+
+    // 成功弹窗（非模态，模拟提交延迟后出现）：文案含站点/桩/预约时段。
+    QMessageBox* prompt = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (prompt = shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt"))) != nullptr,
+        5000);
+    QVERIFY(prompt->isVisible());
+    QCOMPARE(prompt->text(), QStringLiteral("预约提交成功，是否现在前往充电？"));
+    // 站点文案取详情通道回查结果（id1 = 科技园充电驿站，快照被数据源覆盖）。
+    QVERIFY(prompt->informativeText().contains(QStringLiteral("科技园充电驿站")));
+    QVERIFY(prompt->informativeText().contains(QStringLiteral("预约时段")));
+
+    auto* later = promptButton(prompt, QStringLiteral("稍后再说"));
+    QVERIFY(later != nullptr);
+    later->click();
+
+    QTRY_VERIFY_WITH_TIMEOUT(pageStack->currentIndex() == 6, 5000);
+    auto* module = modulePage(shell);
+    QCOMPARE(module->currentSubTab(), QStringLiteral("order"));
+    auto* order = module->orderPage();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Active, 5000);
+    QVERIFY(!order->countdownText().isEmpty());
+    // 名额约束：成功预约后占用 1 个名额（车辆数 = 1），二次预约将被入口拦截。
+    QCOMPARE(module->service()->activeReservationCount(), 1);
+    // 推荐时段总在未来 → 倒计时处于“等待开始”阶段；信息行含车辆与时段。
+    QVERIFY(order->countdownText().contains(QStringLiteral("距开始")));
+    QCOMPARE(order->countdownColorRole(), QStringLiteral("green"));
+    QString orderText;
+    for (const auto* label : order->findChildren<QLabel*>()) {
+        orderText += label->text();
+    }
+    QVERIFY(orderText.contains(QStringLiteral("车辆 粤B·D11111")));
+    QVERIFY(orderText.contains(QStringLiteral("时段")));
+
+    // 确认页复位（下次进入为 Idle 可编辑态）。
+    QCOMPARE(confirmPage(shell)->pageState(), ReservationConfirmPage::PageState::Idle);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order_tab.png"));
+}
+
+// ---- 提交失败（桩被抢占，注入 next-submit conflict）：停留本页 + 红字原因 + 按钮恢复，
+//      可修改重试；关闭仍能回详情（失败不是死路） ----
+void HomeShellTest::confirmFailureKeepsPageOpenForRetry()
+{
+    // 提交失败（桩被抢占）：红色原因展示、停留在本页、可修改后重试。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+
+    reservationService(shell)->setSimulateNextSubmitConflict(true);
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* confirmButton = shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"));
+    confirmButton->click();
+
+    QTRY_VERIFY_WITH_TIMEOUT(confirmPage(shell)->messageText().contains(QStringLiteral("抢占")),
+                             5000);
+    QCOMPARE(pageStack->currentIndex(), 5); // 失败不跳转
+    QVERIFY(confirmButton->isEnabled());    // 恢复可再次尝试
+    QVERIFY(confirmButton->text().contains(QStringLiteral("确认预约")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_confirm_failed.png"));
+
+    // 关闭仍可返回详情页。
+    shell.findChild<QPushButton*>(QStringLiteral("reservationCloseButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 4);
+}
+
+// ---- 名额制端到端（二次迭代核心）：名额=车辆数；同车重复提交由 Service 兜底拒绝；
+//      换车成功；满额后拦截点前移到详情入口；全程非模态弹窗需等销毁再进下一轮 ----
+void HomeShellTest::slotQuotaFollowsVehicleCountWithPerVehicleUniqueness()
+{
+    // 名额制端到端（二次迭代核心变更）：2 辆车 = 2 个名额；同一车辆重复
+    // 预约被确认页兜底拒绝；换车成功；满额后入口提示；还车后可再约。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111")); // id 1（默认）
+    addVehicle(shell, QStringLiteral("粤B·D22222")); // id 2
+    clearReservations(shell);
+    QCOMPARE(reservationService(shell)->unfinishedSlotLimit(), 2);
+
+    // 第一辆车预约成功（稍后再说 → 回模块订单页）。
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+    shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"))->click();
+    QMessageBox* prompt = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (prompt = shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt"))) != nullptr,
+        5000);
+    promptButton(prompt, QStringLiteral("稍后再说"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        modulePage(shell)->orderPage()->viewState()
+            == ReservationOrderPage::PageState::Active,
+        5000);
+    QCOMPARE(reservationService(shell)->activeReservationCount(), 1);
+
+    // 同一辆车（默认车仍是下拉首选）再次预约 → Service 兜底拒绝。
+    tabButton(shell, QStringLiteral("station"))->click();
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+    auto* confirmButton = shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"));
+    confirmButton->click();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        confirmPage(shell)->messageText().contains(QStringLiteral("该车辆已有未结束的预约")), 5000);
+
+    // 换第二辆车 → 名额未用满，成功。
+    auto* vehicleCombo = shell.findChild<QComboBox*>(QStringLiteral("reservationVehicleComboBox"));
+    QVERIFY(vehicleCombo->count() == 2);
+    vehicleCombo->setCurrentIndex(1);
+    confirmButton->click();
+    // prompt2 != prompt：上一轮成功提示是非模态框、可能尚未销毁；不校验“新框换体”，
+    // 点到的会是旧框里的按钮，断言就成了假通过。
+    QMessageBox* prompt2 = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (prompt2 = shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt"))) != nullptr
+            && prompt2 != prompt,
+        5000);
+    promptButton(prompt2, QStringLiteral("稍后再说"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(reservationService(shell)->activeReservationCount() == 2, 5000);
+
+    // 满额（2/2）：详情页入口直接提示，不再进入确认页。
+    tabButton(shell, QStringLiteral("station"))->click();
+    openDetailAndWait(shell, 1, 850);
+    firstEnabledReserveButton(*detailPage(shell))->click();
+    auto* quotaPrompt =
+        shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt"));
+    QVERIFY(quotaPrompt != nullptr);
+    QCOMPARE(quotaPrompt->text(),
+             QStringLiteral("可预约名额已全部占用（名额 = 车辆数），请结束当前预约后再发起新预约"));
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentIndex(), 4); // 不跳转确认页
+    promptButton(quotaPrompt, QStringLiteral("知道了"))->click();
+    // 两类非模态提示都确认销毁（WA_DeleteOnClose）才算闭环：钉“知道了”只关提示、
+    // 不改路由，同时防残留旧框被后续 findChild 误命中。
+    QTRY_VERIFY_WITH_TIMEOUT(
+        shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt")) == nullptr
+            && shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt"))
+                == nullptr,
+        3000);
+}
+
+// ---- 默认 mock 已有 1 条“预约中”：1 车即满额 → 详情入口直接提示（文案逐字钉规格），
+//      不进确认页；“去查看”/“知道了”两分支：前者直达模块订单 Tab、后者关框不动路由 ----
+void HomeShellTest::fullQuotaBlocksNewConfirmWithPrompt()
+{
+    // 业务约束：默认模拟数据已有 1 条“预约中”（车辆数 1 → 名额 1），点
+    // “预约”→ 提示拦截、不跳转；“去查看”直达【预约订单】页。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    openDetailAndWait(shell, 1, 850);
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    QVERIFY(firstEnabledReserveButton(*detailPage(shell)) != nullptr);
+    firstEnabledReserveButton(*detailPage(shell))->click();
+
+    auto* prompt = shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->isVisible());
+    // 提示文案与规格逐字一致。
+    QCOMPARE(prompt->text(),
+             QStringLiteral("可预约名额已全部占用（名额 = 车辆数），请结束当前预约后再发起新预约"));
+    QCOMPARE(pageStack->currentIndex(), 4); // 不跳转确认页
+
+    auto* goLook = prompt->findChild<QPushButton*>(QStringLiteral("unfinishedGoLookButton"));
+    QVERIFY(goLook != nullptr);
+    goLook->click();
+    QCOMPARE(pageStack->currentIndex(), 6); // 直达我的预约模块
+    QCOMPARE(modulePage(shell)->currentSubTab(), QStringLiteral("order"));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt")) == nullptr,
+        3000);
+
+    // “知道了”分支：仅关闭提示，留在模块页（提示不改变路由）。
+    tabButton(shell, QStringLiteral("station"))->click();
+    openDetailAndWait(shell, 1, 850);
+    firstEnabledReserveButton(*detailPage(shell))->click();
+    auto* prompt2 = shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt"));
+    QVERIFY(prompt2 != nullptr);
+    promptButton(prompt2, QStringLiteral("知道了"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        shell.findChild<QMessageBox*>(QStringLiteral("unfinishedReservationPrompt")) == nullptr,
+        3000);
+    QCOMPARE(pageStack->currentIndex(), 4);
+}
+
+// ---- 未登录预约拦截：提示且路由不动（仍在详情）；“去登录”经壳的 loginRequested 外抛 ----
+void HomeShellTest::reservationWithoutLoginPromptsAndRoutesToLogin()
+{
+    // 未登录点击预约：提示登录，“去登录”经全局 loginRequested 跳登录页。
+    HomeShell shell;
+    shell.show();
+    openDetailAndWait(shell, 1, 850);
+    auto* detail = detailPage(shell);
+
+    QSignalSpy loginSpy(&shell, &HomeShell::loginRequested);
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* enabledButton = firstEnabledReserveButton(*detail);
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+
+    auto* prompt = shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->isVisible());
+    // 未登录不进入预约确认页（仍停留在详情路由）。
+    QCOMPARE(pageStack->currentIndex(), 4);
+
+    auto* goLogin = prompt->findChild<QPushButton*>(QStringLiteral("reservationGoLoginButton"));
+    QVERIFY(goLogin != nullptr);
+    goLogin->click();
+    QCOMPARE(loginSpy.count(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt")) == nullptr, 3000);
+}
+
+// ---- 模块二级 Tab：订单页三栏文案逐字钉 mock 记录（9001 不进归档 → 归档恰 3 卡）；
+//      历史卡→详情弹窗→关闭；二级 Tab 切换不得污染全局底部 Tab 选中态 ----
+void HomeShellTest::reservationModuleShowsOrderAndCompletedSubTabs()
+{
+    // 预约模块：二级 Tab 切换【预约订单】（三栏）/【已完成的预约】（归档）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+
+    openModuleViaProfileTab(shell);
+    QCOMPARE(pageStack->currentIndex(), 6);
+    QVERIFY(topBar->isBackVisible());
+
+    auto* module = modulePage(shell);
+    QCOMPARE(module->currentSubTab(), QStringLiteral("order"));
+
+    // 【预约订单】三栏：距离（虚拟占位）/ 倒计时 / 电量（虚拟占位）。
+    auto* order = module->orderPage();
+    QTRY_VERIFY_WITH_TIMEOUT(order->viewState() == ReservationOrderPage::PageState::Active, 3000);
+    QVERIFY(order->distanceText().contains(QStringLiteral("km"))); // 默认 1250m → 约 1.3 km
+    QVERIFY(order->batteryText().contains(QStringLiteral("SOC")));
+    QString orderText;
+    for (const auto* label : order->findChildren<QLabel*>()) {
+        orderText += label->text();
+    }
+    QVERIFY(orderText.contains(QStringLiteral("南山智造充电站")));
+    QVERIFY(orderText.contains(QStringLiteral("SZ-NSZ-03-07")));
+    QVERIFY(orderText.contains(QStringLiteral("120kW")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order_tab.png"));
+
+    // 【已完成的预约】：历史卡片（已完成/已取消/已过期）。
+    shell.findChild<QPushButton*>(QStringLiteral("reservationHistoryTabButton"))->click();
+    QCOMPARE(module->currentSubTab(), QStringLiteral("completed"));
+    auto* completed = module->completedPage();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        completed->viewState() == ReservationCompletedPage::PageState::List, 3000);
+    QCOMPARE(completed->recordCardCount(), 3); // 9001 进行中 → 订单页，不进归档
+    QString historyText;
+    for (const auto* label : completed->findChildren<QLabel*>()) {
+        historyText += label->text();
+    }
+    QVERIFY(historyText.contains(QStringLiteral("已完成")));
+    QVERIFY(historyText.contains(QStringLiteral("已取消")));
+    QVERIFY(historyText.contains(QStringLiteral("已过期")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_completed_tab.png"));
+
+    // 点击历史卡片 → 详情弹窗（全部字段）→ 可关闭。
+    QWidget* firstCard = nullptr;
+    const auto cards = completed->findChildren<QFrame*>();
+    for (auto* frame : cards) {
+        if (frame->property("isHistoryReservationCard").toBool()) {
+            firstCard = frame;
+            break;
+        }
+    }
+    QVERIFY(firstCard != nullptr);
+    QTest::mouseClick(firstCard, Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(completed->detailDialogVisible(), 3000);
+    QVERIFY(completed->detailDialogText().contains(QStringLiteral("站点名称：")));
+    QVERIFY(completed->detailDialogText().contains(QStringLiteral("充电桩：")));
+    QVERIFY(completed->detailDialogText().contains(QStringLiteral("预约时段：")));
+    shell.findChild<QPushButton*>(QStringLiteral("reservationDetailCloseButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(!completed->detailDialogVisible(), 3000);
+
+    // 二级 Tab 仅模块内生效：不改变全局底部 Tab 选中。
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+}
+
+// ---- 取消闭环：按钮 loading 防重复提交 → 成功自动跳归档（3→4 卡）→
+//      订单页转空态、名额归零可再约（取消必须同时释放 UI 和业务名额） ----
+void HomeShellTest::cancelReservationSwitchesToCompletedTab()
+{
+    // 取消预约：成功 → 自动跳转【已完成的预约】页。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    openModuleViaProfileTab(shell);
+
+    auto* module = modulePage(shell);
+    auto* order = module->orderPage();
+    QTRY_VERIFY_WITH_TIMEOUT(order->viewState() == ReservationOrderPage::PageState::Active, 3000);
+
+    auto* cancelButton = shell.findChild<QPushButton*>(QStringLiteral("reservationOrderCancelButton"));
+    QVERIFY(cancelButton != nullptr);
+    cancelButton->click();
+    // 取消中：按钮禁用防重复提交（loading 态）。
+    QVERIFY(!cancelButton->isEnabled());
+    QVERIFY(cancelButton->text().contains(QStringLiteral("取消中")));
+
+    QTRY_VERIFY_WITH_TIMEOUT(module->currentSubTab() == QStringLiteral("completed"), 5000);
+    auto* completed = module->completedPage();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        completed->viewState() == ReservationCompletedPage::PageState::List
+            && completed->recordCardCount() == 4,
+        5000);
+
+    // 订单页转空态：无进行中预约，名额全部释放，可重新发起新预约。
+    shell.findChild<QPushButton*>(QStringLiteral("reservationOrderTabButton"))->click();
+    QCOMPARE(order->viewState(), ReservationOrderPage::PageState::Empty);
+    QCOMPARE(module->service()->activeReservationCount(), 0);
+}
+
+// ---- 模块异常口径：空记录→友好空态（倒计时不留残影）+“去找桩”回找站 Tab；
+//      注错→两页同步 Error，已完成页“重试”撤错后恢复 Empty ----
+void HomeShellTest::reservationEmptyAndErrorStates()
+{
+    // 空记录 → 订单页友好空态（“去找桩”回找站 Tab）；
+    // 接口异常 → 两页错误态 + 重试恢复。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* service = reservationService(shell);
+    service->setMockRecords({});
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    openModuleViaProfileTab(shell);
+    auto* module = modulePage(shell);
+    auto* order = module->orderPage();
+    QTRY_VERIFY_WITH_TIMEOUT(order->viewState() == ReservationOrderPage::PageState::Empty, 3000);
+    QVERIFY(order->countdownText().isEmpty()); // 无倒计时残留
+
+    // 订单页空态引导：去找桩 → 回“找站”Tab（路由落回栈顶）。
+    QPushButton* findStation = nullptr;
+    const auto orderButtons = order->findChildren<QPushButton*>();
+    for (auto* button : orderButtons) {
+        if (button->text().contains(QStringLiteral("去找桩"))) {
+            findStation = button;
+            break;
+        }
+    }
+    QVERIFY(findStation != nullptr);
+    findStation->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(tabButton(shell, QStringLiteral("station"))->isChecked());
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_order_empty.png"));
+
+    // 错误态：接口异常 → 模块两页展示友好错误；重试恢复。
+    openModuleViaProfileTab(shell);
+    // 先等待进入模块触发的拉取收敛（避免与下面的失败注入请求竞争标志）。
+    QTRY_VERIFY_WITH_TIMEOUT(order->viewState() == ReservationOrderPage::PageState::Empty, 3000);
+    service->setSimulateFailure(true);
+    module->refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Error, 3000);
+    QCOMPARE(module->completedPage()->viewState(), ReservationCompletedPage::PageState::Error);
+
+    // 已完成页错误态“重试”按钮：重新拉取后恢复空态。
+    auto* completed = module->completedPage();
+    QPushButton* retryButton = nullptr;
+    const auto buttons = completed->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->text() == QStringLiteral("重试")) {
+            retryButton = button;
+            break;
+        }
+    }
+    QVERIFY(retryButton != nullptr);
+    retryButton->click();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        completed->viewState() == ReservationCompletedPage::PageState::Empty, 3000);
+}
+
+// ---- 倒计时状态机三阶段全钉：等待态绿“距开始”/ 进行中剩余分档（45min绿、10min黄、
+//      2min红）/ 归零自动流转（订单空 + 归档+1 + 名额释放）。记录用 setMockRecords
+//      回填历史时刻构造、refresh() 驱动收敛，避免真等 45 分钟 ----
+void HomeShellTest::countdownPhasesThresholdsAndExpiryTransition()
+{
+    // 三阶段倒计时（任务 #17 二次迭代）：时段未开始 → “距开始 mm:ss”绿色
+    // 等待态；进行中 → 剩余时长分档变色（>30min 绿 / 5~30min 黄 / <5min 红）；
+    // 归零自动流转“已过期”并刷新展示。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* service = reservationService(shell);
+    auto* module = modulePage(shell);
+    auto* order = module->orderPage();
+
+    const auto makeActiveRecord = [](qint64 id, int startDeltaSecs, int durationMinutes) {
+        ReservationRecord record;
+        record.reservation.id = id;
+        record.reservation.userId = 42;
+        record.reservation.chargerId = 7000 + id;
+        record.reservation.status = charging::model::ReservationStatus::Active;
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        record.startAtUtc = now.addSecs(startDeltaSecs);
+        record.reservation.reservedAtUtc = record.startAtUtc;
+        record.reservation.expiresAtUtc = record.startAtUtc.addSecs(durationMinutes * 60);
+        record.stationName = QStringLiteral("倒计时测试站");
+        record.chargerCode = QStringLiteral("TEST-01");
+        record.chargerSpec = QStringLiteral("直流快充 · 120kW");
+        record.vehicleId = 1;
+        record.vehiclePlate = QStringLiteral("粤B·D00001");
+        record.durationMinutes = durationMinutes;
+        record.estimatedFeeCents = 120;
+        record.distanceMeters = 1500;
+        return record;
+    };
+
+    // 阶段一：开始时刻在 10 分钟后 → 等待态绿色“距开始”。
+    service->setMockRecords({makeActiveRecord(9090, 10 * 60, 45)});
+    module->refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Active, 3000);
+    QVERIFY(order->countdownText().contains(QStringLiteral("距开始")));
+    QCOMPARE(order->countdownColorRole(), QStringLiteral("green"));
+
+    // 阶段二：时段进行中，剩余时长三档色。构造口径：开始 1 分钟前（处于
+    // 15 分钟迟到宽限内，不被自动取消），时长 = 剩余 + 1 分钟。
+    struct Case
+    {
+        int secsToExpire;
+        QString tone;
+    };
+    const QList<Case> cases = {
+        {45 * 60, QStringLiteral("green")},
+        {10 * 60, QStringLiteral("yellow")},
+        {2 * 60, QStringLiteral("red")},
+    };
+    for (const auto& testCase : cases) {
+        service->setMockRecords({makeActiveRecord(9100, -60, testCase.secsToExpire / 60)});
+        module->refresh();
+        QTRY_VERIFY_WITH_TIMEOUT(
+            order->viewState() == ReservationOrderPage::PageState::Active, 3000);
+        QVERIFY(order->countdownText().contains(QLatin1Char(':')));
+        QVERIFY(!order->countdownText().contains(QStringLiteral("距开始")));
+        QCOMPARE(order->countdownColorRole(), testCase.tone);
+    }
+
+    // 归零流转：开始 57 秒、时长 1 分钟 → 3 秒后到期，自动流转“已过期”，
+    // 订单页回空态、归档页出现。
+    service->setMockRecords({makeActiveRecord(9101, -57, 1)});
+    module->refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Active, 3000);
+    QCOMPARE(order->countdownColorRole(), QStringLiteral("red"));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Empty
+            && module->completedPage()->recordCardCount() == 1
+            && service->activeReservationCount() == 0,
+        8000);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_countdown.png"));
+}
+
+// ---- 迟到超 15 分钟宽限自动取消：开始 20min 前、时段未过期 → 订单页每秒 tick
+//      自行流转“已取消·迟到”并归档、名额释放（页面不轮询，流转由服务定时驱动） ----
+void HomeShellTest::lateReservationAutoCancelledAndFlaggedInHistory()
+{
+    // 迟到超 15 分钟自动取消：开始 20 分钟前、时段仍在有效期内 →
+    // 订单页每秒 tick 驱动流转“已取消”，归档页展示“已取消·迟到”。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* service = reservationService(shell);
+    auto* module = modulePage(shell);
+    auto* order = module->orderPage();
+
+    ReservationRecord late;
+    late.reservation.id = 9110;
+    late.reservation.userId = 42;
+    late.reservation.chargerId = 7110;
+    late.reservation.status = charging::model::ReservationStatus::Active;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    late.startAtUtc = now.addSecs(-20 * 60);
+    late.reservation.reservedAtUtc = late.startAtUtc;
+    late.reservation.expiresAtUtc = late.startAtUtc.addSecs(45 * 60); // 还剩 25 分钟
+    late.stationName = QStringLiteral("迟到测试站");
+    late.chargerCode = QStringLiteral("TEST-LATE");
+    late.chargerSpec = QStringLiteral("直流快充 · 120kW");
+    late.vehicleId = 1;
+    late.vehiclePlate = QStringLiteral("粤B·D00001");
+    late.durationMinutes = 45;
+    late.distanceMeters = 900;
+    service->setMockRecords({late});
+
+    module->refresh();
+    // 订单页 Active → tick 扫描后流转取消 → 订单页空态（名额随之释放）。
+    QTRY_VERIFY_WITH_TIMEOUT(
+        order->viewState() == ReservationOrderPage::PageState::Empty
+            && service->activeReservationCount() == 0,
+        5000);
+
+    auto* completed = module->completedPage();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        completed->viewState() == ReservationCompletedPage::PageState::List, 3000);
+    QString historyText;
+    for (const auto* label : completed->findChildren<QLabel*>()) {
+        historyText += label->text();
+    }
+    QVERIFY(historyText.contains(QStringLiteral("已取消·迟到")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_late_cancelled.png"));
+}
+
+// ---- 模块返回链单级化：全局“返回”回“我的”Tab 并收起返回按钮（Tab 层不出现返回） ----
+void HomeShellTest::moduleRouteBackReturnsToProfile()
+{
+    // 模块顶部“返回”（复用全局导航）→ 回“我的”Tab。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+
+    openModuleViaProfileTab(shell);
+    QCOMPARE(pageStack->currentIndex(), 6);
+    auto* backButton = shell.findChild<QPushButton*>(QStringLiteral("navBackButton"));
+    QVERIFY(backButton->isVisible());
+    backButton->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+    QVERIFY(!topBar->isBackVisible());
+}
+
+void HomeShellTest::chargingOrderRoutesToChargingPage()
+{
+    // 修复回归：充电中订单点击应进入“充电过程”路由页（停止充电唯一入口），
+    // 而不是只读的订单详情页（否则用户在壳层内无法结束会话）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* chargingPage = shell.findChild<charging::client::ChargingPage*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(chargingPage != nullptr);
+
+    charging::client::OrderSummary live;
+    live.order.id = 101;
+    live.order.status = charging::model::OrderStatus::Charging;
+    live.stationName = QStringLiteral("测试电站");
+    live.chargerCode = QStringLiteral("DC-01");
+    emit orderList->orderOpened(live);
+
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(chargingPage));
+    QVERIFY(topBar->isBackVisible());
+    // 嵌入壳层：页内返回隐藏，返回动作由顶部全局导航承担。
+    QPushButton* inPageBack = nullptr;
+    for (auto* button : chargingPage->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("返回")) {
+            inPageBack = button;
+            break;
+        }
+    }
+    QVERIFY(inPageBack != nullptr);
+    QVERIFY(!inPageBack->isVisible());
+}
+
+void HomeShellTest::settlementDoneReturnsToFilteredOrderTab()
+{
+    // 修复回归：支付完成点“查看订单”应切到订单 Tab 并按“已完成”筛选——
+    // 此前 setCurrentTab 同 id 不发信号，按钮表现为无响应。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderDetail = shell.findChild<charging::client::OrderDetailPage*>();
+    auto* settlement = shell.findChild<charging::client::SettlementPage*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(orderDetail != nullptr);
+    QVERIFY(settlement != nullptr);
+
+    charging::client::OrderSummary pending;
+    pending.order.id = 102;
+    pending.order.status = charging::model::OrderStatus::WaitingPayment;
+    pending.order.amountCents = 2442;
+    pending.stationName = QStringLiteral("测试电站");
+    emit orderList->orderOpened(pending);
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(orderDetail));
+
+    emit orderDetail->payRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+
+    emit settlement->doneRequested();
+    QCOMPARE(pageStack->currentIndex(), 1); // 订单 Tab
+    QVERIFY(tabButton(shell, QStringLiteral("order"))->isChecked());
+    QVERIFY(!topBar->isBackVisible());      // 返回栈已清
+    // 筛选芯片同步为“已完成”（showFilter 同步生效，数据异步刷新）。
+    QPushButton* completedChip = nullptr;
+    for (auto* button : orderList->findChildren<QPushButton*>()) {
+        if (button->text() == QStringLiteral("已完成")) {
+            completedChip = button;
+            break;
+        }
+    }
+    QVERIFY(completedChip != nullptr);
+    QVERIFY(completedChip->isChecked());
+}
+
+void HomeShellTest::rechargeFromSettlementReturnsAndUnlocksPay()
+{
+    // 修复回归：余额不足 → 去充值 → 充值成功后应自动回跳结算页，且结算页
+    // 拿到权威新余额解锁“确认支付”。此前回跳后余额仍是进页旧快照，按钮置灰。
+    HomeShell shell(makeSampleUser()); // 余额 ¥123.45
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderDetail = shell.findChild<charging::client::OrderDetailPage*>();
+    auto* settlement = shell.findChild<charging::client::SettlementPage*>();
+    auto* recharge = shell.findChild<charging::client::RechargePage*>();
+    QVERIFY(recharge != nullptr);
+
+    charging::client::OrderSummary pending;
+    pending.order.id = 103;
+    pending.order.status = charging::model::OrderStatus::WaitingPayment;
+    pending.order.amountCents = 24420; // ¥244.20 > 余额 → 买不起
+    pending.stationName = QStringLiteral("测试电站");
+    emit orderList->orderOpened(pending);
+    emit orderDetail->payRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+
+    // 结算页初始：支付置灰、“去充值”可见（余额不足 UI 门槛）。
+    QPushButton* payButton = nullptr;
+    QPushButton* jumpRecharge = nullptr;
+    for (auto* button : settlement->findChildren<QPushButton*>()) {
+        if (button->text().startsWith(QStringLiteral("确认支付"))) {
+            payButton = button;
+        } else if (button->text() == QStringLiteral("去充值")) {
+            jumpRecharge = button;
+        }
+    }
+    QVERIFY(payButton != nullptr);
+    QVERIFY(!payButton->isEnabled());
+    QVERIFY(jumpRecharge != nullptr);
+    QVERIFY(jumpRecharge->isVisible());
+
+    emit settlement->rechargeRequested();
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(recharge));
+
+    // 充值成功（直接发公共信号，绕开 mock 时延）：应自动回结算页并解锁支付。
+    emit recharge->rechargeSucceeded(999900);
+    QCOMPARE(pageStack->currentWidget(), static_cast<QWidget*>(settlement));
+    QVERIFY(payButton->isEnabled());
+    QVERIFY(!jumpRecharge->isVisible());
+    for (auto* label : settlement->findChildren<QLabel*>()) {
+        if (label->text().startsWith(QStringLiteral("当前余额"))) {
+            QVERIFY(label->text().contains(QStringLiteral("9999")));
+            QVERIFY(!label->text().contains(QStringLiteral("123.45")));
+        }
+    }
+}
+
+void HomeShellTest::emptyOrderListNoticeFillsListArea()
+{
+    // 修复回归：订单为空时空态提示应铺满列表区（此前滚动区隐藏后无拉伸项，
+    // 提示缩在顶部一小条、下方大片空白）。
+    HomeShell shell(makeSampleUser());
+    shell.resize(420, 860);
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderService = shell.findChild<charging::client::OrderService*>();
+    auto* listStack = orderList->findChild<QStackedWidget*>(QStringLiteral("uiOrderListStack"));
+    auto* notice = orderList->findChild<charging::client::NoticePanel*>();
+    QVERIFY(orderService != nullptr);
+    QVERIFY(listStack != nullptr);
+    QVERIFY(notice != nullptr);
+
+    emit orderService->ordersLoaded({}, 0, false);
+    QCOMPARE(listStack->currentWidget(), static_cast<QWidget*>(notice));
+    QVERIFY(notice->height() >= listStack->height() - 10); // 铺满而非缩在顶部
+}
+
+void HomeShellTest::avatarChoicePersistsAndRendersLibraryAvatar()
+{
+    // 头像库闭环回归：编辑资料页网格选择 → 服务层 UPDATE_USER_INFO →
+    // profileLoaded 权威回传 → 页内/Hub 头像标签切换到库内头像渲染。
+    qRegisterMetaType<charging::model::User>();
+
+    HomeShell shell(makeSampleUser());
+    shell.resize(420, 860);
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* editPage = shell.findChild<charging::client::ProfileEditPage*>();
+    auto* wallet = shell.findChild<charging::client::WalletService*>();
+    QVERIFY(editPage != nullptr);
+    QVERIFY(wallet != nullptr);
+
+    QSignalSpy loaded(wallet, &charging::client::WalletService::profileLoaded);
+    editPage->refresh();
+    for (int i = 0; i < 60 && loaded.isEmpty(); ++i) {
+        QTest::qWait(50);
+    }
+    QVERIFY(!loaded.isEmpty()); // 示例用户 avatarKey 为空 → 默认格勾选。
+
+    // 网格 = 默认"默" + 8 个内置头像。
+    QList<QPushButton*> choices;
+    const auto buttons = editPage->findChildren<QPushButton*>();
+    for (auto* button : buttons) {
+        if (button->objectName() == QStringLiteral("uiAvatarChoice")) {
+            choices.append(button);
+        }
+    }
+    QCOMPARE(choices.size(), 9);
+
+    // 契约 v1 §3 冻结内置头像清单，三方各持一份字面量：UI 库（此处）、
+    // 服务端 user_api_service.cpp 的 QSet、mock 侧 isBuiltInAvatarKey
+    // （由 tst_wallet_service 的 mockAcceptsEveryFrozenAvatarKeyAndRejectsUnknown
+    // 逐 key 验证）。这里把 UI 库钉死在契约清单上，改一处必红两处。
+    const QStringList frozen{QStringLiteral("bolt"), QStringLiteral("plug"),
+                             QStringLiteral("car"), QStringLiteral("leaf"),
+                             QStringLiteral("cat"), QStringLiteral("panda"),
+                             QStringLiteral("moon"), QStringLiteral("rocket")};
+    QStringList libraryKeys;
+    for (const charging::client::AvatarSpec& spec : charging::client::AvatarLibrary::all()) {
+        libraryKeys.append(spec.key);
+    }
+    QCOMPARE(libraryKeys, frozen);
+
+    QPushButton* bolt = nullptr;
+    for (auto* button : choices) {
+        if (button->property("avatarKey").toString() == QStringLiteral("bolt")) {
+            bolt = button;
+        }
+    }
+    QVERIFY(bolt != nullptr);
+    QVERIFY(!bolt->isChecked());
+
+    bolt->click(); // 选"⚡" → 发 UPDATE_USER_INFO。
+    const int countBefore = loaded.count();
+    for (int i = 0; i < 60 && loaded.count() <= countBefore; ++i) {
+        QTest::qWait(50);
+    }
+    QVERIFY(loaded.count() > countBefore);
+    QVERIFY(bolt->isChecked());
+
+    // 页内头像标签切到头像图（hasAvatar 属性同时让 QSS 去掉字母底色）。
+    auto* avatarLabel = editPage->findChild<QLabel*>(QStringLiteral("uiAvatar"));
+    QVERIFY(avatarLabel != nullptr);
+    QVERIFY(avatarLabel->property("hasAvatar").toBool());
+    QVERIFY(!avatarLabel->pixmap().isNull());
+
+    // Hub 的头像也吃到同一份权威数据。
+    auto* hubAvatar = shell.findChild<QLabel*>(QStringLiteral("uiAvatarHub"));
+    QVERIFY(hubAvatar != nullptr);
+    QVERIFY(hubAvatar->property("hasAvatar").toBool());
+}
+
+void HomeShellTest::orderListGroupsRowsByMonthWithTotals()
+{
+    // 月度分组回归：跨月订单应按月倒序分组，每月表头汇总单数/金额/电量。
+    // 汇总只是可见行相加（服务端仍是唯一事实来源），这里核对该算术与结构。
+    qRegisterMetaType<charging::client::OrderSummary>();
+    qRegisterMetaType<QVector<charging::client::OrderSummary>>();
+
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&shell));
+
+    auto* orderList = shell.findChild<charging::client::OrderListPage*>();
+    auto* orderService = shell.findChild<charging::client::OrderService*>();
+    QVERIFY(orderList != nullptr);
+    QVERIFY(orderService != nullptr);
+
+    const auto makeOrder = [](qint64 id, const QDate& day, qint64 cents, qint64 wh) {
+        charging::client::OrderSummary summary;
+        summary.order.id = id;
+        summary.order.orderNo = QStringLiteral("T%1").arg(id);
+        summary.order.status = charging::model::OrderStatus::Completed;
+        summary.order.createdAtUtc = QDateTime(day, QTime(9, 0), Qt::UTC); // 月中，跨时区安全
+        summary.order.amountCents = cents;
+        summary.order.energyWh = wh;
+        summary.stationName = QStringLiteral("测试电站");
+        summary.chargerCode = QStringLiteral("A0");
+        return summary;
+    };
+
+    // 契约 v1 §3：服务端 createdAt DESC 是唯一排序事实来源，页面不再自排、
+    // 分组与展示共用同一时钟（§5"时间分组与 createdAt 分页顺序对齐"）。
+    // 按服务端序喂入，跨月订单应按月倒序分组。
+    QVector<charging::client::OrderSummary> orders;
+    orders << makeOrder(3, QDate(2026, 8, 25), 220, 1670)
+           << makeOrder(2, QDate(2026, 8, 10), 100, 1000)
+           << makeOrder(1, QDate(2026, 7, 20), 3258, 24680);
+    emit orderService->ordersLoaded(orders, orders.size(), false);
+
+    const auto titles = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthTitle"));
+    const auto summaries = orderList->findChildren<QLabel*>(QStringLiteral("uiMonthSummary"));
+    QCOMPARE(titles.size(), 2);
+    QCOMPARE(summaries.size(), 2);
+    // 时间倒序：八月在前，七月在后。
+    QCOMPARE(titles.at(0)->text(), QStringLiteral("2026年8月"));
+    QCOMPARE(titles.at(1)->text(), QStringLiteral("2026年7月"));
+    // 八月合计 2 单 ¥3.20 (100+220) 2.67 kWh (1000+1670)；七月 1 单。
+    QCOMPARE(summaries.at(0)->text(), QStringLiteral("2 单 · ¥3.20 · 2.67 kWh"));
+    QCOMPARE(summaries.at(1)->text(), QStringLiteral("1 单 · ¥32.58 · 24.68 kWh"));
+}
+
+// —— 任务 #17 二次迭代：设置页 / 车辆管理 / 导航引导 ——
+
+// ---- 无车辆拦截：0 辆车点预约 → 引导提示且路由不动；“去添加车辆”直达设置页
+//      （空态文案 + 名额“当前 0 辆车”同步可见） ----
+void HomeShellTest::noVehiclePromptRoutesToSettings()
+{
+    // 无车辆拦截：0 辆车时点“预约”→ 引导提示；“去添加车辆”直达设置页。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    QCOMPARE(shell.settingsService()->vehicleCount(), 0);
+    // 清掉默认 mock“预约中”记录：排除名额拦截抢跑，本用例只留车辆门这一个变量。
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    auto* enabledButton = firstEnabledReserveButton(*detailPage(shell));
+    QVERIFY(enabledButton != nullptr);
+    enabledButton->click();
+    QCOMPARE(pageStack->currentIndex(), 4); // 不进入确认页
+
+    auto* prompt = shell.findChild<QMessageBox*>(QStringLiteral("vehicleRequiredPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->isVisible());
+    QVERIFY(prompt->text().contains(QStringLiteral("设置 - 车辆管理")));
+
+    auto* goSettings = prompt->findChild<QPushButton*>(QStringLiteral("vehicleGoSettingsButton"));
+    QVERIFY(goSettings != nullptr);
+    goSettings->click();
+    QTRY_VERIFY_WITH_TIMEOUT(pageStack->currentIndex() == 12, 3000);
+    auto* settings = shell.findChild<SettingsPage*>();
+    QVERIFY(settings != nullptr);
+    QVERIFY(settings->slotsCaptionText().contains(QStringLiteral("当前 0 辆车")));
+    auto* empty = shell.findChild<QLabel*>(QStringLiteral("vehiclesEmptyLabel"));
+    QVERIFY(empty != nullptr);
+    QVERIFY(empty->text().contains(QStringLiteral("暂无车辆")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings_empty_vehicle.png"));
+}
+
+// ---- 设置入口与装配：ProfilePage“⚙️设置”→ 路由页（索引 12）三模块卡齐备、
+//      通知开关 QSettings 复位回读；guest 走 openSettings() 同样被登录门拦截 ----
+void HomeShellTest::settingsRouteFromProfileCard()
+{
+    // 个人中心“⚙️ 设置”按钮行（成员 3 ProfilePage）→ 设置路由页
+    // （登录后索引 12）；三大模块卡片齐备；未登录访问设置同样被登录拦截。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+
+    tabButton(shell, QStringLiteral("profile"))->click();
+    QTest::qWait(20);
+    auto* settingsButton = shell.findChild<QPushButton*>(QStringLiteral("openSettingsButton"));
+    QVERIFY(settingsButton != nullptr);
+    settingsButton->click();
+    QCOMPARE(pageStack->currentIndex(), 12);
+    QVERIFY(shell.findChild<QFrame*>(QStringLiteral("settingsSecurityCard")) != nullptr);
+    QVERIFY(shell.findChild<QFrame*>(QStringLiteral("settingsVehicleCard")) != nullptr);
+    QVERIFY(shell.findChild<QFrame*>(QStringLiteral("settingsNotificationCard")) != nullptr);
+    // 通知开关默认全开（QSettings 复位后回读）。
+    shell.settingsService()->resetForTesting();
+    shell.findChild<SettingsPage*>()->refresh();
+    QVERIFY(shell.findChild<QCheckBox*>(QStringLiteral("expiryReminderSwitch"))->isChecked());
+    QVERIFY(shell.findChild<QCheckBox*>(QStringLiteral("reservationSuccessSwitch"))->isChecked());
+    QVERIFY(shell.findChild<QCheckBox*>(QStringLiteral("reservationCancelSwitch"))->isChecked());
+
+    // 设置页顶部“返回”→ 回“我的”Tab。
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings.png"));
+
+    // 未登录拦截：设置涉及账户数据。
+    HomeShell guest;
+    QSignalSpy loginSpy(&guest, &HomeShell::loginRequested);
+    guest.openSettings();
+    auto* prompt = guest.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt"));
+    QVERIFY(prompt != nullptr);
+    auto* goLogin = prompt->findChild<QPushButton*>(QStringLiteral("reservationGoLoginButton"));
+    goLogin->click();
+    QCOMPARE(loginSpy.count(), 1);
+}
+
+// ---- 车辆 CRUD 闭环：空车牌被必填拦截 → 保存渲染卡片（首台自动默认）→ 删除回空态；
+//      预约名额 unfinishedSlotLimit 随车辆数实时演进（0→1→0），钉住两条链路的联动 ----
+void HomeShellTest::settingsVehicleDialogCrudAndQuota()
+{
+    // 车辆管理对话框式增删：空车牌校验 → 填写保存 → 卡片渲染 → 删除；
+    // 名额随车辆数实时演进（联动预约链路 unfinishedSlotLimit）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    shell.settingsService()->resetForTesting();
+    shell.openSettings();
+    auto* settings = shell.findChild<SettingsPage*>();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(settings->vehicleCardCount(), 0);
+    QCOMPARE(reservationService(shell)->unfinishedSlotLimit(), 0);
+
+    // 打开添加车辆对话框：空车牌保存被拦截（必填校验）。
+    shell.findChild<QPushButton*>(QStringLiteral("addVehicleButton"))->click();
+    auto* dialog = shell.findChild<QDialog*>(QStringLiteral("vehicleDialog"));
+    QVERIFY(dialog != nullptr);
+    shell.findChild<QPushButton*>(QStringLiteral("vehicleSaveButton"))->click();
+    QVERIFY(shell.findChild<QLabel*>(QStringLiteral("vehicleDialogMessage"))
+                ->text()
+                .contains(QStringLiteral("车牌")));
+    QVERIFY(dialog->isVisible());
+
+    // 填写并保存 → 车辆卡片出现，名额 +1。
+    shell.findChild<QLineEdit*>(QStringLiteral("vehiclePlateEdit"))
+        ->setText(QStringLiteral("粤B·D66666"));
+    shell.findChild<QPushButton*>(QStringLiteral("vehicleSaveButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isVisible(), 3000);
+    QCOMPARE(settings->vehicleCardCount(), 1);
+    QVERIFY(settings->slotsCaptionText().contains(QStringLiteral("当前 1 辆车")));
+    QCOMPARE(reservationService(shell)->unfinishedSlotLimit(), 1);
+    auto* defaultTag = shell.findChild<QLabel*>(QStringLiteral("vehicleDefaultTag"));
+    QVERIFY(defaultTag != nullptr); // 首台自动成为默认车
+
+    // 卡片删除按钮 → 空态回退，名额归零。
+    shell.findChild<QPushButton*>(QStringLiteral("vehicleDeleteButton"))->click();
+    QCOMPARE(settings->vehicleCardCount(), 0);
+    QCOMPARE(reservationService(shell)->unfinishedSlotLimit(), 0);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings_vehicles.png"));
+    pageStack->setCurrentIndex(0);
+}
+
+// ---- 二级保护门禁：无密码→开关置灰+引导文案；对话框双校验（≥4 位、两次一致）后放行；
+//      开关联动 Service，明文不落盘（只留哈希可 verify）；用例尾复位防 QSettings 泄漏 ----
+void HomeShellTest::protectionSwitchGatedByPasswordDialog()
+{
+    // 二级保护密码：未设置密码时开关置灰 + 引导文案；对话框校验（长度/
+    // 两次一致）后启用；开关联动 Service 状态。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    shell.settingsService()->resetForTesting();
+    shell.openSettings();
+    auto* settings = shell.findChild<SettingsPage*>();
+
+    QVERIFY(!settings->protectionSwitchEnabled()); // 无密码 → 置灰
+    QVERIFY(settings->passwordStatusText().contains(QStringLiteral("未设置")));
+    auto* hint = shell.findChild<QLabel*>(QStringLiteral("protectionSwitchHint"));
+    QVERIFY(hint != nullptr);
+    QVERIFY(!hint->text().isEmpty()); // 置灰原因引导文案
+
+    // 对话框：两次输入不一致被拦截；长度不足被拦截；合法保存生效。
+    shell.findChild<QPushButton*>(QStringLiteral("setProtectionPasswordButton"))->click();
+    auto* dialog = shell.findChild<QDialog*>(QStringLiteral("passwordDialog"));
+    QVERIFY(dialog != nullptr);
+    shell.findChild<QLineEdit*>(QStringLiteral("newPasswordEdit"))->setText(QStringLiteral("123"));
+    shell.findChild<QLineEdit*>(QStringLiteral("confirmPasswordEdit"))->setText(QStringLiteral("123"));
+    shell.findChild<QPushButton*>(QStringLiteral("passwordSaveButton"))->click();
+    QVERIFY(shell.findChild<QLabel*>(QStringLiteral("passwordDialogMessage"))
+                ->text()
+                .contains(QStringLiteral("至少 4 位")));
+    shell.findChild<QLineEdit*>(QStringLiteral("newPasswordEdit"))->setText(QStringLiteral("2580"));
+    shell.findChild<QLineEdit*>(QStringLiteral("confirmPasswordEdit"))->setText(QStringLiteral("9999"));
+    shell.findChild<QPushButton*>(QStringLiteral("passwordSaveButton"))->click();
+    QVERIFY(shell.findChild<QLabel*>(QStringLiteral("passwordDialogMessage"))
+                ->text()
+                .contains(QStringLiteral("不一致")));
+    shell.findChild<QLineEdit*>(QStringLiteral("confirmPasswordEdit"))->setText(QStringLiteral("2580"));
+    shell.findChild<QPushButton*>(QStringLiteral("passwordSaveButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->isVisible(), 3000);
+
+    QVERIFY(settings->passwordStatusText().contains(QStringLiteral("已设置")));
+    QVERIFY(settings->protectionSwitchEnabled());   // 有密码后开关可用
+    QVERIFY(!settings->protectionSwitchChecked());  // 默认仍关闭
+    shell.findChild<QCheckBox*>(QStringLiteral("protectionSwitch"))->click();
+    QVERIFY(settings->protectionSwitchChecked());
+    QVERIFY(shell.settingsService()->protectionEnabled());
+    // 明文不落盘：Service 仅存哈希。
+    QVERIFY(!shell.settingsService()->verifyProtectionPassword(QStringLiteral("wrong")));
+    QVERIFY(shell.settingsService()->verifyProtectionPassword(QStringLiteral("2580")));
+    shell.settingsService()->resetForTesting(); // 复位：避免污染后续用例
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_settings_security.png"));
+}
+
+// ---- “去充电”引导链：成功弹窗→导航页（索引 13，模拟路线摘要可见）→
+//      返回链逐层回收：导航→模块订单 Tab→“我的”（复用全局导航不自建返回） ----
+void HomeShellTest::goChargePromptNavigatesAndBackReturnsToOrderTab()
+{
+    // 预约成功 → “去充电” → 导航页（模拟路线摘要）；导航页“返回”→
+    // 预约模块【预约订单】Tab → 再“返回”→ “我的”（复用全局导航）。
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    addVehicle(shell, QStringLiteral("粤B·D11111"));
+    clearReservations(shell);
+    openDetailAndWait(shell, 1, 850);
+    clickReserveAndWaitConfirm(shell);
+    shell.findChild<QPushButton*>(QStringLiteral("reservationConfirmButton"))->click();
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QMessageBox* prompt = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (prompt = shell.findChild<QMessageBox*>(QStringLiteral("goChargePrompt"))) != nullptr,
+        5000);
+    auto* goCharge = prompt->findChild<QPushButton*>(QStringLiteral("goChargeButton"));
+    QVERIFY(goCharge != nullptr);
+    goCharge->click();
+    QTRY_VERIFY_WITH_TIMEOUT(pageStack->currentIndex() == 13, 3000);
+
+    auto* nav = shell.findChild<NavigationPage*>();
+    QVERIFY(nav != nullptr);
+    QVERIFY(shell.findChild<QLabel*>(QStringLiteral("navigationMapPlaceholder")) != nullptr);
+    QVERIFY(nav->distanceText().contains(QStringLiteral("850")));
+    QVERIFY(nav->etaText().contains(QStringLiteral("预计行驶约")));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_navigation.png"));
+
+    // 返回链：导航 → 模块订单 Tab → 我的。
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 6);
+    QCOMPARE(modulePage(shell)->currentSubTab(), QStringLiteral("order"));
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3);
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+}
+
+// ---- 地图升级时序（独立页注入假 HTTP，不动壳装配）：模拟推荐先出+“更新中”后缀 →
+//      真实矩阵扣包释放后原地升级分钟数并标“真实路况”，时长上限 45 不变 ----
+void HomeShellTest::confirmPageUpgradesSlotWithRealMatrix()
+{
+    // 地图接入（确认页）：模拟推荐即时可用 → 真实矩阵到达后原地升级
+    // 车程分钟数并标注“真实路况”；时序由假服务扣包控制，永不触外网。
+    // init() 清了 key（无 key = 纯模拟口径，页面根本不发矩阵请求），本用例自备假
+    // key 只为过 hasUsableKey() 门槛，endpoint 随即改指假服务器。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    QVERIFY(mapService.hasUsableKey());
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+    mapService.setRequestTimeoutForTesting(2000);
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    // 模拟口径先出（850 m → 约 7 分钟），请求在途带“更新中…”后缀。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 7 分钟")));
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("（更新中…）")));
+
+    // 等请求真的被假服务器扣下（hold 模式）再 release，release 早了会空放、永远等不到升级。
+    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
+    server.releasePending(kMapMatrixJson);
+    QTRY_VERIFY_WITH_TIMEOUT(!page.recommendedSlotText().contains(QStringLiteral("更新中")),
+                             5000);
+
+    // 600 s 车程 + 5 min 出发准备 = 15 分钟（区别于模拟 7 分钟）。
+    // 不比较具体时刻：15 分钟对齐下不同分钟数可能落到同一开始刻度。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 15 分钟")));
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("真实路况")));
+    QCOMPARE(page.selectedMinutes(), 45);  // 时长仍为规格上限 45 分钟
+}
+
+// ---- 异步结果让位用户编辑：矩阵晚到只升级推荐文案（“真实路况”出现），
+//      不回填用户已手改的起止时刻（userEditedSlot_ 代际守卫） ----
+void HomeShellTest::confirmPageKeepsUserEditedSlotWhenMatrixArrives()
+{
+    // 用户手动改过起止时间后，真实矩阵只升级文案、不覆盖其编辑。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    auto* startEdit = page.findChild<QDateTimeEdit*>(QStringLiteral("reservationStartEdit"));
+    QVERIFY(startEdit != nullptr);
+    const QDateTime edited = QDateTime::currentDateTime().addSecs(2 * 3600);
+    startEdit->setDateTime(edited); // 触发 userEditedSlot_
+
+    // 同“先扣后放”时序：确认矩阵请求已到假服务器，再释放真实结果。
+    QTRY_VERIFY_WITH_TIMEOUT(!server.lastRequestTarget().isEmpty(), 3000);
+    server.releasePending(kMapMatrixJson);
+    QTRY_VERIFY_WITH_TIMEOUT(page.recommendedSlotText().contains(QStringLiteral("真实路况")),
+                             5000);
+
+    QCOMPARE(page.startUtc(), edited.toUTC()); // 未被真实推荐覆盖
+}
+
+// ---- 地图失败降级（假服务器直回 status 310）：推荐保持模拟口径 + 一次性非阻塞 Toast，
+//      页流程不打断（规格：Toast + 页内文案，禁模态框） ----
+void HomeShellTest::confirmPageFallsBackWithToastOnMatrixFailure()
+{
+    // 密钥无效（status 310）：推荐保持模拟口径 + 一次性非阻塞 Toast，
+    // 页面流程不打断（任务书第 3 条：Toast + 页内文案，不用模态框）。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "invalid-key-for-test");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 310, \"message\": \"invalid key\"}"));
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    ReservationConfirmPage page;
+    page.setMapService(&mapService);
+    page.openContext(makeMapStation(), makeMapCharger(), 850);
+
+    QTRY_VERIFY_WITH_TIMEOUT(!page.recommendedSlotText().contains(QStringLiteral("更新中")),
+                             5000);
+    // 兜底：推荐文案回到模拟口径，无“真实路况”标注。
+    QVERIFY(page.recommendedSlotText().contains(QStringLiteral("约 7 分钟")));
+    QVERIFY(!page.recommendedSlotText().contains(QStringLiteral("真实路况")));
+    // 非阻塞 Toast（成员 3 组件，objectName 定位）。
+    auto* toast = page.findChild<QFrame*>(QStringLiteral("uiToast"));
+    QVERIFY(toast != nullptr);
+    auto* toastLabel = toast->findChild<QLabel*>(QStringLiteral("uiToastLabel"));
+    QVERIFY(toastLabel != nullptr);
+    QVERIFY(toastLabel->text().contains(QStringLiteral("地图服务暂不可用")));
+    QVERIFY(toastLabel->text().contains(QStringLiteral("模拟")));
+}
+
+// ---- 导航真实路线替换：模拟路线先渲染（永不空页）→ 扣包释放后距离/时长原地切真实口径；
+//      页内在途两条请求（路线+逆地理），用 requestTargets() 认出 driving 请求再整体释放 ----
+void HomeShellTest::navigationPageSwapsToRealRoute()
+{
+    // 地图接入（导航页）：模拟路线先行渲染（永不空页）→ 真实路线到达
+    // 后原地替换距离/时长，caption 与 usingRealRoute 切换真实口径。
+    // （迭代 3：路线步骤文字模块已整块移除，页面只留地图可视化。）
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setHoldRequests(true);
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    NavigationPage page;
+    page.setMapService(&mapService);
+    page.openRoute(makeMapRecord());
+
+    auto* caption = page.findChild<QLabel*>(QStringLiteral("navigationCaptionLabel"));
+    QVERIFY(caption != nullptr);
+    QVERIFY(!page.usingRealRoute());
+    QVERIFY(page.distanceText().contains(QStringLiteral("850"))); // 模拟距离
+    // key 可用 + 带坐标：caption 进入 loading 态（任务书第 3 条）。
+    QVERIFY(caption->text().contains(QStringLiteral("正在加载真实导航路线")));
+
+    // 本页在途有两条请求（路线规划 + 逆地理），driving 请求必在其中。
+    QTRY_VERIFY_WITH_TIMEOUT(server.requestTargets().size() >= 2, 3000);
+    bool sawDrivingRequest = false;
+    for (const QString& target : server.requestTargets()) {
+        sawDrivingRequest = sawDrivingRequest
+            || target.startsWith(QStringLiteral("/ws/direction/v1/driving/"));
+    }
+    QVERIFY(sawDrivingRequest);
+    server.releasePending(kMapRouteJson); // 逆地理收到无 address 响应：静默回落
+    QTRY_VERIFY_WITH_TIMEOUT(page.usingRealRoute(), 5000);
+
+    QVERIFY(page.distanceText().contains(QStringLiteral("5.1"))); // 5120 m
+    QVERIFY(page.etaText().contains(QStringLiteral("约 12 分钟")));
+    QVERIFY(caption->text().contains(QStringLiteral("真实导航路线")));
+}
+
+// ---- 限流降级（status 121）：路线保持模拟口径不替换，caption 标“接口异常+模拟数据”，
+//      Toast 告知“已展示模拟路线”（失败可解释、不留黑盒） ----
+void HomeShellTest::navigationPageKeepsMockRouteOnFailure()
+{
+    // 限流（status 121）：保持模拟路线，caption 标注接口异常原因 + Toast。
+    qputenv("CHARGING_TENCENT_MAP_KEY", "unit-test-key");
+    FakeTencentServer server;
+    QVERIFY(server.start());
+    server.setJsonResponse(QByteArrayLiteral("{\"status\": 121, \"message\": \"quota\"}"));
+
+    MapGeoService mapService;
+    mapService.setEndpointBaseForTesting(server.endpointBase());
+
+    NavigationPage page;
+    page.setMapService(&mapService);
+    page.openRoute(makeMapRecord());
+
+    auto* caption = page.findChild<QLabel*>(QStringLiteral("navigationCaptionLabel"));
+    QVERIFY(caption != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(caption->text().contains(QStringLiteral("接口异常")), 5000);
+    QVERIFY(caption->text().contains(QStringLiteral("模拟数据")));
+    QVERIFY(!page.usingRealRoute());
+    auto* toastLabel = page.findChild<QLabel*>(QStringLiteral("uiToastLabel"));
+    QVERIFY(toastLabel != nullptr);
+    QVERIFY(toastLabel->text().contains(QStringLiteral("已展示模拟路线")));
+}
+
+// ============================================================================
+// 迭代 3：高级筛选 / 收藏 / 消息通知（壳级接线回归）
+// ============================================================================
+
+// ---- 顶栏新控件排布口径（搜索→筛选→铃铛→头像，x 单调）+ 可见性跟“找站”语境
+//      联动（切订单 Tab 与搜索框同步收起，切回恢复） ----
+void HomeShellTest::navFilterAndBellFollowStationContext()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    auto* filterButton = shell.findChild<QPushButton*>(QStringLiteral("navFilterButton"));
+    auto* notifyButton = shell.findChild<QPushButton*>(QStringLiteral("navNotifyButton"));
+    auto* searchLineEdit = shell.findChild<QLineEdit*>(QStringLiteral("navSearchLineEdit"));
+    auto* avatarButton = shell.findChild<QPushButton*>(QStringLiteral("navAvatarButton"));
+    QVERIFY(topBar != nullptr);
+    QVERIFY(filterButton != nullptr);
+    QVERIFY(notifyButton != nullptr);
+    QVERIFY(searchLineEdit != nullptr);
+    QVERIFY(avatarButton != nullptr);
+
+    // 排布口径：搜索框 → 高级筛选 → 消息图标 → …… → 用户头像。
+    const auto xOf = [topBar](QWidget* w) { return w->mapTo(topBar, QPoint(0, 0)).x(); };
+    QVERIFY(xOf(searchLineEdit) < xOf(filterButton));
+    QVERIFY(xOf(filterButton) < xOf(notifyButton));
+    QVERIFY(xOf(notifyButton) < xOf(avatarButton));
+
+    // “找站”语境：按钮可见；切到订单 Tab 收起（与搜索框同步 syncTopBar）。
+    QVERIFY(topBar->isFilterVisible());
+    QVERIFY(topBar->isNotificationsVisible());
+    tabButton(shell, QStringLiteral("order"))->click();
+    QTest::qWait(20);
+    QVERIFY(!topBar->isFilterVisible());
+    QVERIFY(!topBar->isNotificationsVisible());
+    tabButton(shell, QStringLiteral("station"))->click();
+    QTest::qWait(20);
+    QVERIFY(topBar->isFilterVisible());
+    QVERIFY(topBar->isNotificationsVisible());
+}
+
+// ---- 筛选弹窗全生命周期：QPointer 去重（连点仍一框）→ 组内单选/组间 AND 应用生效 →
+//      accept 销毁去重复位 → 重开回显已应用条件 → 重置只清内部勾选、确定才下发 ----
+void HomeShellTest::advancedFilterDialogRoundTripAndDedup()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+    QCOMPARE(shell.stationPage()->stationCardCount(), 6);
+
+    auto* filterButton = shell.findChild<QPushButton*>(QStringLiteral("navFilterButton"));
+    filterButton->click();
+    auto* dialog = shell.findChild<StationFilterDialog*>(QStringLiteral("stationFilterDialog"));
+    QVERIFY(dialog != nullptr);
+    // QPointer 去重：再次点击不重复开弹窗。
+    filterButton->click();
+    QCOMPARE(shell.findChildren<StationFilterDialog*>().size(), 1);
+
+    // 距离组单选：换项自动取消前项（始终至多 1 个勾选）。
+    dialog->setGroupSelectionForTesting(QStringLiteral("distance"), {QStringLiteral("5公里")});
+    QCOMPARE(dialog->checkedCountForGroup(QStringLiteral("distance")), 1);
+    dialog->setGroupSelectionForTesting(QStringLiteral("distance"), {QStringLiteral("30公里")});
+    QCOMPARE(dialog->checkedCountForGroup(QStringLiteral("distance")), 1);
+
+    // 组间 AND：自营 ∩ 暂停运营 → 仅 id4（Inactive 自营站）。
+    dialog->setGroupSelectionForTesting(QStringLiteral("distance"), {});
+    dialog->setGroupSelectionForTesting(QStringLiteral("operator"), {QStringLiteral("自营")});
+    dialog->setGroupSelectionForTesting(QStringLiteral("status"), {QStringLiteral("暂停运营")});
+    QVERIFY(dialog->currentCriteria().operators.contains(QStringLiteral("自营")));
+    dialog->findChild<QPushButton*>(QStringLiteral("stationFilterApplyButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.stationPage()->stationCardCount() == 1, 3000);
+    QCOMPARE(shell.stationPage()->visibleStationIds().constFirst(), qint64(4));
+    // accept() 经 finished→close 走 WA_DeleteOnClose（QPointer 去重随之复位）。
+    QTRY_VERIFY_WITH_TIMEOUT(shell.findChildren<StationFilterDialog*>().isEmpty(), 3000);
+
+    // 回显：重开弹窗仍按“已生效条件”勾选（距离未应用 → 保持空）。
+    filterButton->click();
+    auto* reopened = shell.findChild<StationFilterDialog*>(QStringLiteral("stationFilterDialog"));
+    QVERIFY(reopened != nullptr);
+    QCOMPARE(reopened->checkedCountForGroup(QStringLiteral("operator")), 1);
+    QCOMPARE(reopened->checkedCountForGroup(QStringLiteral("status")), 1);
+    QCOMPARE(reopened->checkedCountForGroup(QStringLiteral("distance")), 0);
+
+    // 重置仅清空勾选，点“确定”才下发（规格：确定下发过滤、重置清空）。
+    reopened->findChild<QPushButton*>(QStringLiteral("stationFilterResetButton"))->click();
+    QCOMPARE(reopened->checkedCountForGroup(QStringLiteral("operator")), 0);
+    QCOMPARE(shell.stationPage()->stationCardCount(), 1); // 旧条件未被重置动作下发
+    reopened->findChild<QPushButton*>(QStringLiteral("stationFilterApplyButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.stationPage()->stationCardCount() == 6, 3000);
+    QVERIFY(shell.stationPage()->filterCriteria().isEmpty());
+}
+
+// ---- 筛选空集走专属空态文案“暂无符合条件的充电站”（与关键词无结果区分口径）；
+//      清空条件全量恢复 ----
+void HomeShellTest::advancedFilterNoMatchShowsDedicatedEmptyState()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    // 个人桩 ∩ 超充 = 空集（id6 个人桩只有慢充）。
+    StationFilterCriteria criteria;
+    criteria.operators = {QStringLiteral("个人桩")};
+    criteria.chargerTypes = {QStringLiteral("超充")};
+    shell.stationPage()->setFilterCriteria(criteria);
+
+    QCOMPARE(shell.stationPage()->stationCardCount(), 0);
+    QCOMPARE(shell.stationPage()->viewState(), StationHomePage::ViewState::Empty);
+    // 规格文案：筛选无匹配 → “暂无符合条件的充电站”（区别于关键词无结果）。
+    bool sawDedicatedCopy = false;
+    const auto labels = shell.stationPage()->findChildren<QLabel*>();
+    for (const auto* label : labels) {
+        if (label->text().contains(QStringLiteral("暂无符合条件的充电站"))) {
+            sawDedicatedCopy = true;
+            break;
+        }
+    }
+    QVERIFY(sawDedicatedCopy);
+
+    shell.stationPage()->setFilterCriteria({});
+    QCOMPARE(shell.stationPage()->stationCardCount(), 6);
+}
+
+// 验收缺陷 2 回归：电价筛选生效（与关键词叠加成空集）时空态按钮承诺「重置
+// 筛选」，必须重置全部筛选条件并保留关键词——不得清词绕开电价筛选。
+// （测试口径：关键词“科技园”×电价档 ≤¥1.00 叠加成空集后点空态 ActionButton，
+//  钉“档位归 0 且命中集仍是 {1}”两个方向。）
+void HomeShellTest::emptyStateResetClearsPriceFilterAndKeepsKeyword()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+    auto* page = shell.stationPage();
+
+    page->search(QStringLiteral("科技园"));
+    QTRY_VERIFY_WITH_TIMEOUT(page->viewState() == StationHomePage::ViewState::List, 3000);
+    QCOMPARE(page->visibleStationIds(), QVector<qint64>({1})); // 唯一命中，电价 120¢
+
+    auto* priceCombo = page->findChild<QComboBox*>(QStringLiteral("priceFilterComboBox"));
+    QVERIFY(priceCombo != nullptr);
+    priceCombo->setCurrentIndex(1); // ≤¥1.00：与关键词同层投影 → 空集
+    QCOMPARE(page->viewState(), StationHomePage::ViewState::Empty);
+
+    charging::client::ActionButton* action = nullptr;
+    const auto buttons = page->findChildren<charging::client::ActionButton*>();
+    for (auto* button : buttons) {
+        if (button->isVisible()) {
+            action = button;
+            break;
+        }
+    }
+    QVERIFY(action != nullptr);
+    QCOMPARE(action->text(), QStringLiteral("重置筛选"));
+
+    action->click();
+    QCOMPARE(priceCombo->currentIndex(), 0); // 电价档已复位（修复前停在 ≤¥1.00）
+    QCOMPARE(page->visibleStationIds(), QVector<qint64>({1})); // 关键词未被静默清空
+}
+
+// ---- 筛选投影代数钉死：组内 OR（自营={1,4}）、电压档集合、距离半径与组间 AND
+//      收敛、空条件=全量；比对排序后的 id 集合，不依赖展示顺序 ----
+void HomeShellTest::filterProjectionCombinesGroupsAndDistance()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    auto visibleSorted = [&shell]() {
+        auto ids = shell.stationPage()->visibleStationIds();
+        std::sort(ids.begin(), ids.end());
+        return ids;
+    };
+
+    // 运营商单组 OR：自营 = {1, 4}。
+    StationFilterCriteria criteria;
+    criteria.operators = {QStringLiteral("自营")};
+    shell.stationPage()->setFilterCriteria(criteria);
+    QCOMPARE(visibleSorted(), QVector<qint64>({1, 4}));
+
+    // 电压档位：低于700V = 全部（每家站都配低压桩）；700V及以上 = {1,3,5}。
+    criteria = {};
+    criteria.voltageBands = {QStringLiteral("低于700V")};
+    shell.stationPage()->setFilterCriteria(criteria);
+    QCOMPARE(visibleSorted(), QVector<qint64>({1, 2, 3, 4, 5, 6}));
+    criteria.voltageBands = {QStringLiteral("700V及以上")};
+    shell.stationPage()->setFilterCriteria(criteria);
+    QCOMPARE(visibleSorted(), QVector<qint64>({1, 3, 5}));
+
+    // 距离半径：≤2km = {1 (850m), 2 (1300m)}；与运营商 AND 组合收敛。
+    criteria = {};
+    criteria.maxDistanceKm = 2;
+    shell.stationPage()->setFilterCriteria(criteria);
+    QCOMPARE(visibleSorted(), QVector<qint64>({1, 2}));
+    criteria.operators = {QStringLiteral("互联互通")};
+    shell.stationPage()->setFilterCriteria(criteria);
+    QCOMPARE(visibleSorted(), QVector<qint64>({2}));
+
+    // 空条件 = 不限制（全量回显）。
+    shell.stationPage()->setFilterCriteria({});
+    QCOMPARE(shell.stationPage()->stationCardCount(), 6);
+}
+
+// ---- 星星→收藏→持久化闭环：点击后统一按 objectName 重找控件（收藏信号会重建星星）、
+//      starred/★ 回显；出作用域销毁壳后重开新壳（同用户键）验 QSettings“刷新回显”口径，
+//      两端各做一次 favoritesServiceReset 防跨运行残留 ----
+void HomeShellTest::starToggleFeedsFavoritesPageAndPersists()
+{
+    favoritesServiceReset();
+    {
+        HomeShell shell(makeSampleUser());
+        shell.show();
+        waitForStationList(shell);
+
+        auto* star = shell.stationPage()->findChild<QPushButton*>(QStringLiteral(
+            "stationCardStar_1"));
+        QVERIFY(star != nullptr);
+        QCOMPARE(star->text(), QStringLiteral("☆")); // 初始未收藏（空心灰）
+        star = nullptr; // 点击后星星可能随收藏信号重建，统一按 objectName 重找
+        shell.stationPage()->findChild<QPushButton*>(QStringLiteral("stationCardStar_1"))
+            ->click();
+        QVERIFY(shell.favoritesService()->contains(1));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            shell.stationPage()
+                    ->findChild<QPushButton*>(QStringLiteral("stationCardStar_1"))
+                    ->property("starred")
+                .toBool(),
+            3000);
+        QCOMPARE(shell.stationPage()
+                     ->findChild<QPushButton*>(QStringLiteral("stationCardStar_1"))
+                     ->text(),
+                 QStringLiteral("★")); // 实心绿高亮回显
+    }
+    // “刷新回显”口径：新壳（同用户键）从 QSettings 恢复收藏。
+    {
+        HomeShell reopened(makeSampleUser());
+        QCOMPARE(reopened.favoritesService()->favoriteCount(), 1);
+        QVERIFY(reopened.favoritesService()->contains(1));
+        reopened.favoritesService()->resetForTesting(); // 清持久化，防泄漏
+    }
+}
+
+// ---- 收藏页三件事：排序口径（服务追加序 [3,1] → 页面反序 = 最近收藏在前）、
+//      卡片星星直接取消（服务/列表同步收缩）、清空后空态 + 返回固定回“我的” ----
+void HomeShellTest::favoritesPageUnfavoriteEmptyAndBack()
+{
+    favoritesServiceReset();
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    // 收藏两家（id3 先、id1 后 → 收藏页“最近收藏在前”应 id1 打头）。
+    shell.stationPage()->findChild<QPushButton*>(QStringLiteral("stationCardStar_3"))->click();
+    shell.stationPage()->findChild<QPushButton*>(QStringLiteral("stationCardStar_1"))->click();
+
+    // 入口：我的 Tab → 「账号与服务」收藏行。
+    tabButton(shell, QStringLiteral("profile"))->click();
+    QTest::qWait(20);
+    auto* favoritesRow = shell.findChild<QPushButton*>(QStringLiteral("openFavoritesButton"));
+    QVERIFY(favoritesRow != nullptr);
+    favoritesRow->click();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentWidget(), shell.favoritesPage());
+    QVERIFY(shell.findChild<QPushButton*>(QStringLiteral("favoritesFilterButton")) != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(shell.favoritesPage()->favoriteCardCount() == 2, 3000);
+    // 收藏时间正序入服务 [3, 1] → 页面反序渲染 = 最近收藏（id1）在前。
+    QCOMPARE(shell.favoritesService()->favoriteIds(), QVector<qint64>({3, 1}));
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_favorites.png"));
+
+    // 卡片星星直接取消收藏：卡片移除、服务同步。
+    shell.favoritesPage()->findChild<QPushButton*>(QStringLiteral("favoriteCardStar_1"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.favoritesPage()->favoriteCardCount() == 1, 3000);
+    QVERIFY(!shell.favoritesService()->contains(1));
+    QVERIFY(shell.favoritesService()->contains(3));
+
+    // 清空后：空态“暂无收藏的充电站”；顶部导航返回 → 回“我的”Tab。
+    shell.favoritesPage()->findChild<QPushButton*>(QStringLiteral("favoriteCardStar_3"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.favoritesPage()->emptyStateVisible(), 3000);
+    bool sawEmptyCopy = false;
+    const auto labels = shell.favoritesPage()->findChildren<QLabel*>();
+    for (const auto* label : labels) {
+        if (label->text().contains(QStringLiteral("暂无收藏的充电站"))) {
+            sawEmptyCopy = true;
+            break;
+        }
+    }
+    QVERIFY(sawEmptyCopy);
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 3); // “我的”Tab
+    QVERIFY(tabButton(shell, QStringLiteral("profile"))->isChecked());
+
+    shell.favoritesService()->resetForTesting();
+}
+
+// 验收缺陷 4 回归：壳层入口的无条件 refresh() 不得旁路查询状态机——首查
+// 落定前保持加载态（不误报“暂无收藏”），落定后才允许真空态出现。
+// （页级隔离口径：单独构造 FavoritesPage、不经壳，只钉查询状态机本身。）
+void HomeShellTest::favoritesPageKeepsLoadingWhileQueryInFlight()
+{
+    FavoritesPage page;
+    page.show();
+    QCOMPARE(page.viewState(), FavoritesPage::ViewState::Loading);
+    QVERIFY(!page.emptyStateVisible());
+
+    page.refresh(); // 模拟 HomeShell::openFavorites 入口刷新（原缺陷触发点）
+    QCOMPARE(page.viewState(), FavoritesPage::ViewState::Loading);
+    QVERIFY(!page.emptyStateVisible());
+
+    QTRY_VERIFY_WITH_TIMEOUT(page.viewState() == FavoritesPage::ViewState::Empty, 3000);
+    QVERIFY(page.emptyStateVisible()); // 查询确有结果、收藏确实为空 → 空态合法
+}
+
+// ---- 铃铛→通知页（mock 历史 3 条三类各一）+ 设置三开关联动：拨一个即时隐一卡、
+//      全关到空态、再开又现（联动是投影不是重查）；返回固定回“找站”语境；
+//      用例尾恢复开关默认值防 QSettings 泄漏 ----
+void HomeShellTest::notificationPageLinksSettingsSwitches()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    // 铃铛入口（找站语境）→ 通知路由页；模拟历史 3 条（成功/取消/到期各一）。
+    shell.findChild<QPushButton*>(QStringLiteral("navNotifyButton"))->click();
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    QCOMPARE(pageStack->currentWidget(), shell.notificationPage());
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->notificationCardCount() == 3, 3000);
+    saveSnapshotIfRequested(shell, QStringLiteral("home_shell_notifications.png"));
+
+    // 设置页“通知与提醒”关闭取消类 → 对应卡片即时隐藏（联动口径）。
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationCancelNotice, false);
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->notificationCardCount() == 2, 3000);
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationExpiryReminder, false);
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationSuccessNotice, false);
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->emptyStateVisible(), 3000);
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationCancelNotice, true);
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->notificationCardCount() == 1, 3000);
+
+    // 返回固定回“找站”Tab（铃铛入口语境）。
+    shell.findChild<QPushButton*>(QStringLiteral("navBackButton"))->click();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    QVERIFY(tabButton(shell, QStringLiteral("station"))->isChecked());
+
+    // 恢复三开关默认（QSettings 持久化，防跨用例泄漏）。
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationExpiryReminder, true);
+    shell.settingsService()->setNotificationEnabled(
+        SettingsService::Notification::ReservationSuccessNotice, true);
+}
+
+// ---- 跨服务桥接：ReservationService.cancel 成功 → NotificationService 追加
+//      “预约取消通知”（3→4、新在前、正文由记录反查站点上下文），壳负责接线 ----
+void HomeShellTest::reservationCancelBridgesToNotice()
+{
+    HomeShell shell(makeSampleUser());
+    shell.show();
+    waitForStationList(shell);
+
+    // 桥接回归：ReservationService 取消成功 → NotificationService 追加
+    // “预约取消通知”（模拟历史 3 + 1，站点上下文经 reservationRecord 反查）。
+    ReservationRecord record;
+    record.reservation.id = 101;
+    record.reservation.userId = 42;
+    record.reservation.chargerId = 11;
+    record.reservation.status = charging::model::ReservationStatus::Active;
+    record.reservation.expiresAtUtc = QDateTime::currentDateTimeUtc().addSecs(30 * 60);
+    record.stationName = QStringLiteral("测试站点 1");
+    record.chargerCode = QStringLiteral("A01");
+    reservationService(shell)->setMockRecords({record});
+
+    shell.findChild<QPushButton*>(QStringLiteral("navNotifyButton"))->click();
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->notificationCardCount() == 3, 3000);
+    reservationService(shell)->cancel(101);
+    QTRY_VERIFY_WITH_TIMEOUT(shell.notificationPage()->notificationCardCount() == 4, 5000);
+    QCOMPARE(shell.notificationPage()->notificationCardCount(), 4);
+
+    const auto items = shell.notificationService()->notifications();
+    QVERIFY(items.constFirst()
+                .title.contains(QStringLiteral("预约取消通知"))); // 新在前
+    bool sawContext = false;
+    for (const auto& item : items) {
+        sawContext = sawContext || item.body.contains(QStringLiteral("测试站点 1"));
+    }
+    QVERIFY(sawContext);
+}
+
+// ---- 访客壳门禁：收藏/通知入口提示且路由不动（“去登录”发信号、“稍后再说”不发）；
+//      收藏仅内存态不落盘（无用户键）——拦截在入口不在组件 ----
+void HomeShellTest::guestShellGatesFavoritesAndNotificationsToLogin()
+{
+    HomeShell shell; // 未登录壳：路由页照常构建（登录态 15/16 → 未登录 9/10）
+    shell.show();
+
+    auto* pageStack = shell.findChild<QStackedWidget*>(QStringLiteral("homePageStack"));
+    // 访客页栈恰 11 页（登录专属路由页不构建）：钉“不给访客建达不到的页”装配口径。
+    QCOMPARE(pageStack->count(), 11);
+    QVERIFY(shell.notificationPage() != nullptr);
+    QVERIFY(shell.favoritesPage() != nullptr);
+    auto* topBar = shell.findChild<charging::client::TopNavBar*>();
+    QVERIFY(topBar->isNotificationsVisible()); // 铃铛在“找站”语境可见，点击才拦截
+
+    QSignalSpy loginSpy(&shell, &HomeShell::loginRequested);
+
+    shell.openNotifications();
+    QCOMPARE(pageStack->currentIndex(), 0); // 未入页
+    auto* prompt = shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->text().contains(QStringLiteral("消息通知")));
+    promptButton(prompt, QStringLiteral("去登录"))->click();
+    QCOMPARE(loginSpy.count(), 1);
+    QTest::qWait(20); // 非模态提示框 WA_DeleteOnClose 销毁
+
+    shell.openFavorites();
+    QCOMPARE(pageStack->currentIndex(), 0);
+    prompt = shell.findChild<QMessageBox*>(QStringLiteral("reservationLoginPrompt"));
+    QVERIFY(prompt != nullptr);
+    QVERIFY(prompt->text().contains(QStringLiteral("收藏")));
+    promptButton(prompt, QStringLiteral("稍后再说"))->click();
+    QCOMPARE(loginSpy.count(), 1); // “稍后再说”不触发登录
+
+    // 访客收藏仅内存态（不落盘）：toggle 生效、无用户键。
+    QVERIFY(shell.favoritesService()->currentUser().isEmpty());
+    QVERIFY(shell.favoritesService()->toggle(2));
+    QVERIFY(shell.favoritesService()->contains(2));
+}
+
+QTEST_MAIN(HomeShellTest)
+
+#include "tst_home_shell.moc"

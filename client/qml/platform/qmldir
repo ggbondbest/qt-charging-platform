@@ -1,0 +1,3 @@
+module platform
+singleton Style 1.0 Style.qml
+singleton TabCache 1.0 TabCache.qml

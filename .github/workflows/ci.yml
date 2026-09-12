@@ -16,9 +16,11 @@ jobs:
   ubuntu-qt-6-2-4:
     name: Ubuntu 22.04 / Qt 6.2.4
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu --disable-dev-shm-usage
 
     steps:
       - name: Check out repository
@@ -30,13 +32,31 @@ jobs:
           sudo apt-get install --yes \
             build-essential \
             cmake \
+            fonts-noto-cjk \
             libgl1-mesa-dev \
             libqt6sql6-sqlite \
             libxkbcommon-x11-0 \
             libxcb-cursor0 \
             ninja-build \
+            python3 \
             qt6-base-dev \
             qt6-base-dev-tools \
+            qt6-declarative-dev \
+            qt6-declarative-dev-tools \
+            qt6-webengine-dev \
+            qt6-webengine-dev-tools \
+            libqt6webenginecore6-bin \
+            libqt6charts6-dev \
+            qml6-module-qtquick \
+            qml6-module-qtquick-window \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-templates \
+            qml6-module-qtquick-dialogs \
+            qml6-module-qtqml \
+            qml6-module-qtqml-models \
+            qml6-module-qtqml-workerscript \
+            qml6-module-qtwebengine \
             sqlite3
 
       - name: Configure
@@ -45,12 +65,17 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON
+          -DCHARGING_BUILD_QML=ON
+          -DCHARGING_BUILD_WIDGETS_CLIENT=OFF
 
       - name: Build
         run: cmake --build build --parallel 2
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
+
+      - name: Check embedded QML routes and screenshots
+        run: bash scripts/verify_qml_routes.sh "$PWD/build/client/charging-client" "$RUNNER_TEMP/qml-route-smoke"
 
       - name: Verify database schema and seed data
         run: bash scripts/verify_database.sh

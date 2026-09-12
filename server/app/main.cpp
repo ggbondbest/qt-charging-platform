@@ -1,11 +1,13 @@
-#include "charging_server.h"
 #include "main_window.h"
+#include "server_runtime.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QDir>
 #include <QHostAddress>
+#include <QStandardPaths>
 #include <QStringList>
 
 int main(int argc, char* argv[])
@@ -30,8 +32,22 @@ int main(int argc, char* argv[])
         QStringList{QStringLiteral("p"), QStringLiteral("port")},
         QCoreApplication::translate("main", "Listen on the specified TCP port."),
         QCoreApplication::translate("main", "port"), QStringLiteral("9527"));
+    const QString applicationDataPath =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString defaultDatabasePath =
+        QDir(applicationDataPath).filePath(QStringLiteral("charging-platform.sqlite3"));
+    const QCommandLineOption databaseOption(
+        QStringList{QStringLiteral("d"), QStringLiteral("database")},
+        QCoreApplication::translate("main", "Use the specified SQLite database file."),
+        QCoreApplication::translate("main", "path"), defaultDatabasePath);
+    const QCommandLineOption demoSeedOption(
+        QStringLiteral("demo-seed"),
+        QCoreApplication::translate(
+            "main", "Load the idempotent demo data. Use only with a demo database."));
     parser.addOption(addressOption);
     parser.addOption(portOption);
+    parser.addOption(databaseOption);
+    parser.addOption(demoSeedOption);
     parser.process(application);
 
     QHostAddress address;
@@ -49,17 +65,27 @@ int main(int argc, char* argv[])
         return 2;
     }
 
-    charging::server::ChargingServer server;
-    if (!server.listen(address, port)) {
-        qCritical().noquote() << QCoreApplication::translate("main", "Unable to start server:")
-                              << server.errorString();
-        return 1;
-    }
-
-    qInfo().noquote() << QCoreApplication::translate("main", "Server listening on")
-                      << address.toString() << ':' << server.serverPort();
-
+    charging::server::ServerRuntime server;
     charging::server::MainWindow window(&server);
+    // Closing the last window requests shutdown but keeps the GUI event loop
+    // alive until the worker has closed sockets, repositories and SQLite.
+    application.setQuitOnLastWindowClosed(false);
+    int exitCode = 0;
+    QObject::connect(&application, &QApplication::lastWindowClosed, &server,
+                     &charging::server::ServerRuntime::stop);
+    QObject::connect(&server, &charging::server::ServerRuntime::startupFailed, &application,
+                     [&](const QString& message) {
+                         exitCode = 1;
+                         qCritical().noquote() << message;
+                     });
+    QObject::connect(&server, &charging::server::ServerRuntime::stopped, &application,
+                     [&]() { application.exit(exitCode); });
+    QObject::connect(&server, &charging::server::ServerRuntime::listening, &application,
+                     [address](quint16 actualPort) {
+                         qInfo().noquote() << "Server listening on" << address.toString()
+                                           << ':' << actualPort;
+                     });
+    server.start(parser.value(databaseOption), parser.isSet(demoSeedOption), address, port);
     window.show();
     return application.exec();
 }

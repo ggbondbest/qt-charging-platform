@@ -1,5 +1,8 @@
 #include "charging_server.h"
 
+#include "client_session.h"
+#include "request_dispatcher.h"
+
 #include <QHostAddress>
 #include <QTcpSocket>
 
@@ -8,6 +11,29 @@ namespace charging::server {
 ChargingServer::ChargingServer(QObject* parent) : QObject(parent)
 {
     connect(&tcpServer_, &QTcpServer::newConnection, this, &ChargingServer::handleNewConnections);
+}
+
+ChargingServer::~ChargingServer()
+{
+    tcpServer_.close();
+    // Delete sessions while their dispatcher and this object's members still
+    // exist. Avoid disconnected callbacks during QObject base destruction.
+    const auto clients = clients_;
+    clients_.clear();
+    for (QTcpSocket* socket : clients) {
+        socket->disconnect(this);
+        socket->abort();
+        delete socket;
+    }
+}
+
+void ChargingServer::setRequestDispatcher(RequestDispatcher* dispatcher)
+{
+    Q_ASSERT(!tcpServer_.isListening());
+    if (tcpServer_.isListening()) {
+        return;
+    }
+    dispatcher_ = dispatcher;
 }
 
 bool ChargingServer::listen(const QHostAddress& address, quint16 port)
@@ -40,6 +66,11 @@ int ChargingServer::clientCount() const
     return clients_.size();
 }
 
+void ChargingServer::broadcastWorkflowChanged(const QJsonObject& data)
+{
+    for (auto* session : findChildren<ClientSession*>()) session->sendWorkflowChanged(data);
+}
+
 void ChargingServer::handleNewConnections()
 {
     while (tcpServer_.hasPendingConnections()) {
@@ -50,6 +81,9 @@ void ChargingServer::handleNewConnections()
 
         connection->setParent(this);
         clients_.insert(connection);
+        if (dispatcher_ != nullptr) {
+            new ClientSession(connection, dispatcher_, connection);
+        }
         connect(connection, &QTcpSocket::disconnected, this,
                 &ChargingServer::handleClientDisconnected);
         connect(connection, &QTcpSocket::disconnected, connection, &QObject::deleteLater);

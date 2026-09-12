@@ -172,6 +172,28 @@ QString toString(MessageKind kind)
     return {};
 }
 
+QByteArray serializePayload(const EventEnvelope& event)
+{
+    return QJsonDocument(QJsonObject{{QStringLiteral("protocolVersion"), event.protocolVersion},
+        {QStringLiteral("kind"), toString(event.kind)}, {QStringLiteral("type"), event.type},
+        {QStringLiteral("data"), event.data}}).toJson(QJsonDocument::Compact);
+}
+
+bool parseEventPayload(const QByteArray& payload, EventEnvelope* outValue, ProtocolError* error)
+{
+    clearError(error);
+    if (!outValue) return fail(error, error_code::kInternalError, QStringLiteral("Event output is null"));
+    QJsonObject object;
+    EventEnvelope value;
+    if (!parseRootObject(payload, &object, error)
+        || !readProtocolVersion(object, &value.protocolVersion, error)
+        || !readKind(object, MessageKind::Event, &value.kind, error)
+        || !readBoundedString(object, "type", kMaxTypeLength, &value.type, error)
+        || !readData(object, &value.data, error)) return false;
+    *outValue = value;
+    return true;
+}
+
 bool messageKindFromString(const QString& text, MessageKind* outValue)
 {
     if (outValue == nullptr) {
