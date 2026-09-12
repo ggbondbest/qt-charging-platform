@@ -1,0 +1,45 @@
+{
+  "dataset_id": "charging_full_180d_v1",
+  "manifest_sha256": "10e855866c78fa9ce7d527e9a7eddf85de8d382bbabe87d4f66b6930c3a40366",
+  "validation_date": "2026-09-12",
+  "result": "PASSED",
+  "scope": "Real local-file PySpark processing plus independent post-computation reference reconciliation; HDFS connectivity not tested",
+  "runtime": {
+    "python": "3.12.14",
+    "pyspark": "3.5.6",
+    "java_major": 17,
+    "spark_master": "local[2]",
+    "driver_memory": "3g",
+    "shuffle_partitions": 8
+  },
+  "raw_tables": 22,
+  "raw_rows": 6075972,
+  "all_raw_manifest_counts_verified": true,
+  "clean_sessions": 129768,
+  "normalized_session_status_rows": 461,
+  "rejected_session_rows": 2057,
+  "rejection_reasons": {
+    "MISSING_SESSION_ID": 507,
+    "UNKNOWN_STATION_ID": 491,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 517,
+    "DUPLICATE_SESSION_ID": 542
+  },
+  "station_hourly_rows": 108000,
+  "station_daily_rows": 4500,
+  "all_summary_keys_and_fields_verified": true,
+  "missing_or_duplicate_summary_keys": 0,
+  "different_integer_or_dimension_field_values": 0,
+  "different_mean_power_kw_values": 0,
+  "mean_power_kw_absolute_tolerance": 1e-9,
+  "reference_aggregates_used_as_calculation_input": false,
+  "timings_seconds": {
+    "full_pipeline_including_process_startup": 50.30,
+    "full_verifier_including_process_startup": 12.91,
+    "reference_comparison_inside_verifier": 5.245
+  },
+  "sizes_bytes_at_validation": {
+    "dataset_directory_files": 71372611,
+    "spark_output_directory_files_including_reports": 72156664
+  },
+  "measurement_note": "One development-machine run, not a performance guarantee. Byte sizes sum file contents, not filesystem allocated blocks. Spark output is ignored by Git and can be regenerated."
+}

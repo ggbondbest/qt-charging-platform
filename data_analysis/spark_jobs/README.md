@@ -1,0 +1,136 @@
+# Spark batch processing
+
+This is an actual PySpark job, separate from the Python generator's reference
+aggregates. It never reads `reference_aggregates/` as an input to computation.
+It does not implement a Vue application, prediction API, or a trained model.
+
+## Runtime and local execution
+
+Use Python 3.10-3.12, Java 17, and `pyspark==3.5.6`. Install the optional runtime:
+
+```sh
+python -m pip install -r data_analysis/requirements-spark.txt
+python -m data_analysis.spark_jobs.pipeline \
+  --input data_analysis/datasets/charging_sample_7d_v1 \
+  --output /tmp/charging_sample_7d_spark_v1
+```
+
+Run commands from the repository root. Choose a **new output directory** for
+each run. Existing paths, source/output overlap, and nested output paths are
+rejected. A failed run is retained for diagnosis, with `_RUNNING` but without the
+root `_SUCCESS`; it is not an accepted batch result. Do not publish it to a
+dashboard. A successful run produces a root `_SUCCESS` and removes `_RUNNING`.
+
+To process HDFS files, provide the teacher's verified Hadoop configuration in
+`HADOOP_CONF_DIR`, upload the dataset root unchanged, and replace both paths:
+
+```sh
+python -m data_analysis.spark_jobs.pipeline \
+  --input hdfs://namenode:9000/charging/raw/charging_sample_7d_v1 \
+  --output hdfs://namenode:9000/charging/processed/charging_sample_7d_run1
+```
+
+The URI is only a placeholder: use the address in the actual Hadoop setup.
+Spark can run as `local[2]` while reading/writing HDFS; this demonstrates real
+HDFS storage and Spark calculation, **not a multi-node computation cluster**.
+An existing Spark master may be selected with `--master`.
+
+## Processing and meanings
+
+- Read the versioned manifest and exact CSV headers; explicitly cast timestamps,
+  numbers, and dates. Timestamps stay UTC; business days use Asia/Shanghai.
+- Compare the actual row count of **every raw table** to the manifest before
+  publishing statistics. Missing rows/shards fail the batch; after cleaning,
+  canonical session count is checked too. No incomplete batch receives `_SUCCESS`.
+- Trim/canonicalize enums. Isolate bad session types, missing IDs, negative
+  money/energy, unknown foreign keys, inconsistent ownership, time ordering,
+  total-fee identities, and unrecognized session statuses.
+- Validate **before** deduplicating. Thus the original valid session survives
+  alongside its deliberately corrupted clones. Deduplication has deterministic
+  canonical contents; rejected rows retain raw JSON and a reason.
+- Fail closed on unexpected invalid typed values in other tables, malformed
+  telemetry intervals, bad telemetry ownership, or duplicate charger timestamps.
+  Do not silently turn such data into believable dashboard statistics.
+- Produce station-hour energy, mean kW, all six state sample counts, capacity,
+  sample count, and availability at the **last sample**. Mean kW is hourly Wh / 1000;
+  availability is not calculated from power. Sample counts let consumers detect
+  incomplete hours. Input telemetry intervals may not cross an hour boundary.
+- Produce station-day energy, interval-level grid costs, ended-charge session
+  counts, successful receipts/refunds by **payment occurrence date**, operating
+  costs, and repair costs on the restoration date. `completed_sessions` means
+  charging has ended and includes unpaid finished sessions; it is not paid count.
+  Cash flow and service-delivery totals are intentionally separate metrics.
+
+## Output tree
+
+```text
+<new-output>/
+  clean/<table>/                    # typed Parquet tables
+  rejected/charging_sessions/       # Parquet; raw JSON + rejection_reason
+  statistics/station_hourly/        # Parquet, computed from raw telemetry
+  statistics/station_daily/         # Parquet, computed from facts
+  reports/quality_report/           # one part-*.json plus Spark marker
+  _SUCCESS                         # present only after the complete run
+```
+
+The report includes input counts, normalization counts, rejection reasons,
+clean session count, output counts, dataset version and synthetic provenance.
+Parquet directories are normal Spark output, not a single file. Future Vue/API
+and ML code should consume a completed, versioned output directory.
+
+## Tests
+
+The default dependency-free test suite skips these integration tests. To run
+them with a real Java/Spark runtime, on **Linux/POSIX shells**:
+
+```sh
+RUN_SPARK_TESTS=1 python -m unittest data_analysis.tests.test_spark_pipeline -v
+```
+
+On **Windows PowerShell**, use two commands:
+
+```powershell
+$env:RUN_SPARK_TESTS = '1'
+python -m unittest data_analysis.tests.test_spark_pipeline -v
+```
+
+Tests cover actual gzip CSV ingestion, enum normalization, rejection and
+deduplication, hourly energy/state math, Shanghai midnight cashflow semantics,
+output overwrite refusal, missing rows/shards, a small end-to-end Parquet batch, and a one-day
+generated dataset compared field by field with the independent Python
+`reference_aggregates/`. All seven integration tests have been exercised with
+Python 3.12, Java 17, and PySpark 3.5.6. HDFS connectivity still depends on the
+target environment and must be verified there; local Spark tests do not certify
+the teacher's HDFS configuration.
+
+## Full aggregate reconciliation
+
+After the batch finishes, run the **separate verifier**. This command is one
+line and works in both PowerShell and a Linux shell:
+
+```text
+python -m data_analysis.spark_jobs.verify_aggregates --input data_analysis/datasets/charging_full_180d_v1 --processed data_analysis/outputs/spark_full_180d_v1 --report data_analysis/outputs/spark_full_180d_v1/reports/reference_verification
+```
+
+The verifier requires the root `_SUCCESS` marker, matching dataset IDs, verified
+raw manifest row counts, and provenance confirming the calculation did not use
+reference aggregates. It checks every station/time primary key, uniqueness,
+non-null values, all six state counts, last-sample availability, capacities,
+energy, and financial fields against independently generated Python controls.
+Integer fields compare exactly; mean kW uses an absolute tolerance of `1e-9`.
+Reference counts must also match the manifest. Any mismatch exits unsuccessfully
+instead of merely printing a warning. The optional report directory must be new;
+omit `--report` for a read-only rerun. It never writes into the source dataset.
+
+The reference aggregates are used **only after Spark calculation, for
+verification**, never as inputs to the production aggregation job. A successful
+full run has 108,000 station-hour rows and 4,500 station-day rows.
+
+`full_validation_summary.json` records the exercised 180-day batch, including
+its input-manifest digest, rejection counts, complete reconciliation results,
+runtime versions, and measured timings. It contains no developer-machine paths.
+The generated Parquet data and detailed reports are ignored by Git, not missing
+source files; regenerate them with the commands above.
+
+References: [Spark CSV options](https://spark.apache.org/docs/3.5.6/sql-data-sources-csv.html),
+[Spark 3.5.6](https://spark.apache.org/docs/3.5.6/).

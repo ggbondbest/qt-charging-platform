@@ -1,0 +1,3 @@
+# Keep separate from the dependency-free synthetic data generator.
+# Runtime: Python 3.10-3.12 and Java 17. HDFS settings come from HADOOP_CONF_DIR.
+pyspark==3.5.6

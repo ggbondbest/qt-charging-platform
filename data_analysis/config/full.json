@@ -1,0 +1,9 @@
+{
+  "dataset_id": "charging_full_180d_v1",
+  "seed": 20260912,
+  "start_date": "2025-12-01",
+  "days": 180,
+  "users_per_city": 1200,
+  "interval_minutes": 5,
+  "dirty_rate": 0.02
+}
