@@ -35,6 +35,42 @@ Spark can run as `local[2]` while reading/writing HDFS; this demonstrates real
 HDFS storage and Spark calculation, **not a multi-node computation cluster**.
 An existing Spark master may be selected with `--master`.
 
+### Full-batch resource settings
+
+The pipeline and `data_analysis.scripts.run_data_layer` accept
+`--driver-memory 4g`. This setting is applied **before the first Java process
+starts**, not by changing an already running Spark session. The default is 2g
+unless `PYSPARK_SUBMIT_ARGS` already specifies a heap; an explicit CLI value
+takes precedence. The 180-day dataset is run with 4g and `local[2]`. Leave enough
+memory for Python, the operating system, and other applications. Start a new
+Python process when changing the heap.
+
+Parsed raw tables use disk-only persistence: the retained forensic JSON and
+millions of telemetry/battery rows no longer compete with validation shuffles
+for heap space. Spark needs writable local temporary storage even with HDFS
+input. Reserve several GB of free scratch disk; this cache is not an output or
+a substitute for the versioned HDFS/Parquet data.
+
+When running the separate export/verifier entry points, set the launcher heap
+in the environment before starting Python. Also ensure Spark's Python worker
+uses the same environment as the driver:
+
+```powershell
+$env:PYSPARK_PYTHON = (Get-Command python).Source
+$env:PYSPARK_SUBMIT_ARGS = '--driver-memory 4g pyspark-shell'
+```
+
+On Linux:
+
+```sh
+export PYSPARK_PYTHON="$(command -v python)"
+export PYSPARK_SUBMIT_ARGS='--driver-memory 4g pyspark-shell'
+```
+
+Do not run several full Spark jobs concurrently on a development machine.
+Keep failed output directories for diagnosis and choose a fresh path for a
+retry; an old `_RUNNING` directory is never a completed batch.
+
 ## Processing and meanings
 
 - The current dataset is generator `2.0.0`, schema `1.1.0`, with 23 raw tables.
@@ -118,7 +154,7 @@ Run the final full batch into a new output directory, then run the
 and a Linux shell:
 
 ```text
-python -m data_analysis.spark_jobs.pipeline --input data_analysis/datasets/charging_full_180d_v2 --output data_analysis/outputs/spark_full_180d_v2_final --master 'local[2]' --shuffle-partitions 8
+python -m data_analysis.spark_jobs.pipeline --input data_analysis/datasets/charging_full_180d_v2 --output data_analysis/outputs/spark_full_180d_v2_final --master 'local[2]' --shuffle-partitions 8 --driver-memory 4g
 python -m data_analysis.spark_jobs.verify_aggregates --input data_analysis/datasets/charging_full_180d_v2 --processed data_analysis/outputs/spark_full_180d_v2_final --report data_analysis/outputs/spark_full_180d_v2_final/reports/reference_verification
 ```
 

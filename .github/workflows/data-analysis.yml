@@ -13,6 +13,7 @@ permissions:
 jobs:
   generator:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -27,21 +28,67 @@ jobs:
       - name: Validate committed sample data
         run: python -m data_analysis.charging_data.validate --dataset data_analysis/datasets/charging_sample_7d_v2
 
-  spark:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
+  api:
+    name: API and contracts / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            data_analysis/requirements-api.txt
+            data_analysis/requirements-contract-test.txt
+      - name: Install API and HTTP test dependencies (no Spark)
+        run: python -m pip install -r data_analysis/requirements-api.txt -r data_analysis/requirements-contract-test.txt
+      - name: Read-only API, publication integrity and public contracts
+        run: >-
+          python -m unittest
+          data_analysis.tests.test_analytics_api
+          data_analysis.tests.test_publishing
+          data_analysis.tests.test_bundle
+          data_analysis.tests.test_contracts
+          data_analysis.tests.test_json_schemas
+          data_analysis.tests.test_contract_drift -v
+
+  spark:
+    name: Spark / ${{ matrix.suite }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: cleaning
+            module: data_analysis.tests.test_spark_pipeline
+          - suite: dirty-parser
+            module: data_analysis.tests.test_dirty_injection.SparkDirtyParsingTests
+          - suite: dashboard
+            module: data_analysis.tests.test_dashboard_aggregates
+          - suite: ml-features
+            module: data_analysis.tests.test_ml_features
+          - suite: data-export
+            module: data_analysis.tests.test_data_export
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: data_analysis/requirements-spark.txt
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - run: python -m pip install -r data_analysis/requirements-spark.txt
-      - name: Real Spark cleaning and statistics tests
+      - name: Real Spark integration tests
         env:
           RUN_SPARK_TESTS: '1'
           SPARK_LOCAL_IP: '127.0.0.1'
-        run: python -m unittest data_analysis.tests.test_spark_pipeline -v
+        run: python -m unittest ${{ matrix.module }} -v

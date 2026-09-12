@@ -1,0 +1,8 @@
+# Read-only analytics HTTP API; independent of Spark/Hadoop.
+# Python >= 3.10. Versions verified together by tests/test_analytics_api.py.
+fastapi==0.141.1
+starlette==1.6.0
+pydantic==2.13.5
+uvicorn==0.52.4
+# HTTP test client; no network calls are made by the unit tests.
+httpx==0.28.1

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:charging-analysis:serving-manifest:1.0.0",
+  "title": "Analytics export manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "featureVersion", "datasetId", "publishedBatchId", "pipelineRunId", "sourceManifestSha256", "generatedAt", "startDate", "endDate", "businessTimezone", "periodStart", "periodEndExclusive", "mlHistoryHours", "mlSplits", "definitions", "source", "tables", "qualityReportPath", "qualityReportSha256"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "featureVersion": {"const": "history24-v1"},
+    "datasetId": {"type": "string", "minLength": 1},
+    "publishedBatchId": {"type": "string", "minLength": 1},
+    "pipelineRunId": {"type": "string", "minLength": 1},
+    "sourceManifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "generatedAt": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "startDate": {"type": "string", "format": "date"},
+    "endDate": {"type": "string", "format": "date"},
+    "businessTimezone": {"const": "Asia/Shanghai"},
+    "periodStart": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "periodEndExclusive": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "mlHistoryHours": {"const": 24},
+    "mlSplits": {"type": "object", "additionalProperties": false,
+      "required": ["start", "trainEnd", "validationEnd", "end", "usable"], "properties": {
+        "start": {"type": "string", "format": "date"}, "trainEnd": {"type": "string", "format": "date"},
+        "validationEnd": {"type": "string", "format": "date"}, "end": {"type": "string", "format": "date"},
+        "usable": {"type": "boolean"}}},
+    "definitions": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "storageProfile": {"const": "PORTABLE_CSV_GZIP"},
+    "source": {"const": "SIMULATED"},
+    "qualityReportPath": {"const": "quality_report.json"},
+    "qualityReportSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tables": {
+      "type": "object", "minProperties": 10, "maxProperties": 10,
+      "required": ["cities", "station_snapshot", "station_hourly_metrics", "station_metrics_daily", "city_daily", "user_activity_daily", "station_cohorts_daily", "station_service_daily", "ml_features_hourly", "ml_targets_hourly"],
+      "additionalProperties": {"$ref": "#/$defs/table"}
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object", "additionalProperties": false, "required": ["primaryKey", "columns", "rows", "files"],
+      "properties": {
+        "primaryKey": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}},
+        "parquetPath": {"type": "string", "pattern": "^parquet/[a-z][a-z0-9_]*$"},
+        "rows": {"type": "integer", "minimum": 0},
+        "columns": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["name", "type", "nullable"], "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "type": {"enum": ["string", "integer", "number", "boolean", "date", "timestamp"]},
+          "nullable": {"type": "boolean"}, "unit": {"type": "string"}}}},
+        "files": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "bytes"], "properties": {
+          "path": {"type": "string", "pattern": "^csv/[a-z][a-z0-9_]*/part-[A-Za-z0-9_.-]+\\.csv\\.gz$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "bytes": {"type": "integer", "minimum": 1}}}}
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "method": "GET",
+  "path": "/api/v1/cities",
+  "query": {
+    "datasetId": "charging_sample_7d_v2",
+    "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3"
+  },
+  "httpStatus": 200,
+  "response": {
+    "code": "OK",
+    "message": "成功",
+    "data": {
+      "items": [
+        {
+          "cityId": "BJ",
+          "cityName": "北京市",
+          "latitude": 39.9042,
+          "longitude": 116.4074,
+          "timezone": "Asia/Shanghai"
+        },
+        {
+          "cityId": "DL",
+          "cityName": "大连市",
+          "latitude": 38.914,
+          "longitude": 121.6147,
+          "timezone": "Asia/Shanghai"
+        },
+        {
+          "cityId": "SH",
+          "cityName": "上海市",
+          "latitude": 31.2304,
+          "longitude": 121.4737,
+          "timezone": "Asia/Shanghai"
+        },
+        {
+          "cityId": "SY",
+          "cityName": "沈阳市",
+          "latitude": 41.8057,
+          "longitude": 123.4315,
+          "timezone": "Asia/Shanghai"
+        },
+        {
+          "cityId": "SZ",
+          "cityName": "深圳市",
+          "latitude": 22.5431,
+          "longitude": 114.0579,
+          "timezone": "Asia/Shanghai"
+        }
+      ],
+      "page": 1,
+      "pageSize": 20,
+      "total": 5,
+      "hasNext": false
+    },
+    "meta": {
+      "requestId": "280166e2ef99446694d9eb6d6407cad0",
+      "datasetId": "charging_sample_7d_v2",
+      "schemaVersion": "1.0.0",
+      "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+      "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+      "generatedAt": "2026-09-12T13:59:53.987019Z"
+    }
+  }
+}

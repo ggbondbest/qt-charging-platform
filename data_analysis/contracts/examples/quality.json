@@ -1,0 +1,300 @@
+{
+  "method": "GET",
+  "path": "/api/v1/pipeline/runs",
+  "query": {
+    "datasetId": "charging_sample_7d_v2",
+    "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3"
+  },
+  "httpStatus": 200,
+  "response": {
+    "code": "OK",
+    "message": "成功",
+    "data": {
+      "items": [
+        {
+          "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+          "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+          "status": "PUBLISHED",
+          "generatedAt": "2026-09-12T13:59:53.987019Z",
+          "quality": {
+            "rawRows": 203973,
+            "cleanRows": 203887,
+            "rejectedRows": 86,
+            "normalizedRows": 21,
+            "cleanSessionRows": 4619,
+            "tables": [
+              {
+                "tableName": "anomaly_labels",
+                "rawRows": 185
+              },
+              {
+                "tableName": "battery_samples",
+                "rawRows": 27433
+              },
+              {
+                "tableName": "calendar",
+                "rawRows": 35
+              },
+              {
+                "tableName": "campaigns",
+                "rawRows": 5
+              },
+              {
+                "tableName": "charger_telemetry",
+                "rawRows": 151200
+              },
+              {
+                "tableName": "chargers",
+                "rawRows": 75
+              },
+              {
+                "tableName": "charging_attempts",
+                "rawRows": 5308
+              },
+              {
+                "tableName": "charging_sessions",
+                "rawRows": 4705
+              },
+              {
+                "tableName": "cities",
+                "rawRows": 5
+              },
+              {
+                "tableName": "corruption_log",
+                "rawRows": 107
+              },
+              {
+                "tableName": "maintenance_events",
+                "rawRows": 106
+              },
+              {
+                "tableName": "maintenance_tickets",
+                "rawRows": 27
+              },
+              {
+                "tableName": "operating_costs",
+                "rawRows": 175
+              },
+              {
+                "tableName": "payments",
+                "rawRows": 5116
+              },
+              {
+                "tableName": "queue_entries",
+                "rawRows": 412
+              },
+              {
+                "tableName": "reservations",
+                "rawRows": 777
+              },
+              {
+                "tableName": "reviews",
+                "rawRows": 1048
+              },
+              {
+                "tableName": "stations",
+                "rawRows": 25
+              },
+              {
+                "tableName": "tariffs",
+                "rawRows": 120
+              },
+              {
+                "tableName": "users",
+                "rawRows": 400
+              },
+              {
+                "tableName": "vehicle_energy_intervals",
+                "rawRows": 5469
+              },
+              {
+                "tableName": "vehicles",
+                "rawRows": 400
+              },
+              {
+                "tableName": "weather_hourly",
+                "rawRows": 840
+              }
+            ],
+            "normalizedByTable": [
+              {
+                "tableName": "anomaly_labels",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "battery_samples",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "calendar",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "campaigns",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "charger_telemetry",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "chargers",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "charging_attempts",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "charging_sessions",
+                "normalizedRows": 21
+              },
+              {
+                "tableName": "cities",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "corruption_log",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "maintenance_events",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "maintenance_tickets",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "operating_costs",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "payments",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "queue_entries",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "reservations",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "reviews",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "stations",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "tariffs",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "users",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "vehicle_energy_intervals",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "vehicles",
+                "normalizedRows": 0
+              },
+              {
+                "tableName": "weather_hourly",
+                "normalizedRows": 0
+              }
+            ],
+            "rejectionReasons": [
+              {
+                "reason": "DUPLICATE_SESSION_ID",
+                "rowCount": 17
+              },
+              {
+                "reason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+                "rowCount": 25
+              },
+              {
+                "reason": "MISSING_SESSION_ID",
+                "rowCount": 22
+              },
+              {
+                "reason": "UNKNOWN_STATION_ID",
+                "rowCount": 22
+              }
+            ],
+            "rejectionSamples": [
+              {
+                "sessionId": "SES-00000279",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00000372",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00000784",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00000901",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001031",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001269",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001301",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001757",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001812",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00001902",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00002283",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              },
+              {
+                "sessionId": "SES-00002747",
+                "rejectionReason": "DUPLICATE_SESSION_ID"
+              }
+            ],
+            "rejectionSampleLimit": 100,
+            "normalizationSemantics": "Rows with at least one enum trim/uppercase/empty-to-NULL change; counted per table, not cells or necessarily corrupt rows"
+          }
+        }
+      ],
+      "page": 1,
+      "pageSize": 20,
+      "total": 1,
+      "hasNext": false
+    },
+    "meta": {
+      "requestId": "f7e04a2287104a8c90e6a7ee9945973e",
+      "datasetId": "charging_sample_7d_v2",
+      "schemaVersion": "1.0.0",
+      "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+      "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+      "generatedAt": "2026-09-12T13:59:53.987019Z"
+    }
+  }
+}
