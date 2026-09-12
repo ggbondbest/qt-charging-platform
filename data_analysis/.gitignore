@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+outputs/
+spark-warehouse/
+metastore_db/
+derby.log
+artifacts/
+*.parquet
+*.pkl
+*.joblib
+*.pt
+*.onnx

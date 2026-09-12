@@ -19,6 +19,12 @@ SQLite
 首阶段暂不开发 Web 大数据大屏和机器学习子系统。必须先完成用户端、管理端、数据库与
 “预约 → 充电 → 计费 → 结算”闭环。
 
+## 第二阶段：数据分析基础
+
+第二阶段在独立的 [data_analysis](data_analysis/README.md) 中开发：已提供五城市、180 天、
+23 类关联数据：有来源依据的模拟充电、带署名的气象背景、Python 生成校验与 PySpark 清洗统计；不改动一期 Qt 业务。
+Vue 大屏、查询 API 与机器学习模型沿用该目录的数据契约继续开发。
+
 ## 已建立的基线
 
 - CMake + C++17 的 `charging_client`、`charging_server`、`charging_common` target。

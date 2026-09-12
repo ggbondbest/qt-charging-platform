@@ -1,0 +1,187 @@
+{
+  "business_totals": {
+    "delivered_energy_wh": 2932585304,
+    "grid_cost_cents": 250563990,
+    "grid_energy_wh": 3097069604,
+    "gross_session_fee_cents": 356937993,
+    "successful_payment_cents": 346152638,
+    "successful_refund_cents": 2733012
+  },
+  "canonical_sessions": 121539,
+  "checks": 87621887,
+  "corruption_actions": {
+    "NORMALIZE": 434,
+    "QUARANTINE": 1415,
+    "REMOVE_DUPLICATE": 502
+  },
+  "coverage": {
+    "anomaly_labels.anomaly_type": {
+      "EARLY_STOP": 1817,
+      "POWER_DERATING": 1844,
+      "THERMAL_STRESS": 1204
+    },
+    "canonical_sessions.status": {
+      "COMPLETED": 117875,
+      "WAITING_PAYMENT": 3664
+    },
+    "canonical_sessions.stop_reason": {
+      "DURATION_LIMIT": 13242,
+      "TARGET_REACHED": 106492,
+      "USER_STOPPED": 1805
+    },
+    "canonical_sessions.target_mode": {
+      "ENERGY": 121539
+    },
+    "charger_telemetry.state": {
+      "AVAILABLE": 2152801,
+      "CHARGING": 1217829,
+      "MAINTENANCE": 11968,
+      "OCCUPIED": 429039,
+      "OFFLINE": 4194,
+      "RESERVED": 72169
+    },
+    "chargers.connector_type": {
+      "AC": 30,
+      "DC": 45
+    },
+    "charging_attempts.failure_reason": {
+      "(empty)": 121539,
+      "APP_TIMEOUT": 1940,
+      "AUTH_FAILED": 1928,
+      "CALL_TIMEOUT": 4037,
+      "CANCELLED": 1781,
+      "CONNECTOR_HANDSHAKE": 1972,
+      "EXPIRED": 1434,
+      "NO_AVAILABLE_CHARGER": 24380,
+      "QUEUE_PATIENCE": 10143
+    },
+    "charging_attempts.outcome": {
+      "ABANDONED": 38560,
+      "FAILED": 5840,
+      "RESERVATION_CANCELLED": 1781,
+      "RESERVATION_EXPIRED": 1434,
+      "STARTED": 121539
+    },
+    "maintenance_tickets.fault_type": {
+      "COMMUNICATION": 113,
+      "CONNECTOR": 105,
+      "COOLING": 97,
+      "POWER_MODULE": 103
+    },
+    "maintenance_tickets.status": {
+      "IN_PROGRESS": 1,
+      "RESOLVED": 417
+    },
+    "payments.channel": {
+      "ALIPAY": 45841,
+      "FLEET_ACCOUNT": 10294,
+      "WALLET": 19414,
+      "WECHAT": 59581
+    },
+    "payments.status": {
+      "FAILED": 14330,
+      "SUCCESS": 120800
+    },
+    "payments.transaction_type": {
+      "PAYMENT": 132205,
+      "REFUND": 2925
+    },
+    "queue_entries.status": {
+      "ABANDONED": 10143,
+      "CALL_EXPIRED": 4037,
+      "SERVED": 22414
+    },
+    "reservations.status": {
+      "CANCELLED": 1781,
+      "CONFIRMED": 15054,
+      "EXPIRED": 1434
+    },
+    "reviews.issue_type": {
+      "LONG_WAIT": 744,
+      "NONE": 25452,
+      "SLOW_CHARGING": 398
+    },
+    "reviews.rating": {
+      "1": 481,
+      "2": 774,
+      "3": 4232,
+      "4": 8644,
+      "5": 12463
+    },
+    "stations.site_type": {
+      "CAMPUS": 5,
+      "OFFICE": 5,
+      "RESIDENTIAL": 5,
+      "SHOPPING": 5,
+      "TRANSIT": 5
+    },
+    "users.acquisition_channel": {
+      "ADS": 1452,
+      "ORGANIC": 1518,
+      "REFERRAL": 1540,
+      "SEARCH": 1490
+    },
+    "users.membership": {
+      "PLUS": 1492,
+      "STANDARD": 4508
+    },
+    "users.segment": {
+      "COMMUTER": 2688,
+      "FAMILY": 1541,
+      "FLEET": 589,
+      "RIDE_HAILING": 1182
+    },
+    "weather_hourly.weather": {
+      "CLEAR": 11543,
+      "CLOUD": 7924,
+      "RAIN": 1934,
+      "SNOW": 199
+    }
+  },
+  "dataset_id": "charging_full_180d_v2",
+  "dirty_rows": 2351,
+  "error_count": 0,
+  "errors": [],
+  "manifest_sha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "normalized_rows": 434,
+  "rejected_session_copies": {
+    "DUPLICATE": 502,
+    "MISSING_SESSION_ID": 470,
+    "NEGATIVE_TOTAL_FEE": 484,
+    "UNKNOWN_STATION": 461
+  },
+  "schema_version": "1.1.0",
+  "source": "SIMULATED",
+  "tables": {
+    "anomaly_labels": 4865,
+    "battery_samples": 1217829,
+    "calendar": 900,
+    "campaigns": 30,
+    "charger_telemetry": 3888000,
+    "chargers": 75,
+    "charging_attempts": 169154,
+    "charging_sessions": 123456,
+    "cities": 5,
+    "corruption_log": 2351,
+    "maintenance_events": 1671,
+    "maintenance_tickets": 418,
+    "operating_costs": 4500,
+    "payments": 135130,
+    "queue_entries": 36594,
+    "reservations": 18269,
+    "reviews": 26594,
+    "stations": 25,
+    "tariffs": 120,
+    "users": 6000,
+    "vehicle_energy_intervals": 169254,
+    "vehicles": 6000,
+    "weather_hourly": 21600
+  },
+  "valid": true,
+  "vehicle_energy_totals": {
+    "driving_wh": 16101504246,
+    "external_charge_intervals": 91918,
+    "external_charge_wh": 13252677500,
+    "intervals": 169254
+  }
+}
