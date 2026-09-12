@@ -1,0 +1,18 @@
+{
+  "source": "GENERAL_OFFICE_STATE_COUNCIL_2026_HOLIDAY_NOTICE",
+  "source_url": "https://www.beijing.gov.cn/fuwu/bmfw/sy/jrts/202511/t20251104_4258838.html",
+  "document_number": "国办发明电〔2025〕7号",
+  "coverage_start": "2025-12-01",
+  "coverage_end": "2026-12-31",
+  "holiday_ranges": [
+    ["2026-01-01", "2026-01-03", "NEW_YEAR"],
+    ["2026-02-15", "2026-02-23", "SPRING_FESTIVAL"],
+    ["2026-04-04", "2026-04-06", "QINGMING"],
+    ["2026-05-01", "2026-05-05", "LABOUR_DAY"],
+    ["2026-06-19", "2026-06-21", "DRAGON_BOAT"],
+    ["2026-09-25", "2026-09-27", "MID_AUTUMN"],
+    ["2026-10-01", "2026-10-07", "NATIONAL_DAY"]
+  ],
+  "adjusted_workdays": ["2026-01-04", "2026-02-14", "2026-02-28", "2026-05-09", "2026-09-20", "2026-10-10"],
+  "limitations": "Official holiday dates only. Charging demand effects are simulation assumptions, not measured holiday elasticities. Outside coverage use weekday/weekend only. Calendar is_weekend retains literal Saturday/Sunday meaning."
+}

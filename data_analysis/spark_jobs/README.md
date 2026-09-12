@@ -11,8 +11,8 @@ Use Python 3.10-3.12, Java 17, and `pyspark==3.5.6`. Install the optional runtim
 ```sh
 python -m pip install -r data_analysis/requirements-spark.txt
 python -m data_analysis.spark_jobs.pipeline \
-  --input data_analysis/datasets/charging_sample_7d_v1 \
-  --output /tmp/charging_sample_7d_spark_v1
+  --input data_analysis/datasets/charging_sample_7d_v2 \
+  --output data_analysis/outputs/charging_sample_7d_spark_v2
 ```
 
 Run commands from the repository root. Choose a **new output directory** for
@@ -26,8 +26,8 @@ To process HDFS files, provide the teacher's verified Hadoop configuration in
 
 ```sh
 python -m data_analysis.spark_jobs.pipeline \
-  --input hdfs://namenode:9000/charging/raw/charging_sample_7d_v1 \
-  --output hdfs://namenode:9000/charging/processed/charging_sample_7d_run1
+  --input hdfs://namenode:9000/charging/raw/charging_sample_7d_v2 \
+  --output hdfs://namenode:9000/charging/processed/charging_sample_7d_v2_run1
 ```
 
 The URI is only a placeholder: use the address in the actual Hadoop setup.
@@ -37,6 +37,12 @@ An existing Spark master may be selected with `--master`.
 
 ## Processing and meanings
 
+- The current dataset is generator `2.0.0`, schema `1.1.0`, with 23 raw tables.
+  The new `vehicle_energy_intervals` table records driving consumption and
+  off-network charging between platform visits. It is retained as typed Parquet
+  for vehicle-energy analysis but contributes **no platform energy sales or
+  revenue**. The v2 batch and its manifest must be used together; v1 results do
+  not validate v2 data.
 - Read the versioned manifest and exact CSV headers; explicitly cast timestamps,
   numbers, and dates. Timestamps stay UTC; business days use Asia/Shanghai.
 - Compare the actual row count of **every raw table** to the manifest before
@@ -98,18 +104,22 @@ Tests cover actual gzip CSV ingestion, enum normalization, rejection and
 deduplication, hourly energy/state math, Shanghai midnight cashflow semantics,
 output overwrite refusal, missing rows/shards, a small end-to-end Parquet batch, and a one-day
 generated dataset compared field by field with the independent Python
-`reference_aggregates/`. All seven integration tests have been exercised with
+`reference_aggregates/`. The v2 fixture also verifies that off-network vehicle
+energy is retained as integer Wh without entering platform energy or revenue.
+All seven integration tests have been exercised with
 Python 3.12, Java 17, and PySpark 3.5.6. HDFS connectivity still depends on the
 target environment and must be verified there; local Spark tests do not certify
 the teacher's HDFS configuration.
 
 ## Full aggregate reconciliation
 
-After the batch finishes, run the **separate verifier**. This command is one
-line and works in both PowerShell and a Linux shell:
+Run the final full batch into a new output directory, then run the
+**separate verifier**. Each command is one line and works in both PowerShell
+and a Linux shell:
 
 ```text
-python -m data_analysis.spark_jobs.verify_aggregates --input data_analysis/datasets/charging_full_180d_v1 --processed data_analysis/outputs/spark_full_180d_v1 --report data_analysis/outputs/spark_full_180d_v1/reports/reference_verification
+python -m data_analysis.spark_jobs.pipeline --input data_analysis/datasets/charging_full_180d_v2 --output data_analysis/outputs/spark_full_180d_v2_final --master 'local[2]' --shuffle-partitions 8
+python -m data_analysis.spark_jobs.verify_aggregates --input data_analysis/datasets/charging_full_180d_v2 --processed data_analysis/outputs/spark_full_180d_v2_final --report data_analysis/outputs/spark_full_180d_v2_final/reports/reference_verification
 ```
 
 The verifier requires the root `_SUCCESS` marker, matching dataset IDs, verified
@@ -125,6 +135,13 @@ omit `--report` for a read-only rerun. It never writes into the source dataset.
 The reference aggregates are used **only after Spark calculation, for
 verification**, never as inputs to the production aggregation job. A successful
 full run has 108,000 station-hour rows and 4,500 station-day rows.
+
+The verified final v2 full batch has 23 raw tables and 5,832,840 raw rows. Cleaning
+preserves 121,539 canonical sessions: 1,415 invalid copies are quarantined and
+502 valid duplicates are removed. Both categories appear in the rejected
+session output (1,917 rows in total); 434 normalized enum rows do not reduce
+the row count. Every hourly/daily summary field matched its independent
+reference, including final-sample availability and Shanghai payment dates.
 
 `full_validation_summary.json` records the exercised 180-day batch, including
 its input-manifest digest, rejection counts, complete reconciliation results,

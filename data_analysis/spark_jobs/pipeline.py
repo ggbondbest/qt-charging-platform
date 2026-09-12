@@ -3,8 +3,8 @@
 Run from the repository root (local paths or hdfs:// paths are supported)::
 
     python -m data_analysis.spark_jobs.pipeline \
-        --input data_analysis/datasets/charging_sample_7d_v1 \
-        --output /tmp/charging_sample_7d_spark_v1
+        --input data_analysis/datasets/charging_sample_7d_v2 \
+        --output data_analysis/outputs/charging_sample_7d_spark_v2
 
 The output must not exist. An incomplete run has no root _SUCCESS marker and
 must never be published as a successful dataset. The raw input is never changed.

@@ -56,6 +56,12 @@ class SparkPipelineTests(unittest.TestCase):
         rows["chargers"] = [{"charger_id": name, "station_id": "st1"} for name in ["ch1", "ch2"]]
         rows["users"] = [{"user_id": "u1", "home_city_id": "city1"}]
         rows["vehicles"] = [{"vehicle_id": "v1", "user_id": "u1"}]
+        rows["vehicle_energy_intervals"] = [{
+            "interval_id": "ev1", "vehicle_id": "v1",
+            "started_at": stamp - timedelta(hours=1), "ended_at": stamp,
+            "start_soc_pct": 70.0, "end_soc_pct": 65.0,
+            "driving_wh": 5000, "external_charge_wh": 2000,
+        }]
         rows["charging_attempts"] = [{"attempt_id": "a1", "session_id": "s1", "user_id": "u1",
                                      "vehicle_id": "v1", "station_id": "st1", "charger_id": "ch1",
                                      "attempted_at": stamp, "outcome": "SUCCESS"}]
@@ -189,6 +195,16 @@ class SparkPipelineTests(unittest.TestCase):
             self.assertFalse((output_path / "_RUNNING").exists())
             actual = self.spark.read.parquet(str(output_path / "statistics/station_hourly")).first()
             self.assertEqual(actual.energy_wh, 5500)
+            external = self.spark.read.parquet(str(output_path / "clean/vehicle_energy_intervals"))
+            self.assertEqual(external.schema["driving_wh"].dataType.simpleString(), "bigint")
+            self.assertEqual(external.first().external_charge_wh, 2000)
+            # Off-network charging is retained for SOC analysis, not added to
+            # platform electricity sales, receipts or grid purchase costs.
+            daily = {str(row.business_date): row for row in self.spark.read.parquet(
+                str(output_path / "statistics/station_daily")).collect()}
+            self.assertEqual(daily["2025-12-01"].energy_wh, 5500)
+            self.assertEqual(daily["2025-12-01"].grid_cost_cents, 220)
+            self.assertEqual(daily["2025-12-02"].paid_cents, 600)
             with self.assertRaises(FileExistsError):
                 run_pipeline(self.spark, str(input_path), str(output_path))
             with self.assertRaisesRegex(ValueError, "non-nested"):

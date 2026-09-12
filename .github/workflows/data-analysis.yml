@@ -23,9 +23,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Generator and integrity regression tests
-        run: python -m unittest data_analysis.tests.test_generator -v
+        run: python -m unittest discover -s data_analysis/tests -v
       - name: Validate committed sample data
-        run: python -m data_analysis.charging_data.validate --dataset data_analysis/datasets/charging_sample_7d_v1
+        run: python -m data_analysis.charging_data.validate --dataset data_analysis/datasets/charging_sample_7d_v2
 
   spark:
     runs-on: ubuntu-22.04

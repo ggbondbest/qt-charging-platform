@@ -1,15 +1,19 @@
-"""Event-based synthetic operations simulator. No real records are copied.
+"""Event-based synthetic operations simulator. No private charging rows copied.
 
 Run from repository root:
 python -m data_analysis.charging_data.generator --config data_analysis/config/full.json
 All random streams and gzip headers are reproducible. Only the standard library
 is needed. The output contains raw data and clearly labeled reference aggregates,
 not pretense Spark output or pre-trained machine learning predictions.
+Attributed ERA5 context is cached separately; charging operations are synthetic.
 """
 
 import argparse
 from collections import defaultdict, deque
+import csv
 from datetime import date, datetime, timedelta, timezone
+import gzip
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -17,6 +21,7 @@ import random
 import re
 
 from . import __version__
+from .behavior import BEHAVIOR_VERSION, BehaviorModel, CONFIG_DIR, SEGMENTS
 from .io import DatasetWriter, write_json
 from .schema import SCHEMA_VERSION, TABLES, SUMMARY_TABLES
 
@@ -51,7 +56,7 @@ def validate_config(config):
         if type(config[key]) is not int or not low <= config[key] <= high:
             raise ValueError(f"Invalid {key}")
     if config["interval_minutes"] != 5 or isinstance(config["interval_minutes"], bool):
-        raise ValueError("Version 1 supports exactly five-minute intervals")
+        raise ValueError("The simulator supports exactly five-minute intervals")
     if type(config["dirty_rate"]) not in (int, float) or not 0 <= config["dirty_rate"] <= .1:
         raise ValueError("dirty_rate must be in [0, 0.1]")
     start = date.fromisoformat(config["start_date"])
@@ -75,6 +80,7 @@ class Simulator:
         self.stations = []
         self.chargers = []
         self.users = defaultdict(list)
+        self.user_groups = defaultdict(list)
         self.locks = {}
         self.tariffs = {}
         self.weather = {}
@@ -84,6 +90,23 @@ class Simulator:
         self.daily = {}
         self.canonical_sessions = 0
         self.corruptions = defaultdict(int)
+        self.behavior = BehaviorModel()
+        self.driving = {segment: self.behavior.driving_prefix(segment, self.times) for segment in SEGMENTS}
+        self.weather_sources = defaultdict(int)
+        self.weather_cache = {}
+        cache_path = CONFIG_DIR / "weather_reference.csv.gz"
+        provenance = json.loads((CONFIG_DIR / "weather_reference_provenance.json").read_text(encoding="utf-8"))
+        if hashlib.sha256(cache_path.read_bytes()).hexdigest() != provenance["cache_sha256"]:
+            raise ValueError("Weather reference cache checksum mismatch")
+        with gzip.open(cache_path, "rt", encoding="utf-8", newline="") as stream:
+            for row in csv.DictReader(stream):
+                code = int(row["weather"])
+                category = ("SNOW" if code in {71, 73, 75, 77, 85, 86} else
+                            "RAIN" if code >= 51 else "FOG" if code in {45, 48} else
+                            "CLOUD" if code in {2, 3} else "CLEAR")
+                self.weather_cache[row["city_id"], row["recorded_at"]] = dict(row,
+                    temperature_c=float(row["temperature_c"]), humidity_pct=float(row["humidity_pct"]),
+                    rainfall_mm=float(row["rainfall_mm"]), weather=category)
 
     def ident(self, kind):
         self.counters[kind] += 1
@@ -107,10 +130,12 @@ class Simulator:
         for city_index, (cid, cname, lat, lon, winter) in enumerate(CITIES):
             self.emit("cities", dict(city_id=cid, city_name=cname, latitude=lat, longitude=lon, timezone="Asia/Shanghai"))
             for hour in range(24):
-                period = "VALLEY" if hour < 7 else "PEAK" if hour in (10, 11, 18, 19, 20, 21) else "NORMAL"
-                rate = {"VALLEY": 42, "NORMAL": 70, "PEAK": 105}[period] + city_index * 3
+                # A simulated operator package, NOT a current city grid tariff.
+                # In particular Liaoning moved to spot-linked trading in 2025.
+                period = "VALLEY" if hour < 7 or hour == 23 else "PEAK" if hour in (10, 11, 12, 17, 18, 19, 20, 21) else "NORMAL"
+                rate = {"VALLEY": 42, "NORMAL": 70, "PEAK": 105}[period]
                 row = dict(tariff_id=f"T-{cid}-{hour:02}", city_id=cid, hour=hour,
-                           energy_price_cents_per_kwh=rate + 12, service_price_cents_per_kwh=30 + city_index * 2,
+                           energy_price_cents_per_kwh=rate + 12, service_price_cents_per_kwh=30,
                            grid_price_cents_per_kwh=rate, period=period)
                 self.tariffs[cid, hour] = row
                 self.emit("tariffs", row)
@@ -121,11 +146,20 @@ class Simulator:
                     registered_at=utc_text(self.start - timedelta(days=rng.randint(1, 730))),
                     segment=segment, acquisition_channel=rng.choice(["SEARCH", "REFERRAL", "ADS", "ORGANIC"]),
                     membership=rng.choices(["STANDARD", "PLUS"], [75, 25])[0]))
+                capacity, acceptance = rng.choice([(40, 50), (50, 80), (60, 100), (75, 120), (90, 150)])
                 vehicle = dict(vehicle_id=f"V-{cid}-{user_index+1:06}", user_id=uid,
-                    battery_capacity_kwh=rng.choice([40, 50, 60, 75, 90]),
-                    max_charge_kw=rng.choice([50, 80, 120, 150]), vehicle_class=segment)
+                    battery_capacity_kwh=capacity, max_charge_kw=acceptance, vehicle_class=segment)
                 self.emit("vehicles", vehicle)
+                initial_wh = round(capacity * 10 * rng.triangular(18, 76, 46))
+                daily_range = {"COMMUTER": (5, 10), "FAMILY": (2.5, 6),
+                               "RIDE_HAILING": (28, 48), "FLEET": (20, 38)}[segment]
+                vehicle.update(energy_wh=initial_wh, soc_pct=initial_wh/(capacity*10), soc_tick=0,
+                    daily_drive_wh=round(rng.uniform(*daily_range)*1000),
+                    activity=min(1, max(.12, rng.lognormvariate(-.55, .65))),
+                    favorite_site=rng.choices([kind for kind, _, _ in SITES],
+                        [self.behavior.segment_weights(kind, 12)[segment] for kind, _, _ in SITES])[0])
                 self.users[cid].append(vehicle)
+                self.user_groups[cid, segment].append(vehicle)
                 self.locks[uid] = 0
             for site_index, (kind, label, intensity) in enumerate(SITES):
                 sid = f"ST-{cid}-{site_index+1:02}"
@@ -133,9 +167,10 @@ class Simulator:
                     site_type=kind, latitude=round(lat+(site_index-2)*.025, 6),
                     longitude=round(lon+(site_index%3-1)*.035, 6),
                     opened_at=utc_text(self.start-timedelta(days=730)), transformer_kw=360,
-                    rent_daily_cents=(12000+city_index*2500+site_index*1000))
+                    rent_daily_cents=(12000+site_index*1000))
                 self.emit("stations", station)
-                station.update(intensity=intensity*(1+city_index*.08), chargers=[], waiting=deque())
+                station.update(intensity=intensity*max(.7, min(1.3, rng.lognormvariate(-.02, .18))),
+                               phase_shift=rng.choice([-1, 0, 0, 0, 1]), chargers=[], waiting=deque())
                 self.stations.append(station)
                 for charger_index in range(3):
                     ac = charger_index == 2 or (kind == "RESIDENTIAL" and charger_index == 1)
@@ -148,14 +183,22 @@ class Simulator:
                                    meter_wh=0)
                     station["chargers"].append(charger)
                     self.chargers.append(charger)
+            day_shock = 0
             for day in range(self.config["days"]):
                 dt = self.times[day*288]
-                event = "LOCAL_EXPO" if day % 45 in (20, 21, 22) else "NONE"
-                multiplier = 1.6 if event != "NONE" else 1.0
+                event = self.behavior.calendar_event(dt)
+                if event == "NONE" and (day+city_index*7) % 45 in (20, 21, 22):
+                    event = "LOCAL_EXPO"
+                day_shock = .65 * day_shock + rng.gauss(0, .075)
+                multiplier = round((1.4 if event == "LOCAL_EXPO" else 1.0) * math.exp(day_shock), 4)
                 self.events[cid, day] = multiplier
                 self.emit("calendar", dict(city_id=cid, business_date=dt.date().isoformat(),
                     is_weekend=int(dt.weekday() >= 5), scenario_event=event, demand_multiplier=multiplier))
-                base_temp = winter + 13 * (1-math.cos(day/180*math.pi)) + rng.uniform(-3, 3)
+                # Only used when a custom date lies outside the archived window.
+                # Day-of-year seasonality avoids v1's ever-increasing temperature.
+                mean, amplitude = {"DL": (12, 12), "SY": (9, 18), "BJ": (13, 15),
+                                   "SH": (17, 12), "SZ": (23, 6)}[cid]
+                base_temp = mean + amplitude*math.cos((dt.timetuple().tm_yday-200)*2*math.pi/365.25) + day_shock*8
                 wet = rng.random() < .22
                 for hour in range(24):
                     temp = round(base_temp + 4 * math.sin((hour-8)*math.pi/12), 1)
@@ -163,6 +206,12 @@ class Simulator:
                              humidity_pct=rng.randint(65, 95) if wet else rng.randint(30, 65),
                              weather="SNOW" if wet and temp < 0 else "RAIN" if wet else "CLEAR",
                              rainfall_mm=round(rng.uniform(.1, 2.5), 1) if wet else 0)
+                    cached = self.weather_cache.get((cid, w["recorded_at"]))
+                    if cached is not None:
+                        w = cached
+                        self.weather_sources["ERA5_REANALYSIS"] += 1
+                    else:
+                        self.weather_sources["SEASONAL_SIMULATION_FALLBACK"] += 1
                     self.weather[cid, day*24+hour] = w
                     self.emit("weather_hourly", w, day*288)
             for block in range((self.config["days"]+29)//30):
@@ -170,7 +219,7 @@ class Simulator:
                 end = min((block+1)*30*288, self.ticks)
                 campaign = dict(campaign_id=f"CP-{cid}-{block+1}", city_id=cid,
                     starts_at=self.stamps[begin], ends_at=self.stamps[end], channel="APP_COUPON",
-                    discount_cents=300+city_index*50, budget_cents=150000)
+                    discount_cents=300, budget_cents=150000)
                 self.campaigns[cid, block] = campaign
                 self.emit("campaigns", campaign)
         for station in self.stations:
@@ -180,6 +229,39 @@ class Simulator:
                     network_cents=600)
                 self.emit("operating_costs", cost, day*288)
                 self.daily_row(station, day*288)["operating_cost_cents"] = sum(cost[k] for k in ("rent_cents", "labor_cents", "network_cents"))
+
+    def refresh_vehicle(self, vehicle, tick, city):
+        """Account for unobserved travel/charging without silently resetting SOC.
+
+        These are interval aggregates, not fabricated exact external trip stops.
+        External charging never enters platform orders, cash or charger meters.
+        """
+        before_tick = vehicle["soc_tick"]
+        if tick <= before_tick:
+            return
+        capacity = vehicle["battery_capacity_kwh"] * 1000
+        prefix = self.driving[vehicle["vehicle_class"]]
+        elapsed_drive = prefix[tick] - prefix[before_tick]
+        # Use the mean background over this interval, not just the end hour.
+        hours = range(before_tick//12, max(before_tick//12+1, (tick+11)//12))
+        temp = sum(self.weather[city, h]["temperature_c"] for h in hours) / len(hours)
+        cold_factor = 1 + min(.45, max(0, 15-temp)*.012)
+        drive = max(0, round(vehicle["daily_drive_wh"] * elapsed_drive * cold_factor))
+        before = vehicle["energy_wh"]
+        reserve = round(capacity * .08)
+        external = 0
+        if drive > before-reserve and tick-before_tick >= 144:
+            # A vehicle may also use chargers outside our small 25-station network.
+            # Half-pack replenishments are an explicit conservative assumption.
+            topup = capacity // 2
+            external = math.ceil((drive-before+reserve)/topup) * topup
+        drive = min(drive, max(0, before+external-reserve))
+        after = before + external - drive
+        self.emit("vehicle_energy_intervals", dict(interval_id=self.ident("VEI"),
+            vehicle_id=vehicle["vehicle_id"], started_at=self.stamps[before_tick], ended_at=self.stamps[tick],
+            start_soc_pct=round(before/capacity*100, 4), end_soc_pct=round(after/capacity*100, 4),
+            driving_wh=drive, external_charge_wh=external), tick)
+        vehicle.update(energy_wh=after, soc_pct=after/capacity*100, soc_tick=tick)
 
     def finalize_request(self, request, outcome, tick, charger=None, session_id="", reason=""):
         attempt = request["attempt"]
@@ -221,9 +303,9 @@ class Simulator:
         station = charger["station"]
         vehicle = request["vehicle"]
         sid = self.ident("SES")
-        soc = rng.randint(10, 55)
-        target_soc = rng.randint(72, 96)
-        target_wh = int(vehicle["battery_capacity_kwh"] * (target_soc-soc) * 10)
+        soc = vehicle["soc_pct"]
+        plan = self.behavior.session_plan(vehicle, charger, station["site_type"], self.times[tick], rng)
+        target_wh = plan["target_wh"]
         requested_target_wh = target_wh
         anomaly = rng.choices(["NONE", "POWER_DERATING", "EARLY_STOP", "THERMAL_STRESS"], [96, 1.5, 1.5, 1])[0]
         stop_reason = "TARGET_REACHED"
@@ -232,7 +314,7 @@ class Simulator:
             stop_reason = "USER_STOPPED"
         steps = []
         energy = grid_energy = energy_fee = service_fee = grid_cost = 0
-        max_steps = min(60, self.ticks-12-tick)
+        max_steps = min(plan["max_charge_ticks"], self.ticks-12-tick)
         if max_steps <= 0:
             self.finalize_request(request, "FAILED", tick, charger, reason="PERIOD_CLOSING")
             return ""
@@ -241,8 +323,11 @@ class Simulator:
             temp = self.weather[station["city_id"], at//12]["temperature_c"]
             current_soc = soc + energy/(vehicle["battery_capacity_kwh"]*10)
             taper = 1 if current_soc < 72 else max(.25, (100-current_soc)/28)
-            weather_factor = max(.65, 1 - max(0, 8-temp)*.006)
-            power = min(charger["rated_power_kw"], vehicle["max_charge_kw"]) * taper * weather_factor
+            # Cold derating gradually relaxes as the pack warms. Coefficients
+            # are scenario assumptions, not a fitted chemistry-specific model.
+            weather_factor = max(.60, 1 - max(0, 12-temp)*.01*math.exp(-len(steps)/9))
+            acceptance = .80 if charger["connector_type"] == "DC" else .98
+            power = min(charger["rated_power_kw"], vehicle["max_charge_kw"]) * taper * weather_factor * acceptance
             power *= .4 if anomaly == "POWER_DERATING" else 1
             wh = min(target_wh-energy, max(1, math.floor(power*1000/12)))
             efficiency = .92 if charger["connector_type"] == "AC" else .95
@@ -260,9 +345,9 @@ class Simulator:
         end = tick + len(steps)
         if energy < target_wh:
             stop_reason = "DURATION_LIMIT"
-        parked_ticks = rng.choices([0, 1, 2, 3, 6, 12], [40, 25, 15, 10, 7, 3])[0]
-        unplugged = min(end + parked_ticks, self.ticks)
-        parking_fee = max(0, (unplugged-end)*5-10) * 8
+        unplugged = min(max(end, tick+plan["connected_ticks"], end+plan["parking_ticks"]), self.ticks-2)
+        free_parking = charger["connector_type"] == "AC" and station["site_type"] in {"OFFICE", "CAMPUS", "RESIDENTIAL"}
+        parking_fee = 0 if free_parking else max(0, (unplugged-end)*5-10) * 8
         campaign = self.campaigns[station["city_id"], (tick//288)//30]
         discount = 0
         if rng.random() < .30 and self.campaign_spend[campaign["campaign_id"]] + campaign["discount_cents"] <= campaign["budget_cents"]:
@@ -276,14 +361,15 @@ class Simulator:
             energy_wh=energy, grid_energy_wh=grid_energy, electricity_fee_cents=energy_fee,
             service_fee_cents=service_fee, parking_fee_cents=parking_fee, discount_cents=discount,
             total_fee_cents=total_fee, grid_cost_cents=grid_cost, status="COMPLETED" if paid else "WAITING_PAYMENT",
-            stop_reason=stop_reason, start_soc_pct=soc,
+            stop_reason=stop_reason, start_soc_pct=round(soc, 4),
             end_soc_pct=round(soc+energy/(vehicle["battery_capacity_kwh"]*10), 4),
             target_mode="ENERGY", target_value=requested_target_wh,
             campaign_id=campaign["campaign_id"] if discount else "")
         self.record_session(row, tick)
         self.daily_row(station, end)["completed_sessions"] += 1
         payment_tick = min(max(end+1, unplugged), self.ticks-1)
-        channel = rng.choice(["WECHAT", "ALIPAY", "WALLET", "FLEET_ACCOUNT"])
+        channel = rng.choices(["WECHAT", "ALIPAY", "WALLET", "FLEET_ACCOUNT"],
+            [15, 10, 10, 65] if vehicle["vehicle_class"] == "FLEET" else [48, 37, 15, 0])[0]
         if rng.random() < .09 or not paid:
             self.emit("payments", dict(payment_id=self.ident("PAY"), session_id=sid, user_id=vehicle["user_id"],
                 occurred_at=self.stamps[payment_tick], transaction_type="PAYMENT", status="FAILED", channel=channel,
@@ -314,7 +400,9 @@ class Simulator:
                 recorded_at=self.stamps[tick], anomaly_type=anomaly, severity="MEDIUM"))
         charger["session"] = dict(row=row, steps=steps, start=tick, end=end, unplugged=unplugged,
                                    anomaly=anomaly)
-        self.locks[vehicle["user_id"]] = unplugged
+        vehicle.update(energy_wh=vehicle["energy_wh"]+energy,
+                       soc_pct=soc+energy/(vehicle["battery_capacity_kwh"]*10), soc_tick=unplugged)
+        self.locks[vehicle["user_id"]] = unplugged + self.behavior.min_revisit_ticks(vehicle["vehicle_class"])
         self.finalize_request(request, "STARTED", tick, charger, sid)
         return sid
 
@@ -363,29 +451,27 @@ class Simulator:
         rng = self.rng
         dt = self.times[tick]
         hour = dt.hour
-        if station["site_type"] == "OFFICE":
-            shape = 2.2 if 8 <= hour <= 10 else 1.4 if 16 <= hour <= 19 else .55
-            if dt.weekday() >= 5:
-                shape *= .55
-        elif station["site_type"] == "RESIDENTIAL":
-            shape = 2 if hour >= 18 else .65
-        elif station["site_type"] == "SHOPPING":
-            shape = 1.6 if 11 <= hour <= 21 else .25
-            if dt.weekday() >= 5:
-                shape *= 1.35
-        else:
-            shape = 1.4 if 7 <= hour <= 21 else .3
+        shape = self.behavior.arrival_weight(station["site_type"], dt, station["phase_shift"])
+        shape *= self.behavior.city_public_pressure(station["city_id"], station["site_type"], dt)
         demand = station["intensity"] * shape * self.events[station["city_id"], tick//288]
-        if self.weather[station["city_id"], tick//12]["weather"] != "CLEAR":
+        if self.weather[station["city_id"], tick//12]["weather"] in {"SNOW", "RAIN"}:
             demand *= .88
         if rng.random() >= min(.8, demand) or tick >= self.ticks-24:
             return
         vehicle = None
-        for _ in range(10):
-            candidate = rng.choice(self.users[station["city_id"]])
-            if self.locks[candidate["user_id"]] <= tick:
-                vehicle = candidate
-                break
+        segments = self.behavior.segment_weights(station["site_type"], hour)
+        for _ in range(30):
+            segment = rng.choices(list(segments), list(segments.values()))[0]
+            pool = self.user_groups[station["city_id"], segment] or self.users[station["city_id"]]
+            candidate = rng.choice(pool)
+            preference = 1 if candidate["favorite_site"] == station["site_type"] else .45
+            if self.locks[candidate["user_id"]] > tick or rng.random() > candidate["activity"]*preference:
+                continue
+            self.refresh_vehicle(candidate, tick, station["city_id"])
+            if candidate["soc_pct"] >= 85:
+                continue
+            vehicle = candidate
+            break
         if vehicle is None:
             return
         attempt = dict(attempt_id=self.ident("ATT"), user_id=vehicle["user_id"], vehicle_id=vehicle["vehicle_id"],
@@ -397,7 +483,7 @@ class Simulator:
             self.finalize_request(request, "FAILED", tick, available[0] if available else None,
                 reason=rng.choice(["AUTH_FAILED", "CONNECTOR_HANDSHAKE", "APP_TIMEOUT"]))
         elif available and not station["waiting"]:
-            charger = available[0]
+            charger = self.behavior.choose_charger(available, vehicle, station["site_type"], hour, rng)
             if rng.random() < .18:
                 due = tick+rng.randint(1, 4)
                 choice = rng.random()
@@ -487,10 +573,13 @@ class Simulator:
                         remaining.append(request)
                 station["waiting"] = remaining
                 available = [c for c in station["chargers"] if not c["session"] and not c["hold"] and tick >= c["blocked_until"]]
-                for charger in available:
+                queue_available = list(available)
+                while queue_available:
                     if not remaining or tick >= self.ticks-12:
                         break
                     request = remaining.popleft()
+                    charger = self.behavior.choose_charger(queue_available, request["vehicle"], station["site_type"], self.times[tick].hour, self.rng)
+                    queue_available.remove(charger)
                     request["queue"]["called_at"] = self.stamps[tick]
                     charger["hold"] = dict(kind="queue", request=request, due=tick+1, accept=self.rng.random()<.85)
                 available = [c for c in available if not c["hold"]]
@@ -521,6 +610,11 @@ class Simulator:
         reference = self.summaries.finish()
         manifest = dict(dataset_id=self.config["dataset_id"], schema_version=SCHEMA_VERSION,
             generator_version=__version__, source="SIMULATED", config=self.config,
+            behavior_version=BEHAVIOR_VERSION, parking_policy_id="site_connector_v2",
+            reference_profiles={name: hashlib.sha256((CONFIG_DIR/name).read_bytes()).hexdigest()
+                for name in ["reference_profile.json", "urban_ev_profile.json", "weather_reference.csv.gz",
+                             "weather_reference_provenance.json", "calendar_reference.json"]},
+            weather_source_rows=dict(self.weather_sources),
             business_timezone="Asia/Shanghai", timestamp_timezone="UTC",
             period_start=self.stamps[0], period_end_exclusive=self.stamps[-1],
             tables=tables, reference_aggregates=reference,
@@ -530,6 +624,15 @@ class Simulator:
                          "power_kw": "interval mean output power", "meter_wh": "cumulative output energy at interval end",
                          "reference_aggregates": "independent Python simulator controls, not Spark outputs",
                          "battery_samples": "simulated charging-only values; positive current means charging; not physical diagnostics",
+                         "weather_hourly": "archived ERA5 reanalysis where available; counted seasonal simulation fallback outside cache window; credit Open-Meteo / ECMWF / C3S",
+                         "rainfall_mm": "legacy name for preceding-hour total precipitation including snow water-equivalent",
+                         "vehicle_energy_intervals": "simulated outside-network energy balance between platform stays; external charging excluded from platform sales, payments and meters",
+                         "city_behavior": "same five site archetypes per city, not representative city market samples; SZ TRANSIT uses 25% utilization-proxy modulation, not measured arrival rates",
+                         "tariffs": "same illustrative operator retail/grid-cost scenario in all cities, not actual local tariff policy or spot prices",
+                         "operating_costs": "same site-type rent, labor, network and coupon assumptions across cities for comparison; no city-index cost hierarchy or claim of actual local land/labor prices",
+                         "calendar": "is_weekend literally Sat/Sun; PUBLIC_HOLIDAY_* and ADJUSTED_WORKDAY follow archived official dates within coverage; LOCAL_EXPO and demand effects are simulated",
+                         "parking_policy": "AC RESIDENTIAL/OFFICE/CAMPUS post-charge stay included; other connectors/sites 10 free minutes then 8 cents/minute, simulated package",
+                         "boundary": "empty-system initialization; final arrivals close two hours early and final stays are clipped to period end minus ten minutes; exclude edge days in behavior analysis",
                          "coordinate_system": "WGS84 illustrative offsets, not actual station locations",
                          "profit": "modeled cash contribution only; excludes taxes, capex, depreciation and demand charges"})
         write_json(self.root/"manifest.json", manifest)

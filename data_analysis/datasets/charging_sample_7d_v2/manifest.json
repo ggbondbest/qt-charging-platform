@@ -1,0 +1,338 @@
+{
+  "behavior_version": "2.0.0",
+  "business_timezone": "Asia/Shanghai",
+  "canonical_session_count": 4619,
+  "config": {
+    "dataset_id": "charging_sample_7d_v2",
+    "days": 7,
+    "dirty_rate": 0.02,
+    "interval_minutes": 5,
+    "seed": 20260912,
+    "start_date": "2025-12-01",
+    "users_per_city": 80
+  },
+  "corruptions": {
+    "DUPLICATE": 17,
+    "MISSING_ID": 22,
+    "NEGATIVE_FEE": 25,
+    "STATUS_FORMAT": 21,
+    "UNKNOWN_STATION": 22
+  },
+  "dataset_id": "charging_sample_7d_v2",
+  "definitions": {
+    "battery_samples": "simulated charging-only values; positive current means charging; not physical diagnostics",
+    "boundary": "empty-system initialization; final arrivals close two hours early and final stays are clipped to period end minus ten minutes; exclude edge days in behavior analysis",
+    "calendar": "is_weekend literally Sat/Sun; PUBLIC_HOLIDAY_* and ADJUSTED_WORKDAY follow archived official dates within coverage; LOCAL_EXPO and demand effects are simulated",
+    "city_behavior": "same five site archetypes per city, not representative city market samples; SZ TRANSIT uses 25% utilization-proxy modulation, not measured arrival rates",
+    "coordinate_system": "WGS84 illustrative offsets, not actual station locations",
+    "energy_wh": "charger output interval energy",
+    "grid_energy_wh": "simulated purchased interval energy including conversion loss",
+    "meter_wh": "cumulative output energy at interval end",
+    "operating_costs": "same site-type rent, labor, network and coupon assumptions across cities for comparison; no city-index cost hierarchy or claim of actual local land/labor prices",
+    "parking_policy": "AC RESIDENTIAL/OFFICE/CAMPUS post-charge stay included; other connectors/sites 10 free minutes then 8 cents/minute, simulated package",
+    "power_kw": "interval mean output power",
+    "profit": "modeled cash contribution only; excludes taxes, capex, depreciation and demand charges",
+    "rainfall_mm": "legacy name for preceding-hour total precipitation including snow water-equivalent",
+    "reference_aggregates": "independent Python simulator controls, not Spark outputs",
+    "tariffs": "same illustrative operator retail/grid-cost scenario in all cities, not actual local tariff policy or spot prices",
+    "vehicle_energy_intervals": "simulated outside-network energy balance between platform stays; external charging excluded from platform sales, payments and meters",
+    "weather_hourly": "archived ERA5 reanalysis where available; counted seasonal simulation fallback outside cache window; credit Open-Meteo / ECMWF / C3S"
+  },
+  "expected_telemetry_rows": 151200,
+  "generator_version": "2.0.0",
+  "parking_policy_id": "site_connector_v2",
+  "period_end_exclusive": "2025-12-07T16:00:00Z",
+  "period_start": "2025-11-30T16:00:00Z",
+  "reference_aggregates": {
+    "station_daily": {
+      "files": [
+        {
+          "bytes": 3063,
+          "path": "reference_aggregates/station_daily/part-2025-12.csv.gz",
+          "rows": 175,
+          "sha256": "0f475b9335bb999e4ed00d64b8b3b21f25d696ce3a5536a5d1f2d0db1b2ff865"
+        }
+      ],
+      "rows": 175
+    },
+    "station_hourly": {
+      "files": [
+        {
+          "bytes": 42546,
+          "path": "reference_aggregates/station_hourly/part-2025-12.csv.gz",
+          "rows": 4200,
+          "sha256": "5c066a14b92965d70979e17c0d8893cebcb8682b7107edf69538a4b91385719d"
+        }
+      ],
+      "rows": 4200
+    }
+  },
+  "reference_profiles": {
+    "calendar_reference.json": "c1701530b8b255254cf3f33fa0f0d3d2f2b403af5734f6a95d691d97d14ea57b",
+    "reference_profile.json": "2a2d4d4295cd1492733cbdf67651cf5e3f09db756062b1b7521adcfab00433b6",
+    "urban_ev_profile.json": "2ba5ba1309f602496ba3ae93df771b6cde7e5f2957516ba76ef627e3bdceae9f",
+    "weather_reference.csv.gz": "9893d56fb66250cface851c23fde478a5575e1319ce85490ac94efd29c26d33b",
+    "weather_reference_provenance.json": "dbc880c9fdcbf7b5c809b83dde209dec311c6eb6b4ab0bb4a7d43bc7f4b2c843"
+  },
+  "schema_version": "1.1.0",
+  "source": "SIMULATED",
+  "tables": {
+    "anomaly_labels": {
+      "files": [
+        {
+          "bytes": 1857,
+          "path": "raw/anomaly_labels/part-static.csv.gz",
+          "rows": 185,
+          "sha256": "1060e75276608025f95e6fcc043e9b0e9464c92bf6e38a48d56c0e18e74ff659"
+        }
+      ],
+      "rows": 185
+    },
+    "battery_samples": {
+      "files": [
+        {
+          "bytes": 558576,
+          "path": "raw/battery_samples/part-2025-12.csv.gz",
+          "rows": 27433,
+          "sha256": "bcfbf98a02cd63b41fa26c13656e1732cbcb674666c362128dea81d3da135ce9"
+        }
+      ],
+      "rows": 27433
+    },
+    "calendar": {
+      "files": [
+        {
+          "bytes": 331,
+          "path": "raw/calendar/part-static.csv.gz",
+          "rows": 35,
+          "sha256": "79a47d09e4804b02e9bd0b490dee381b1066d3af4df9bcdefe4e8c916bb8a3a8"
+        }
+      ],
+      "rows": 35
+    },
+    "campaigns": {
+      "files": [
+        {
+          "bytes": 177,
+          "path": "raw/campaigns/part-static.csv.gz",
+          "rows": 5,
+          "sha256": "30d5ded0decc3c4c2674198ea3a0f0c30c89214da2efc652f5a937d81e0d8a6a"
+        }
+      ],
+      "rows": 5
+    },
+    "charger_telemetry": {
+      "files": [
+        {
+          "bytes": 927658,
+          "path": "raw/charger_telemetry/part-2025-12.csv.gz",
+          "rows": 151200,
+          "sha256": "4c083edc27284aaafde3757c4cc5d38d1115a9ac1daf7e9d840998836ffcfe0c"
+        }
+      ],
+      "rows": 151200
+    },
+    "chargers": {
+      "files": [
+        {
+          "bytes": 584,
+          "path": "raw/chargers/part-static.csv.gz",
+          "rows": 75,
+          "sha256": "609d3520022cfbc45d626e84b21b90c76e37d65ed4da46c5ce3fa6ae0de8b70d"
+        }
+      ],
+      "rows": 75
+    },
+    "charging_attempts": {
+      "files": [
+        {
+          "bytes": 70212,
+          "path": "raw/charging_attempts/part-2025-12.csv.gz",
+          "rows": 5308,
+          "sha256": "25021ea5012df2295024efcbb8717d8013ea4c8a7d9981d6f811bada293eebd9"
+        }
+      ],
+      "rows": 5308
+    },
+    "charging_sessions": {
+      "files": [
+        {
+          "bytes": 220194,
+          "path": "raw/charging_sessions/part-2025-12.csv.gz",
+          "rows": 4705,
+          "sha256": "5e1d9d82b2d6c8188a38c89ff7ddc32c9624d6352075af4f732555b85e6445af"
+        }
+      ],
+      "rows": 4705
+    },
+    "cities": {
+      "files": [
+        {
+          "bytes": 215,
+          "path": "raw/cities/part-static.csv.gz",
+          "rows": 5,
+          "sha256": "a95275d13692be57ccfc25d3e39d2d5a2b93310214a6cd10218ff2196c5a1762"
+        }
+      ],
+      "rows": 5
+    },
+    "corruption_log": {
+      "files": [
+        {
+          "bytes": 871,
+          "path": "raw/corruption_log/part-static.csv.gz",
+          "rows": 107,
+          "sha256": "44fe7ee5b2a3d0d90e577f90ef7456faf416dd17a8f33649290cc385122e776d"
+        }
+      ],
+      "rows": 107
+    },
+    "maintenance_events": {
+      "files": [
+        {
+          "bytes": 886,
+          "path": "raw/maintenance_events/part-2025-12.csv.gz",
+          "rows": 106,
+          "sha256": "a46db41726a6870a4e1d8d224ac4595e2003d35685054b27ec2e445f803fd0f0"
+        }
+      ],
+      "rows": 106
+    },
+    "maintenance_tickets": {
+      "files": [
+        {
+          "bytes": 1050,
+          "path": "raw/maintenance_tickets/part-2025-12.csv.gz",
+          "rows": 27,
+          "sha256": "ba11295872679371c431079cc7b4c359d336d219fe4639233f14252d46100d34"
+        }
+      ],
+      "rows": 27
+    },
+    "operating_costs": {
+      "files": [
+        {
+          "bytes": 528,
+          "path": "raw/operating_costs/part-2025-12.csv.gz",
+          "rows": 175,
+          "sha256": "2f97f5fc91dd815231b01b1aff75a1ed1c631e82807bb8cb446cdf091483b584"
+        }
+      ],
+      "rows": 175
+    },
+    "payments": {
+      "files": [
+        {
+          "bytes": 67514,
+          "path": "raw/payments/part-2025-12.csv.gz",
+          "rows": 5116,
+          "sha256": "d30462319d4df07cd019fe52df30abc9b9412672d90c104ef500b2d71f4945a3"
+        }
+      ],
+      "rows": 5116
+    },
+    "queue_entries": {
+      "files": [
+        {
+          "bytes": 6688,
+          "path": "raw/queue_entries/part-2025-12.csv.gz",
+          "rows": 412,
+          "sha256": "9c97269f3f6bd866405f1e4f46e34fd9314e2d309adf4d26355630a1ebf80fa7"
+        }
+      ],
+      "rows": 412
+    },
+    "reservations": {
+      "files": [
+        {
+          "bytes": 12582,
+          "path": "raw/reservations/part-2025-12.csv.gz",
+          "rows": 777,
+          "sha256": "22f086429b790baceb894a5bcc06829df31f8ebc58546d2426d9b3c693029c5c"
+        }
+      ],
+      "rows": 777
+    },
+    "reviews": {
+      "files": [
+        {
+          "bytes": 13097,
+          "path": "raw/reviews/part-2025-12.csv.gz",
+          "rows": 1048,
+          "sha256": "fd5d92d689ccff528367eee45621a1e1cdfffba753949104c08283025c0d2104"
+        }
+      ],
+      "rows": 1048
+    },
+    "stations": {
+      "files": [
+        {
+          "bytes": 710,
+          "path": "raw/stations/part-static.csv.gz",
+          "rows": 25,
+          "sha256": "2e3cdee4184810efdd6a68216a478240a99fbe4a70163ebed7536663b6045b44"
+        }
+      ],
+      "rows": 25
+    },
+    "tariffs": {
+      "files": [
+        {
+          "bytes": 712,
+          "path": "raw/tariffs/part-static.csv.gz",
+          "rows": 120,
+          "sha256": "320551b7178ff340758c3c394595e2aca68efaec5678c67f782f83503721a671"
+        }
+      ],
+      "rows": 120
+    },
+    "users": {
+      "files": [
+        {
+          "bytes": 3152,
+          "path": "raw/users/part-static.csv.gz",
+          "rows": 400,
+          "sha256": "2dea546de4a203ad14d6cc0845f775aac47338a8348869ff31dfcc85fac33501"
+        }
+      ],
+      "rows": 400
+    },
+    "vehicle_energy_intervals": {
+      "files": [
+        {
+          "bytes": 107653,
+          "path": "raw/vehicle_energy_intervals/part-2025-12.csv.gz",
+          "rows": 5469,
+          "sha256": "ca27a87bb3208153920636abfadc16e261481a232a04ba7063325ee8d462c2e3"
+        }
+      ],
+      "rows": 5469
+    },
+    "vehicles": {
+      "files": [
+        {
+          "bytes": 2484,
+          "path": "raw/vehicles/part-static.csv.gz",
+          "rows": 400,
+          "sha256": "22f6ec493c1e9de70fd9634afbf4e354aafa4f9c31b4feef1a52778b7428e3af"
+        }
+      ],
+      "rows": 400
+    },
+    "weather_hourly": {
+      "files": [
+        {
+          "bytes": 5128,
+          "path": "raw/weather_hourly/part-2025-12.csv.gz",
+          "rows": 840,
+          "sha256": "4b2e5ae08daf9eddf2b3e9fe55dcb39cf89831611681e30306ecd684337e51b6"
+        }
+      ],
+      "rows": 840
+    }
+  },
+  "timestamp_timezone": "UTC",
+  "weather_source_rows": {
+    "ERA5_REANALYSIS": 840
+  }
+}

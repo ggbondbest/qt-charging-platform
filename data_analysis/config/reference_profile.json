@@ -1,0 +1,738 @@
+{
+  "arrival": {
+    "day_07_to_18_count": 2949,
+    "global_hour_counts": [
+      3,
+      3,
+      0,
+      2,
+      4,
+      2,
+      1,
+      1,
+      53,
+      158,
+      295,
+      504,
+      475,
+      291,
+      139,
+      192,
+      404,
+      437,
+      233,
+      119,
+      56,
+      14,
+      7,
+      2
+    ],
+    "hour_index": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "night_18_to_07_count": 446,
+    "population": "All reference records, including zero-energy/nonpositive-duration records; these are recorded sessions, not all real-world attempted visits.",
+    "weekday_counts": [
+      616,
+      635,
+      713,
+      735,
+      610,
+      62,
+      24
+    ],
+    "weekday_hour_counts": [
+      3,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      53,
+      145,
+      280,
+      498,
+      466,
+      280,
+      136,
+      184,
+      402,
+      434,
+      232,
+      119,
+      55,
+      13,
+      6,
+      1
+    ],
+    "weekday_index": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "weekday_sample_count": 3309,
+    "weekend_hour_counts": [
+      0,
+      2,
+      0,
+      2,
+      3,
+      2,
+      1,
+      1,
+      0,
+      13,
+      15,
+      6,
+      9,
+      11,
+      3,
+      8,
+      2,
+      3,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1
+    ],
+    "weekend_sample_count": 86
+  },
+  "facility_groups": [
+    {
+      "connection_hours": {
+        "count": 589,
+        "max": 8.831388889,
+        "mean": 2.46711564,
+        "min": 0.078055556,
+        "quantiles": {
+          "p05": 0.95483333,
+          "p25": 2.00083333,
+          "p50": 2.45083333,
+          "p75": 3.01638889,
+          "p95": 3.83394444,
+          "p99": 4.65225556
+        }
+      },
+      "energy_kwh": {
+        "count": 589,
+        "max": 23.68,
+        "mean": 5.7916129,
+        "min": 0.1,
+        "quantiles": {
+          "p05": 1.39,
+          "p25": 4.5,
+          "p50": 6.3,
+          "p75": 6.78,
+          "p95": 7.666,
+          "p99": 18.8308
+        }
+      },
+      "group": "reference_facility_group_1",
+      "hour_counts": [
+        3,
+        3,
+        0,
+        2,
+        4,
+        2,
+        1,
+        1,
+        48,
+        103,
+        60,
+        26,
+        102,
+        70,
+        20,
+        49,
+        18,
+        48,
+        27,
+        3,
+        0,
+        1,
+        1,
+        1
+      ],
+      "row_count": 593,
+      "weekday_counts": [
+        97,
+        107,
+        111,
+        105,
+        99,
+        52,
+        22
+      ]
+    },
+    {
+      "connection_hours": {
+        "count": 843,
+        "max": 9.320277778,
+        "mean": 2.89522835,
+        "min": 0.040555556,
+        "quantiles": {
+          "p05": 1.138,
+          "p25": 2.31333333,
+          "p50": 2.78805556,
+          "p75": 3.44791667,
+          "p95": 4.71111111,
+          "p99": 5.89380556
+        }
+      },
+      "energy_kwh": {
+        "count": 843,
+        "max": 11.61,
+        "mean": 5.72924081,
+        "min": 0.02,
+        "quantiles": {
+          "p05": 1.726,
+          "p25": 5.085,
+          "p50": 6.44,
+          "p75": 6.84,
+          "p95": 7.08,
+          "p99": 7.637
+        }
+      },
+      "group": "reference_facility_group_2",
+      "hour_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        53,
+        64,
+        148,
+        70,
+        106,
+        46,
+        48,
+        81,
+        91,
+        74,
+        46,
+        22,
+        6,
+        2,
+        0
+      ],
+      "row_count": 862,
+      "weekday_counts": [
+        170,
+        164,
+        194,
+        190,
+        143,
+        1,
+        0
+      ]
+    },
+    {
+      "connection_hours": {
+        "count": 1801,
+        "max": 11.58694444,
+        "mean": 2.93336295,
+        "min": 0.021111111,
+        "quantiles": {
+          "p05": 0.9225,
+          "p25": 2.1525,
+          "p50": 2.98444444,
+          "p75": 3.66777778,
+          "p95": 4.72388889,
+          "p99": 6.46333333
+        }
+      },
+      "energy_kwh": {
+        "count": 1801,
+        "max": 22.07,
+        "mean": 5.94294281,
+        "min": 0.01,
+        "quantiles": {
+          "p05": 1.53,
+          "p25": 4.15,
+          "p50": 6.0,
+          "p75": 6.89,
+          "p95": 12.92,
+          "p99": 18.07
+        }
+      },
+      "group": "reference_facility_group_3",
+      "hour_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        171,
+        277,
+        302,
+        107,
+        69,
+        85,
+        294,
+        291,
+        126,
+        68,
+        31,
+        6,
+        2,
+        1
+      ],
+      "row_count": 1832,
+      "weekday_counts": [
+        326,
+        345,
+        389,
+        418,
+        343,
+        9,
+        2
+      ]
+    },
+    {
+      "connection_hours": {
+        "count": 107,
+        "max": 55.23805556,
+        "mean": 4.1588188,
+        "min": 0.169722222,
+        "quantiles": {
+          "p05": 1.35502778,
+          "p25": 2.80666667,
+          "p50": 3.90861111,
+          "p75": 4.12333333,
+          "p95": 6.18133333,
+          "p99": 8.8671
+        }
+      },
+      "energy_kwh": {
+        "count": 107,
+        "max": 22.03,
+        "mean": 7.28448598,
+        "min": 1.97,
+        "quantiles": {
+          "p05": 4.481,
+          "p25": 6.565,
+          "p50": 6.69,
+          "p75": 6.815,
+          "p95": 15.94,
+          "p99": 20.8978
+        }
+      },
+      "group": "reference_facility_group_4",
+      "hour_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        53,
+        1,
+        8,
+        4,
+        10,
+        11,
+        7,
+        6,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "row_count": 108,
+      "weekday_counts": [
+        23,
+        19,
+        19,
+        22,
+        25,
+        0,
+        0
+      ]
+    }
+  ],
+  "limitations": [
+    "This is a user-supplied reference sample, not a representative survey of Chinese cities or proof that all charging demand peaks at night.",
+    "Source timezone/year meaning is unverified. Original years are never corrected. No absolute daily visit-frequency calibration is produced.",
+    "Hourly/weekday counts describe recorded sessions. Missing visits, failed attempts, operating exposure days and sampling selection are unknown.",
+    "Energy and connection duration are jointly observed. Connection duration can include non-charging occupancy; energy/duration is not rated charger power or charging-only power.",
+    "The positive-energy/positive-duration filter applies jointly to energy, duration, average-power, correlation and joint-histogram metrics; arrival counts retain all source records.",
+    "Facility groups are anonymous categories. Their real site-type meanings and stationId-versus-connector semantics are not verified.",
+    "Small weekend/category samples, a long-duration tail and selection bias remain. Fitted accuracy or real-world causality cannot be inferred from these aggregates.",
+    "Synthetic residential/nighttime, high-power DC and other operational patterns require separately disclosed scenario assumptions, not relabeling this reference as evidence.",
+    "Do not feed future observed energy/duration outcomes into forecasting features. These aggregates calibrate a simulator, not per-user or per-station replicas."
+  ],
+  "profile_version": "1.0.0",
+  "provenance": {
+    "energy_connection_sample_count": 3340,
+    "original_license_and_timezone_verified": false,
+    "privacy": "Aggregate counts, quantiles and histograms only; no identifiers, paths or raw sample pairs.",
+    "source": "USER_PROVIDED_REFERENCE_AGGREGATES",
+    "source_files": [
+      {
+        "bytes": 420477,
+        "role": "charging_sessions_reference",
+        "row_count": 3395,
+        "sha256": "c5053622442c30afebb7ed1af852a2cdc704eac4b6febb38c226bc4aa10fc057"
+      },
+      {
+        "bytes": 13018,
+        "role": "station_metadata_reference",
+        "row_count": 105,
+        "sha256": "b7d7c64d03e9c6936bfed8b998e733e2aa5af2cd877dca7c73ef1d6c5a34539d"
+      }
+    ],
+    "source_row_count": 3395
+  },
+  "quality": {
+    "connection_duration_mismatch_over_one_second": 0,
+    "created_hour_mismatch": 0,
+    "created_timestamp_rows": 3395,
+    "created_timezone_unspecified": 3395,
+    "created_weekday_mismatch": 0,
+    "created_year_before_2000": 3395,
+    "duplicate_session_identifiers": 0,
+    "end_before_start": 0,
+    "excluded_from_energy_connection_metrics": 55,
+    "metadata": {
+      "facility_type_mismatches": 0,
+      "location_pair_mismatches": 0,
+      "metadata_row_count": 105,
+      "missing_station_references": 0,
+      "present": true
+    },
+    "nonpositive_connection_duration_rows": 0,
+    "nonpositive_energy_rows": 55,
+    "unparseable_created_timestamps": 0,
+    "unparseable_or_incompatible_ended_timestamps": 0
+  },
+  "session_metrics": {
+    "connection_averaged_kw": {
+      "count": 3340,
+      "max": 45.95744686868405,
+      "mean": 2.2616578,
+      "min": 0.018433179723502304,
+      "quantiles": {
+        "p05": 0.80682132,
+        "p25": 1.6348931,
+        "p50": 2.1294457,
+        "p75": 2.75911787,
+        "p95": 3.87125756,
+        "p99": 5.79305514
+      }
+    },
+    "connection_hours": {
+      "count": 3340,
+      "histogram": {
+        "counts": [
+          61,
+          110,
+          497,
+          2294,
+          361,
+          16,
+          1
+        ],
+        "edges": [
+          0,
+          0.5,
+          1,
+          2,
+          4,
+          8,
+          24,
+          72
+        ]
+      },
+      "max": 55.23805556,
+      "mean": 2.88077512,
+      "min": 0.021111111,
+      "quantiles": {
+        "p05": 0.99468056,
+        "p25": 2.14493056,
+        "p50": 2.82666667,
+        "p75": 3.56159722,
+        "p95": 4.61416667,
+        "p99": 6.39620278
+      }
+    },
+    "energy_connection_joint": {
+      "connection_hour_edges": [
+        0,
+        0.5,
+        1,
+        2,
+        4,
+        8,
+        24,
+        72
+      ],
+      "counts": [
+        [
+          54,
+          50,
+          58,
+          63,
+          14,
+          0,
+          0
+        ],
+        [
+          1,
+          56,
+          171,
+          171,
+          21,
+          0,
+          0
+        ],
+        [
+          2,
+          4,
+          208,
+          536,
+          73,
+          2,
+          1
+        ],
+        [
+          4,
+          0,
+          41,
+          1363,
+          221,
+          12,
+          0
+        ],
+        [
+          0,
+          0,
+          17,
+          56,
+          10,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          2,
+          90,
+          19,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          15,
+          3,
+          0,
+          0
+        ]
+      ],
+      "energy_edges": [
+        0,
+        2,
+        4,
+        6,
+        8,
+        12,
+        20,
+        40
+      ]
+    },
+    "energy_connection_pearson": 0.28026036,
+    "energy_kwh": {
+      "count": 3340,
+      "histogram": {
+        "counts": [
+          239,
+          420,
+          826,
+          1641,
+          84,
+          112,
+          18
+        ],
+        "edges": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          12,
+          20,
+          40
+        ]
+      },
+      "max": 23.68,
+      "mean": 5.90529641,
+      "min": 0.01,
+      "quantiles": {
+        "p05": 1.54,
+        "p25": 4.47,
+        "p50": 6.28,
+        "p75": 6.84,
+        "p95": 9.6225,
+        "p99": 17.9761
+      }
+    },
+    "histogram_interval_rule": "[left,right), except final bin includes its right edge",
+    "population": "Only rows with energy_kwh > 0 AND connection_hours > 0; no outlier trimming.",
+    "quantile_method": "linear interpolation at (n-1)*p",
+    "sample_count": 3340
+  },
+  "station_heterogeneity": {
+    "distinct_station_count": 105,
+    "eligible_station_count": 56,
+    "facility_category_meanings_verified": false,
+    "minimum_sessions_for_peak": 20,
+    "peak_hour_share": {
+      "count": 56,
+      "max": 0.8,
+      "mean": 0.36240561,
+      "min": 0.2,
+      "quantiles": {
+        "p05": 0.21607378,
+        "p25": 0.26258581,
+        "p50": 0.30434783,
+        "p75": 0.41757246,
+        "p95": 0.64772727,
+        "p99": 0.7553125
+      }
+    },
+    "peak_hour_station_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      4,
+      12,
+      9,
+      5,
+      0,
+      0,
+      7,
+      14,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "peak_tie_rule": "earliest_hour"
+  },
+  "users": {
+    "distinct_user_count": 85,
+    "interpretation": "Within-observation-window repeat use, not retention or a precise physical schedule constraint.",
+    "repeat_user_count": 78,
+    "sessions_per_user": {
+      "count": 85,
+      "histogram": {
+        "counts": [
+          0,
+          7,
+          11,
+          11,
+          14,
+          14,
+          19,
+          9
+        ],
+        "edges": [
+          0,
+          1,
+          2,
+          5,
+          10,
+          20,
+          50,
+          100,
+          200
+        ]
+      },
+      "max": 192,
+      "mean": 39.94117647,
+      "min": 1,
+      "quantiles": {
+        "p05": 1.0,
+        "p25": 5.0,
+        "p50": 19.0,
+        "p75": 58.0,
+        "p95": 127.6,
+        "p99": 173.52
+      }
+    },
+    "top_station_share_among_repeat_users": {
+      "count": 78,
+      "max": 1.0,
+      "mean": 0.51450459,
+      "min": 0.14705882352941177,
+      "quantiles": {
+        "p05": 0.2,
+        "p25": 0.29335443,
+        "p50": 0.46529412,
+        "p75": 0.66346154,
+        "p95": 1.0,
+        "p99": 1.0
+      }
+    },
+    "window_repeat_user_fraction": 0.91764706
+  }
+}

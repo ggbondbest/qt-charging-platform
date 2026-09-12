@@ -1,3 +1,3 @@
-"""Deterministic, entirely synthetic charging operations datasets."""
+"""Deterministic synthetic charging with explicitly attributed context data."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

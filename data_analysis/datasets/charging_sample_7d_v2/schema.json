@@ -1,0 +1,269 @@
+{
+  "raw": {
+    "anomaly_labels": [
+      "label_id",
+      "session_id",
+      "recorded_at",
+      "anomaly_type",
+      "severity"
+    ],
+    "battery_samples": [
+      "session_id",
+      "charger_id",
+      "recorded_at",
+      "soc_pct",
+      "pack_voltage_v",
+      "charge_current_a",
+      "max_cell_voltage_v",
+      "min_cell_voltage_v",
+      "max_temperature_c",
+      "min_temperature_c"
+    ],
+    "calendar": [
+      "city_id",
+      "business_date",
+      "is_weekend",
+      "scenario_event",
+      "demand_multiplier"
+    ],
+    "campaigns": [
+      "campaign_id",
+      "city_id",
+      "starts_at",
+      "ends_at",
+      "channel",
+      "discount_cents",
+      "budget_cents"
+    ],
+    "charger_telemetry": [
+      "charger_id",
+      "station_id",
+      "recorded_at",
+      "interval_seconds",
+      "state",
+      "session_id",
+      "power_kw",
+      "energy_wh",
+      "grid_energy_wh",
+      "grid_cost_cents",
+      "meter_wh",
+      "online"
+    ],
+    "chargers": [
+      "charger_id",
+      "station_id",
+      "connector_type",
+      "rated_power_kw",
+      "commissioned_at",
+      "manufacturer",
+      "model"
+    ],
+    "charging_attempts": [
+      "attempt_id",
+      "user_id",
+      "vehicle_id",
+      "station_id",
+      "charger_id",
+      "attempted_at",
+      "outcome",
+      "failure_reason",
+      "session_id",
+      "queue_id",
+      "reservation_id"
+    ],
+    "charging_sessions": [
+      "session_id",
+      "attempt_id",
+      "user_id",
+      "vehicle_id",
+      "station_id",
+      "charger_id",
+      "started_at",
+      "ended_at",
+      "unplugged_at",
+      "energy_wh",
+      "grid_energy_wh",
+      "electricity_fee_cents",
+      "service_fee_cents",
+      "parking_fee_cents",
+      "discount_cents",
+      "total_fee_cents",
+      "grid_cost_cents",
+      "status",
+      "stop_reason",
+      "start_soc_pct",
+      "end_soc_pct",
+      "target_mode",
+      "target_value",
+      "campaign_id"
+    ],
+    "cities": [
+      "city_id",
+      "city_name",
+      "latitude",
+      "longitude",
+      "timezone"
+    ],
+    "corruption_log": [
+      "corruption_id",
+      "table_name",
+      "record_id",
+      "corruption_type",
+      "expected_action"
+    ],
+    "maintenance_events": [
+      "event_id",
+      "ticket_id",
+      "event_at",
+      "status",
+      "note"
+    ],
+    "maintenance_tickets": [
+      "ticket_id",
+      "charger_id",
+      "station_id",
+      "reported_at",
+      "accepted_at",
+      "work_started_at",
+      "restored_at",
+      "fault_type",
+      "severity",
+      "labor_cost_cents",
+      "parts_cost_cents",
+      "status"
+    ],
+    "operating_costs": [
+      "station_id",
+      "business_date",
+      "rent_cents",
+      "labor_cents",
+      "network_cents"
+    ],
+    "payments": [
+      "payment_id",
+      "session_id",
+      "user_id",
+      "occurred_at",
+      "transaction_type",
+      "status",
+      "channel",
+      "amount_cents",
+      "failure_reason"
+    ],
+    "queue_entries": [
+      "queue_id",
+      "user_id",
+      "station_id",
+      "joined_at",
+      "called_at",
+      "resolved_at",
+      "position_at_join",
+      "status",
+      "session_id"
+    ],
+    "reservations": [
+      "reservation_id",
+      "user_id",
+      "station_id",
+      "charger_id",
+      "created_at",
+      "expires_at",
+      "resolved_at",
+      "status",
+      "session_id"
+    ],
+    "reviews": [
+      "review_id",
+      "session_id",
+      "user_id",
+      "station_id",
+      "created_at",
+      "rating",
+      "issue_type",
+      "comment"
+    ],
+    "stations": [
+      "station_id",
+      "city_id",
+      "station_name",
+      "site_type",
+      "latitude",
+      "longitude",
+      "opened_at",
+      "transformer_kw",
+      "rent_daily_cents"
+    ],
+    "tariffs": [
+      "tariff_id",
+      "city_id",
+      "hour",
+      "energy_price_cents_per_kwh",
+      "service_price_cents_per_kwh",
+      "grid_price_cents_per_kwh",
+      "period"
+    ],
+    "users": [
+      "user_id",
+      "home_city_id",
+      "registered_at",
+      "segment",
+      "acquisition_channel",
+      "membership"
+    ],
+    "vehicle_energy_intervals": [
+      "interval_id",
+      "vehicle_id",
+      "started_at",
+      "ended_at",
+      "start_soc_pct",
+      "end_soc_pct",
+      "driving_wh",
+      "external_charge_wh"
+    ],
+    "vehicles": [
+      "vehicle_id",
+      "user_id",
+      "battery_capacity_kwh",
+      "max_charge_kw",
+      "vehicle_class"
+    ],
+    "weather_hourly": [
+      "city_id",
+      "recorded_at",
+      "temperature_c",
+      "humidity_pct",
+      "weather",
+      "rainfall_mm"
+    ]
+  },
+  "reference_aggregates": {
+    "station_daily": [
+      "station_id",
+      "city_id",
+      "business_date",
+      "energy_wh",
+      "grid_cost_cents",
+      "completed_sessions",
+      "paid_cents",
+      "refund_cents",
+      "operating_cost_cents",
+      "maintenance_cost_cents"
+    ],
+    "station_hourly": [
+      "station_id",
+      "city_id",
+      "recorded_at",
+      "energy_wh",
+      "mean_power_kw",
+      "available_samples",
+      "charging_samples",
+      "reserved_samples",
+      "occupied_samples",
+      "maintenance_samples",
+      "offline_samples",
+      "sample_count",
+      "capacity",
+      "end_available_count"
+    ]
+  }
+}

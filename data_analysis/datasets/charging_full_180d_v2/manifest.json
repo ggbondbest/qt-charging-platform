@@ -1,0 +1,788 @@
+{
+  "behavior_version": "2.0.0",
+  "business_timezone": "Asia/Shanghai",
+  "canonical_session_count": 121539,
+  "config": {
+    "dataset_id": "charging_full_180d_v2",
+    "days": 180,
+    "dirty_rate": 0.02,
+    "interval_minutes": 5,
+    "seed": 20260912,
+    "start_date": "2025-12-01",
+    "users_per_city": 1200
+  },
+  "corruptions": {
+    "DUPLICATE": 502,
+    "MISSING_ID": 470,
+    "NEGATIVE_FEE": 484,
+    "STATUS_FORMAT": 434,
+    "UNKNOWN_STATION": 461
+  },
+  "dataset_id": "charging_full_180d_v2",
+  "definitions": {
+    "battery_samples": "simulated charging-only values; positive current means charging; not physical diagnostics",
+    "boundary": "empty-system initialization; final arrivals close two hours early and final stays are clipped to period end minus ten minutes; exclude edge days in behavior analysis",
+    "calendar": "is_weekend literally Sat/Sun; PUBLIC_HOLIDAY_* and ADJUSTED_WORKDAY follow archived official dates within coverage; LOCAL_EXPO and demand effects are simulated",
+    "city_behavior": "same five site archetypes per city, not representative city market samples; SZ TRANSIT uses 25% utilization-proxy modulation, not measured arrival rates",
+    "coordinate_system": "WGS84 illustrative offsets, not actual station locations",
+    "energy_wh": "charger output interval energy",
+    "grid_energy_wh": "simulated purchased interval energy including conversion loss",
+    "meter_wh": "cumulative output energy at interval end",
+    "operating_costs": "same site-type rent, labor, network and coupon assumptions across cities for comparison; no city-index cost hierarchy or claim of actual local land/labor prices",
+    "parking_policy": "AC RESIDENTIAL/OFFICE/CAMPUS post-charge stay included; other connectors/sites 10 free minutes then 8 cents/minute, simulated package",
+    "power_kw": "interval mean output power",
+    "profit": "modeled cash contribution only; excludes taxes, capex, depreciation and demand charges",
+    "rainfall_mm": "legacy name for preceding-hour total precipitation including snow water-equivalent",
+    "reference_aggregates": "independent Python simulator controls, not Spark outputs",
+    "tariffs": "same illustrative operator retail/grid-cost scenario in all cities, not actual local tariff policy or spot prices",
+    "vehicle_energy_intervals": "simulated outside-network energy balance between platform stays; external charging excluded from platform sales, payments and meters",
+    "weather_hourly": "archived ERA5 reanalysis where available; counted seasonal simulation fallback outside cache window; credit Open-Meteo / ECMWF / C3S"
+  },
+  "expected_telemetry_rows": 3888000,
+  "generator_version": "2.0.0",
+  "parking_policy_id": "site_connector_v2",
+  "period_end_exclusive": "2026-05-29T16:00:00Z",
+  "period_start": "2025-11-30T16:00:00Z",
+  "reference_aggregates": {
+    "station_daily": {
+      "files": [
+        {
+          "bytes": 12946,
+          "path": "reference_aggregates/station_daily/part-2025-12.csv.gz",
+          "rows": 775,
+          "sha256": "c634678eeb550d12d0dfe941ad0bcbc31517e270e356d5fa1075bb2ec1643993"
+        },
+        {
+          "bytes": 12757,
+          "path": "reference_aggregates/station_daily/part-2026-01.csv.gz",
+          "rows": 775,
+          "sha256": "fa46b6e50cba0f1ab59e4682602da0882a9d0d2a47db58ff6744b21bf9e05af9"
+        },
+        {
+          "bytes": 11513,
+          "path": "reference_aggregates/station_daily/part-2026-02.csv.gz",
+          "rows": 700,
+          "sha256": "ccdb9817d0c09bb6bc4f89aeddb5066952a4740aa987b3273e21e13cd18f9a8a"
+        },
+        {
+          "bytes": 12939,
+          "path": "reference_aggregates/station_daily/part-2026-03.csv.gz",
+          "rows": 775,
+          "sha256": "2878de4a4c524b5384db456eb8f9e2dcf5913fac5a8760e959a812d83d4577a4"
+        },
+        {
+          "bytes": 12459,
+          "path": "reference_aggregates/station_daily/part-2026-04.csv.gz",
+          "rows": 750,
+          "sha256": "6e8431d138fc744470ff51eaedbb5b5bb83e4489d57c28936233d9e1285cbd2b"
+        },
+        {
+          "bytes": 12003,
+          "path": "reference_aggregates/station_daily/part-2026-05.csv.gz",
+          "rows": 725,
+          "sha256": "5cc29de142eb0955098505fe1bf7c7ce64c06c6e92d5ac89cb7a71f3936702d8"
+        }
+      ],
+      "rows": 4500
+    },
+    "station_hourly": {
+      "files": [
+        {
+          "bytes": 205046,
+          "path": "reference_aggregates/station_hourly/part-2025-12.csv.gz",
+          "rows": 18600,
+          "sha256": "21166c8ea3f869956751bf3a7476630ffa02f7467190e49f46a08509d56740a0"
+        },
+        {
+          "bytes": 204040,
+          "path": "reference_aggregates/station_hourly/part-2026-01.csv.gz",
+          "rows": 18600,
+          "sha256": "ece181ac27144a4912e7f7408cfd9ceee9204c566f72c80e83a5152083a90fc3"
+        },
+        {
+          "bytes": 179810,
+          "path": "reference_aggregates/station_hourly/part-2026-02.csv.gz",
+          "rows": 16800,
+          "sha256": "497c5c1d717b1c0b8829d13b131145f448e91256028b05534aa5a9b1bf917fc9"
+        },
+        {
+          "bytes": 204809,
+          "path": "reference_aggregates/station_hourly/part-2026-03.csv.gz",
+          "rows": 18600,
+          "sha256": "44a3fbdef7c12efbebfc356b3941dee2cbd11bbdd023aea233fb901e3295b4c2"
+        },
+        {
+          "bytes": 194639,
+          "path": "reference_aggregates/station_hourly/part-2026-04.csv.gz",
+          "rows": 18000,
+          "sha256": "2dbe1de4892042dc534dc2093f85f7c3805a3bcf305082bcb754ad2680a04efd"
+        },
+        {
+          "bytes": 183321,
+          "path": "reference_aggregates/station_hourly/part-2026-05.csv.gz",
+          "rows": 17400,
+          "sha256": "0a9a1e489cff083716e22d2604d0f90a6ccd913926c5e2bc272475d59aae2427"
+        }
+      ],
+      "rows": 108000
+    }
+  },
+  "reference_profiles": {
+    "calendar_reference.json": "c1701530b8b255254cf3f33fa0f0d3d2f2b403af5734f6a95d691d97d14ea57b",
+    "reference_profile.json": "2a2d4d4295cd1492733cbdf67651cf5e3f09db756062b1b7521adcfab00433b6",
+    "urban_ev_profile.json": "2ba5ba1309f602496ba3ae93df771b6cde7e5f2957516ba76ef627e3bdceae9f",
+    "weather_reference.csv.gz": "9893d56fb66250cface851c23fde478a5575e1319ce85490ac94efd29c26d33b",
+    "weather_reference_provenance.json": "dbc880c9fdcbf7b5c809b83dde209dec311c6eb6b4ab0bb4a7d43bc7f4b2c843"
+  },
+  "schema_version": "1.1.0",
+  "source": "SIMULATED",
+  "tables": {
+    "anomaly_labels": {
+      "files": [
+        {
+          "bytes": 44789,
+          "path": "raw/anomaly_labels/part-static.csv.gz",
+          "rows": 4865,
+          "sha256": "879a88d3fee716c13eb47f71f4792ffe9a25e2eeee137940f4cc4825984bf0b6"
+        }
+      ],
+      "rows": 4865
+    },
+    "battery_samples": {
+      "files": [
+        {
+          "bytes": 4416596,
+          "path": "raw/battery_samples/part-2025-12.csv.gz",
+          "rows": 215604,
+          "sha256": "11cb4439e2d88b7c7fa16f4be647a07eaacdd4b8cf267072153068c8ff889995"
+        },
+        {
+          "bytes": 4494442,
+          "path": "raw/battery_samples/part-2026-01.csv.gz",
+          "rows": 218188,
+          "sha256": "2d9574db90b7d87c98b20a975d2d7f816673e31ebfa5a42742b60100156c10e7"
+        },
+        {
+          "bytes": 3837391,
+          "path": "raw/battery_samples/part-2026-02.csv.gz",
+          "rows": 187842,
+          "sha256": "62ccc7a12963eeeb2b09388e73601fbea85ce66cc996863a057fded66c258a7d"
+        },
+        {
+          "bytes": 4322659,
+          "path": "raw/battery_samples/part-2026-03.csv.gz",
+          "rows": 212915,
+          "sha256": "430d0e89c09391181257f4faa6d14fab212ab288c6b40cf676e85860ac1344a9"
+        },
+        {
+          "bytes": 3989977,
+          "path": "raw/battery_samples/part-2026-04.csv.gz",
+          "rows": 198552,
+          "sha256": "02d9a02391e3de15e6aa1bd59edc5040870c12acc10de9391cbca8e9bd446fb3"
+        },
+        {
+          "bytes": 3688969,
+          "path": "raw/battery_samples/part-2026-05.csv.gz",
+          "rows": 184728,
+          "sha256": "34d6a53277a532232cd31d1f3d381e48f55116a3c3981cf7c197c3cc05485b6c"
+        }
+      ],
+      "rows": 1217829
+    },
+    "calendar": {
+      "files": [
+        {
+          "bytes": 5066,
+          "path": "raw/calendar/part-static.csv.gz",
+          "rows": 900,
+          "sha256": "07e7a73062d0031277261564fe9093e2e4f2145641ab82df12535a88ba5f5d41"
+        }
+      ],
+      "rows": 900
+    },
+    "campaigns": {
+      "files": [
+        {
+          "bytes": 348,
+          "path": "raw/campaigns/part-static.csv.gz",
+          "rows": 30,
+          "sha256": "6b7a869523c253d10b8a912131a7a3bdb2b54ce03800f390330dada33488d631"
+        }
+      ],
+      "rows": 30
+    },
+    "charger_telemetry": {
+      "files": [
+        {
+          "bytes": 5132264,
+          "path": "raw/charger_telemetry/part-2025-12.csv.gz",
+          "rows": 669600,
+          "sha256": "9bbb903773eddf51abc6ee016bf8cd4d5719e256315d63939d5bc77597ffd40d"
+        },
+        {
+          "bytes": 5315987,
+          "path": "raw/charger_telemetry/part-2026-01.csv.gz",
+          "rows": 669600,
+          "sha256": "8d9447e9f29285bac65a1475b1550393e23f8301891d4f31d3ddede0008d7252"
+        },
+        {
+          "bytes": 4588779,
+          "path": "raw/charger_telemetry/part-2026-02.csv.gz",
+          "rows": 604800,
+          "sha256": "0f98685c4cca5d88f1230bcd67d7a330e2bb225dadd00b7fb6992b44337afd4f"
+        },
+        {
+          "bytes": 4967840,
+          "path": "raw/charger_telemetry/part-2026-03.csv.gz",
+          "rows": 669600,
+          "sha256": "437301080cb25d00b2e72fae3a75f29a6009e82d291b3bd5a430c1fae5e2dece"
+        },
+        {
+          "bytes": 4283823,
+          "path": "raw/charger_telemetry/part-2026-04.csv.gz",
+          "rows": 648000,
+          "sha256": "1e968edc0070e3f153b619c049c1d86650a34a293015c1fcb4b1ecbfdf6176c5"
+        },
+        {
+          "bytes": 3846688,
+          "path": "raw/charger_telemetry/part-2026-05.csv.gz",
+          "rows": 626400,
+          "sha256": "bcbcdc1dda4e8ff574a6be575328c1ce056ecb7a4ab87fa281a40dd979977be2"
+        }
+      ],
+      "rows": 3888000
+    },
+    "chargers": {
+      "files": [
+        {
+          "bytes": 584,
+          "path": "raw/chargers/part-static.csv.gz",
+          "rows": 75,
+          "sha256": "609d3520022cfbc45d626e84b21b90c76e37d65ed4da46c5ce3fa6ae0de8b70d"
+        }
+      ],
+      "rows": 75
+    },
+    "charging_attempts": {
+      "files": [
+        {
+          "bytes": 468367,
+          "path": "raw/charging_attempts/part-2025-12.csv.gz",
+          "rows": 29730,
+          "sha256": "a1d80f8688b32f2bb883b028d60102a6222824c94bbcf494ffda37bb368a35d8"
+        },
+        {
+          "bytes": 467133,
+          "path": "raw/charging_attempts/part-2026-01.csv.gz",
+          "rows": 29646,
+          "sha256": "57451d7f2f8cce048c5f93b3e6b1c3c975e3e1d98ae798ca9d8fad4dfec6544a"
+        },
+        {
+          "bytes": 401750,
+          "path": "raw/charging_attempts/part-2026-02.csv.gz",
+          "rows": 25497,
+          "sha256": "c8eed60d7dd8281e0b4b8c0c96460e7b5c0aa97d5526d355409fab130bd5b556"
+        },
+        {
+          "bytes": 470554,
+          "path": "raw/charging_attempts/part-2026-03.csv.gz",
+          "rows": 29884,
+          "sha256": "0b26e8c7918c1d97b6a6100814c0366235cf8e46f692f6d895fdc70dcb02b08a"
+        },
+        {
+          "bytes": 448386,
+          "path": "raw/charging_attempts/part-2026-04.csv.gz",
+          "rows": 28523,
+          "sha256": "5c127ce53de8bfb0b9fbe0d1e7560f996d36796744fd50f670982bc0428c49a2"
+        },
+        {
+          "bytes": 406755,
+          "path": "raw/charging_attempts/part-2026-05.csv.gz",
+          "rows": 25874,
+          "sha256": "4bf15a31ba8882483dabc9e0fcaad910b5509284950c317a9eb83ee57ac7a446"
+        }
+      ],
+      "rows": 169154
+    },
+    "charging_sessions": {
+      "files": [
+        {
+          "bytes": 1087300,
+          "path": "raw/charging_sessions/part-2025-12.csv.gz",
+          "rows": 21489,
+          "sha256": "8f581ca190f829694d3bf5c1ef23eedfa67167d90b6305acd450c5453485a8c9"
+        },
+        {
+          "bytes": 1078653,
+          "path": "raw/charging_sessions/part-2026-01.csv.gz",
+          "rows": 21332,
+          "sha256": "e4e8f7955baca0c454fc5dfd0e84ba03717019dd562a15d38069dfb5b791b63d"
+        },
+        {
+          "bytes": 934173,
+          "path": "raw/charging_sessions/part-2026-02.csv.gz",
+          "rows": 18483,
+          "sha256": "d35c674c61120b2bbe42dba6dcc4572ac7268c0852e9f23c252099f4bb91f797"
+        },
+        {
+          "bytes": 1101946,
+          "path": "raw/charging_sessions/part-2026-03.csv.gz",
+          "rows": 21821,
+          "sha256": "025fa84785904b7ffc91dbfd618fd29a285b27fa666f3abc69be83279a5792a1"
+        },
+        {
+          "bytes": 1062032,
+          "path": "raw/charging_sessions/part-2026-04.csv.gz",
+          "rows": 21056,
+          "sha256": "0278b81c4d5177b26f252867ee49adab6e8c90324e5a3521f756de952a6b4221"
+        },
+        {
+          "bytes": 972773,
+          "path": "raw/charging_sessions/part-2026-05.csv.gz",
+          "rows": 19275,
+          "sha256": "2d5ddc25183dc830dc1d9ea39d782d62288e2a981dfd8f51a66e721ec47b915d"
+        }
+      ],
+      "rows": 123456
+    },
+    "cities": {
+      "files": [
+        {
+          "bytes": 215,
+          "path": "raw/cities/part-static.csv.gz",
+          "rows": 5,
+          "sha256": "a95275d13692be57ccfc25d3e39d2d5a2b93310214a6cd10218ff2196c5a1762"
+        }
+      ],
+      "rows": 5
+    },
+    "corruption_log": {
+      "files": [
+        {
+          "bytes": 15438,
+          "path": "raw/corruption_log/part-static.csv.gz",
+          "rows": 2351,
+          "sha256": "4194962157183b9510a614d11753cac17b6a156010770fcac97d21ad4174f025"
+        }
+      ],
+      "rows": 2351
+    },
+    "maintenance_events": {
+      "files": [
+        {
+          "bytes": 2297,
+          "path": "raw/maintenance_events/part-2025-12.csv.gz",
+          "rows": 306,
+          "sha256": "c2fcf538ecf63fae3a3db95422c1cfe4ae63627548e46b1177535f32503d19c5"
+        },
+        {
+          "bytes": 2164,
+          "path": "raw/maintenance_events/part-2026-01.csv.gz",
+          "rows": 286,
+          "sha256": "8e7155e500e929fc70d0744f4d81c8fb01094a2cbec97867c1451a4203e2fd0e"
+        },
+        {
+          "bytes": 1777,
+          "path": "raw/maintenance_events/part-2026-02.csv.gz",
+          "rows": 228,
+          "sha256": "5c39c4d3568643ffebc88d12c5ff93c4d751e4054f55a2ce634744a8b2727ab6"
+        },
+        {
+          "bytes": 2329,
+          "path": "raw/maintenance_events/part-2026-03.csv.gz",
+          "rows": 304,
+          "sha256": "9a15641976905f3bd4c3d7e32baf777667d927ad8656d1b5a9b7b609249f49b9"
+        },
+        {
+          "bytes": 2248,
+          "path": "raw/maintenance_events/part-2026-04.csv.gz",
+          "rows": 299,
+          "sha256": "d77396c6f72580146902e62a2526b9b17e4764f231d05cc74c4376ddab2a4949"
+        },
+        {
+          "bytes": 1880,
+          "path": "raw/maintenance_events/part-2026-05.csv.gz",
+          "rows": 248,
+          "sha256": "863c0383838fb49a601e5a577867820c4a0d9283cccf860fa150985309b9f6b8"
+        }
+      ],
+      "rows": 1671
+    },
+    "maintenance_tickets": {
+      "files": [
+        {
+          "bytes": 2408,
+          "path": "raw/maintenance_tickets/part-2025-12.csv.gz",
+          "rows": 77,
+          "sha256": "f64ce065cd58d69547ee0c07d0f2089a2a5d87bcd3654116d29b8e697f362a0f"
+        },
+        {
+          "bytes": 2323,
+          "path": "raw/maintenance_tickets/part-2026-01.csv.gz",
+          "rows": 71,
+          "sha256": "d56b66b011d381811b02ac7baa47176e536f23510bad41e0e7ae9dbb576ef218"
+        },
+        {
+          "bytes": 1916,
+          "path": "raw/maintenance_tickets/part-2026-02.csv.gz",
+          "rows": 57,
+          "sha256": "e40a075d164afdbf14a8be20889e06441ad0b1dce3468155892ccbe1b3867427"
+        },
+        {
+          "bytes": 2416,
+          "path": "raw/maintenance_tickets/part-2026-03.csv.gz",
+          "rows": 76,
+          "sha256": "4407bd215a34752c8785e9c7a126c35df236e99d5912482fd94e71bb90809ddd"
+        },
+        {
+          "bytes": 2372,
+          "path": "raw/maintenance_tickets/part-2026-04.csv.gz",
+          "rows": 75,
+          "sha256": "b6f880de974d4c514cac323b370840e697b59f5ed5c2a4a9301ed928c1bfe7fa"
+        },
+        {
+          "bytes": 2046,
+          "path": "raw/maintenance_tickets/part-2026-05.csv.gz",
+          "rows": 62,
+          "sha256": "8f2c6aa745e7319a7f48275f455a53e564f9be10d31dd7359e1c9ca34d8b9a23"
+        }
+      ],
+      "rows": 418
+    },
+    "operating_costs": {
+      "files": [
+        {
+          "bytes": 1946,
+          "path": "raw/operating_costs/part-2025-12.csv.gz",
+          "rows": 775,
+          "sha256": "e14443acadf65f74f1131b6b95aaa5c673417e40f8747a72b3e8bad8923375d8"
+        },
+        {
+          "bytes": 1946,
+          "path": "raw/operating_costs/part-2026-01.csv.gz",
+          "rows": 775,
+          "sha256": "c6d1811ce6ebe8acfdc5861ad096240c6928eecb6c2329b77b597814db9220f5"
+        },
+        {
+          "bytes": 1771,
+          "path": "raw/operating_costs/part-2026-02.csv.gz",
+          "rows": 700,
+          "sha256": "a6759e8ee39ea75e54344fc22a0336236f91d8e1bffbb1c765aa7a66891ee409"
+        },
+        {
+          "bytes": 1947,
+          "path": "raw/operating_costs/part-2026-03.csv.gz",
+          "rows": 775,
+          "sha256": "849a4e0da03b7b5b6b11a9054b9c7daa657be6e7e8d6b392d168f6b644b823ec"
+        },
+        {
+          "bytes": 1882,
+          "path": "raw/operating_costs/part-2026-04.csv.gz",
+          "rows": 750,
+          "sha256": "fd231d2e2aeab21b36e99c8324e3f5356c4813c881d06e295c056518c1071d2e"
+        },
+        {
+          "bytes": 1825,
+          "path": "raw/operating_costs/part-2026-05.csv.gz",
+          "rows": 725,
+          "sha256": "4c81cde16bf9c4ed0d4e10880cd41b46ac6738b8ad93aa9478c7fc7cc1b527b1"
+        }
+      ],
+      "rows": 4500
+    },
+    "payments": {
+      "files": [
+        {
+          "bytes": 331194,
+          "path": "raw/payments/part-2025-12.csv.gz",
+          "rows": 23488,
+          "sha256": "d4577a405a856590bb41f463eeca35df05b2ec5bc8a442e89032615aabdc03a6"
+        },
+        {
+          "bytes": 329376,
+          "path": "raw/payments/part-2026-01.csv.gz",
+          "rows": 23299,
+          "sha256": "69db5ecebcd89e784ba9d21c86c6aeeaec46aad37aefc1ac1a47e24a45f7ddab"
+        },
+        {
+          "bytes": 286391,
+          "path": "raw/payments/part-2026-02.csv.gz",
+          "rows": 20264,
+          "sha256": "86686c1c17cfd92667088ba762bc109d70acc4d3ff3446d588a19fe7a7f1387c"
+        },
+        {
+          "bytes": 336688,
+          "path": "raw/payments/part-2026-03.csv.gz",
+          "rows": 23851,
+          "sha256": "40ecb6e61d71dcb8052c91ac5dc52bc608344bb193c9adf366beafce7caf4297"
+        },
+        {
+          "bytes": 325465,
+          "path": "raw/payments/part-2026-04.csv.gz",
+          "rows": 23049,
+          "sha256": "6758445f1fb27f45fdff96703b9823988f7338654e148bb9f118a39f3f938304"
+        },
+        {
+          "bytes": 298837,
+          "path": "raw/payments/part-2026-05.csv.gz",
+          "rows": 21179,
+          "sha256": "66205e520535d268cd52b87c42bd5e24437b762490e90c1e80d9500f98444d2a"
+        }
+      ],
+      "rows": 135130
+    },
+    "queue_entries": {
+      "files": [
+        {
+          "bytes": 99717,
+          "path": "raw/queue_entries/part-2025-12.csv.gz",
+          "rows": 6679,
+          "sha256": "fc9c7049dcfb91d8b3865999ecf8d8868183ca394a7d6c82e40c9c322c6ef07c"
+        },
+        {
+          "bytes": 100267,
+          "path": "raw/queue_entries/part-2026-01.csv.gz",
+          "rows": 6719,
+          "sha256": "75cb3c14711dea1e85919eecbe2765b1aa46b4bebd65c80fb6305298082314c2"
+        },
+        {
+          "bytes": 84034,
+          "path": "raw/queue_entries/part-2026-02.csv.gz",
+          "rows": 5609,
+          "sha256": "2b3004fe628d16e55accac4ffa0236005dbc5ff4034d01e853f907689f77855e"
+        },
+        {
+          "bytes": 97283,
+          "path": "raw/queue_entries/part-2026-03.csv.gz",
+          "rows": 6480,
+          "sha256": "c69d34ed978b573ec60d17b1cf6f41270498061fc81fc1d6d5a972089d617e44"
+        },
+        {
+          "bytes": 91124,
+          "path": "raw/queue_entries/part-2026-04.csv.gz",
+          "rows": 6052,
+          "sha256": "21ee5da3432fd5ab6051850881d7120df2681350cc30ce08ccd4bddbb467ec6f"
+        },
+        {
+          "bytes": 76701,
+          "path": "raw/queue_entries/part-2026-05.csv.gz",
+          "rows": 5055,
+          "sha256": "a0cbb60371458d1146b1a7247b6cab8354bab84c450410fbd9dbcdaadbf52b38"
+        }
+      ],
+      "rows": 36594
+    },
+    "reservations": {
+      "files": [
+        {
+          "bytes": 55049,
+          "path": "raw/reservations/part-2025-12.csv.gz",
+          "rows": 3218,
+          "sha256": "b414233f3728c9b838f607c3fb8b123b60ab39a345d3fd074ba23ca2a2cdee56"
+        },
+        {
+          "bytes": 54623,
+          "path": "raw/reservations/part-2026-01.csv.gz",
+          "rows": 3167,
+          "sha256": "eb1ce0665aaf10e25745504b9a230225a9e0a82335d26b5e29fe499d4dd938c8"
+        },
+        {
+          "bytes": 47662,
+          "path": "raw/reservations/part-2026-02.csv.gz",
+          "rows": 2759,
+          "sha256": "a4d1320a447bb06a851b76cd3f5dd6276f6117e706c174513cf67ce44cae46d3"
+        },
+        {
+          "bytes": 55798,
+          "path": "raw/reservations/part-2026-03.csv.gz",
+          "rows": 3256,
+          "sha256": "6d345445cf9b41b8a7a10861ccc6872489c803f6984747e1b349b34621507bed"
+        },
+        {
+          "bytes": 51624,
+          "path": "raw/reservations/part-2026-04.csv.gz",
+          "rows": 2993,
+          "sha256": "c0872bbc56f90607f6e3dad7e327de26dfef9d266b0226340831577288e74902"
+        },
+        {
+          "bytes": 49435,
+          "path": "raw/reservations/part-2026-05.csv.gz",
+          "rows": 2876,
+          "sha256": "6bd87d47905cc385b8360278ab6562c89481808789bccc3202f3f490313e7d4e"
+        }
+      ],
+      "rows": 18269
+    },
+    "reviews": {
+      "files": [
+        {
+          "bytes": 61251,
+          "path": "raw/reviews/part-2025-12.csv.gz",
+          "rows": 4626,
+          "sha256": "5355d6572499b83038823dce5eac0bbeb92c9b6f8561a0da2dc62525d57d518a"
+        },
+        {
+          "bytes": 59751,
+          "path": "raw/reviews/part-2026-01.csv.gz",
+          "rows": 4500,
+          "sha256": "4b65115ba5a5b5b0c6d48a3a569cbd298b98565edb20c2313b9c815d87834755"
+        },
+        {
+          "bytes": 53266,
+          "path": "raw/reviews/part-2026-02.csv.gz",
+          "rows": 4004,
+          "sha256": "dab660897ee9fe958f5d6f8ff68325ab4bfae7621afd6f1c9f6e09b9e8617591"
+        },
+        {
+          "bytes": 61695,
+          "path": "raw/reviews/part-2026-03.csv.gz",
+          "rows": 4653,
+          "sha256": "27cd3886506cc0e50e4ba1db83966ef84f66fc2371c382f2bdbad9be371b8c05"
+        },
+        {
+          "bytes": 61494,
+          "path": "raw/reviews/part-2026-04.csv.gz",
+          "rows": 4644,
+          "sha256": "ae6c76645a85569b0ba939ae00a2d05cffcb7a567dd1056ee455c7a4ad63f279"
+        },
+        {
+          "bytes": 55287,
+          "path": "raw/reviews/part-2026-05.csv.gz",
+          "rows": 4167,
+          "sha256": "f02521e9dd272ed45b44ae2b37f8a233e665c494bd4215b71bdd82b45f996f07"
+        }
+      ],
+      "rows": 26594
+    },
+    "stations": {
+      "files": [
+        {
+          "bytes": 710,
+          "path": "raw/stations/part-static.csv.gz",
+          "rows": 25,
+          "sha256": "2e3cdee4184810efdd6a68216a478240a99fbe4a70163ebed7536663b6045b44"
+        }
+      ],
+      "rows": 25
+    },
+    "tariffs": {
+      "files": [
+        {
+          "bytes": 712,
+          "path": "raw/tariffs/part-static.csv.gz",
+          "rows": 120,
+          "sha256": "320551b7178ff340758c3c394595e2aca68efaec5678c67f782f83503721a671"
+        }
+      ],
+      "rows": 120
+    },
+    "users": {
+      "files": [
+        {
+          "bytes": 38523,
+          "path": "raw/users/part-static.csv.gz",
+          "rows": 6000,
+          "sha256": "2eca952423d81380d3d4ba9d807a04302796d78f23da6b65ae872b114528d579"
+        }
+      ],
+      "rows": 6000
+    },
+    "vehicle_energy_intervals": {
+      "files": [
+        {
+          "bytes": 671183,
+          "path": "raw/vehicle_energy_intervals/part-2025-12.csv.gz",
+          "rows": 29748,
+          "sha256": "9f9e64e63386e875ecc8313796bea3807a8f4e0325cf1c4b841e2fa2859bab17"
+        },
+        {
+          "bytes": 690144,
+          "path": "raw/vehicle_energy_intervals/part-2026-01.csv.gz",
+          "rows": 29661,
+          "sha256": "a38f4238aa5eb1f5b1e3ea95feb0974641a6854997f4900d16beb39ad6d0a598"
+        },
+        {
+          "bytes": 594817,
+          "path": "raw/vehicle_energy_intervals/part-2026-02.csv.gz",
+          "rows": 25510,
+          "sha256": "ce37a563957f270a730b4cfcde0aac2529560046c84b3a9ec6aa2f6c87ba0d3c"
+        },
+        {
+          "bytes": 694117,
+          "path": "raw/vehicle_energy_intervals/part-2026-03.csv.gz",
+          "rows": 29898,
+          "sha256": "eaeef7bf5f59f1990e4343da0ee96146057e5ff93e87d001d7f6e0448a9d8cc1"
+        },
+        {
+          "bytes": 660735,
+          "path": "raw/vehicle_energy_intervals/part-2026-04.csv.gz",
+          "rows": 28540,
+          "sha256": "37f0d5ff5a6efcd166ce86f7b8d30944c8f66353a3df28a8746140b701520e5f"
+        },
+        {
+          "bytes": 601918,
+          "path": "raw/vehicle_energy_intervals/part-2026-05.csv.gz",
+          "rows": 25897,
+          "sha256": "b5dfe62e39ee4d46dfc0a0fd262a4d6fbc86aecfe040bcf7b86781f40ab365ce"
+        }
+      ],
+      "rows": 169254
+    },
+    "vehicles": {
+      "files": [
+        {
+          "bytes": 34785,
+          "path": "raw/vehicles/part-static.csv.gz",
+          "rows": 6000,
+          "sha256": "f44795c7d79f436fbb441584c4fc5e4c489bf57c999f80170b516b7ed78082e4"
+        }
+      ],
+      "rows": 6000
+    },
+    "weather_hourly": {
+      "files": [
+        {
+          "bytes": 21389,
+          "path": "raw/weather_hourly/part-2025-12.csv.gz",
+          "rows": 3720,
+          "sha256": "6d33b194f2c2c519caa03379cdf6af506aacc86add3d314e33106c53884c5972"
+        },
+        {
+          "bytes": 21337,
+          "path": "raw/weather_hourly/part-2026-01.csv.gz",
+          "rows": 3720,
+          "sha256": "b73a01dea4487d4bc49447d8203268dae9f627599b988f317d9b082e29bc0827"
+        },
+        {
+          "bytes": 19516,
+          "path": "raw/weather_hourly/part-2026-02.csv.gz",
+          "rows": 3360,
+          "sha256": "b95682778e62dec843b55891a1c37414ae907f3ee8f7cf6846707e7d09f2b053"
+        },
+        {
+          "bytes": 21507,
+          "path": "raw/weather_hourly/part-2026-03.csv.gz",
+          "rows": 3720,
+          "sha256": "804593ec1ef787bc77054fefedd9e1ff6b3dbdda38306159f3092ec2b50f6d61"
+        },
+        {
+          "bytes": 21020,
+          "path": "raw/weather_hourly/part-2026-04.csv.gz",
+          "rows": 3600,
+          "sha256": "d3fcfd1678c0984413c2d3050662b312a5de4d94cadf2182999d8488eaf6106a"
+        },
+        {
+          "bytes": 19954,
+          "path": "raw/weather_hourly/part-2026-05.csv.gz",
+          "rows": 3480,
+          "sha256": "f33b3b54cc82b58c047ce97659e037a0c9b3373e79f13348adfde2c8ee6ca1b4"
+        }
+      ],
+      "rows": 21600
+    }
+  },
+  "timestamp_timezone": "UTC",
+  "weather_source_rows": {
+    "ERA5_REANALYSIS": 21600
+  }
+}

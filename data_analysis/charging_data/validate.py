@@ -9,6 +9,7 @@ Only an explicitly requested, exclusively created JSON report is written.
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_left
 import csv
 import gzip
 import hashlib
@@ -129,9 +130,12 @@ def _validate(root):
         audit.check(False, f"cannot read manifest.json: {exc}")
         return _report(audit)
 
-    audit.check(manifest.get("schema_version") == SCHEMA_VERSION,
+    audit.check(manifest.get("schema_version") in {SCHEMA_VERSION, "1.0.0"},
                 "manifest schema_version does not match supported schema")
     config = manifest.get("config", {})
+    parking_policy = manifest.get("parking_policy_id", "legacy_v1")
+    audit.check(parking_policy in {"legacy_v1", "site_connector_v2"},
+                f"unknown parking policy: {parking_policy}")
     audit.check(manifest.get("source") == "SIMULATED", "dataset must be explicitly labeled SIMULATED")
     audit.check(manifest.get("dataset_id") == config.get("dataset_id"), "dataset_id/config mismatch")
     cities = audit.indexed("cities", "city_id")
@@ -240,6 +244,14 @@ def _validate(root):
             for field in ["session_id", "user_id", "vehicle_id", "station_id", "charger_id"]:
                 audit.check(attempt[field] == row[field], f"{context}: attempt {field} mismatch")
         audit.ordered(row, ["started_at", "ended_at", "unplugged_at"], context)
+        parked_minutes = int((_stamp(row["unplugged_at"]) - _stamp(row["ended_at"])).total_seconds()) // 60
+        if row["station_id"] in stations and row["charger_id"] in chargers:
+            free_slow_parking = (parking_policy == "site_connector_v2" and
+                chargers[row["charger_id"]]["connector_type"] == "AC" and
+                stations[row["station_id"]]["site_type"] in {"RESIDENTIAL", "OFFICE", "CAMPUS"})
+            expected_parking = 0 if free_slow_parking else max(0, parked_minutes - 10) * 8
+            audit.check(int(row["parking_fee_cents"]) == expected_parking,
+                        f"{context}: parking fee does not match declared site/connector policy")
         if row["user_id"] in users:
             audit.check(users[row["user_id"]]["registered_at"] <= row["started_at"],
                         f"{context}: user has not registered yet")
@@ -278,6 +290,7 @@ def _validate(root):
         for previous, current in zip(rows, rows[1:]):
             audit.check(previous["unplugged_at"] <= current["started_at"],
                         f"{vehicle_id}: vehicle appears in overlapping charging/parking sessions")
+    vehicle_energy = _validate_vehicle_energy_intervals(audit, manifest, vehicles, sessions_by_vehicle)
     for campaign_id, spend in campaign_spend.items():
         if campaign_id in campaigns:
             audit.check(spend <= int(campaigns[campaign_id]["budget_cents"]),
@@ -404,11 +417,12 @@ def _validate(root):
             else:
                 datetime.strptime(row[time_key], "%Y-%m-%d")
     _validate_manifest(audit, manifest)
-    return _report(audit, dataset_id=manifest.get("dataset_id"), schema_version=SCHEMA_VERSION,
+    return _report(audit, dataset_id=manifest.get("dataset_id"), schema_version=manifest.get("schema_version"),
                    manifest_sha256=_sha256(manifest_path), source=manifest.get("source"),
                    canonical_sessions=len(sessions), dirty_rows=actual_dirty,
                    rejected_session_copies=dict(rejected), normalized_rows=normalized,
                    corruption_actions=dict(logged_actions),
+                   vehicle_energy_totals=vehicle_energy,
                    business_totals={
                        "delivered_energy_wh": sum(int(row["energy_wh"]) for row in sessions.values()),
                        "grid_energy_wh": sum(int(row.get("grid_energy_wh", 0)) for row in sessions.values()),
@@ -417,6 +431,88 @@ def _validate(root):
                        "successful_refund_cents": sum(refunds.values()),
                        "grid_cost_cents": sum(int(row["grid_cost_cents"]) for row in sessions.values()),
                    })
+
+
+def _validate_vehicle_energy_intervals(audit, manifest, vehicles, sessions_by_vehicle):
+    """Explain between-session SOC without silently inventing platform sales.
+
+    Vehicle updates are streamed in end-time order. Only small per-vehicle
+    continuity state and a link to the next already-loaded session are kept.
+    External energy is reported separately from platform energy and revenue.
+    """
+    table = "vehicle_energy_intervals"
+    if table not in manifest.get("tables", {}):
+        if str(manifest.get("behavior_version", "1")).startswith("2"):
+            audit.check(False, "behavior v2 requires the vehicle energy interval ledger")
+        return None
+    if not audit.check(table in TABLES, "vehicle energy interval schema is unavailable"):
+        return None
+    timelines = {}
+    for vehicle_id, sessions in sessions_by_vehicle.items():
+        ordered = sorted(sessions, key=lambda row: row["started_at"])
+        timelines[vehicle_id] = ([_stamp(row["started_at"]) for row in ordered], ordered)
+    identifiers = set()
+    previous = {}
+    links = {}
+    totals = Counter()
+    for row in audit.rows(table):
+        context = f"vehicle energy interval {row['interval_id']}"
+        audit.check(bool(row["interval_id"]) and row["interval_id"] not in identifiers,
+                    f"{context}: missing or duplicate interval ID")
+        identifiers.add(row["interval_id"])
+        if not audit.relation(row, "vehicle_id", vehicles, context):
+            continue
+        vehicle_id = row["vehicle_id"]
+        start = audit.timestamp(row["started_at"], f"{context}.started_at")
+        end = audit.timestamp(row["ended_at"], f"{context}.ended_at")
+        if start is None or end is None:
+            continue
+        audit.check(start < end, f"{context}: non-positive interval length")
+        start_soc, end_soc = float(row["start_soc_pct"]), float(row["end_soc_pct"])
+        driving, external = int(row["driving_wh"]), int(row["external_charge_wh"])
+        audit.check(0 <= start_soc <= 100 and 0 <= end_soc <= 100,
+                    f"{context}: SOC outside 0..100")
+        audit.check(driving >= 0 and external >= 0, f"{context}: negative modeled energy")
+        capacity_wh = float(vehicles[vehicle_id]["battery_capacity_kwh"]) * 1000
+        tolerance_wh = capacity_wh * 0.000001 + 0.01  # Two independently rounded 0.0001% SOC endpoints.
+        audit.check(abs((end_soc - start_soc) * capacity_wh / 100 - (external - driving)) <= tolerance_wh,
+                    f"{context}: driving/external energy does not conserve SOC")
+        if external:
+            audit.check((end - start).total_seconds() >= 12 * 3600,
+                        f"{context}: external charge cannot explain an extremely short revisit")
+        starts, platform_sessions = timelines.get(vehicle_id, ([], []))
+        next_index = bisect_left(starts, end)
+        preceding = platform_sessions[next_index - 1] if next_index else None
+        if preceding is not None:
+            audit.check(_stamp(preceding["unplugged_at"]) <= start,
+                        f"{context}: interval overlaps platform charging or postcharge occupancy")
+        next_session = platform_sessions[next_index] if next_index < len(platform_sessions) else None
+        next_id = next_session["session_id"] if next_session else None
+        earlier = previous.get(vehicle_id)
+        if earlier is not None:
+            audit.check(start >= earlier["end"], f"{context}: vehicle ledger intervals overlap or go backwards")
+        if earlier is not None and earlier["next_id"] == next_id:
+            audit.check(abs(start_soc - earlier["end_soc"]) <= 0.00011,
+                        f"{context}: adjacent unobserved-driving intervals have unexplained SOC changes")
+        elif preceding is not None:
+            audit.check(abs(start_soc - float(preceding["end_soc_pct"])) <= 0.00011,
+                        f"{context}: ledger start does not match prior platform charge end SOC")
+        if next_id is not None:
+            links[next_id] = end_soc
+        previous[vehicle_id] = {"end": end, "end_soc": end_soc, "next_id": next_id}
+        totals["driving_wh"] += driving
+        totals["external_charge_wh"] += external
+        totals["external_charge_intervals"] += bool(external)
+        totals["intervals"] += 1
+    for _, sessions in timelines.values():
+        for index, session in enumerate(sessions):
+            expected_soc = links.get(session["session_id"])
+            if expected_soc is None and index:
+                expected_soc = float(sessions[index - 1]["end_soc_pct"])
+            if expected_soc is not None:
+                audit.check(abs(float(session["start_soc_pct"]) - expected_soc) <= 0.00011,
+                            f"{session['session_id']}: start SOC is not explained by the between-session energy ledger")
+    return dict(totals)
 
 
 def _validate_telemetry(audit, config, chargers, stations, vehicles, sessions, tariffs):
@@ -569,7 +665,10 @@ def _validate_battery(audit, config, sessions, chargers):
 def _validate_manifest(audit, manifest):
     """Verify both compressed bytes and row counts, not only manifest claims."""
     tables = manifest.get("tables", {})
-    audit.check(set(tables) == set(TABLES), "manifest tables do not match schema tables")
+    expected_tables = set(TABLES)
+    if "vehicle_energy_intervals" not in tables and not str(manifest.get("behavior_version", "1")).startswith("2"):
+        expected_tables.discard("vehicle_energy_intervals")
+    audit.check(set(tables) == expected_tables, "manifest tables do not match schema tables")
     declared_files = set()
     for table, entry in tables.items():
         if table not in TABLES:

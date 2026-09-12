@@ -4,13 +4,14 @@ All *_at timestamps are ISO 8601 UTC. *_date is Asia/Shanghai business date.
 Telemetry rows describe [recorded_at, recorded_at + interval_seconds).
 """
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 TABLES = {
     "cities": "city_id city_name latitude longitude timezone",
     "stations": "station_id city_id station_name site_type latitude longitude opened_at transformer_kw rent_daily_cents",
     "chargers": "charger_id station_id connector_type rated_power_kw commissioned_at manufacturer model",
     "users": "user_id home_city_id registered_at segment acquisition_channel membership",
     "vehicles": "vehicle_id user_id battery_capacity_kwh max_charge_kw vehicle_class",
+    "vehicle_energy_intervals": "interval_id vehicle_id started_at ended_at start_soc_pct end_soc_pct driving_wh external_charge_wh",
     "tariffs": "tariff_id city_id hour energy_price_cents_per_kwh service_price_cents_per_kwh grid_price_cents_per_kwh period",
     "campaigns": "campaign_id city_id starts_at ends_at channel discount_cents budget_cents",
     "calendar": "city_id business_date is_weekend scenario_event demand_multiplier",
