@@ -76,7 +76,7 @@ python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 python -m data_analysis.charging_data.inject_dirty --input data_analysis/datasets/charging_sample_7d_v2 --output data_analysis/outputs/dirty_demo_run1 --rate 0.05 --seed 42
 ```
 
-包含重复会话、未知关联 ID、负电量、缺失结束时间、状态格式错误；抽样以 seed 固定，操作可复现。
+包含重复会话、未知关联 ID、负费用、缺失会话 ID、状态格式错误；抽样以 seed 固定，操作可复现。
 原目录不变，新目录包含新 manifest、来源哈希、`injection_plan.json` 和 `_INJECTION_SUCCESS`。
 `rate` 作用于尚未污染的规范会话，不是“所有表 5% 的每个字段都随机损坏”；不要误解数量。
 
