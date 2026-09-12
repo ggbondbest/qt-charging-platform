@@ -1,0 +1,270 @@
+{
+  "recordedAt": "2026-09-12T14:15:33.297599Z",
+  "implementationBranch": "feature/phase2-data-layer",
+  "foundationCommit": "d60ea242bdfac6fc800dfedc0ca1f5ada7401f9d",
+  "scope": "local working tree; no remote CI claim",
+  "source": "SIMULATED",
+  "runtime": {
+    "python": "3.12.14",
+    "pyspark": "3.5.6",
+    "java": "17.0.20.1",
+    "fullDriverHeapBytes": 4294967296
+  },
+  "rawRows": 5832840,
+  "cleanSessionRows": 121539,
+  "rejectedSessionRows": 1917,
+  "rejectionReasons": {
+    "DUPLICATE_SESSION_ID": 502,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+    "MISSING_SESSION_ID": 470,
+    "UNKNOWN_STATION_ID": 461
+  },
+  "full": {
+    "datasetId": "charging_full_180d_v2",
+    "publishedBatchId": "analytics-5f8e93429948404099b735999bfb6c4e",
+    "pipelineRunId": "spark-625439908b6d4bcca1ae72e2e35ef27f",
+    "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+    "databaseSha256": "4bc352ae153145391e96406631889998ade0789d14030714711d1f6cd39500df",
+    "databaseBytes": 78721024,
+    "cities": 5,
+    "stations": 25,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "targetLabelsImported": false,
+    "realPredictionsImplemented": false,
+    "totals": {
+      "energy_wh": 2932585304,
+      "grid_cost_cents": 250563990,
+      "completed_sessions": 121539,
+      "paid_cents": 346152638,
+      "refund_cents": 2733012,
+      "operating_cost_cents": 101700000,
+      "maintenance_cost_cents": 18494611,
+      "net_paid_cents": 343419626
+    },
+    "tables": {
+      "cities": 5,
+      "city_daily": 900,
+      "ml_features_hourly": 107425,
+      "ml_targets_hourly": 107425,
+      "station_cohorts_daily": 4401,
+      "station_hourly_metrics": 108000,
+      "station_metrics_daily": 4500,
+      "station_service_daily": 4429,
+      "station_snapshot": 25,
+      "user_activity_daily": 119371
+    }
+  },
+  "sample": {
+    "datasetId": "charging_sample_7d_v2",
+    "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+    "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+    "sourceManifestSha256": "fac612b1fca3289d7bae176ceb009dfac1e037176c1e42635fef7d96be8adf29",
+    "databaseSha256": "504ec046f86e5b652c568ba77f6a91e8c5bce02c7e943f4dd4d90416c0cfd25d",
+    "databaseBytes": 2752512,
+    "cities": 5,
+    "stations": 25,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "targetLabelsImported": false,
+    "realPredictionsImplemented": false,
+    "totals": {
+      "energy_wh": 46319214,
+      "grid_cost_cents": 3994187,
+      "completed_sessions": 4619,
+      "paid_cents": 5211136,
+      "refund_cents": 45163,
+      "operating_cost_cents": 3955000,
+      "maintenance_cost_cents": 1049512,
+      "net_paid_cents": 5165973
+    },
+    "tables": {
+      "cities": 5,
+      "city_daily": 35,
+      "ml_features_hourly": 3625,
+      "ml_targets_hourly": 3625,
+      "station_cohorts_daily": 169,
+      "station_hourly_metrics": 4200,
+      "station_metrics_daily": 175,
+      "station_service_daily": 175,
+      "station_snapshot": 25,
+      "user_activity_daily": 3554
+    }
+  },
+  "fullIndependentReferenceComparison": {
+    "comparison": {
+      "station_daily": {
+        "compared_fields": [
+          "city_id",
+          "energy_wh",
+          "grid_cost_cents",
+          "completed_sessions",
+          "paid_cents",
+          "refund_cents",
+          "operating_cost_cents",
+          "maintenance_cost_cents"
+        ],
+        "different_rows_per_field": {
+          "city_id": 0,
+          "completed_sessions": 0,
+          "energy_wh": 0,
+          "grid_cost_cents": 0,
+          "maintenance_cost_cents": 0,
+          "missing_keys": 0,
+          "operating_cost_cents": 0,
+          "paid_cents": 0,
+          "refund_cents": 0
+        },
+        "floating_tolerance": 0,
+        "key_columns": [
+          "station_id",
+          "business_date"
+        ],
+        "rows": 4500
+      },
+      "station_hourly": {
+        "compared_fields": [
+          "city_id",
+          "energy_wh",
+          "mean_power_kw",
+          "available_samples",
+          "charging_samples",
+          "reserved_samples",
+          "occupied_samples",
+          "maintenance_samples",
+          "offline_samples",
+          "sample_count",
+          "capacity",
+          "end_available_count"
+        ],
+        "different_rows_per_field": {
+          "available_samples": 0,
+          "capacity": 0,
+          "charging_samples": 0,
+          "city_id": 0,
+          "end_available_count": 0,
+          "energy_wh": 0,
+          "maintenance_samples": 0,
+          "mean_power_kw": 0,
+          "missing_keys": 0,
+          "occupied_samples": 0,
+          "offline_samples": 0,
+          "reserved_samples": 0,
+          "sample_count": 0
+        },
+        "floating_tolerance": 1e-09,
+        "key_columns": [
+          "station_id",
+          "recorded_at"
+        ],
+        "rows": 108000
+      }
+    },
+    "created_at": "2026-09-12T13:55:39.115491+00:00",
+    "dataset_id": "charging_full_180d_v2",
+    "elapsed_seconds": 1.696,
+    "reference_used_only_for_post_computation_verification": true,
+    "status": "PASSED",
+    "verification": "all primary keys and all summary fields compared"
+  },
+  "mlSplits": {
+    "end": "2026-05-29",
+    "start": "2025-12-02",
+    "trainEnd": "2026-03-30",
+    "usable": true,
+    "validationEnd": "2026-04-29"
+  },
+  "tests": {
+    "standardAndApi": {
+      "discovered": 166,
+      "passed": 136,
+      "sparkSkipped": 30,
+      "failures": 0,
+      "errors": 0,
+      "logSha256": "37993fa4d2f547a8dcd2aeafcd1df19b03051adb15165e151cb9ec163ae72934"
+    },
+    "spark": {
+      "totals": {
+        "run": 32,
+        "passed": 32,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0
+      },
+      "realSpark": {
+        "run": 30,
+        "passed": 30,
+        "skipped": 0
+      },
+      "modules": [
+        {
+          "module": "data_analysis.tests.test_spark_pipeline",
+          "run": 7,
+          "passed": 7,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0,
+          "duration_seconds": 34.233,
+          "log_sha256": "e1e05ccf55f159bfdccd026d5607516085adc70cc5c8c3c9482a48dcfe73c33b"
+        },
+        {
+          "module": "data_analysis.tests.test_dirty_injection.SparkDirtyParsingTests",
+          "run": 3,
+          "passed": 3,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0,
+          "duration_seconds": 12.573,
+          "log_sha256": "50a652b9a54820046a8e5b84925cbc8eb169204ca746441df7bfe4c70cd5b4eb"
+        },
+        {
+          "module": "data_analysis.tests.test_dashboard_aggregates",
+          "run": 6,
+          "passed": 6,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0,
+          "duration_seconds": 13.94,
+          "log_sha256": "8dccf3a77ede87ac473ef70de8f78b40d15552f8c9f598d3f6813efddfac91af"
+        },
+        {
+          "module": "data_analysis.tests.test_ml_features",
+          "run": 8,
+          "passed": 8,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0,
+          "duration_seconds": 41.728,
+          "log_sha256": "fefa02b30450df4c21aec701a43aa3b5d32ed293b956b88a2c8f98e3ee18b6f0"
+        },
+        {
+          "module": "data_analysis.tests.test_data_export",
+          "run": 8,
+          "passed": 8,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0,
+          "duration_seconds": 36.436,
+          "log_sha256": "869e360f0c5abfd8d9b221c65e397564a41bfe3678b70da558c00f3d739e80c3"
+        }
+      ]
+    },
+    "oneCommandSamplePipeline": "PASSED",
+    "realUvicornLoopbackHttp": "PASSED health and OpenAPI",
+    "openApiTypeDrift": "PASSED",
+    "draft202012AndRfc3339": "PASSED",
+    "typeScriptCompiler": "NOT_RUN; compiler unavailable"
+  },
+  "notVerified": {
+    "teacherLinuxHdfs": "NOT_RUN in teachers Linux/HDFS environment",
+    "remoteCi": "NOT_RUN; no push or PR this turn",
+    "realModelTrainingOrPrediction": "NOT_IMPLEMENTED; real requests return 503 MODEL_NOT_READY"
+  },
+  "storage": {
+    "portableBundlesInclude": "CSV.gz, schema, manifest, quality, completion marker",
+    "sqliteFiles": "generated locally in ignored outputs; rebuild from portable bundle",
+    "processedParquetImmutability": "must not edit in place; source identity and counts checked, no per-shard processed hash inventory"
+  }
+}

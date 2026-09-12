@@ -1,0 +1,124 @@
+{
+  "business_timezone": "Asia/Shanghai",
+  "clean_session_rows": 121539,
+  "created_at": "2026-09-12T13:51:24.089452+00:00",
+  "dataset_id": "charging_full_180d_v2",
+  "engine": "PySpark",
+  "input_rows": {
+    "anomaly_labels": 4865,
+    "battery_samples": 1217829,
+    "calendar": 900,
+    "campaigns": 30,
+    "charger_telemetry": 3888000,
+    "chargers": 75,
+    "charging_attempts": 169154,
+    "charging_sessions": 123456,
+    "cities": 5,
+    "corruption_log": 2351,
+    "maintenance_events": 1671,
+    "maintenance_tickets": 418,
+    "operating_costs": 4500,
+    "payments": 135130,
+    "queue_entries": 36594,
+    "reservations": 18269,
+    "reviews": 26594,
+    "stations": 25,
+    "tariffs": 120,
+    "users": 6000,
+    "vehicle_energy_intervals": 169254,
+    "vehicles": 6000,
+    "weather_hourly": 21600
+  },
+  "manifest_row_counts_verified": true,
+  "normalized_enum_rows": {
+    "anomaly_labels": 0,
+    "battery_samples": 0,
+    "calendar": 0,
+    "campaigns": 0,
+    "charger_telemetry": 0,
+    "chargers": 0,
+    "charging_attempts": 0,
+    "charging_sessions": 434,
+    "cities": 0,
+    "corruption_log": 0,
+    "maintenance_events": 0,
+    "maintenance_tickets": 0,
+    "operating_costs": 0,
+    "payments": 0,
+    "queue_entries": 0,
+    "reservations": 0,
+    "reviews": 0,
+    "stations": 0,
+    "tariffs": 0,
+    "users": 0,
+    "vehicle_energy_intervals": 0,
+    "vehicles": 0,
+    "weather_hourly": 0
+  },
+  "pipeline_run_id": "spark-625439908b6d4bcca1ae72e2e35ef27f",
+  "raw_file_checksums_verified": true,
+  "reference_aggregates_used_as_input": false,
+  "rejected_session_rows": 1917,
+  "rejection_reasons": {
+    "DUPLICATE_SESSION_ID": 502,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+    "MISSING_SESSION_ID": 470,
+    "UNKNOWN_STATION_ID": 461
+  },
+  "rejection_samples": [
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000279"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000372"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000784"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000901"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001031"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001269"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001301"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001757"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001812"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001902"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00002283"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00002747"
+    }
+  ],
+  "schema_version": "1.1.0",
+  "source": "SIMULATED",
+  "source_manifest_sha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "spark_version": "3.5.6",
+  "station_daily_rows": 4500,
+  "station_hourly_rows": 108000
+}

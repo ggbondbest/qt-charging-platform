@@ -1,0 +1,22 @@
+{
+  "method": "GET",
+  "path": "/api/v1/dashboard/overview",
+  "query": {
+    "datasetId": "charging_sample_7d_v2",
+    "publishedBatchId": "wrong-batch"
+  },
+  "httpStatus": 409,
+  "response": {
+    "code": "BATCH_MISMATCH",
+    "message": "发布批次已变化，请重新选择数据批次",
+    "data": null,
+    "meta": {
+      "datasetId": "charging_sample_7d_v2",
+      "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+      "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+      "schemaVersion": "1.0.0",
+      "generatedAt": "2026-09-12T13:59:53.987019Z",
+      "requestId": "5cad3df4961848139e19cbcc176b3253"
+    }
+  }
+}

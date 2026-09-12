@@ -14,6 +14,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import shlex
+import uuid
 from datetime import datetime, timezone
 
 from data_analysis.charging_data.schema import SCHEMA_VERSION, STATE_VALUES, TABLES
@@ -46,6 +50,64 @@ def _spark_imports():
             "and Java 17 before running this batch job."
         ) from exc
     return SparkSession, Window, F, T
+
+
+def configure_driver_memory(driver_memory=None):
+    """Configure the launcher, not an already running JVM.
+
+    An explicit CLI value takes precedence; otherwise respect a heap size set
+    in PYSPARK_SUBMIT_ARGS and use 2g only when none was provided. Retain all
+    unrelated submit options (including deployment/security options).
+    """
+    arguments = shlex.split(os.environ.get("PYSPARK_SUBMIT_ARGS", "pyspark-shell"))
+    retained = []
+    configured = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--driver-memory":
+            if index + 1 == len(arguments):
+                raise ValueError("PYSPARK_SUBMIT_ARGS --driver-memory requires a value")
+            configured = arguments[index + 1]
+            index += 2
+            continue
+        if argument.startswith("--driver-memory="):
+            configured = argument.split("=", 1)[1]
+            index += 1
+            continue
+        if argument == "--conf" and index + 1 < len(arguments):
+            if arguments[index + 1].startswith("spark.driver.memory="):
+                configured = arguments[index + 1].split("=", 1)[1]
+                index += 2
+                continue
+        if argument.startswith("--conf=spark.driver.memory="):
+            configured = argument.split("=", 2)[2]
+            index += 1
+            continue
+        retained.append(argument)
+        index += 1
+    selected = driver_memory if driver_memory is not None else (configured or "2g")
+    if not isinstance(selected, str) or not re.fullmatch(r"[1-9][0-9]*[mMgG]", selected):
+        raise ValueError("driver-memory must be a positive size such as 2g, 4g or 2048m")
+    selected = selected.lower()
+    # Spark's options must precede its application resource.
+    os.environ["PYSPARK_SUBMIT_ARGS"] = shlex.join(["--driver-memory", selected, *retained])
+    return selected
+
+
+def create_spark(app_name, master="local[2]", shuffle_partitions=8, driver_memory=None):
+    """Start a fresh batch JVM with resource options applied before launch."""
+    if shuffle_partitions < 1:
+        raise ValueError("shuffle-partitions must be positive")
+    SparkSession, _, _, _ = _spark_imports()
+    from pyspark import SparkContext
+    if SparkContext._gateway is not None:
+        raise RuntimeError("create_spark must run before the first Spark JVM; restart the Python process to change its heap")
+    selected = configure_driver_memory(driver_memory)
+    return (SparkSession.builder.appName(app_name).master(master)
+            .config("spark.driver.memory", selected)
+            .config("spark.sql.session.timeZone", "UTC")
+            .config("spark.sql.shuffle.partitions", shuffle_partitions).getOrCreate())
 
 
 def field_type(field):
@@ -88,8 +150,16 @@ def read_table(spark, dataset_root, table):
         if field in ENUM_FIELDS:
             normalized = F.upper(normalized)
             changed.append(~F.col(field).eqNullSafe(normalized))
-        typed = normalized.cast(field_type(field))
+        kind = field_type(field)
+        typed = normalized.cast(kind)
         parse_errors.append(normalized.isNotNull() & typed.isNull())
+        if isinstance(kind, T.DoubleType):
+            # Spark accepts NaN and Infinity as doubles; a successful cast is
+            # not proof that a measurement is safe for statistics or models.
+            parse_errors.append(typed.isNotNull() & (F.isnan(typed) | (F.abs(typed) == F.lit(float("inf")))))
+        elif isinstance(kind, T.LongType):
+            # Permissive casts can silently truncate "1.5" to integer 1.
+            parse_errors.append(normalized.isNotNull() & ~normalized.rlike(r"^[+-]?[0-9]+$"))
         expressions.append(typed.alias(field))
     malformed = parse_errors[0]
     for flag in parse_errors[1:]:
@@ -133,8 +203,13 @@ def clean_sessions(sessions, tables):
         frame = _add_reason(frame, F.col(field).isNull() | (F.col(field) < 0),
                             "INVALID_NONNEGATIVE_" + field.upper())
     frame = _add_reason(frame,
-                        (F.col("ended_at") < F.col("started_at")) |
+                        (F.col("ended_at") <= F.col("started_at")) |
                         (F.col("unplugged_at") < F.col("ended_at")), "INVALID_TIME_ORDER")
+    for field in ["start_soc_pct", "end_soc_pct"]:
+        frame = _add_reason(frame, F.col(field).isNull() | ~F.col(field).between(0, 100),
+                            "INVALID_" + field.upper())
+    frame = _add_reason(frame, F.col("target_mode").isNull() | (F.col("target_mode") != "ENERGY") |
+                        F.col("target_value").isNull() | (F.col("target_value") <= 0), "INVALID_ENERGY_TARGET")
     frame = _add_reason(frame, ~F.col("status").isin("COMPLETED", "WAITING_PAYMENT"),
                         "INVALID_SESSION_STATUS")
     frame = _add_reason(frame,
@@ -300,6 +375,7 @@ def _qualified(spark, path):
 def run_pipeline(spark, input_root, output_root):
     """Write a new versioned result tree. Existing output is never overwritten."""
     _, _, F, _ = _spark_imports()
+    from pyspark import StorageLevel
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     spark.conf.set("spark.sql.ansi.enabled", "false")
     source = _qualified(spark, input_root)
@@ -309,10 +385,13 @@ def run_pipeline(spark, input_root, output_root):
     filesystem, output_path = _filesystem(spark, output_root)
     if filesystem.exists(output_path):
         raise FileExistsError("Output already exists; use a fresh run directory: " + output_root)
-    manifest_rows = spark.read.option("multiLine", True).json(input_root.rstrip("/") + "/manifest.json").collect()
-    if len(manifest_rows) != 1:
-        raise ValueError("Expected exactly one dataset manifest")
-    manifest = manifest_rows[0].asDict(recursive=True)
+    from data_analysis.spark_jobs.fs import read_json, checksum, verify_raw_files, require_raw_complete
+    manifest_path = input_root.rstrip("/") + "/manifest.json"
+    manifest = read_json(spark, manifest_path)
+    if not isinstance(manifest, dict):
+        raise ValueError("Expected exactly one dataset manifest object")
+    require_raw_complete(spark, input_root, manifest)
+    source_digest = checksum(spark, manifest_path)
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("Dataset schema_version is not supported by this pipeline")
     declared_tables = manifest.get("tables")
@@ -322,6 +401,8 @@ def run_pipeline(spark, input_root, output_root):
         count = metadata.get("rows") if isinstance(metadata, dict) else None
         if type(count) is not int or count < 0:
             raise ValueError("Manifest contains an invalid raw row count: " + table)
+    verified_files = verify_raw_files(spark, input_root, manifest)
+    pipeline_run_id = "spark-" + uuid.uuid4().hex
     filesystem.mkdirs(output_path)
     marker_path = spark._jvm.org.apache.hadoop.fs.Path(output_root.rstrip("/") + "/_RUNNING")
     marker = filesystem.create(marker_path, False)
@@ -332,7 +413,12 @@ def run_pipeline(spark, input_root, output_root):
         counts = {}
         normalizations = {}
         for table in TABLES:
-            frame = read_table(spark, input_root, table).cache()
+            # Parsed raw rows retain a full forensic JSON copy. Telemetry and
+            # battery data together contain millions of rows, so retaining all
+            # 23 tables in the JVM heap can starve validation/shuffle execution.
+            # Disk persistence still avoids reparsing compressed CSV on every
+            # action and works with Spark's local scratch storage for HDFS input.
+            frame = read_table(spark, input_root, table).persist(StorageLevel.DISK_ONLY)
             cached.append(frame)
             quality = frame.agg(F.count("*").alias("count"),
                                 F.sum(F.col("_parse_error").cast("long")).alias("invalid"),
@@ -368,6 +454,9 @@ def run_pipeline(spark, input_root, output_root):
                    for row in rejected.groupBy("rejection_reason").count().collect()}
         report = {
             "dataset_id": manifest.get("dataset_id"), "schema_version": SCHEMA_VERSION,
+            "pipeline_run_id": pipeline_run_id,
+            "source_manifest_sha256": source_digest,
+            "raw_file_checksums_verified": verified_files,
             "source": manifest.get("source", "SIMULATED"),
             "engine": "PySpark", "spark_version": spark.version,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -398,13 +487,14 @@ def main(argv=None):
     parser.add_argument("--output", required=True, help="New independent output directory; never overwritten")
     parser.add_argument("--master", default="local[2]", help="Spark master; default local[2]")
     parser.add_argument("--shuffle-partitions", type=int, default=8)
+    parser.add_argument("--driver-memory", help="JVM heap before startup, e.g. 2g or 4g; default: submit environment or 2g")
     args = parser.parse_args(argv)
     if args.shuffle_partitions < 1:
         parser.error("--shuffle-partitions must be positive")
-    SparkSession, _, _, _ = _spark_imports()
-    spark = (SparkSession.builder.appName("charging-analysis-batch").master(args.master)
-             .config("spark.sql.session.timeZone", "UTC")
-             .config("spark.sql.shuffle.partitions", args.shuffle_partitions).getOrCreate())
+    try:
+        spark = create_spark("charging-analysis-batch", args.master, args.shuffle_partitions, args.driver_memory)
+    except ValueError as exc:
+        parser.error(str(exc))
     try:
         report = run_pipeline(spark, args.input, args.output)
         print(json.dumps(report, ensure_ascii=False, indent=2))

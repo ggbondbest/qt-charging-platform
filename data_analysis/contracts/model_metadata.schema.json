@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:charging-analysis:model-metadata:1.0.0",
+  "title": "Model artifact metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "featureVersion", "modelId", "modelVersion", "target", "datasetId", "sourceManifestSha256", "trainingPublishedBatchId", "trainEndExclusive", "validationEndExclusive", "testEndExclusive", "historyHours", "supportedHorizons", "featureColumns", "artifactFile", "artifactSha256", "metrics", "dependencies"],
+  "allOf": [
+    {"if": {"properties": {"target": {"const": "load"}}}, "then": {"properties": {"metrics": {"properties": {"unit": {"const": "kW"}}}}}},
+    {"if": {"properties": {"target": {"const": "availability"}}}, "then": {"properties": {"metrics": {"properties": {"unit": {"const": "chargers"}}}}}}
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "featureVersion": {"const": "history24-v1"},
+    "modelId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "modelVersion": {"type": "string", "minLength": 1},
+    "target": {"enum": ["load", "availability"]},
+    "datasetId": {"type": "string", "minLength": 1},
+    "sourceManifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "trainingPublishedBatchId": {"type": "string", "minLength": 1},
+    "trainEndExclusive": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "validationEndExclusive": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "testEndExclusive": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "historyHours": {"const": 24},
+    "supportedHorizons": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [1, 6, 24]}},
+    "featureColumns": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^(?!label_|split_)[a-z][a-z0-9_]*$"}},
+    "artifactFile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+    "artifactSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "metrics": {
+      "type": "object", "required": ["mae", "rmse", "testSamples", "unit"], "additionalProperties": false,
+      "properties": {"mae": {"type": "number", "minimum": 0}, "rmse": {"type": "number", "minimum": 0}, "testSamples": {"type": "integer", "minimum": 1}, "unit": {"enum": ["kW", "chargers"]}}
+    },
+    "dependencies": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}}
+  }
+}

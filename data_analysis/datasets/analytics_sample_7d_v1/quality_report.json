@@ -1,0 +1,124 @@
+{
+  "business_timezone": "Asia/Shanghai",
+  "clean_session_rows": 4619,
+  "created_at": "2026-09-12T13:15:12.304795+00:00",
+  "dataset_id": "charging_sample_7d_v2",
+  "engine": "PySpark",
+  "input_rows": {
+    "anomaly_labels": 185,
+    "battery_samples": 27433,
+    "calendar": 35,
+    "campaigns": 5,
+    "charger_telemetry": 151200,
+    "chargers": 75,
+    "charging_attempts": 5308,
+    "charging_sessions": 4705,
+    "cities": 5,
+    "corruption_log": 107,
+    "maintenance_events": 106,
+    "maintenance_tickets": 27,
+    "operating_costs": 175,
+    "payments": 5116,
+    "queue_entries": 412,
+    "reservations": 777,
+    "reviews": 1048,
+    "stations": 25,
+    "tariffs": 120,
+    "users": 400,
+    "vehicle_energy_intervals": 5469,
+    "vehicles": 400,
+    "weather_hourly": 840
+  },
+  "manifest_row_counts_verified": true,
+  "normalized_enum_rows": {
+    "anomaly_labels": 0,
+    "battery_samples": 0,
+    "calendar": 0,
+    "campaigns": 0,
+    "charger_telemetry": 0,
+    "chargers": 0,
+    "charging_attempts": 0,
+    "charging_sessions": 21,
+    "cities": 0,
+    "corruption_log": 0,
+    "maintenance_events": 0,
+    "maintenance_tickets": 0,
+    "operating_costs": 0,
+    "payments": 0,
+    "queue_entries": 0,
+    "reservations": 0,
+    "reviews": 0,
+    "stations": 0,
+    "tariffs": 0,
+    "users": 0,
+    "vehicle_energy_intervals": 0,
+    "vehicles": 0,
+    "weather_hourly": 0
+  },
+  "pipeline_run_id": "spark-109d317486184d24bd58d8d8bb3c7c79",
+  "raw_file_checksums_verified": true,
+  "reference_aggregates_used_as_input": false,
+  "rejected_session_rows": 86,
+  "rejection_reasons": {
+    "DUPLICATE_SESSION_ID": 17,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 25,
+    "MISSING_SESSION_ID": 22,
+    "UNKNOWN_STATION_ID": 22
+  },
+  "rejection_samples": [
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000279"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000372"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000784"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00000901"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001031"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001269"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001301"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001757"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001812"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00001902"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00002283"
+    },
+    {
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00002747"
+    }
+  ],
+  "schema_version": "1.1.0",
+  "source": "SIMULATED",
+  "source_manifest_sha256": "fac612b1fca3289d7bae176ceb009dfac1e037176c1e42635fef7d96be8adf29",
+  "spark_version": "3.5.6",
+  "station_daily_rows": 175,
+  "station_hourly_rows": 4200
+}
