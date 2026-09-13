@@ -1,0 +1,118 @@
+{
+  "recordedDate": "2026-09-13",
+  "implementationBranch": "feature/phase2-cleaning-acceptance",
+  "baseCommit": "067f7b94bcac0934ee73cc7dc2eb5786a0f25a71",
+  "scope": "Observed local working-tree runs; not remote CI or real HDFS verification",
+  "source": "SIMULATED",
+  "webFramework": "FastAPI",
+  "runtime": {
+    "python": "3.12.14",
+    "pyspark": "3.5.6",
+    "java": "17.0.20.1",
+    "sparkMaster": "local[2]",
+    "fullDriverMemory": "4g"
+  },
+  "implementationSha256": {
+    "spark_jobs/pipeline.py": "06385b62bec1664151e81d3b28fca26b28217b026f74f16a4cc4670e7faf135d",
+    "spark_jobs/normalization.py": "06f534b1c6ef91143d72e9d89bb22bd01fb3b9e973f0c7176551a4936a26c66d",
+    "spark_jobs/quality.py": "39aa8eb80cefec193ad44099fe58184a25b2df392e38e0a578b1228adad2449a",
+    "spark_jobs/acceptance_analysis.py": "80f364cdd7037ad8a1becf0a7f357312331e902fe37394739cfb5485c7e5c3cd",
+    "scripts/run_acceptance.py": "f43129fcb93e385f84bcbe7f0952e34151b45706ecf74d45de8c1acc53559515",
+    "scripts/verify_hdfs.py": "cffcdfd77a43f96ed3f355e29d206ae6d610406bf1897f28fecf724ee66155d9"
+  },
+  "rules": {
+    "version": "cleaning-rules-1.0.0",
+    "sha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982"
+  },
+  "sample": {
+    "localOutput": "data_analysis/outputs/acceptance_sample_20260913_run1",
+    "status": "LOCAL_DATA_READY",
+    "extraDirtyInjection": {"rate": 0.05, "seed": 42},
+    "datasetId": "charging_sample_7d_v2_dirty_42_a53d70cb",
+    "pipelineRunId": "spark-632f992ac14f47ef870e0d90d2621258",
+    "publishedBatchId": "analytics-08c13713c6db469c8d31eeb026aa4a96",
+    "sourceManifestSha256": "b6f146aaaf37219815e03a025dd38919fa9659f3f780706ebc97b373984d40a5",
+    "auditSha256": "659ee3f0b8c510c473b59dea895ebdd040cf6eaf514bd906a49d7fc6e4263f7e",
+    "tableCount": 23,
+    "inputRows": 204347,
+    "cleanSessionRows": 4619,
+    "rejectedSessionRows": 254,
+    "rowsConserved": true,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true
+  },
+  "full": {
+    "localOutput": "data_analysis/outputs/acceptance_full_20260913_run1",
+    "status": "LOCAL_DATA_READY",
+    "extraDirtyInjection": false,
+    "datasetId": "charging_full_180d_v2",
+    "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+    "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+    "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+    "auditSha256": "5c5f43b04083fd2b03fc4ef977a118296b863f5a47149896405aa9fbf82b20d3",
+    "databaseSha256": "eac122667c60218219d946ca84744de192e2016087135ef333d13e99c70d26b1",
+    "tableCount": 23,
+    "inputRows": 5832840,
+    "cleanSessionRows": 121539,
+    "rejectedSessionRows": 1917,
+    "rejectionReasons": {
+      "MISSING_SESSION_ID": 470,
+      "UNKNOWN_STATION_ID": 461,
+      "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+      "DUPLICATE_SESSION_ID": 502
+    },
+    "rowsConserved": true,
+    "cities": 5,
+    "stations": 25,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "mlTargetsImportedIntoQueryDatabase": false,
+    "independentReferenceComparison": {
+      "status": "PASSED",
+      "stationHourlyRows": 108000,
+      "stationDailyRows": 4500,
+      "allPrimaryKeysAndSummaryFieldsCompared": true,
+      "differentRows": 0,
+      "floatingToleranceHourly": 1e-9,
+      "floatingToleranceDaily": 0,
+      "referenceUsedOnlyAfterComputation": true
+    }
+  },
+  "analysis": {
+    "semanticDimensions": 11,
+    "resultTables": 15,
+    "comparisons": [
+      ["city", "start_hour"],
+      ["site_type", "day_type"],
+      ["city", "payment_channel"]
+    ],
+    "newResultsDeliveredAs": "Independent aggregate CSV, preview and manifest; existing OpenAPI unchanged"
+  },
+  "tests": {
+    "defaultDiscovery": {"discovered": 211, "passed": 170, "sparkSkipped": 41, "failures": 0, "errors": 0},
+    "sparkOptInGroups": [
+      {
+        "modules": ["test_cleaning_quality", "test_spark_pipeline", "test_dirty_injection.SparkDirtyParsingTests"],
+        "run": 15, "passed": 15, "skipped": 0
+      },
+      {
+        "modules": ["test_acceptance_analysis", "test_data_export", "test_dashboard_aggregates", "test_ml_features"],
+        "run": 32, "passed": 32, "skipped": 0
+      }
+    ],
+    "realSparkTestsWithinGroups": 41,
+    "note": "Groups include six structural/catalog tests also seen in default discovery; do not sum these as distinct new tests",
+    "finalCleaningQualityRerun": {"run": 5, "passed": 5, "skipped": 0},
+    "withoutSitePackagesRunnerAndHdfsGuards": {"run": 27, "passed": 27, "skipped": 0}
+  },
+  "limitations": {
+    "hdfs": "NOT_VERIFIED: requires actual teacher Hadoop 3.x environment",
+    "windowsAndLinuxNewWorkflow": "NOT_RUN_REMOTELY: configured Python 3.12/3.11 CI is not a local execution result",
+    "frontend": "NOT_VERIFIED: Vue 3, DataV, Node.js >=23 and interactions remain frontend work",
+    "machineLearning": "FEATURES_READY_MODELS_NOT_TRAINED",
+    "realWorldAccuracy": "NOT_MEASURED: simulated data has no independent real-world ground truth",
+    "artifacts": "Output directories are local ignored artifacts; rerun the documented command to recreate, with fresh batch IDs"
+  }
+}
