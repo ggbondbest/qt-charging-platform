@@ -63,7 +63,18 @@ python -m data_analysis.scripts.verify_serving --database data_analysis/outputs/
 
 全量 108,000 条小时统计和 4,500 条日统计已逐键逐字段与独立参考结果核对，无超出约定容差的差异；参考数据只在计算完成后用于核验。样本和全量各完成 59 次 FastAPI 请求核对，接口汇总与 SQLite 一致。
 
-本地输出在 `data_analysis/outputs/acceptance_sample_20260913_run1` 和 `data_analysis/outputs/acceptance_full_20260913_run1`，不重复提交大体积运行产物。可复核的源码哈希、批次、数量和测试范围保存在 [本次验收记录](cleaning_acceptance_validation.json)。这些记录不是远程 CI、真实 HDFS、网页或模型验收结果。
+原始运行输出在 `data_analysis/outputs/acceptance_sample_20260913_run1` 和 `data_analysis/outputs/acceptance_full_20260913_run1`。
+全量已整理为仓库内的 [180 天交付包](../datasets/analytics_full_180d_v1/README.md)：规则和质量审计在包内 `reports/`，清洗明细在 `clean/`，对比结果在 `analysis/`，原有统计/特征/标签在 `csv/`。没有把查询 SQLite、缓存文件、重复统计 Parquet 或本机输出目录整体上传。
+可复核的源码哈希、批次、数量和测试范围保存在 [本次验收记录](cleaning_acceptance_validation.json)。这些记录不是远程 CI、真实 HDFS、网页或模型验收结果。
+
+打包是清洗完成后的独立步骤，原有运行命令仍然写入 `--output`，不会自动覆盖 datasets。要整理下一轮已通过的运行结果，先选择新目录：
+
+```text
+python -m data_analysis.publishing.acceptance_bundle --input data_analysis/outputs/acceptance_full_20260913_run1 --output data_analysis/outputs/next_delivery_run1
+python -m data_analysis.publishing.acceptance_bundle --verify data_analysis/outputs/next_delivery_run1
+```
+
+确认通过后再用独立 Git 提交更新交付目录。打包工具本身拒绝覆盖已存在的目录，避免组员误操作丢失旧数据。
 
 ## 清洗具体做了什么
 

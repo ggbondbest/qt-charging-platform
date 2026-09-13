@@ -1,0 +1,887 @@
+{
+  "bundleVersion": "acceptance-bundle-1.0.0",
+  "cleanTables": {
+    "anomaly_labels": {
+      "columnNames": [
+        "label_id",
+        "session_id",
+        "recorded_at",
+        "anomaly_type",
+        "severity"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/anomaly_labels",
+      "rowCount": 4865
+    },
+    "battery_samples": {
+      "columnNames": [
+        "session_id",
+        "charger_id",
+        "recorded_at",
+        "soc_pct",
+        "pack_voltage_v",
+        "charge_current_a",
+        "max_cell_voltage_v",
+        "min_cell_voltage_v",
+        "max_temperature_c",
+        "min_temperature_c"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/battery_samples",
+      "rowCount": 1217829
+    },
+    "calendar": {
+      "columnNames": [
+        "city_id",
+        "business_date",
+        "is_weekend",
+        "scenario_event",
+        "demand_multiplier"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/calendar",
+      "rowCount": 900
+    },
+    "campaigns": {
+      "columnNames": [
+        "campaign_id",
+        "city_id",
+        "starts_at",
+        "ends_at",
+        "channel",
+        "discount_cents",
+        "budget_cents"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/campaigns",
+      "rowCount": 30
+    },
+    "charger_telemetry": {
+      "columnNames": [
+        "charger_id",
+        "station_id",
+        "recorded_at",
+        "interval_seconds",
+        "state",
+        "session_id",
+        "power_kw",
+        "energy_wh",
+        "grid_energy_wh",
+        "grid_cost_cents",
+        "meter_wh",
+        "online"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/charger_telemetry",
+      "rowCount": 3888000
+    },
+    "chargers": {
+      "columnNames": [
+        "charger_id",
+        "station_id",
+        "connector_type",
+        "rated_power_kw",
+        "commissioned_at",
+        "manufacturer",
+        "model"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/chargers",
+      "rowCount": 75
+    },
+    "charging_attempts": {
+      "columnNames": [
+        "attempt_id",
+        "user_id",
+        "vehicle_id",
+        "station_id",
+        "charger_id",
+        "attempted_at",
+        "outcome",
+        "failure_reason",
+        "session_id",
+        "queue_id",
+        "reservation_id"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/charging_attempts",
+      "rowCount": 169154
+    },
+    "charging_sessions": {
+      "columnNames": [
+        "session_id",
+        "attempt_id",
+        "user_id",
+        "vehicle_id",
+        "station_id",
+        "charger_id",
+        "started_at",
+        "ended_at",
+        "unplugged_at",
+        "energy_wh",
+        "grid_energy_wh",
+        "electricity_fee_cents",
+        "service_fee_cents",
+        "parking_fee_cents",
+        "discount_cents",
+        "total_fee_cents",
+        "grid_cost_cents",
+        "status",
+        "stop_reason",
+        "start_soc_pct",
+        "end_soc_pct",
+        "target_mode",
+        "target_value",
+        "campaign_id"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/charging_sessions",
+      "rowCount": 121539
+    },
+    "cities": {
+      "columnNames": [
+        "city_id",
+        "city_name",
+        "latitude",
+        "longitude",
+        "timezone"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/cities",
+      "rowCount": 5
+    },
+    "corruption_log": {
+      "columnNames": [
+        "corruption_id",
+        "table_name",
+        "record_id",
+        "corruption_type",
+        "expected_action"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/corruption_log",
+      "rowCount": 2351
+    },
+    "maintenance_events": {
+      "columnNames": [
+        "event_id",
+        "ticket_id",
+        "event_at",
+        "status",
+        "note"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/maintenance_events",
+      "rowCount": 1671
+    },
+    "maintenance_tickets": {
+      "columnNames": [
+        "ticket_id",
+        "charger_id",
+        "station_id",
+        "reported_at",
+        "accepted_at",
+        "work_started_at",
+        "restored_at",
+        "fault_type",
+        "severity",
+        "labor_cost_cents",
+        "parts_cost_cents",
+        "status"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/maintenance_tickets",
+      "rowCount": 418
+    },
+    "operating_costs": {
+      "columnNames": [
+        "station_id",
+        "business_date",
+        "rent_cents",
+        "labor_cents",
+        "network_cents"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/operating_costs",
+      "rowCount": 4500
+    },
+    "payments": {
+      "columnNames": [
+        "payment_id",
+        "session_id",
+        "user_id",
+        "occurred_at",
+        "transaction_type",
+        "status",
+        "channel",
+        "amount_cents",
+        "failure_reason"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/payments",
+      "rowCount": 135130
+    },
+    "queue_entries": {
+      "columnNames": [
+        "queue_id",
+        "user_id",
+        "station_id",
+        "joined_at",
+        "called_at",
+        "resolved_at",
+        "position_at_join",
+        "status",
+        "session_id"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/queue_entries",
+      "rowCount": 36594
+    },
+    "reservations": {
+      "columnNames": [
+        "reservation_id",
+        "user_id",
+        "station_id",
+        "charger_id",
+        "created_at",
+        "expires_at",
+        "resolved_at",
+        "status",
+        "session_id"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/reservations",
+      "rowCount": 18269
+    },
+    "reviews": {
+      "columnNames": [
+        "review_id",
+        "session_id",
+        "user_id",
+        "station_id",
+        "created_at",
+        "rating",
+        "issue_type",
+        "comment"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/reviews",
+      "rowCount": 26594
+    },
+    "stations": {
+      "columnNames": [
+        "station_id",
+        "city_id",
+        "station_name",
+        "site_type",
+        "latitude",
+        "longitude",
+        "opened_at",
+        "transformer_kw",
+        "rent_daily_cents"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/stations",
+      "rowCount": 25
+    },
+    "tariffs": {
+      "columnNames": [
+        "tariff_id",
+        "city_id",
+        "hour",
+        "energy_price_cents_per_kwh",
+        "service_price_cents_per_kwh",
+        "grid_price_cents_per_kwh",
+        "period"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/tariffs",
+      "rowCount": 120
+    },
+    "users": {
+      "columnNames": [
+        "user_id",
+        "home_city_id",
+        "registered_at",
+        "segment",
+        "acquisition_channel",
+        "membership"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/users",
+      "rowCount": 6000
+    },
+    "vehicle_energy_intervals": {
+      "columnNames": [
+        "interval_id",
+        "vehicle_id",
+        "started_at",
+        "ended_at",
+        "start_soc_pct",
+        "end_soc_pct",
+        "driving_wh",
+        "external_charge_wh"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/vehicle_energy_intervals",
+      "rowCount": 169254
+    },
+    "vehicles": {
+      "columnNames": [
+        "vehicle_id",
+        "user_id",
+        "battery_capacity_kwh",
+        "max_charge_kw",
+        "vehicle_class"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/vehicles",
+      "rowCount": 6000
+    },
+    "weather_hourly": {
+      "columnNames": [
+        "city_id",
+        "recorded_at",
+        "temperature_c",
+        "humidity_pct",
+        "weather",
+        "rainfall_mm"
+      ],
+      "countSource": "SPARK_CLEANING_AUDIT_NOT_RECOUNTED_BY_PACKAGER",
+      "path": "clean/weather_hourly",
+      "rowCount": 21600
+    }
+  },
+  "datasetId": "charging_full_180d_v2",
+  "evidence": {
+    "auditSha256": "5c5f43b04083fd2b03fc4ef977a118296b863f5a47149896405aa9fbf82b20d3",
+    "comparisons": 3,
+    "ruleVersion": "cleaning-rules-1.0.0",
+    "rulesFileSha256": "9cb996178f60bae106b65c2677bb7886e85b40fec8a928b55b1fa86fcc706830",
+    "rulesSha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982",
+    "semanticDimensions": 11
+  },
+  "files": [
+    {
+      "bytes": 0,
+      "path": "analysis/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 53399,
+      "path": "analysis/analysis_manifest.json",
+      "sha256": "fe1062962a95dba9e8e5a02df0a2924a465cac4895124d68f2cfff4b6eb89e1b"
+    },
+    {
+      "bytes": 7511,
+      "path": "analysis/csv/comparison_city_hour/part-00000-77c5e8ec-ca11-4d4b-ac85-4a8156fdce6a-c000.csv.gz",
+      "sha256": "0ab4bfc92059a8d0f57d474a183a326b4adebe149ad52cf92d2ace24006d1ddd"
+    },
+    {
+      "bytes": 1044,
+      "path": "analysis/csv/comparison_city_payment_channel/part-00000-496f84e7-af5d-495b-bdaf-806107d37abb-c000.csv.gz",
+      "sha256": "dd4628700f5da745776f73dbb1c6179680f3b9940958a4d8102775d9b74e7f90"
+    },
+    {
+      "bytes": 889,
+      "path": "analysis/csv/comparison_site_day_type/part-00000-5f61e685-7b22-4ed3-be46-130774242824-c000.csv.gz",
+      "sha256": "eb40523e7b6e267fbcf2b3b7a376ff5c26c42729b4141681f8f2e078068d9cec"
+    },
+    {
+      "bytes": 5711,
+      "path": "analysis/csv/payments_by_business_date/part-00000-f2cff067-d567-4ba7-9391-4d683d020c28-c000.csv.gz",
+      "sha256": "a75b45541ea3ab5376e937c11ecf9ec24c2951823926904dbb2828b7841f9fd5"
+    },
+    {
+      "bytes": 340,
+      "path": "analysis/csv/payments_by_channel/part-00000-0c463792-5955-4569-9c16-502284bf22a8-c000.csv.gz",
+      "sha256": "f125230d3d2ef766aed7b624d33e6bcc3e5a83876aabf5cb3392d61cb7baf3ff"
+    },
+    {
+      "bytes": 262,
+      "path": "analysis/csv/repairs_by_fault_type/part-00000-b7c7f80c-d8ea-4bc9-a37f-33ead2d4cacd-c000.csv.gz",
+      "sha256": "a05e49e9020c7db4f579d2904a030b51e39902f1c8e556d217f750a602c0f4b5"
+    },
+    {
+      "bytes": 10572,
+      "path": "analysis/csv/sessions_by_business_date/part-00000-c0715aaa-5b83-4879-a5d9-d7850b822de3-c000.csv.gz",
+      "sha256": "3571496a204adbc1f5efe25e848ec89bad0789caaa659486db9d9b862a17aaef"
+    },
+    {
+      "bytes": 553,
+      "path": "analysis/csv/sessions_by_city/part-00000-b24cbc4a-ea1f-4c4b-91ae-6eac8fc9a5e9-c000.csv.gz",
+      "sha256": "eefbb9e59be70413dd0c73aae55c8c45df4a00684ad83156f89aaf7c407dd2da"
+    },
+    {
+      "bytes": 291,
+      "path": "analysis/csv/sessions_by_connector_type/part-00000-c8bb40b8-97d0-47e8-9020-f3bc21d757b4-c000.csv.gz",
+      "sha256": "5821a6297996687b1195c0fe29641b75bda2a077cedc81d7594089b903ac38af"
+    },
+    {
+      "bytes": 301,
+      "path": "analysis/csv/sessions_by_day_type/part-00000-13eb9ac3-5bc2-4fc7-8d42-fe6f887151a5-c000.csv.gz",
+      "sha256": "50318536498369c57b9ad1d88e3bdfb1579ef653ab082bdfec0f966fc0294088"
+    },
+    {
+      "bytes": 530,
+      "path": "analysis/csv/sessions_by_site_type/part-00000-ffa65b3a-3975-42c8-97c2-c11f2f8d1ded-c000.csv.gz",
+      "sha256": "29ca6a04f4756b4759928b94cfb5b7956f6d61cc502bebcdd70a5f2bf405b1be"
+    },
+    {
+      "bytes": 1669,
+      "path": "analysis/csv/sessions_by_start_hour/part-00000-11efd261-5b85-4cbc-9347-770886da441a-c000.csv.gz",
+      "sha256": "4600530bb3511fc3369b6ccc7d56ea26e7a6856c250413bcb5d61fb9f9c24965"
+    },
+    {
+      "bytes": 2045,
+      "path": "analysis/csv/sessions_by_station/part-00000-43791a1d-1e34-4cbf-9316-d52a6ef62264-c000.csv.gz",
+      "sha256": "a2e2d28ca55aeaa3b2f482179ef37dc29f16e8c0c72aa5e81c31a41ada669674"
+    },
+    {
+      "bytes": 454,
+      "path": "analysis/csv/sessions_by_user_segment/part-00000-9134150c-11e5-4f79-a48f-e730939a04cf-c000.csv.gz",
+      "sha256": "6161443b82f275aebd95a502254ed7dffa00b0187169893e2dcdaf7a32aa968a"
+    },
+    {
+      "bytes": 458,
+      "path": "analysis/csv/sessions_by_vehicle_class/part-00000-68b3defd-e9b6-4c28-87ae-cc9ea0352eff-c000.csv.gz",
+      "sha256": "e66df295848b3e60331b8c213598e21492a4e32ee2c97b9540ae7d49064a9f4b"
+    },
+    {
+      "bytes": 55217,
+      "path": "analysis/preview.json",
+      "sha256": "640cba6f0c7191ff643aae035eebdad82a932bfc1af0f09c19add04eccb984f7"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/anomaly_labels/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 84680,
+      "path": "clean/anomaly_labels/part-00000-fe55e63e-29c6-43fc-a111-4bf4dbcaeef2-c000.snappy.parquet",
+      "sha256": "a04a583a07ae8179524d50133bf96589562515a8136884530af7874ca53cf96a"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/battery_samples/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11513221,
+      "path": "clean/battery_samples/part-00000-443bec04-80be-4d96-9acd-8b52abe5ec8e-c000.snappy.parquet",
+      "sha256": "b12cadc9f43599edebf1465c854eac3389b79547a7d43ea46e2171601ba4e725"
+    },
+    {
+      "bytes": 10157386,
+      "path": "clean/battery_samples/part-00001-443bec04-80be-4d96-9acd-8b52abe5ec8e-c000.snappy.parquet",
+      "sha256": "92ef13292f8ab38b6913a4a81657fb3b2885b880f9ca51f1398682d75b0f1234"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/calendar/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8444,
+      "path": "clean/calendar/part-00000-a14510aa-0bfb-4699-9972-0b7ce144e2da-c000.snappy.parquet",
+      "sha256": "99210ef038588648d0d2d59ae1be0887775da9db989b469f664f462ff271ea0e"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/campaigns/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2416,
+      "path": "clean/campaigns/part-00000-14393e42-df0f-49f3-9c75-76632ea1cd6b-c000.snappy.parquet",
+      "sha256": "b060a4b01c8c3353cddb1459a88f7518f36482d0190587ddcc29af8199fd3aa9"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/charger_telemetry/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 14721651,
+      "path": "clean/charger_telemetry/part-00000-3ead9c1d-7f51-451e-8570-4a51f0f88f97-c000.snappy.parquet",
+      "sha256": "84d4f329ce0c02793df2ccdf176d26adaff236e91d398a531ddce62c9a50f6ba"
+    },
+    {
+      "bytes": 12689273,
+      "path": "clean/charger_telemetry/part-00001-3ead9c1d-7f51-451e-8570-4a51f0f88f97-c000.snappy.parquet",
+      "sha256": "4c4eaa604a33053ce6ae5b9dff649dbab9826b21102392cc1f982d90a760a2c1"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/chargers/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2918,
+      "path": "clean/chargers/part-00000-210e4a98-3f66-4756-88a2-cec4a061476b-c000.snappy.parquet",
+      "sha256": "7b5d768350f3d4d9f98d85ccbf3e1747a1757e01c42b1857e0e6fc4a93ae4083"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/charging_attempts/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1758854,
+      "path": "clean/charging_attempts/part-00000-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet",
+      "sha256": "675b1d67018c65a004423df7f66125397d0673eb2070946cc75592d9224928ed"
+    },
+    {
+      "bytes": 1586701,
+      "path": "clean/charging_attempts/part-00001-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet",
+      "sha256": "d491c245dd406263aea5e61c5c3bd48f7a1f68f108b2f5871c702a6d4f1ba2a0"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/charging_sessions/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1098505,
+      "path": "clean/charging_sessions/part-00000-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "386eca2bafae364dd9692702dda2410e8f15509cecfdb309ad138a651d5a547f"
+    },
+    {
+      "bytes": 1118632,
+      "path": "clean/charging_sessions/part-00001-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "ac114fc4e9d4819b54c75c61212219f5757e26355326bc2adf59a8e1bfbccfce"
+    },
+    {
+      "bytes": 1089538,
+      "path": "clean/charging_sessions/part-00002-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "b61b8afb831a18d0c3f4c335de4c7ea58552bfd5c933057bb643f8ec3c4a9528"
+    },
+    {
+      "bytes": 1109156,
+      "path": "clean/charging_sessions/part-00003-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "1e41dbeecc361084877738b3594ad54ffe29b692f3f74b4debc13b395212c009"
+    },
+    {
+      "bytes": 1078822,
+      "path": "clean/charging_sessions/part-00004-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "3300970bcb09f78fdfb0d458d8c63a78c0df91eed1fa733467ff8e4459ddbc70"
+    },
+    {
+      "bytes": 1091571,
+      "path": "clean/charging_sessions/part-00005-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "82e339cc3d33afeaa636ffe52c6ff3b565dd2d6d9a2f7a39833cec376eae4fd6"
+    },
+    {
+      "bytes": 1089937,
+      "path": "clean/charging_sessions/part-00006-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "a5b285a7f0da7718b2227c3c3646a532bc1756d1defa89cfcc31267855949206"
+    },
+    {
+      "bytes": 1118071,
+      "path": "clean/charging_sessions/part-00007-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+      "sha256": "65106fab0b7ee1d83063129a9c7c1f55547616b07d365949196a220441a2c7b7"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/cities/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1723,
+      "path": "clean/cities/part-00000-e1d0a01d-4989-4506-8f04-18f015ec7b2a-c000.snappy.parquet",
+      "sha256": "bd8a4e336fc9fe6a6c01593eca3b303f33e0c4046b8c570e88eecdb0b1277fc6"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/corruption_log/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 29175,
+      "path": "clean/corruption_log/part-00000-be8259bb-14e8-49e0-bcc5-10d17614a965-c000.snappy.parquet",
+      "sha256": "157af1921d86964169314bf7a484523021530623587125cc851218e8dafca064"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/maintenance_events/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 15002,
+      "path": "clean/maintenance_events/part-00000-59d682d4-9572-4048-b783-4a306463f9c7-c000.snappy.parquet",
+      "sha256": "2684b1a6a65e47bbae8d0e0f5ee390fb283dfb0dbab9feba32135c39e85b7944"
+    },
+    {
+      "bytes": 12999,
+      "path": "clean/maintenance_events/part-00001-59d682d4-9572-4048-b783-4a306463f9c7-c000.snappy.parquet",
+      "sha256": "ece36ff923d08977436d5ce95f8aa71d42e1d36fa0779066681d5d200502b365"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/maintenance_tickets/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 15983,
+      "path": "clean/maintenance_tickets/part-00000-66975a96-b3a1-4583-8910-943f3e38975c-c000.snappy.parquet",
+      "sha256": "ef1e5ae22f3bd9d7637be707de2251106003f952f91cbbaa968ee77e5379ca0a"
+    },
+    {
+      "bytes": 14132,
+      "path": "clean/maintenance_tickets/part-00001-66975a96-b3a1-4583-8910-943f3e38975c-c000.snappy.parquet",
+      "sha256": "9da3fde5066dcca616d7d00544d44be134e3d321b10ff7cd95a7679c0587caa4"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/operating_costs/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3133,
+      "path": "clean/operating_costs/part-00000-4d5f2298-8cf4-4702-b9bb-0282c1081de4-c000.snappy.parquet",
+      "sha256": "598f6485faf6f49cd3519bfccfd53c3841884de69874c7045ccb9368b689383d"
+    },
+    {
+      "bytes": 2913,
+      "path": "clean/operating_costs/part-00001-4d5f2298-8cf4-4702-b9bb-0282c1081de4-c000.snappy.parquet",
+      "sha256": "8b60fbd721555f00720682c911b8a4e89941a58c4e35726004819670605c45d6"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/payments/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1248986,
+      "path": "clean/payments/part-00000-2eda6734-61a8-4e9b-9bf1-3b56184c9a66-c000.snappy.parquet",
+      "sha256": "a67ca2a2cbedc6910b07dab5b187d7d826d295a4ef7774c4817664357c301709"
+    },
+    {
+      "bytes": 1146722,
+      "path": "clean/payments/part-00001-2eda6734-61a8-4e9b-9bf1-3b56184c9a66-c000.snappy.parquet",
+      "sha256": "8d17cc0871746ffdc37097f6f70f13830345053ada6a43b8616fd283bcb19ed1"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/queue_entries/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 510494,
+      "path": "clean/queue_entries/part-00000-92968d52-06f2-4115-8082-6a567791610a-c000.snappy.parquet",
+      "sha256": "46c4263f83ef1a0879402b1b172e33a74b68b907888b7394890c16ad1e46ffca"
+    },
+    {
+      "bytes": 439193,
+      "path": "clean/queue_entries/part-00001-92968d52-06f2-4115-8082-6a567791610a-c000.snappy.parquet",
+      "sha256": "5d3ab173d669bd8be8b9b7fc881ea6109381a06c1f3262b235962c7746341657"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/reservations/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 306960,
+      "path": "clean/reservations/part-00000-f65698fe-189f-4e41-89e8-92daaa169b94-c000.snappy.parquet",
+      "sha256": "27618aa817f4ea0e64b30698c77470e737d65aeaa4a8452825c9799d353637c1"
+    },
+    {
+      "bytes": 277620,
+      "path": "clean/reservations/part-00001-f65698fe-189f-4e41-89e8-92daaa169b94-c000.snappy.parquet",
+      "sha256": "986eff4e2d8e8d6f37b429a54fde9eed9dc0f9ff47fa73b99eadc1405ec49ec1"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/reviews/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 277175,
+      "path": "clean/reviews/part-00000-96e9d0b3-8242-4262-9120-16146eff88bc-c000.snappy.parquet",
+      "sha256": "3f618c833c327f341b1ffa580542fd30c019f89f676c78d5e4af3c6487875a71"
+    },
+    {
+      "bytes": 255944,
+      "path": "clean/reviews/part-00001-96e9d0b3-8242-4262-9120-16146eff88bc-c000.snappy.parquet",
+      "sha256": "a9a2a3bdd86c9765bb5d13b0dc5cce819ea2915b69a6d575a4875217ee373afb"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/stations/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3689,
+      "path": "clean/stations/part-00000-0c0277b4-36aa-485f-899e-4fc24af4b717-c000.snappy.parquet",
+      "sha256": "cc0cad908a3cd45916e339463711cdd439f7cd9b136feb23ddc7acadf21e6c10"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/tariffs/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3065,
+      "path": "clean/tariffs/part-00000-17966504-2669-4723-838d-aba2e2a72f2a-c000.snappy.parquet",
+      "sha256": "0693cd0d1847d0955757e45ffdb4932f9b6a36248a5fde97a2d2aa0bb313aa89"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/users/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 42173,
+      "path": "clean/users/part-00000-50ae3c68-07b2-43f7-975c-b30ac724ee34-c000.snappy.parquet",
+      "sha256": "883f18d3e8e3c46bf6d24c4025eea077afbfc9fc35a6b65cb2bf4fffb24e9110"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/vehicle_energy_intervals/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2660324,
+      "path": "clean/vehicle_energy_intervals/part-00000-2344dd88-60d3-4eb3-9dd6-4241f4b56be5-c000.snappy.parquet",
+      "sha256": "beabe37deff4b2c2d837b3647d35d422ab63a8a7d9b5e44b80dc62d0d0de591e"
+    },
+    {
+      "bytes": 2409614,
+      "path": "clean/vehicle_energy_intervals/part-00001-2344dd88-60d3-4eb3-9dd6-4241f4b56be5-c000.snappy.parquet",
+      "sha256": "f17b2c3d81f708cf215526905aed0db7ef8f707fcf7ceb369cebb715c619c340"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/vehicles/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 59439,
+      "path": "clean/vehicles/part-00000-c939350d-02ef-44d5-847f-216e4e2c9acc-c000.snappy.parquet",
+      "sha256": "cc1821188e9dba29632e96a49e8d59c8f0e08230e87b2058a406c7a4c57f7298"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/weather_hourly/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 42932,
+      "path": "clean/weather_hourly/part-00000-4dcfe1eb-c10e-41da-afa5-64e14a378855-c000.snappy.parquet",
+      "sha256": "54e70c3b07cbb53654c923748273abc55dd998f9366c44833cc104de0cc598b1"
+    },
+    {
+      "bytes": 41789,
+      "path": "clean/weather_hourly/part-00001-4dcfe1eb-c10e-41da-afa5-64e14a378855-c000.snappy.parquet",
+      "sha256": "170e8a69283825bd6e7b312184115f1a5e34a9a3199cb730133aee1025753da9"
+    },
+    {
+      "bytes": 0,
+      "path": "rejected/charging_sessions/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 73640,
+      "path": "rejected/charging_sessions/part-00000-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "d7e24fdc891454b4de4ddcc2a373a1c119d597a4c4e8ac684ebc13d64895c4e4"
+    },
+    {
+      "bytes": 73132,
+      "path": "rejected/charging_sessions/part-00001-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "7fc1bb36e09bc2565b7e64e7aee07a7129fda72e8e67d6ea61e58a028228a34e"
+    },
+    {
+      "bytes": 69032,
+      "path": "rejected/charging_sessions/part-00002-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "033aa9da7f2e9c2c3db8b3812f468fcc8e2a3d7d44009bd0c3ce103d0769be46"
+    },
+    {
+      "bytes": 67476,
+      "path": "rejected/charging_sessions/part-00003-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "3ac33761934d8c88ca8badd160dfa9810c6ece44871e64983536313fe8c09e27"
+    },
+    {
+      "bytes": 72798,
+      "path": "rejected/charging_sessions/part-00004-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "e58e1989e167da024c698c91eb78cdf607aaacfd670fddfd58dec2e1c7ba6a31"
+    },
+    {
+      "bytes": 69800,
+      "path": "rejected/charging_sessions/part-00005-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "b49d90c81b484e30f1e261535a8cbebc7518acb163926b06822ff11406106493"
+    },
+    {
+      "bytes": 72329,
+      "path": "rejected/charging_sessions/part-00006-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "f7bdc0827c0f1265701fa0dbecb4758d93612254700983192e9c197658f1bb3b"
+    },
+    {
+      "bytes": 75836,
+      "path": "rejected/charging_sessions/part-00007-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "03b0718a4d2ecf432b7e2515be492af479c3dbd5fd2d9816fe13b8d3e7c59e43"
+    },
+    {
+      "bytes": 34447,
+      "path": "rejected/charging_sessions/part-00008-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "122ce6e0b0735fcc9f808db0593c82c586bb0924f81e079b94f96ddeeae60920"
+    },
+    {
+      "bytes": 37448,
+      "path": "rejected/charging_sessions/part-00009-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "1f0f0ae61f4f931d1406046585397d1fe445ae651d9d056e826f9d7636c4bf02"
+    },
+    {
+      "bytes": 36357,
+      "path": "rejected/charging_sessions/part-00010-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "a9ecb3231b6366ec8f84cbb0b7aec7581358ecfc5eb8ee2dc7d4c13451eefa43"
+    },
+    {
+      "bytes": 33088,
+      "path": "rejected/charging_sessions/part-00011-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "232cd7c59ff137086b7d05ce24b40a51d334f91e519b73e0377c7eed403e6611"
+    },
+    {
+      "bytes": 36274,
+      "path": "rejected/charging_sessions/part-00012-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "fd52c1c6a94a1a9900582bc13cfbd9f9cdadafde78b4ce88a5501d179fd7072d"
+    },
+    {
+      "bytes": 34457,
+      "path": "rejected/charging_sessions/part-00013-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "fc8db9315f3c8bbe56ae73d9d81a620cfe0390022aa154cf5f335988b31faca1"
+    },
+    {
+      "bytes": 36477,
+      "path": "rejected/charging_sessions/part-00014-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "de9e62f2531cc7fbcd0bc2a5e67ec811a12a4d6afafdab922339a9922bf0929b"
+    },
+    {
+      "bytes": 39670,
+      "path": "rejected/charging_sessions/part-00015-47780be4-be57-4bb3-b021-ec44598e7aac-c000.snappy.parquet",
+      "sha256": "9bfdccb091b9b2c2a95198930990deda5ef5cd83b01d654b096d99bb80bacefa"
+    },
+    {
+      "bytes": 132937,
+      "path": "reports/cleaning_audit.json",
+      "sha256": "5c5f43b04083fd2b03fc4ef977a118296b863f5a47149896405aa9fbf82b20d3"
+    },
+    {
+      "bytes": 2829,
+      "path": "reports/cleaning_rules.json",
+      "sha256": "9cb996178f60bae106b65c2677bb7886e85b40fec8a928b55b1fa86fcc706830"
+    }
+  ],
+  "generatedAt": "2026-09-13T12:55:45.336226+00:00",
+  "hdfs": {
+    "reason": "Portable local copy; run verify_hdfs in target environment",
+    "status": "NOT_VERIFIED"
+  },
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "rejectedSessions": 1917,
+  "servingManifestSha256": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+  "source": "SIMULATED",
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95"
+}

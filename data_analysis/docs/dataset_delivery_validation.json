@@ -1,0 +1,80 @@
+{
+  "recordedDate": "2026-09-13",
+  "scope": "Local verification of the updated 180-day repository handoff, not remote CI or HDFS acceptance",
+  "datasetPath": "data_analysis/datasets/analytics_full_180d_v1",
+  "sourceRun": "data_analysis/outputs/acceptance_full_20260913_run1",
+  "datasetId": "charging_full_180d_v2",
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "servingManifestSha256": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+  "acceptanceManifestSha256": "934883f924e2156353133a8964b6102695b70de8573bf3cc38714ce06cd75bb7",
+  "attachmentFiles": 102,
+  "allAttachmentsByteIdenticalToSourceRun": true,
+  "parquetFiles": 58,
+  "independentSparkCheck": {
+    "status": "PASSED",
+    "pythonVersion": "3.12.14",
+    "sparkVersion": "3.5.6",
+    "master": "local[2]",
+    "scope": "Read actual source clean Parquet, compare each table's row count and ordered field names/types, group rejected reasons; delivered files are verified byte-identical",
+    "cleanTables": 23,
+    "cleanRows": 5830923,
+    "rows": {
+      "cities": 5,
+      "stations": 25,
+      "chargers": 75,
+      "users": 6000,
+      "vehicles": 6000,
+      "vehicle_energy_intervals": 169254,
+      "tariffs": 120,
+      "campaigns": 30,
+      "calendar": 900,
+      "weather_hourly": 21600,
+      "operating_costs": 4500,
+      "reservations": 18269,
+      "queue_entries": 36594,
+      "charging_attempts": 169154,
+      "charging_sessions": 121539,
+      "payments": 135130,
+      "maintenance_tickets": 418,
+      "maintenance_events": 1671,
+      "reviews": 26594,
+      "charger_telemetry": 3888000,
+      "battery_samples": 1217829,
+      "anomaly_labels": 4865,
+      "corruption_log": 2351
+    },
+    "rejectionReasons": {
+      "MISSING_SESSION_ID": 470,
+      "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+      "UNKNOWN_STATION_ID": 461,
+      "DUPLICATE_SESSION_ID": 502
+    }
+  },
+  "freshSqlitePublication": {
+    "status": "PUBLISHED",
+    "databaseSha256": "820780c494291707eef83fc6dc114a3cde4ac55470e7d9e9db43ecf3f7227937",
+    "databaseBytes": 78721024,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "targetLabelsImported": false,
+    "realPredictionsImplemented": false
+  },
+  "tests": {
+    "defaultDiscovery": {"discovered": 223, "passed": 182, "sparkSkipped": 41, "failures": 0, "errors": 0},
+    "withoutSitePackagesNewAndExistingBundleTests": {"run": 20, "passed": 20, "skipped": 0},
+    "bundlePublicationJsonSchemaContractDriftTests": {"run": 38, "passed": 38, "skipped": 0},
+    "committedHandoffVerifyWithoutSitePackages": "PASSED"
+  },
+  "preserved": {
+    "rawFullAndSampleUnchanged": true,
+    "analyticsSampleUnchanged": true,
+    "originalTenTableServingContractUnchanged": true,
+    "oldFullDataRecoverableFromGitHistory": true
+  },
+  "hdfs": "NOT_VERIFIED",
+  "frontend": "NOT_VERIFIED",
+  "machineLearning": "FEATURES_READY_MODELS_NOT_TRAINED"
+}

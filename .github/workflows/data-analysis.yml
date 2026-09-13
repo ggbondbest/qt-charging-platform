@@ -36,6 +36,8 @@ jobs:
         run: python -m unittest discover -s data_analysis/tests -v
       - name: Validate committed sample data
         run: python -m data_analysis.charging_data.validate --dataset data_analysis/datasets/charging_sample_7d_v2
+      - name: Validate committed full cleaning handoff
+        run: python -m data_analysis.publishing.acceptance_bundle --verify data_analysis/datasets/analytics_full_180d_v1
 
   api:
     name: API and contracts / ${{ matrix.os }}
