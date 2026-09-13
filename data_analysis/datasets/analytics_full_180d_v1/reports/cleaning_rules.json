@@ -1,0 +1,72 @@
+{
+  "rule_version": "cleaning-rules-1.0.0",
+  "rules": [
+    {
+      "action": "TRIM_UNICODE_BOUNDARIES",
+      "description": "Strip boundary whitespace, Unicode separators, BOM and zero-width space; preserve interior prose.",
+      "id": "N001",
+      "scope": "all text fields"
+    },
+    {
+      "action": "REMOVE_TOKEN_ZERO_WIDTH",
+      "description": "Remove U+200B/U+FEFF inside structured tokens only; do not rewrite free-text words.",
+      "id": "N002",
+      "scope": "IDs, enums and typed numeric/date/time tokens"
+    },
+    {
+      "action": "ASCII_NUMERIC_PRESENTATION",
+      "description": "Translate full-width digits and numeric +/−/decimal punctuation; never infer units or remove currency symbols.",
+      "id": "N003",
+      "scope": "numeric/date/time fields, NOT IDs or free text"
+    },
+    {
+      "action": "UPPERCASE_ENUM",
+      "description": "Canonical uppercase only; unknown business enum values are not guessed.",
+      "id": "N004",
+      "scope": "declared enum columns"
+    },
+    {
+      "action": "EMPTY_TO_NULL",
+      "description": "Represent blanks as null; never fill a key, amount, energy or timestamp.",
+      "id": "N005",
+      "scope": "empty normalized strings"
+    },
+    {
+      "action": "QUARANTINE_OR_FAIL",
+      "description": "Reject non-finite numbers, decimal integer amounts, overflow and ambiguous datetime formats; timestamps require an explicit timezone.",
+      "id": "V001",
+      "scope": "explicit CSV types"
+    },
+    {
+      "action": "QUARANTINE_OR_FAIL",
+      "description": "Reject Unicode replacement characters and prohibited controls; cannot reconstruct the original bytes or detect all mojibake.",
+      "id": "V002",
+      "scope": "all text fields"
+    },
+    {
+      "action": "QUARANTINE_SESSION",
+      "description": "Existing required-field, nonnegative-money/energy, SOC/time, fee identity, status, FK and ownership checks; no outlier clipping.",
+      "id": "V003",
+      "scope": "charging sessions"
+    },
+    {
+      "action": "DETERMINISTIC_SESSION_DEDUP",
+      "description": "Validate first; keep canonical smallest normalized JSON then raw JSON for each session ID; retain discarded copies with reason.",
+      "id": "D001",
+      "scope": "valid charging sessions"
+    },
+    {
+      "action": "FAIL_BATCH",
+      "description": "Existing energy/power/state/interval, station ownership and charger timestamp uniqueness checks.",
+      "id": "V004",
+      "scope": "charger telemetry"
+    },
+    {
+      "action": "ASSERT_ROW_CONSERVATION",
+      "description": "Input equals retained plus quarantined plus duplicate copies; normalized rows are not an additional deletion category.",
+      "id": "A001",
+      "scope": "all tables"
+    }
+  ],
+  "rules_sha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982"
+}

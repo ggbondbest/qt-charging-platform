@@ -13,6 +13,8 @@ HDFS 接入代码已预留实际路径参数，但老师提供的 Linux/Hadoop �
 补充逐字段质量探查、清洗前后对比、规则与血缘、11 个分组维度和 3 组双维对比；继续使用 FastAPI。
 仓库附 `analytics_full_180d_v1` / `analytics_sample_7d_v1` 两个可直接使用的统计包；
 不需要每位成员都重跑 Spark。发布查询库后即可开发 Vue，两张独立 ML 表可直接用于训练。
+180 天交付包已按 2026-09-13 验收批次更新，并附 23 张清洗明细 Parquet、隔离记录、规则清单、质量审计、11 维分析和 3 组双维对比。
+直接查看 [180 天数据包说明](datasets/analytics_full_180d_v1/README.md)。目录名保留以兼容组员命令，实际批次以清单中的 ID 为准；7 天交付包没有改动，不与全量混用。
 
 ## 一、可以直接使用的内容
 
@@ -56,7 +58,7 @@ data_analysis/
   charging_data/          Python 生成器、统一字段、压缩写入、独立校验器
   config/                生成配置、匿名校准聚合、官方日历、ERA5缓存及来源许可
   datasets/              已生成的完整数据和小样本，拉取后可直接使用
-    <dataset_id>/
+    charging_*_v2/       原始数据包
       raw/               23 张原始表，按月分片的 CSV.gz
       preview/           每张表前 12 行，普通 CSV，便于查看字段
       reference_aggregates/  Python 独立小时/日报对照值，不是 Spark 输出
@@ -64,6 +66,15 @@ data_analysis/
       schema.json        每张表的精确字段顺序
       validation_report.json  独立检查结果及状态分布
       behavior_report.json    从实际明细计算的城市/站型/时段与驻留核验
+    analytics_full_180d_v1/  最新 180 天交付包
+      csv/               原有 10 张统计/特征/标签表，接口契约不变
+      clean/             23 张清洗明细，Parquet 格式
+      rejected/          被隔离的会话和重复副本，不混入训练输入
+      reports/           本批 cleaning_rules.json、cleaning_audit.json
+      analysis/          11 维分析、3 组对比的 CSV、预览和字段清单
+      serving_manifest.json     查询包版本、批次和 CSV 哈希
+      acceptance_manifest.json  清洗明细、报告和分析附件的批次与文件校验清单
+    analytics_sample_7d_v1/  原有 7 天统计交付包，独立批次
   spark_jobs/            真正执行清洗和统计的 PySpark 作业
   backend/               已实现的只读统计 HTTP API；模型尚未就绪时明确返回 503
   contracts/             OpenAPI、TS 类型、表结构、预测/模型契约和真实响应示例

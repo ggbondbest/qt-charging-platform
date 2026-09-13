@@ -1,7 +1,26 @@
 {
   "business_timezone": "Asia/Shanghai",
   "clean_session_rows": 121539,
-  "created_at": "2026-09-12T13:51:24.089452+00:00",
+  "cleaning_audit_summary": {
+    "audit_path": "reports/cleaning_audit.json",
+    "audit_sha256": "5c5f43b04083fd2b03fc4ef977a118296b863f5a47149896405aa9fbf82b20d3",
+    "audit_version": "cleaning-audit-1.0.0",
+    "normalization_action_rows": {
+      "N001": 434,
+      "N002": 0,
+      "N003": 0,
+      "N004": 434,
+      "N005": 0
+    },
+    "normalized_cells": 434,
+    "normalized_rows": 434,
+    "row_conservation_passed": true,
+    "rule_version": "cleaning-rules-1.0.0",
+    "rules_file_sha256": "9cb996178f60bae106b65c2677bb7886e85b40fec8a928b55b1fa86fcc706830",
+    "rules_path": "reports/cleaning_rules.json",
+    "rules_sha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982"
+  },
+  "created_at": "2026-09-13T12:01:27.785373+00:00",
   "dataset_id": "charging_full_180d_v2",
   "engine": "PySpark",
   "input_rows": {
@@ -55,7 +74,7 @@
     "vehicles": 0,
     "weather_hourly": 0
   },
-  "pipeline_run_id": "spark-625439908b6d4bcca1ae72e2e35ef27f",
+  "pipeline_run_id": "spark-6ed381b125034f9e95d726a74befb121",
   "raw_file_checksums_verified": true,
   "reference_aggregates_used_as_input": false,
   "rejected_session_rows": 1917,

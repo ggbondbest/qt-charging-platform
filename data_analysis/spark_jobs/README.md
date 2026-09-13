@@ -190,8 +190,11 @@ reference, including final-sample availability and Shanghai payment dates.
 `full_validation_summary.json` records the exercised 180-day batch, including
 its input-manifest digest, rejection counts, complete reconciliation results,
 runtime versions, and measured timings. It contains no developer-machine paths.
-The generated Parquet data and detailed reports are ignored by Git, not missing
-source files; regenerate them with the commands above.
+Historical/intermediate run directories remain ignored by Git. The newer
+2026-09-13 full acceptance batch is shipped in `datasets/analytics_full_180d_v1`
+with 23 cleaned Parquet tables, rejected sessions, rules/audit reports and
+multidimensional CSV results; see its README. Only that validated handoff has
+explicit Parquet ignore exceptions. Other runs can be regenerated with the commands above.
 
 References: [Spark CSV options](https://spark.apache.org/docs/3.5.6/sql-data-sources-csv.html),
 [Spark 3.5.6](https://spark.apache.org/docs/3.5.6/).
