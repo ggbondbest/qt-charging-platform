@@ -113,6 +113,6 @@
     "frontend": "NOT_VERIFIED: Vue 3, DataV, Node.js >=23 and interactions remain frontend work",
     "machineLearning": "FEATURES_READY_MODELS_NOT_TRAINED",
     "realWorldAccuracy": "NOT_MEASURED: simulated data has no independent real-world ground truth",
-    "artifacts": "Output directories are local ignored artifacts; rerun the documented command to recreate, with fresh batch IDs"
+    "artifacts": "Original output directories remain local ignored artifacts. The verified full batch is now packaged in datasets/analytics_full_180d_v1 with clean/rejected Parquet, reports, analysis and portable serving CSV; SQLite and scratch files are not committed. Reruns use fresh batch IDs."
   }
 }

@@ -2,6 +2,9 @@
 
 按老师清洗流程补充的执行入口、质量审计、11 个分组维度/3 组双维对比和真实 HDFS 验证，见 [数据清洗与准备验收指南](docs/cleaning_acceptance.md)。继续使用现有 FastAPI，不改变下述已交付的查询表和公共契约。历史验证记录不自动代表新增规则已经在全量或 HDFS 上通过。
 
+180 天交付包 `datasets/analytics_full_180d_v1` 已更新到 2026-09-13 验收批次，完整内容见 [包内说明](datasets/analytics_full_180d_v1/README.md)。新增的清洗明细、规则、质量报告和多维分析也随仓库交付，不只保存在本机 outputs。
+原有 CSV 相对路径结构和字段契约不变，但分片文件名、清单哈希和发布批次 ID 已更新。读取清单中的全部分片，不硬编码旧文件名/批次。旧查询库不会自动更新，需按下面命令发布新路径并重启 FastAPI；旧数据可从 Git 历史恢复。
+
 ## 已完成和剩余内容
 
 本次已实现：独立脏数据注入、真实 PySpark 清洗、业务统计、历史特征/未来标签导出、可校验的数据包、只读 SQLite 查询库、10 个 HTTP 路由及公共契约。
@@ -87,7 +90,7 @@ python -m data_analysis.charging_data.inject_dirty --input data_analysis/dataset
 
 ## D. 从 raw 一次跑完数据层
 
-需要 Java 17、Python 3.10–3.12、PySpark 3.5.6。Java 路径由环境的 `JAVA_HOME` 配置。
+按验收使用 Java 17、Python 3.11 或 3.12、PySpark 3.5.6。Java 路径由环境的 `JAVA_HOME` 配置。
 建议全量作业至少预留 4 GB JVM 堆和额外进程/系统内存；不能把 4 GB 堆理解成机器总内存只要 4 GB。
 大原始表缓存使用磁盘，样本和全量都使用本地双核作业即可；没有 GPU 需求。
 
@@ -134,10 +137,12 @@ HDFS 是存储层，Spark 是计算层，SQLite 是网页查询快照；各层�
 | 目录 | 是否交给组员 | 用途 |
 | --- | --- | --- |
 | `datasets/charging_*_v2` | 是 | 原始模拟数据、来源和独立对照，原样保留 |
-| `datasets/analytics_*_v1` | 是 | 可直接发布的统计/特征/标签 CSV.gz，体积小于重复附 Parquet |
+| `datasets/analytics_full_180d_v1` | 是 | 最新统计/特征/标签 CSV.gz，加上 23 表清洗 Parquet、隔离记录、规则与审计、11 维分析及校验清单 |
+| `datasets/analytics_sample_7d_v1` | 是 | 原有独立 7 天统计/特征/标签 CSV.gz，小样本接入用 |
 | `contracts/` | 是 | 公共字段、OpenAPI、TS 类型、JSON Schema、真实接口样例 |
-| `outputs/` | 不提交 | 临时 Parquet、SQLite、失败批次、模型产物、运行日志 |
-| `docs/data_layer_validation.json` | 是 | 本轮实际运行与校验结果；不是人工编造的指标 |
+| `outputs/` | 不提交 | 各轮本地运行产物、SQLite、失败批次、模型产物、运行日志；经验证的交付内容另行打包进入 datasets |
+| `docs/data_layer_validation.json` | 是 | 历史数据层批次的实际运行记录 |
+| `docs/cleaning_acceptance_validation.json` | 是 | 2026-09-13 新清洗规则与全量/样本验收记录；真实 HDFS 仍未验证 |
 
 运行测试：
 

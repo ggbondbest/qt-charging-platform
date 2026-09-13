@@ -4,7 +4,7 @@ CI 是提交代码后由 GitHub 自动运行的验收，不是项目运行时的
 
 | GitHub 检查名称 | 检查内容 |
 | --- | --- |
-| `generator (ubuntu-22.04)` | Linux 下的数据生成、可复现性、文件哈希、关联和业务约束，以及不依赖 Spark/API 的基础回归；另外验证随库 7 天原始样本 |
+| `generator (ubuntu-22.04)` | Linux 下的数据生成、可复现性、文件哈希、关联和业务约束，以及不依赖 Spark/API 的基础回归；另外验证随库 7 天原始样本，以及最新 180 天交付包的文件完整性和批次一致性 |
 | `generator (windows-latest)` | 同一套基础检查在 Windows 上运行，发现路径、编码、文件权限等平台差异 |
 | `API and contracts / ubuntu-22.04` | 发布只读 SQLite、数据包完整性、接口查询/分页/错误、未来标签隔离、OpenAPI/TS 一致性和 JSON Schema 格式校验 |
 | `API and contracts / windows-latest` | 同一套接口与发布检查在 Windows 上运行，确保网页组的开发环境能用 |
@@ -16,6 +16,7 @@ CI 是提交代码后由 GitHub 自动运行的验收，不是项目运行时的
 
 基础任务不安装 API、JSON Schema 或 Spark 依赖，对应测试会明确跳过；专门的 API 和 Spark 任务负责真正运行它们。
 检查任务不是 9 个应用，也不是每次提交都重复运行 9 遍 180 天全量。自动测试主要使用小规模、确定性数据；全量数据验证另有批次记录。
+新增的随库全量包检查读取文件清单并计算 SHA256，不重跑 180 天 Spark 作业，也不把文件哈希检查当作重新计算业务统计或真实 HDFS 验收。
 
 ## 为什么第二阶段还有 Ubuntu
 
