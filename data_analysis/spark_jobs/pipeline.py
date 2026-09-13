@@ -141,39 +141,49 @@ def read_table(spark, dataset_root, table):
            .option("columnNameOfCorruptRecord", "_corrupt_record")
            .option("encoding", "UTF-8").option("escape", '"')
            .csv(dataset_root.rstrip("/") + "/raw/" + table + "/part-*.csv.gz"))
-    expressions = []
-    parse_errors = [F.col("_corrupt_record").isNotNull()]
-    changed = []
+    from data_analysis.spark_jobs.normalization import (
+        BAD_TEXT_PATTERN, BOUNDARY_PATTERN, invalid_type, named_flags, normalize_value,
+    )
+    expressions, changed = [], []
+    raw_missing, raw_blanks, raw_invalid, invalid, text_errors, normalized_fields = {}, {}, {}, {}, {}, {}
+    actions = {name: F.lit(False) for name in ["N001", "N002", "N003", "N004", "N005"]}
     for field in fields:
-        source = F.trim(F.col(field))
-        normalized = F.when(source == "", F.lit(None)).otherwise(source)
-        if field in ENUM_FIELDS:
-            normalized = F.upper(normalized)
-            changed.append(~F.col(field).eqNullSafe(normalized))
+        source = F.col(field)
         kind = field_type(field)
-        typed = normalized.cast(kind)
-        parse_errors.append(normalized.isNotNull() & typed.isNull())
-        if isinstance(kind, T.DoubleType):
-            # Spark accepts NaN and Infinity as doubles; a successful cast is
-            # not proof that a measurement is safe for statistics or models.
-            parse_errors.append(typed.isNotNull() & (F.isnan(typed) | (F.abs(typed) == F.lit(float("inf")))))
-        elif isinstance(kind, T.LongType):
-            # Permissive casts can silently truncate "1.5" to integer 1.
-            parse_errors.append(normalized.isNotNull() & ~normalized.rlike(r"^[+-]?[0-9]+$"))
-        expressions.append(typed.alias(field))
-    malformed = parse_errors[0]
-    for flag in parse_errors[1:]:
-        malformed = malformed | flag
+        normalized, field_actions = normalize_value(source, field, kind, field in ENUM_FIELDS)
+        raw_missing[field] = source.isNull() | (source == "")
+        raw_blanks[field] = source.isNotNull() & (source != "") & (F.regexp_replace(source, BOUNDARY_PATTERN, "") == "")
+        raw_invalid[field] = invalid_type(source, kind)
+        invalid[field] = invalid_type(normalized, kind)
+        text_errors[field] = F.coalesce(source.rlike(BAD_TEXT_PATTERN), F.lit(False))
+        normalized_fields[field] = ~source.eqNullSafe(normalized)
+        for rule, condition in field_actions.items():
+            actions[rule] = actions[rule] | condition
+        if field in ENUM_FIELDS:
+            changed.append(~source.eqNullSafe(normalized))
+        expressions.append(normalized.cast(kind).alias(field))
     normalized_enum = F.lit(False)
     for flag in changed:
         normalized_enum = normalized_enum | flag
-    return raw.select(
+    raw_json = F.to_json(F.struct(*[F.col(name) for name in fields]), options={"ignoreNullFields": "false"})
+    frame = raw.select(
         *expressions,
-        malformed.alias("_parse_error"),
         normalized_enum.alias("_normalized_enum"),
-        F.to_json(F.struct(*[F.col(name) for name in fields]),
-                  options={"ignoreNullFields": "false"}).alias("_raw_json"),
+        named_flags(raw_missing).alias("_raw_missing_fields"),
+        named_flags(raw_blanks).alias("_raw_blank_fields"),
+        named_flags(raw_invalid).alias("_raw_type_error_fields"),
+        named_flags(invalid).alias("_type_error_fields"),
+        named_flags(text_errors).alias("_text_error_fields"),
+        named_flags(normalized_fields).alias("_normalized_fields"),
+        named_flags(actions).alias("_normalization_actions"),
+        F.col("_corrupt_record").alias("_corrupt_csv_record"),
+        raw_json.alias("_raw_json"), F.sha2(raw_json, 256).alias("_raw_record_sha256"),
+        F.input_file_name().alias("_source_file"),
     )
+    return (frame.withColumn("_parse_error", F.col("_corrupt_csv_record").isNotNull() |
+                             (F.size("_type_error_fields") > 0) | (F.size("_text_error_fields") > 0))
+            .withColumn("_parse_error_before", F.col("_corrupt_csv_record").isNotNull() |
+                        (F.size("_raw_type_error_fields") > 0) | (F.size("_text_error_fields") > 0)))
 
 
 def _add_reason(frame, condition, reason):
@@ -192,6 +202,8 @@ def clean_sessions(sessions, tables):
     """
     _, Window, F, _ = _spark_imports()
     frame = sessions.withColumn("rejection_reason", F.lit(None).cast("string"))
+    if "_text_error_fields" in sessions.columns:
+        frame = _add_reason(frame, F.size("_text_error_fields") > 0, "INVALID_TEXT_ENCODING")
     frame = _add_reason(frame, F.col("_parse_error"), "INVALID_TYPE_OR_CSV")
     required = ["session_id", "attempt_id", "user_id", "vehicle_id", "station_id",
                 "charger_id", "started_at", "ended_at", "unplugged_at", "status"]
@@ -385,7 +397,11 @@ def run_pipeline(spark, input_root, output_root):
     filesystem, output_path = _filesystem(spark, output_root)
     if filesystem.exists(output_path):
         raise FileExistsError("Output already exists; use a fresh run directory: " + output_root)
-    from data_analysis.spark_jobs.fs import read_json, checksum, verify_raw_files, require_raw_complete
+    from data_analysis.spark_jobs.fs import read_json, checksum, verify_raw_files, require_raw_complete, write_json
+    from data_analysis.spark_jobs.quality import (
+        AUDIT_VERSION, RULE_SHA256, audit_summary, build_audit, profile_table,
+    )
+    from data_analysis.spark_jobs.normalization import RULES, RULE_VERSION
     manifest_path = input_root.rstrip("/") + "/manifest.json"
     manifest = read_json(spark, manifest_path)
     if not isinstance(manifest, dict):
@@ -408,6 +424,9 @@ def run_pipeline(spark, input_root, output_root):
     marker = filesystem.create(marker_path, False)
     marker.close()
     cached = []
+    before_profiles = {}
+    write_json(spark, output_root.rstrip("/") + "/reports/cleaning_rules.json",
+               {"rule_version": RULE_VERSION, "rules_sha256": RULE_SHA256, "rules": RULES})
     try:
         raw = {}
         counts = {}
@@ -420,16 +439,20 @@ def run_pipeline(spark, input_root, output_root):
             # action and works with Spark's local scratch storage for HDFS input.
             frame = read_table(spark, input_root, table).persist(StorageLevel.DISK_ONLY)
             cached.append(frame)
-            quality = frame.agg(F.count("*").alias("count"),
-                                F.sum(F.col("_parse_error").cast("long")).alias("invalid"),
-                                F.sum(F.col("_normalized_enum").cast("long")).alias("normalized")).first()
-            counts[table] = quality["count"]
-            normalizations[table] = quality["normalized"] or 0
+            quality = profile_table(frame, table, before=True, manifest=manifest)
+            before_profiles[table] = quality
+            counts[table] = quality["row_count"]
+            normalizations[table] = quality["normalized_enum_rows"]
             if counts[table] != declared_tables[table]["rows"]:
                 raise ValueError(
                     "Manifest row count mismatch for " + table + ": expected " +
                     str(declared_tables[table]["rows"]) + ", actually read " + str(counts[table]))
-            if table != "charging_sessions" and quality["invalid"]:
+            if table != "charging_sessions" and quality["normalized_type_invalid_rows"]:
+                # Preserve offending rows for investigation, but do not publish
+                # partial business tables with silently missing source facts.
+                (frame.filter("_parse_error").withColumn("rejection_reason", F.when(
+                    F.size("_text_error_fields") > 0, "INVALID_TEXT_ENCODING").otherwise("INVALID_TYPE_OR_CSV"))
+                 .write.mode("errorifexists").parquet(output_root.rstrip("/") + "/rejected/" + table))
                 raise ValueError("Unexpected invalid types outside session corruption fixture: " + table)
             raw[table] = frame
         clean = {table: frame.select(*TABLES[table]) for table, frame in raw.items()}
@@ -443,6 +466,14 @@ def run_pipeline(spark, input_root, output_root):
                 clean_count != manifest["canonical_session_count"]):
             raise ValueError("Clean session count does not match manifest canonical_session_count")
         assert_telemetry_contract(clean["charger_telemetry"], clean["stations"], clean["chargers"])
+        reasons = {row["rejection_reason"]: row["count"]
+                   for row in rejected.groupBy("rejection_reason").count().collect()}
+        audit = build_audit(raw, clean, before_profiles, reasons, rejected, manifest,
+                            pipeline_run_id, source_digest)
+        write_json(spark, output_root.rstrip("/") + "/reports/cleaning_audit.json", audit)
+        cleaning_summary = audit_summary(audit)
+        cleaning_summary["audit_sha256"] = checksum(spark, output_root.rstrip("/") + "/reports/cleaning_audit.json")
+        cleaning_summary["rules_file_sha256"] = checksum(spark, output_root.rstrip("/") + "/reports/cleaning_rules.json")
         hourly = station_hourly(clean["charger_telemetry"], clean["stations"], clean["chargers"])
         daily = station_daily(clean)
         for table, frame in clean.items():
@@ -450,8 +481,6 @@ def run_pipeline(spark, input_root, output_root):
         rejected.write.mode("errorifexists").parquet(output_root.rstrip("/") + "/rejected/charging_sessions")
         hourly.write.mode("errorifexists").parquet(output_root.rstrip("/") + "/statistics/station_hourly")
         daily.write.mode("errorifexists").parquet(output_root.rstrip("/") + "/statistics/station_daily")
-        reasons = {row["rejection_reason"]: row["count"]
-                   for row in rejected.groupBy("rejection_reason").count().collect()}
         report = {
             "dataset_id": manifest.get("dataset_id"), "schema_version": SCHEMA_VERSION,
             "pipeline_run_id": pipeline_run_id,
@@ -467,6 +496,7 @@ def run_pipeline(spark, input_root, output_root):
             "rejected_session_rows": sum(reasons.values()), "rejection_reasons": reasons,
             "station_hourly_rows": hourly.count(), "station_daily_rows": daily.count(),
             "reference_aggregates_used_as_input": False,
+            "cleaning_audit_summary": cleaning_summary,
         }
         (spark.read.json(spark.sparkContext.parallelize([json.dumps(report)]))
          .coalesce(1).write.mode("errorifexists")
@@ -476,6 +506,21 @@ def run_pipeline(spark, input_root, output_root):
         stream.close()
         filesystem.delete(marker_path, False)
         return report
+    except Exception as exc:
+        # Best effort only: a dead JVM cannot write a failure report. Never mask
+        # the original failure or mark the batch successful in that situation.
+        try:
+            write_json(spark, output_root.rstrip("/") + "/reports/cleaning_failure.json", {
+                "audit_version": AUDIT_VERSION, "rule_version": RULE_VERSION, "status": "FAILED",
+                "dataset_id": manifest.get("dataset_id"), "pipeline_run_id": pipeline_run_id,
+                "source_manifest_sha256": source_digest, "source_layer_modified": False,
+                "error_type": type(exc).__name__, "message": str(exc)[:1000],
+                "completed_before_profiles": before_profiles,
+                "note": "Partial audit only; no completed batch or post-cleaning success assessment is claimed.",
+            })
+        except Exception:
+            pass
+        raise
     finally:
         for frame in cached:
             frame.unpersist()

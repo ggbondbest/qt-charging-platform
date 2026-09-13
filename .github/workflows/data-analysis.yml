@@ -16,17 +16,22 @@ permissions:
 
 jobs:
   generator:
+    name: generator (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: windows-latest
+            python: '3.12'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
       - name: Generator and integrity regression tests
         run: python -m unittest discover -s data_analysis/tests -v
       - name: Validate committed sample data
@@ -37,14 +42,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: windows-latest
+            python: '3.12'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: |
             data_analysis/requirements-api.txt
@@ -68,7 +77,7 @@ jobs:
       matrix:
         include:
           - suite: cleaning
-            module: data_analysis.tests.test_spark_pipeline
+            module: data_analysis.tests.test_spark_pipeline data_analysis.tests.test_cleaning_quality
           - suite: dirty-parser
             module: data_analysis.tests.test_dirty_injection.SparkDirtyParsingTests
           - suite: dashboard
@@ -76,7 +85,7 @@ jobs:
           - suite: ml-features
             module: data_analysis.tests.test_ml_features
           - suite: data-export
-            module: data_analysis.tests.test_data_export
+            module: data_analysis.tests.test_data_export data_analysis.tests.test_acceptance_analysis
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:

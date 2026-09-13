@@ -6,7 +6,7 @@ It does not implement a Vue application, prediction API, or a trained model.
 
 ## Runtime and local execution
 
-Use Python 3.10-3.12, Java 17, and `pyspark==3.5.6`. Install the optional runtime:
+Use Python 3.11 or 3.12 for acceptance, Java 17, and `pyspark==3.5.6`. Install the optional runtime:
 
 ```sh
 python -m pip install -r data_analysis/requirements-spark.txt
@@ -72,6 +72,14 @@ Keep failed output directories for diagnosis and choose a fresh path for a
 retry; an old `_RUNNING` directory is never a completed batch.
 
 ## Processing and meanings
+
+The additional cleaning rule catalog, field-level before/after audit, six-dimension
+quality assessment, 11 grouping dimensions and three cross-dimension comparisons
+are described in [the acceptance guide](../docs/cleaning_acceptance.md).
+`python -m data_analysis.scripts.run_acceptance --input <raw> --output <new-local-output>`
+runs the complete preparation sequence. Existing serving schemas remain unchanged.
+The rule audit does not infer true accuracy from simulated data or delete genuine
+high demand solely because it is statistically unusual.
 
 - The current dataset is generator `2.0.0`, schema `1.1.0`, with 23 raw tables.
   The new `vehicle_energy_intervals` table records driving consumption and

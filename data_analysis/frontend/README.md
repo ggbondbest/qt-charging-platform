@@ -1,7 +1,9 @@
 # Vue 大屏：后续开发入口
 
 当前仅搭目录和数据对接说明，没有伪造已实现的网页工程。
-后续采用 Vue 3 + ECharts，通过 `backend/` 的 HTTP API 接入已完成的统计批次。
+按验收采用 Node.js 23 及以上、Vue 3、DataV 大屏组件，可配合 ECharts 展示不同图表，通过 `backend/` 的 FastAPI 接入已完成的统计批次。
+
+新增独立的 11 维/3 组双维分析输出与图表建议见 [清洗验收指南](../docs/cleaning_acceptance.md)。这些 CSV 和清单可供页面接入；不要把现有七类 chart 路由假定成支持全部新增维度。页面尚需开发和实测。
 
 建议三页：
 
