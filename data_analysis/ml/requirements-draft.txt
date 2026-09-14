@@ -1,0 +1,32 @@
+# DRAFT, not a convention. 成员 B 的可用性预测线（`data_analysis/ml/availability/`、`ml/common/`）
+# 真正需要装的东西。按仓库现有约定，正式清单应放在 `data_analysis/requirements-ml.txt`
+# （与 `-api.txt` / `-spark.txt` / `-contract-test.txt` 同目录），但那是共享路径，B 不动，
+# 所以先落在本线目录里，由组长决定是否照抄过去。
+#
+# 为什么需要它：现有三份清单都不含 numpy/pandas/scikit-learn/joblib（已逐个 grep 确认），
+# CI 的 generator/api/spark 三个 job 也都不跑 `data_analysis/ml/tests`。也就是说从本仓库
+# 克隆下来、照 `ml/availability/REPORT.md` 第 3 节敲命令，会在 `import pandas` 这一步就断。
+#
+# 版本取自本轮训练与跑测的真实环境（2026-09-14）：Python 3.13.9，
+# 与 `ml_avail_run1` / `ml_avail_run2` 每个产物的 `model_metadata.json.dependencies` 一致。
+#
+# 两条不能省的说明：
+# 1) scikit-learn 必须**同版本**才能安全 `joblib.load` 本批产物（估计器是 pickle 的，
+#    跨版本加载可能崩或静默改变行为）。要换 sklearn 版本就得重训，见 REPORT.md 第 7 节第 4 条。
+# 2) 本批产物是在 Python 3.13.9 下序列化的；CI 现在跑 3.11。**3.11 能否加载这批 pickle 未实测**，
+#    所以若要在 CI 里跑 `ShippedBundleTest` / `MinimalInferenceTest`（它们会真的加载产物），
+#    先要么把该 job 的解释器对齐 3.13，要么接受"该 job 只做训练与合成数据评估"（需要 numpy 之外
+#    的包，但产物级断言会失败）。这条需要组长拍板，B 不擅自改 workflow。
+
+numpy==2.4.4
+pandas==2.3.3
+scikit-learn==1.7.2
+joblib==1.5.2
+# 下面两个是 pandas / scikit-learn 的传递依赖，钉住只为让干净机器上的解析结果可复现。
+scipy==1.16.3
+python-dateutil==2.9.0.post0
+
+# 元数据校验（`ml/common/artifacts.validate_metadata()`）：有 jsonschema 才走 Draft 2020-12
+# 严格校验，没有则退化为"键集合"检查（代码里写明了这个退化）。正式方案是直接复用
+# `data_analysis/requirements-contract-test.txt`，它钉的是 jsonschema==4.26.0；
+# 本轮 36 个用例是在本机的 jsonschema==4.25.0 下跑绿的，两者的 schema 校验行为差异未实测。

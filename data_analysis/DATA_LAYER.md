@@ -2,7 +2,7 @@
 
 第二阶段正式查询库现使用 **MySQL 8.4**，安装、分权账号、环境变量、发布及回退见 [MySQL 接入说明](docs/mysql_setup.md)。第一阶段 Qt 的 SQLite 不改；旧 SQLite 发布器仅用于离线兼容。
 
-按老师清洗流程补充的执行入口、质量审计、11 个分组维度/3 组双维对比和真实 HDFS 验证，见 [数据清洗与准备验收指南](docs/cleaning_acceptance.md)。继续使用现有 FastAPI，不改变下述已交付的查询表和公共契约。历史验证记录不自动代表新增规则已经在全量或 HDFS 上通过。
+按老师清洗流程补充的执行入口、质量审计、11 个分组维度/3 组双维对比和真实 HDFS 验证，见 [数据清洗与准备验收指南](docs/cleaning_acceptance.md)。`charging_sample_7d_v2` 已完成真实 HDFS 验证，环境、命令、路径、输出和对账结果见 [7 天 HDFS 验证记录](docs/hdfs_sample_7d_validation.json)。继续使用现有 FastAPI，不改变下述已交付的查询表和公共契约。历史验证记录不自动代表新增规则已经在全量 HDFS 上通过。
 
 180 天交付包 `datasets/analytics_full_180d_v1` 已更新到 2026-09-13 验收批次，完整内容见 [包内说明](datasets/analytics_full_180d_v1/README.md)。新增的清洗明细、规则、质量报告和多维分析也随仓库交付，不只保存在本机 outputs。
 原有 CSV 相对路径结构和字段契约不变，但分片文件名、清单哈希和发布批次 ID 已更新。读取清单中的全部分片，不硬编码旧文件名/批次。旧查询库不会自动更新，需按下面命令发布新路径并重启 FastAPI；旧数据可从 Git 历史恢复。
@@ -10,7 +10,7 @@
 ## 已完成和剩余内容
 
 本次已实现：独立脏数据注入、真实 PySpark 清洗、业务统计、历史特征/未来标签导出、可校验的数据包、MySQL 查询批次发布、10 个 HTTP 路由及公共契约。
-Vue 页面、模型训练/评价和真实预测仍由后续开发完成。老师的 Linux/HDFS 环境需最终验收；本地运行通过不等于 HDFS 集群已验收。
+Vue 页面、模型训练/评价和真实预测仍由后续开发完成。老师 Linux/Hadoop 环境中的 7 天样例已完成 HDFS 验收；180 天完整批次继续使用独立的新路径完成同一流程。
 
 ```text
 已有 v2 原始数据（保留不改）
@@ -142,6 +142,7 @@ HDFS 是存储层，Spark 是计算层，MySQL 是网页查询批次；各层职
 | `outputs/` | 不提交 | 各轮本地运行产物、MySQL 发布/核对报告、离线 SQLite、失败批次、模型产物、运行日志；经验证的交付内容另行打包进入 datasets |
 | `docs/data_layer_validation.json` | 是 | 历史数据层批次的实际运行记录 |
 | `docs/cleaning_acceptance_validation.json` | 是 | 2026-09-13 新清洗规则与全量/样本验收记录；真实 HDFS 仍未验证 |
+| `docs/hdfs_sample_7d_validation.json` | 是 | 2026-09-14 老师 Linux/Hadoop 环境中 7 天样例的 HDFS pipeline、分析、export、文件校验与独立统计对账记录 |
 
 运行测试：
 
