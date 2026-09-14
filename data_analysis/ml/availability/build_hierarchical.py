@@ -1,8 +1,8 @@
 """Ship each trained classifier wrapped in the station x hour prior, as a new run.
 
     python -m data_analysis.ml.availability.build_hierarchical \
-        --source-run data_analysis/outputs/ml_avail_run1 \
-        --output data_analysis/outputs/ml_avail_run2
+        --source-run data_analysis/outputs/ml_avail_run5 \
+        --output data_analysis/outputs/ml_avail_run6
 
 No gradient boosting is redone: the estimators are loaded from ``--source-run`` unchanged, the
 station x hour empirical prior is fitted on the same TRAIN rows those estimators saw, and the only

@@ -1,8 +1,8 @@
 """Score the trained availability models against the baselines the handoff document asks for.
 
     python -m data_analysis.ml.availability.evaluate \
-        --run-dir data_analysis/outputs/ml_avail_run2 \
-        --output  data_analysis/outputs/ml_avail_eval_run2
+        --run-dir data_analysis/outputs/ml_avail_run6 \
+        --output  data_analysis/outputs/ml_avail_eval_run6_v1
 
 The training run records the headline TEST numbers it needed while choosing hyper-parameters.  This
 script answers the questions a reviewer asks instead:

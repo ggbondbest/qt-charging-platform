@@ -1,11 +1,11 @@
 """Contract inference for the availability model.
 
     python -m data_analysis.ml.availability.predict \
-        --bundle data_analysis/outputs/ml_avail_run1/h06 \
+        --bundle data_analysis/outputs/ml_avail_run6/h06 \
         --station ST-BJ-01 --reference-time 2026-05-20T00:00:00Z --horizon 6
 
     python -m data_analysis.ml.availability.predict --self-check \
-        --run-dir data_analysis/outputs/ml_avail_run2
+        --run-dir data_analysis/outputs/ml_avail_run6
 
 ``AvailabilityForecaster.predict`` is the ``Predictor`` the backend adapter is supposed to call:
 it receives the 24 complete station hours strictly before ``reference_time``, rebuilds the

@@ -44,7 +44,9 @@ LEVEL_GRID = np.round(np.arange(0.50, 0.995, 0.025), 4)
 POINT_RULES = ("median", "mode")
 #: Levels the mixture can be shrunk towards; ``global`` always has zero support, so it never is.
 PRIOR_LEVELS = [level for level, _ in KEY_LEVELS] + [GLOBAL_LEVEL]
-#: The budget every published bundle was fitted with (``ml_avail_run1`` 0.2.0, ``ml_avail_run2`` 0.3.0).
+#: The budget every published bundle was fitted with (``ml_avail_run5`` 0.2.0, ``ml_avail_run6`` 0.3.0;
+#: the superseded ``run1`` / ``run2`` on the previous batch used the same numbers, which is why the
+#: re-bind changed no score).
 #: ``fit_step`` reproduces it exactly at ``rounds_multiplier=1.0``, so the only way to change a
 #: shipped number is to ask for it out loud in the command and in the bundle's report.
 BASE_PARAMS = {

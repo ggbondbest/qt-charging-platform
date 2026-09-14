@@ -30,9 +30,17 @@ from pathlib import Path
 
 DATA_ANALYSIS = Path(__file__).resolve().parents[2]
 EXPORT_DIR = DATA_ANALYSIS / "datasets" / "analytics_full_180d_v1"
+#: The run directories that are authoritative for the batch currently in the repository.  A data
+#: re-publication mints a new ``publishedBatchId`` and ``predict`` then refuses the old bundles, so
+#: these names move with the batch; ``RunPointerTest`` below fails if they drift apart from the
+#: ``BASE_RUN`` / ``HIERARCHY_RUN`` constants the modules themselves use as defaults.
+RUN_NAMES = ("ml_avail_run5", "ml_avail_run6")
 #: Every published run is checked the same way; a run that has not been trained yet is skipped.
-RUN_DIRS = [DATA_ANALYSIS / "outputs" / name
-            for name in ("ml_avail_run1", "ml_avail_run2")]
+RUN_DIRS = [DATA_ANALYSIS / "outputs" / name for name in RUN_NAMES]
+#: Superseded runs, trained against ``analytics-5f8e9342…``.  Kept pointed at by name because two
+#: resume cases exist precisely to prove the guards work on artefacts that predate ``seed`` and
+#: ``payloadEntry`` - nothing newer has that shape.
+LEGACY_RUN_NAMES = ("ml_avail_run1", "ml_avail_run2")
 
 # Exported doubles travel through Spark's CSV text representation, so parity is asserted to the
 # precision of that round-trip rather than to the last bit of the IEEE-754 result.
@@ -47,10 +55,12 @@ def _depends_available() -> bool:
 requires_stack = unittest.skipUnless(_depends_available(), "pandas/numpy/scikit-learn/joblib not installed")
 requires_run = unittest.skipUnless(any(directory.exists() for directory in RUN_DIRS),
                                    "no trained run under data_analysis/outputs; run ml.availability.train")
-#: the resume tests need one bundle of each generation: a base estimator and the wrapped version of it
-requires_both_runs = unittest.skipUnless(all(
+#: the legacy-compat resume cases need one bundle of each generation: a base estimator and the
+#: wrapped version of it, both from the superseded batch, because that pair is the only artefact on
+#: disk that carries no ``seed`` and no ``payloadEntry``
+requires_legacy_runs = unittest.skipUnless(all(
     (DATA_ANALYSIS / "outputs" / run / "h01" / "model_metadata.json").exists() for run in
-    ("ml_avail_run1", "ml_avail_run2")), "needs both ml_avail_run1 and ml_avail_run2 on disk")
+    LEGACY_RUN_NAMES), f"needs {' and '.join(LEGACY_RUN_NAMES)} on disk (superseded batch)")
 #: the end-to-end tests below train, which needs the exported batch itself, not just a published run
 requires_export = unittest.skipUnless((EXPORT_DIR / "serving_manifest.json").exists(),
                                       f"no exported batch at {EXPORT_DIR}")
@@ -60,6 +70,7 @@ if _depends_available():
     import pandas as pd
 
     from data_analysis.contracts.model import PredictionContext, validate_prediction
+    from data_analysis.ml.availability import BASE_RUN, HIERARCHY_RUN
     from data_analysis.ml.availability import build_hierarchical, evaluate, predict, train
     from data_analysis.ml.availability import model as model_module
     from data_analysis.ml.availability.model import blend, point_value
@@ -898,17 +909,21 @@ class ResumeGuardTest(unittest.TestCase):
 
 
 @requires_stack
-@requires_both_runs
+@requires_legacy_runs
 class HierarchicalResumeTest(unittest.TestCase):
     """``build_hierarchical --resume`` keeps a wrapped bundle only if it names this base and batch.
 
-    The fixtures are the published artefacts themselves - ``ml_avail_run1`` as the base estimators and
-    ``ml_avail_run2`` as the wrapped output - copied into a temporary directory and edited there, so
-    what the guard reads is the real report shape a resumed run has to face, not an approximation.
+    The fixtures are the **superseded** published artefacts - ``ml_avail_run1`` as the base
+    estimators and ``ml_avail_run2`` as the wrapped output - copied into a temporary directory and
+    edited there, so what the guard reads is the real report shape a resumed run has to face, not an
+    approximation.  They are deliberately the old generation: two of these cases exist to prove the
+    guard copes with artefacts that record no ``seed`` and no ``payloadEntry``, and every bundle the
+    re-bound runs (``ml_avail_run5`` / ``ml_avail_run6``) write does record both, so a newer fixture
+    could not test those paths at all.
     """
 
-    BASE = DATA_ANALYSIS / "outputs" / "ml_avail_run1"
-    WRAPPED = DATA_ANALYSIS / "outputs" / "ml_avail_run2"
+    BASE = DATA_ANALYSIS / "outputs" / LEGACY_RUN_NAMES[0]
+    WRAPPED = DATA_ANALYSIS / "outputs" / LEGACY_RUN_NAMES[1]
 
     def _copy(self, root: Path, **report_edits) -> Path:
         target = root / "h01"
@@ -1087,8 +1102,8 @@ class InvocationRecordTest(unittest.TestCase):
         spec = types.SimpleNamespace(name="data_analysis.ml.availability.evaluate")
         with mock.patch.dict(sys.modules, {"__main__": types.SimpleNamespace(__spec__=spec)}):
             self.assertEqual(
-                artifacts.invocation("__main__", ["--run-dir", "data_analysis/outputs/ml_avail_run2"]),
-                "python -m data_analysis.ml.availability.evaluate --run-dir data_analysis/outputs/ml_avail_run2")
+                artifacts.invocation("__main__", ["--run-dir", "data_analysis/outputs/ml_avail_run6"]),
+                "python -m data_analysis.ml.availability.evaluate --run-dir data_analysis/outputs/ml_avail_run6")
 
     def test_a_run_from_a_file_path_records_the_path(self):
         """``python -m <file path>`` is not a command, so a direct run must be quoted as one."""
@@ -1130,6 +1145,32 @@ class DataBindingTest(unittest.TestCase):
         self.assertIn("ml_targets_hourly", TABLE_KEYS)
         self.assertNotIn("ml_targets_hourly", SERVING_TABLES)
         self.assertIn("station_hourly_metrics", SERVING_TABLES)
+
+
+@requires_stack
+class RunPointerTest(unittest.TestCase):
+    """Which run directories are authoritative, and how a re-publication says so.
+
+    The names are written twice on purpose - the test module must know them before the science stack
+    is imported - so the first case is the seam that turns a silent split into a failure.  The second
+    is the one that matters to a reviewer: the data layer re-publishes by minting a new
+    ``publishedBatchId`` (PR #64 did exactly that), after which every older bundle is dead on the
+    serving path.  Without this case that shows up as forty-odd confusing failures; with it, the
+    suite says which directory stopped being bound to which batch.
+    """
+
+    def test_the_test_pointers_match_the_module_constants(self):
+        self.assertEqual(RUN_NAMES, (Path(BASE_RUN).name, Path(HIERARCHY_RUN).name))
+
+    def test_the_authoritative_runs_are_bound_to_the_batch_in_the_repository(self):
+        export = forecaster.open_export(EXPORT_DIR)
+        for run in RUN_DIRS:
+            if not (run / "h01" / artifacts.METADATA_NAME).exists():
+                self.skipTest(f"{run.name} has not been trained on this machine")
+            metadata = json.loads((run / "h01" / artifacts.METADATA_NAME).read_text(encoding="utf-8"))
+            self.assertEqual(metadata["trainingPublishedBatchId"], export.published_batch_id,
+                             f"{run.name} is bound to a superseded batch: retrain into a new "
+                             f"directory and repoint RUN_NAMES / BASE_RUN / HIERARCHY_RUN")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Train the availability forecaster: one ordinal distribution model per predicted hour.
 
-    python -m data_analysis.ml.availability.train --output data_analysis/outputs/ml_avail_run1
+    python -m data_analysis.ml.availability.train --output data_analysis/outputs/ml_avail_run5
 
 Only the rows the export marks TRAIN are fitted, VALIDATION calibrates the interval level, and
 TEST is touched once at the end for the numbers that go into ``model_metadata.json``.  A

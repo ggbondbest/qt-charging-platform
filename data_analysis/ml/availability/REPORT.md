@@ -16,30 +16,33 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 **0.4816 / 0.5047 / 0.5120 桩**，输出合法率 **1.0000**，`predict()` 直接通过
 `contracts/model.py:validate_prediction`，**不改任何契约**。
 
-> **本轮状态提示（rebase 之后）**：上游把数据批次重发布了，我这些已发布 bundle 与服务批次的绑定
-> 现在会被推理入口拒绝——**分数本身一分没变**，变的是批次号，处理办法在第 2.1 节与第 7 节第 5 条。
+> **本轮状态提示（rebase 之后，已改正）**：上游把数据批次重发布了，我原来的已发布 bundle 会被推理入口
+> 按批次拒收。已按第一条出路处理——**B 线产物按 `analytics-298aa3ee…` 重跑并重新发布**
+> （`ml_avail_run5` / `ml_avail_run6` / `ml_avail_eval_run6_v1` / `ml_avail_forecasts_v2`），
+> **分数一分没变**：24 份 bundle 的指标块逐位相同、评估报告只有头部 12 行不同、预测 CSV 两份 sha256 相同；
+> 变的是批次绑定，全过程与证据在第 5.12 节，套件已回到 `Ran 67 tests … OK`（同节末段）。
 
 ## 1. 对照交接文档的交付清单
 
 | 文档对 B 的要求 | 交付位置 | 状态 |
 | --- | --- | --- |
-| 建立 `ml/availability/` | `data_analysis/ml/availability/`（9 个模块 3,246 行；共享层 `ml/common/` 6 个模块 901 行；测试 `ml/tests/test_ml_contract.py` 1,136 行 / 65 个用例） | 完成 |
+| 建立 `ml/availability/` | `data_analysis/ml/availability/`（9 个模块 3,258 行 + `__init__.py` 29 行；共享层 `ml/common/` 6 个模块 900 行；测试 `ml/tests/test_ml_contract.py` 1,177 行 / 67 个用例） | 完成 |
 | 预测各未来小时**最后采样时刻**的空闲桩数 | `model.py` 标签 `label_available_count_hNN` = 应答小时最后采样时刻的空闲桩数；口径由 `train.py` 与 `test_the_label_is_the_free_count_of_the_hour_it_answers` 双向锁定 | 完成 |
 | 先建基线，再训练树模型 | `evaluate.py` 六级基线阶梯（重复上小时 / 站点×小时中位数 / 站点×小时经验分布 / 场站类型×小时 / 城市×小时 / 全局中位数），只在 TRAIN 拟合 | 完成 |
 | 树模型 | `train.py`（0.2.0 纯分类器）+ `build_hierarchical.py`（0.3.0 出厂先验版，复用 0.2.0 的估计器，只在 VALIDATION 上选 k、区间级别和点值规则） | 完成 |
 | 评估 | `evaluate.py` → `evaluation_report.md/.json`（分跨度、分城市/站点、冷启动留出、区间覆盖、风险阈值） | 完成 |
-| 评价报告 | **`outputs/ml_avail_eval_run2_v2/evaluation_report.md`**（本版为准：多出第 6 节分城市表与报告头的复现命令行，其余每个分数与 `ml_avail_eval_run2` 逐字符相同，旧目录一字未动）。因 `outputs/` 被 gitignore，关键数字全部抄进本文件第 5 节 | 完成 |
+| 评价报告 | **`outputs/ml_avail_eval_run6_v1/evaluation_report.md`**（本版为准：与发布批次 `analytics-298aa3ee…` 绑定；除头部 12 行绑定/时间戳/命令行外与 `ml_avail_eval_run2_v2` 逐字符相同，旧目录一字未动，见第 5.12 节）。因 `outputs/` 被 gitignore，关键数字全部抄进本文件第 5 节 | 完成 |
 | 推理 | `predict.py::AvailabilityForecaster.predict()`（契约点预测）与 `.risk()`（小数预计值、区间、P(无桩)，独立侧信道） | 完成 |
 | 报告 MAE 与输出范围合法性 | 第 5 节表格；合法率 1.0000，且是结构性结果（模型只能输出 0..capacity 整数，推理再裁剪一次） | 完成 |
 | 不能把预计小数桩数当真实库存 | 对外 `points[].value` 恒为 Python `int`；期望值只在 `risk()` 的 `expectedChargers` 里，字段名与 `definition` 文案都标注为预计值；由 `MinimalInferenceTest` 机械检查 | 完成 |
-| 模型文件及预处理器 | `data_analysis/outputs/ml_avail_run2/{h01,h06,h24}/model.joblib`（bundle 内含特征列顺序、站点/日历/城市档案、先验表 → 预处理与模型同包，不需要第二个文件） | 完成 |
+| 模型文件及预处理器 | `data_analysis/outputs/ml_avail_run6/{h01,h06,h24}/model.joblib`（bundle 内含特征列顺序、站点/日历/城市档案、先验表 → 预处理与模型同包，不需要第二个文件；批次号打在 pickle 里，所以换批次必换 `artifactSha256`，见第 5.12 节第 5 点） | 完成 |
 | `model_metadata.schema.json` 要求的元数据 | 每 bundle 的 `model_metadata.json`，由 `artifacts.build_metadata()` 生成并 `validate_metadata()` 校验；`metrics` 严格只含 `mae/rmse/testSamples/unit` | 完成 |
-| 可复现训练命令 | 本文件第 3 节，且评估报告头部现在自带复现命令行；代码侧 `artifacts.invocation()` 把命令与种子写入此后每次训练产出的 `training_report.json`（run1/run2 先于该字段，见 3.1） | 完成 |
+| 可复现训练命令 | 本文件第 3 节；评估报告头部自带复现命令行；**当前这批产物（`ml_avail_run5` / `ml_avail_run6`）的 24 份 `training_report.json` 每份都带 `reproducibleCommand` 与 `seed`**——打开产物即可看命令，不必照第 3 节重敲（旧的 run1/run2 先于该字段，见 3.1；代码侧 `artifacts.invocation()`） | 完成 |
 | 最小推理测试 | `python -m data_analysis.ml.availability.predict --self-check --run-dir ...`，并同步为 `ml/tests` 的 `MinimalInferenceTest`（4 个用例）；另有 `RunDirectoryGuardTest`（5 个，锁"不覆盖已发布 run"）与 `InvocationRecordTest`（3 个，锁复现命令本身可执行） | 完成 |
 | 应组长追问「能不能用更好的模型」 | `model_search.py` → `outputs/ml_avail_exp_h01_v1`、`ml_avail_exp_h06_v1`、`ml_avail_exp_h24_v1`、`ml_avail_exp_h06_test1`（第 5.7 节。结论：赢的是**特征**不是估计器，且两种做法不叠加；因此**未**发布 0.4.0，理由写在同节） | 完成（未发版，待组长定） |
 | 应组长要求「先训练 5 个 epoch」 | 树模型没有 epoch，如实换算成 `--rounds-multiplier`（第 5.8 节）；5× 预算全量重训已跑完 → `outputs/ml_avail_run3_r5`（模型改名 `-r5`，不冒充已发布身份） | 完成（结论：不值得发版） |
 | 应组长要求「可以断点续训」 | `train.py --resume` 与 `build_hierarchical.py --resume`（第 5.9 节：829.7 s 的全量训练断在第 6 个 bundle，续跑 380.7 s 补完，12 个 bundle 与一口气跑完逐位相同；配方不符即拒绝且不动 checkpoint） | 完成 |
-| 应用侧可直接看的预测表 | `outputs/ml_avail_forecasts_v1/forecast_table.md` + `forecasts.csv`（4,650 行，`forecast_table.py` 产出，第 5.10 节） | 完成 |
+| 应用侧可直接看的预测表 | `outputs/ml_avail_forecasts_v2/forecast_table.md` + `forecasts.csv`（4,650 行，`forecast_table.py` 产出，第 5.10 节；与上一批的 `ml_avail_forecasts_v1/forecasts.csv` **sha256 相同**） | 完成 |
 | 独立扩展（择一） | **未做**。按「时间不足时先交付基础预测闭环」，先把基础线补完；扩展建议与数据前提见第 6 节 | 待组长定 |
 
 ## 2. 输入批次与绑定（全部实测，非文档转抄）
@@ -47,22 +50,23 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 | 项 | 值 |
 | --- | --- |
 | datasetId | `charging_full_180d_v2` |
-| pipelineRunId | `spark-625439908b6d4bcca1ae72e2e35ef27f` |
-| publishedBatchId | `analytics-5f8e93429948404099b735999bfb6c4e` |
-| 原始数据清单 sha256（`sourceManifestSha256`） | `1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95` |
-| 导出清单 sha256（仅记录，不写进 `sourceManifestSha256`） | `358eeba3d3ceac9fab7858a6293a02575b11150f43454ce575f4408c687eaa59` |
+| pipelineRunId | `spark-6ed381b125034f9e95d726a74befb121` |
+| publishedBatchId | `analytics-298aa3ee1401461fb06ea2bb96930dcf`（上一批 `analytics-5f8e9342…` 见第 2.1 节） |
+| 原始数据清单 sha256（`sourceManifestSha256`） | `1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95`（**两批相同**） |
+| 导出清单 sha256（仅记录，不写进 `sourceManifestSha256`） | `7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350` |
+| 权威 run 目录 | `ml_avail_run5`（基座 0.2.0）/ `ml_avail_run6`（出厂 0.3.0）；名字只写在 `ml/availability/__init__.py` 的 `BASE_RUN` / `HIERARCHY_RUN` 一处 |
 | featureVersion | `history24-v1`，模型输入 75 列（不含任何 `label_` / `split_` 列，由测试锁定） |
 | 训练帧 | 107,425 行 × 75 特征；25 站、5 城（BJ/DL/SH/SY/SZ）、5 种场站类型；每站 `capacity = 3` 桩，故标签取值 {0,1,2,3} |
 | 切分（`mlSplits`，上海业务日右开） | TRAIN 2025-12-02→2026-03-30，VALIDATION →2026-04-29，TEST →2026-05-29 |
 | 各跨度行数 | 1h 70,800/18,000/18,000/EXCLUDED 625；6h 70,675/17,875/17,875/1,000；24h 70,225/17,425/17,425/2,350 |
 
 **批次绑定纪律**：`sourceManifestSha256` 绑的是**原始包 manifest**（`1f03e37c…`）。导出包
-`serving_manifest.json` 自身的哈希（`358eeba3…`）另记在 `training_report.json` 的
-`servingManifestSha256`。测试
+`serving_manifest.json` 自身的哈希（上一批 `358eeba3…`，本批 `7e0e5066…`）另记在
+`training_report.json` 的 `servingManifestSha256`。测试
 `test_bundle_is_bound_to_the_batch_it_reads` 明确断言二者不相等——负荷线 0.1.0 产物正是把后者
 误写进了前者（见附录 A）。
 
-### 2.1 rebase 到 develop 之后：上游把批次重发布了（本轮实测，未修）
+### 2.1 rebase 到 develop 之后：上游把批次重发布了（本轮实测，已按第一条出路改正，见第 5.12 节）
 
 本分支 rebase 到 `origin/develop`（`d8b5fa2`，含 PR #64 `data(analysis): refresh 180-day cleaned
 delivery`、PR #65 MySQL 服务化）后，`data_analysis/datasets/analytics_full_180d_v1/` 里的导出被换成
@@ -75,7 +79,8 @@ delivery`、PR #65 MySQL 服务化）后，`data_analysis/datasets/analytics_ful
 | `sourceManifestSha256` | `1f03e37c…` | `1f03e37c…`（**未变**：原始包没换，变的只是这次 Spark 重跑导出的批次号与各分片哈希） |
 | 训练帧 | 107,425 行 × 75 特征，TRAIN/VAL/TEST 70,800/18,000/18,000 | 同左，**一字未变** |
 
-后果按事实记：**这套用例现在在本分支上是红的**（逐条计数见第 5.11 节）。45 个红项拆开是
+后果按事实记（这一段描述的是**重绑之前**的状态，重绑记录在第 5.12 节）：**这套用例当时在本分支上是红的**
+（逐条计数见第 5.11 节）。45 个红项拆开是
 24 项 `test_bundle_is_bound_to_the_batch_it_reads` 子项的直接断言
 （`'analytics-5f8e…' != 'analytics-298a…'`）、19 项在构造特征、给出任何预测之前就抛出的
 `PredictionError: BATCH_MISMATCH`（含那条"请求不能偷渡答案"的防泄漏用例——它现在到不了断言）、1 项
@@ -83,52 +88,55 @@ delivery`、PR #65 MySQL 服务化）后，`data_analysis/datasets/analytics_ful
 SKIPPED"——因为没有一个 PASS）。
 **没有任何一条模型质量断言变红**。而 `ResumeEndToEndTest` 那两条真命令行用例恰好在重训：同 seed
 （20260913，`train.py` 的默认值）+ 同配方在新批次上现训 h01，日志打印
-`TEST MAE 0.527 / RMSE 0.726 / n=18000`、续跑复用那份打印 `0.5274`——与已发布 run1 h01 记录的
-`mae 0.5274 / rmse 0.7259 / n 18000` 一致（该用例自己断言的是"续跑 == 现训"，与 run1 的相等是我照着
-两边数字对读出来的，不是它断言的）。所以这是**批次号变更导致的重新绑定问题**，不是数据内容变了、
-也不是分数塌了。两条出路（要组长定，见第 7 节第 5 条）：把 B 线产物按新批次重跑一遍再发，
+`TEST MAE 0.527 / RMSE 0.726 / n=18000`、续跑复用那份打印 `0.5274`——与当时已发布（现已被第 5.12 节
+的 `ml_avail_run5` 取代）的 run1 h01 记录的 `mae 0.5274 / rmse 0.7259 / n 18000` 一致（该用例自己断言的是
+"续跑 == 现训"，与 run1 的相等是我照着两边数字对读出来的，不是它断言的）。所以这是**批次号变更导致的
+重新绑定问题**，不是数据内容变了、也不是分数塌了。当时摆着两条出路：把 B 线产物按新批次重跑一遍再发，
 或者数据层确认"每次重发布都换 batchId、下游产物随之失效"这条口径本身是否是验收想要的答案。
+**组长选了第一条（「那你就根据问题来改正」），本轮已执行完，全部实测记录在第 5.12 节**；第二条作为
+口径问题仍然留着（第 7 节第 5 条）。
 
 ## 3. 启动方法（仓库根目录执行，需 numpy/pandas/scikit-learn/joblib）
 
 ```bash
 # 0) 数据画像（可选，只读导出包并逐分片校验 manifest）
-python -m data_analysis.ml.availability.prepare_data --output data_analysis/outputs/ml_avail_run1
+python -m data_analysis.ml.availability.prepare_data --output data_analysis/outputs/ml_avail_run5
 
 # 1) 树模型：纯有序分类器 + 三个城市的冷启动留出（seed 20260913）
 python -m data_analysis.ml.availability.train \
-    --output data_analysis/outputs/ml_avail_run1 \
+    --output data_analysis/outputs/ml_avail_run5 \
     --holdout-city DL --holdout-city SY --holdout-city SZ
 
-# 1b) 同一件事，但把 boosting 预算放大 5 倍（"再训久一点"在这条线上的正确形态，见 5.8；
-#     全 12 个 bundle 实测 829.7 s，产物 `ml_avail_run3_r5`）；
-#     中途断了把这条命令原样重敲、末尾加 --resume 即可接着跑（见 5.9）
-python -m data_analysis.ml.availability.train \
-    --output data_analysis/outputs/ml_avail_run3_r5 --rounds-multiplier 5 \
-    --holdout-city DL --holdout-city SY --holdout-city SZ --resume
-
-# 2) 出厂先验版：复用第 1 步的估计器，只在 VALIDATION 上选每层 k / 区间级别 / 点值规则（约 88 秒）
+# 2) 出厂先验版：复用第 1 步的估计器，只在 VALIDATION 上选每层 k / 区间级别 / 点值规则
 python -m data_analysis.ml.availability.build_hierarchical \
-    --source-run data_analysis/outputs/ml_avail_run1 \
-    --output data_analysis/outputs/ml_avail_run2
+    --source-run data_analysis/outputs/ml_avail_run5 \
+    --output data_analysis/outputs/ml_avail_run6
 
 # 3) 评估（写新目录，绝不覆盖已发布报告；报告头会自动记下这条命令）
 python -m data_analysis.ml.availability.evaluate \
-    --run-dir data_analysis/outputs/ml_avail_run2 \
-    --output data_analysis/outputs/ml_avail_eval_run2_v2
+    --run-dir data_analysis/outputs/ml_avail_run6 \
+    --output data_analysis/outputs/ml_avail_eval_run6_v1
 
 # 4) 最小推理测试：12 个 bundle 逐个加载、按契约服务一个确定 TEST 行，任一非法即退出码 1
-python -m data_analysis.ml.availability.predict --self-check --run-dir data_analysis/outputs/ml_avail_run2
+python -m data_analysis.ml.availability.predict --self-check --run-dir data_analysis/outputs/ml_avail_run6
 
 # 5) 单次推理（后端适配器的调用形态）
 python -m data_analysis.ml.availability.predict \
-    --bundle data_analysis/outputs/ml_avail_run2/h06 \
+    --bundle data_analysis/outputs/ml_avail_run6/h06 \
     --station ST-BJ-01 --reference-time 2026-04-28T19:00:00Z --horizon 6 \
     --export data_analysis/datasets/analytics_full_180d_v1
+
+# 6) 预测表（人看的那份；`--run-dir` 默认即上面的出厂 run）
+python -m data_analysis.ml.availability.forecast_table \
+    --run-dir data_analysis/outputs/ml_avail_run6 --reference-hours 6 --display-hours 10 \
+    --output data_analysis/outputs/ml_avail_forecasts_v2
 ```
 
-**rebase 到 `d8b5fa2` 之后第 4、5 步会直接失败**（`PredictionError: the served batch differs from the
-trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是产物会绑上新批次号。
+`run1 ~ run4` 是**上一批次（`analytics-5f8e9342…`）上的历史产物与预算实验**，命令形态与上面完全一致，
+只是目录名不同（`ml_avail_run1` / `ml_avail_run2`，以及 `--rounds-multiplier 5` 的
+`ml_avail_run3_r5` / `ml_avail_run4_r5_resume`）；它们在服务路径上会被
+`PredictionError: BATCH_MISMATCH` 拒，保留只为对照与旧格式回归（第 2.1、5.12 节）。
+中途断了把第 1 或第 2 步原样重敲、末尾加 `--resume` 即可接着跑（第 5.9 节）。
 
 三个**会写产物**的入口（`train` / `build_hierarchical` / `evaluate`）都在装载数据帧之前拒绝覆盖：
 目标目录已有 bundle、已有 `train_summary.json` 或已有 `evaluation_report.*` 时直接退出，要求写新目录；
@@ -146,9 +154,11 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
   因为那才是加载产物真正需要的东西。
 - 本次新增 `artifacts.invocation()`：此后每一次训练产出的**每个 bundle** 的 `training_report.json`
   都会带 `reproducibleCommand`（含全部命令行参数）与 `seed`，`evaluate.py` 的报告头同样自带复现命令行
-  （`ml_avail_eval_run2_v2` 已是这样产出的）。`-m` 运行的模块名从 run spec 还原，不会写成 `__main__`
+  （`ml_avail_eval_run2_v2` 起就是这样产出的，重绑后的 `ml_avail_eval_run6_v1` 同）。`-m` 运行的模块名
+  从 run spec 还原，不会写成 `__main__`
   ——这条由 `InvocationRecordTest` 锁住，因为一份写着 `-m __main__` 的报告等于没有复现命令。
-- **已发布的 run1 / run2 不含该字段**（它们先于这次改动）。本轮递归读过 `ml_avail_run1`、`ml_avail_run2`
+- **旧的 run1 / run2 不含该字段**（它们先于这次改动，且已被第 5.12 节的重绑取代）。本轮递归读过
+  `ml_avail_run1`、`ml_avail_run2`
   全部 **24 份** `training_report.json`（每个 run 是 3 个主跨度 + 3 座留出城市 × 3 = 12 个 bundle）：
   `reproducibleCommand` **24/24 为空**；`seed` 只有 run1 的 12 份写了（`20260913`），
   run2 的 12 份为 `null`（当时 `build_hierarchical` 只在 run 级 `hierarchical_report.json` 记 seed）。
@@ -164,7 +174,10 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
   * 携带性已被证实：`ml_avail_run3_r5` 的 12 份 `training_report.json` **每一份**都带
     `reproducibleCommand` 与 `seed`（当场可核，`grep` 即可），run1/run2 则一份都没有。
   上面第 3 节的命令按各 run 报告里记录的参数与模块默认值重建，等价但不逐字节证明当时输入。
-  是否值得为这个字段重跑，请组长拍板；**当前状态下的可复现路径是"照第 3 节敲命令"，不是"打开产物看命令"。**
+  **这条"要不要为这个字段重跑"的问题已被第 5.12 节的重绑消解**：当前这批产物（`ml_avail_run5` /
+  `ml_avail_run6`）的 **24/24 份 `training_report.json` 都带 `reproducibleCommand` 与 `seed`**（本轮当场数过），
+  所以可复现路径现在是"打开产物看命令"，不再需要先照第 3 节重敲。旧 run1/run2 仍是缺这个字段的状态，
+  而且它们绑的是上一批次，本来就不能再服务。
 - 训练是确定性的（同一 seed、同一批次、同一 sklearn 版本 ⇒ 同一 MAE）。**跨版本不可加载**：
   本批产物为 Python 3.13.9 / numpy 2.4.4 / pandas 2.3.3 / scikit-learn 1.7.2 序列化，
   Linux 成员环境须按 `model_metadata.json` 的 `dependencies` 对齐，否则 pickle 加载即崩。
@@ -188,7 +201,10 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
 
 ## 5. 测试结果（模拟数据，单位 = 空闲充电桩个数，不是百分比；MAE 0.5 = 平均偏差半个桩）
 
-### 5.1 出厂模型 `ml_avail_run2`（0.3.0，服务口径，TEST）
+### 5.1 出厂模型 `ml_avail_run6`（0.3.0，服务口径，TEST）
+
+（目录自第 5.12 节的重绑起换成 `ml_avail_run6`；下表与重绑前 `ml_avail_run2` 的那一份**逐字符相同**——
+新版评估报告 125 行里只有头部 12 行不同，其余全是同一批分数行。）
 
 | 跨度 | MAE | RMSE | 覆盖率@80% | 平均区间宽度 | 输出合法率 | P(无桩) AUC | 评分点数 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -216,7 +232,8 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
 
 `ml_avail_run1/evaluation_report.md`（0.2.0 时期）**不可引用**：该版审计脚本把收缩权重
 `k/(n+k)` 记在查表一侧，方向用反，其「模型 MAE」连自身元数据都对不上。修正记录写在
-`ml_avail_eval_run2_v2/evaluation_report.md` 第 8 节；`ml_avail_eval_run1_corrected` 是用修正后的
+`ml_avail_eval_run2_v2/evaluation_report.md` 第 8 节（重绑后的 `ml_avail_eval_run6_v1` 第 8 节同文）；
+`ml_avail_eval_run1_corrected` 是用修正后的
 审计脚本重跑 run1 的结果。
 
 ### 5.3 用户口径的"准确率"（整数点命中率，h01 / h06 / h24 主模型）
@@ -254,7 +271,7 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
 **不足以宣称冷启动也能从查表稳定获益**；能说的只有"没有本地历史的站，纯模型 MAE ≈ 0.49–0.55，
 退化在 5% 以内"。
 
-### 5.6 分城市与最差站点（主模型，服务口径，TEST；新增于 `ml_avail_eval_run2_v2` 第 6 节）
+### 5.6 分城市与最差站点（主模型，服务口径，TEST；该表自 `ml_avail_eval_run2_v2` 第 6 节起存在，重绑后的 `ml_avail_eval_run6_v1` 第 6 节同表同数）
 
 | 城市 | h01 MAE | h06 MAE | h24 MAE | h01 点数 | h01 相对全体 |
 | --- | --- | --- | --- | --- | --- |
@@ -402,9 +419,11 @@ trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是�
 
 ### 5.10 预测表（应组长要求「把预测表发给我看看」，本轮新增）
 
-`forecast_table.py` 用**已发布的服务 bundle**（`ml_avail_run2` / 0.3.0）走真实推理路径
+`forecast_table.py` 用**当前出厂的服务 bundle**（重绑后是 `ml_avail_run6` / 0.3.0；`--run-dir` 的默认值
+就取自 `__init__.py` 的 `HIERARCHY_RUN`，不再写死在源码里）走真实推理路径
 （`AvailabilityForecaster.predict()`，不是重新实现一遍），对 25 个站在 6 个参考时刻上各出一张表，
-写到 `outputs/ml_avail_forecasts_v1/`：
+写到 `outputs/ml_avail_forecasts_v2/`（上一批的是 `ml_avail_forecasts_v1`，两份 `forecasts.csv`
+**sha256 相同**：`b2a02fedbad3286d14d636444cc9536d802193798c9e8be1d90e8cf60e248aeb`，见第 5.12 节第 4 点）：
 
 - `forecasts.csv`：4,650 行，每行 = 一个 bundle × 一站 × 一个参考时刻 × 一个未来小时；列含对外的整数
   `predicted_chargers`、区间 `interval_low/high`、预计值 `expected_chargers`、`p_no_charger`、完整分布
@@ -467,7 +486,8 @@ bundle"这条路上），其余 10 个类仍为绿——含本轮新加的续训
 整套 skip（测试文件开头的 `_depends_available()` 守卫），缺导出批次时只有绑数据的那几个类 skip，
 所以新加的这个 CI job 在没有数据的 job 上也不会变红。
 
-65 个用例按主题分布（`ml/tests/test_ml_contract.py`）：
+67 个用例按主题分布（`ml/tests/test_ml_contract.py`；上面那两次跑测分别是 65 与 65 个用例，
+`RunPointerTest` 的 2 个是 rebase 之后为第 2.1 节那条失效路径新增的，故尚未出现在旧记录里）：
 
 | 测试类 | 个数 | 锁住的是什么（按用例名如实列，不夸大） |
 | --- | --- | --- |
@@ -477,14 +497,102 @@ bundle"这条路上），其余 10 个类仍为绿——含本轮新加的续训
 | `MinimalInferenceTest` | 4 | `--self-check` 下每个已发布 bundle 要么 PASS 要么被显式 SKIPPED；对外值是 `0..capacity` 的整数（小数只走 `risk()`）；改掉 `artifactSha256` 必须变 FAIL；命令本身退出码为 0 |
 | `RunDirectoryGuardTest` | 5 | `train` 拒绝已放 bundle 的目录；拒绝"写了一半"的 run；拒绝把 `--resume` 用在一份已完成的汇总上；`build_hierarchical` 同样拒绝有内容的目录；`prepare_data` 先写的 `data_profile.json` 不算已发布（否则正常流程会被自己的守卫挡住） |
 | `ResumeGuardTest` | 11 | 配方一致的 checkpoint 原样复用（哈希不变、`boostingRounds` 形状齐）；没存过就返回"没有"；seed / 批次+manifest / `roundsMultiplier`+modelVersion / 跨度+留出城市 / steps 任一不符即拒；半断（报告缺）与哈希不符各自报错；`published_content` 对不存在的目录返回空（旧实现在这里抛 `FileNotFoundError`）；`data_profile.json` 不计入、bundle 与汇总计入 |
-| `HierarchicalResumeTest` | 8 | 出厂 0.3.0 产物（无 seed 字段）不被冒领；补上 seed 才复用；从别的基座/别的批次包的直接拒；`payloadEntry` 存在时**原样读回**而非重算；不存在时按报告里全精度每小时 MAE 重算，逐位等于当时发布的那一行；续跑的 `hierarchical_report.md` 与已发布版逐字符相同；只跑主城的部分 run 不印 `nan` |
+| `HierarchicalResumeTest` | 8 | 出厂 0.3.0 产物（无 seed 字段）不被冒领；补上 seed 才复用；从别的基座/别的批次包的直接拒；`payloadEntry` 存在时**原样读回**而非重算；不存在时按报告里全精度每小时 MAE 重算，逐位等于当时发布的那一行；续跑的 `hierarchical_report.md` 与已发布版逐字符相同；只跑主城的部分 run 不印 `nan`。**fix 之后仍钉在 run1 / run2 这两份旧产物上**（正是它们没有 `seed`、没有 `payloadEntry`，新产物都有，换目录就没东西可测），故加了 `requires_legacy_runs` 守卫：那两份不在磁盘上时整类 skip 并说明原因，而不是假装通过 |
+| `RunPointerTest` | 2 | 本轮新增（第 5.12 节）：测试里的 `RUN_NAMES` 必须与模块常量 `BASE_RUN` / `HIERARCHY_RUN` 一字不差；每个权威 run 的 `h01/model_metadata.json` 里 `trainingPublishedBatchId` 必须等于仓库当前导出的批次号，不等就报错并直接给出下一步（"retrain into a new directory and repoint …"）。数据层再重发布时，套件红在这两条上，而不是像这次红 45 项让人自己猜 |
 | `ResumeEndToEndTest` | 2 | 真命令行 + 真批次：断掉的 train 续跑后 `pooledTest` 与分数逐位相同、`model.joblib` 哈希不变、改 seed 的续跑被拒且没碰 checkpoint；断掉的先验包装跑后表格除"生成耗时"一行外逐字符相同 |
 | `BoostingBudgetTest` | 7 | 已发布配方在代码里钉死；×1 与钉死值一字不差；×5 同时放大耐心（1250/75）且不动学习率；×0.4 取整为 100/6；0 与负数拒绝；`-r5` 改名；包一层时继承基座的 `-r5` 名字 |
 | `DataBindingTest` | 3 | 导出必须绑到原始包 manifest（成员 A 旧产物正是把 serving manifest 当成了它）；无法核验的导出直接拒绝；`ml_targets_hourly` 永不进服务库 |
 | `AuditScriptTest` | 3 | 审计脚本自己的收缩方向与取键口径；已发布报告不被就地改写 |
 | `InvocationRecordTest` | 3 | `-m` 运行记录模块名而不是 `__main__`；直接按文件路径运行时记录路径；命令行参数逐字记录 |
 
+**重绑之后同一条命令的记录（本轮实测，套件回到绿）**：
+
+```
+$ python -m unittest discover -s data_analysis/ml/tests -t .
+Ran 67 tests in 928.305s
+OK          # 退出码 0
+```
+
+67 = 65 + `RunPointerTest` 的 2 个。输出里没有 `skipped=` 字样 ⇒ **67 项全部真跑**：既包含读
+`ml_avail_run5` / `ml_avail_run6` 的绑定与推理用例（说明重绑后的产物真的过核对），也包含被
+`requires_legacy_runs` 守卫的 `HierarchicalResumeTest`（run1 / run2 还在磁盘上，所以那 8 项旧格式回归
+也真跑了，没有被 skip 蒙过去）。928.3 s 这个数字**含我自己在同一台机器上并发跑的核对探针**
+（反复装载 107,425 行训练帧、给约 1.4 GB 的 `model.joblib` 算 sha256），所以它既不能与上面空闲时的
+139.0 s 比较，也不能与上面那次红的 741.5 s 互相换算；它只是"这一轮跑过的分钟数"。
+新增的那个类干什么用的，写在上面的分类表最后一行与第 5.12 节第 6 点。
+
+### 5.12 按新批次重绑产物（应组长「那你就根据问题来改正」，本轮实测）
+
+**要改的问题**就是第 2.1 节：上游 PR #64 把导出重发布了一次，`publishedBatchId` 换成
+`analytics-298aa3ee…`，`predict.py` 的批次核对因此拒收我全部已发布 bundle，套件红 45 项。
+正解只有一条——**按新批次重跑一遍再发**。没有改测试里的批次号、没有放开核对、没有把旧目录就地改写。
+
+**跑的第 3 节命令（配方一字未动：同 seed 20260913、同 `--rounds-multiplier 1`、同三个留出城市、同 75 列）**，
+各步自计耗时如实抄在这里：
+
+| 步骤 | 新目录 | 自计耗时 |
+| --- | --- | --- |
+| 1) `train` 全 12 个 bundle | `ml_avail_run5` | **5191.8 s**（`train_summary.json`） |
+| 2) `build_hierarchical` | `ml_avail_run6` | **551.0 s**（`hierarchical_report.json`） |
+| 3) `evaluate` | `ml_avail_eval_run6_v1` | **197.8 s**（报告头） |
+| 4) `predict --self-check` | 不写文件 | 3 PASS / 0 FAIL / 9 SKIPPED（原文见附录 B） |
+| 6) `forecast_table` | `ml_avail_forecasts_v2` | 脚本不自计耗时，故不给秒数 |
+
+第 0 步（可选的 `prepare_data` 画像）**本轮没重跑**，`ml_avail_run5/run6` 里没有 `data_profile.json`。
+不影响可追溯性：逐分片 sha256 校验在 `data_io._read_shards()` 里，**每次装载都做**（不符即 `ExportError`），
+本轮四个入口各做了一遍并全部通过；`prepare_data` 只是把同一件事的结果另存一份画像。
+这些数字**不能**与第 5.8 节空闲机器上测的 829.7 s（那是 5× 预算）或本节下面的套件时间互相换算——
+本轮同机一直有 IDE / 微信 / 虚拟机在跑，第 5.11 节那次"不解释成用例变贵"的教训同样适用。
+
+**旧目录一字未动**（`ml_avail_run1` ~ `ml_avail_run4_r5_resume` 仍在磁盘上），第 5.11 节那条红记录描述的
+就是它们当时的状态。
+
+**"重绑只是元数据事件"这句话本轮是被证出来的，不是被预期的**（探针 `probe_rebind.py` /
+`probe_payload.py` / `probe_trees.py` / `probe_reports_diff.py`，均临时脚本、不入库）。全部指标为模拟数据
+测试结果（第二阶段发布批次），不代表真实运营数据表现：
+
+1. **24/24 个 bundle 的 `model_metadata.json` 分数块逐位相同**：`mae` / `rmse` / `testSamples` 三项，
+   run1↔run5 与 run2↔run6 各 12 份，一个字节都没动（例：h01 `0.5274 / 0.7259 / 18000`，
+   出厂 h01 `0.4816 / 0.7223 / 18000`，冷启动 9 份同样）。
+2. **出厂层的"选择"也复现了**：12 个 bundle 的 `pseudoCount`（每层 k）、`priorWeightMean`、
+   `pointRule`（全部 `median`）、`testModelAlone`、`testModelWithChosenRule`、`validation`、`splits`
+   全部相等，变的只有 `directory` 与 `reusedEstimatorFrom` 两个路径字段——先验是在 VALIDATION 上选的，
+   VALIDATION 一行未变，所以选择不可能变，实测确认它没变。
+3. **评估报告 125 行 → 125 行，只有 12 行不同，全在头部**：数据集/批次行、被评分目录行、导出清单
+   sha（`358eeba3…` → `7e0e5066…`）、生成时间与耗时、复现命令、以及那句"本报告写入新目录"的路径。
+   **所有分数行、分城市表、冷启动表、风险阈值表逐字符不变**——所以第 5.1~5.6 节的每张表在新 run 上
+   原样成立，不必重抄数字。
+4. **预测表 `forecasts.csv` 两份 sha256 完全相同**（`b2a02fed…`，4,650 行 + 表头）；
+   `forecast_table.md` 107 → 108 行，多的一行是本轮新加的「来源 run / 批次」头，另有两处是我把
+   写死的 run 名改成从产物里读出来的表头与"看该 run 的 `evaluation_report.md`"（见下面第 6 点）。
+5. **`model.joblib` 的字节确实变了，24/24 全变**——这一点上一版报告里我按"预期哈希不变"来设计探针，
+   实测把它证伪了，如实记下原因：批次号是**打在 pickle 里**的（`bundle["publishedBatchId"]`，出厂包另有
+   `inheritedFrom`），所以换批次必然换哈希；此外新代码在 bundle 里多写了 `roundsMultiplier`、基座模型多写
+   `point_rule`、报告多写 `reused: false`，`training_report.json` 的 `perStep.*` 多了
+   `boostingRounds` / `maxBoostingRounds` / `calibration.{pointRule,validationMae,modelMae}`、
+   `pooledTest` 多了 `maeExpectation`（全是"字段以前不存在"，不是"值变了"）。
+   `model_metadata.json` 里对应的 `artifactSha256` 24 份也全部跟着变——**如果哪里钉过这个哈希，必须更新**
+   （`MinimalInferenceTest` 的变异用例正是为这件事存在的）。
+   唯一一处我**没能**归因到字段的技术细节：h01 基座估计器的 pickle 比旧的多 23 字节，而它 44 个属性逐个
+   比较全部相等、129 轮树的 1,548 个数组/标量按值全部相等、18,000 行 TEST 的 4 类 pmf 与中位数
+   **逐位相同**（h06/h24 的估计器字节反而完全相同）。也就是说这是编码/对象图层面的差异，不是模型状态
+   差异；我说"说不出差在哪个字节"，因为按值找不到它。
+6. **下次同样的事会先红在哪**（本轮新增 `RunPointerTest`，2 个用例）：① 测试里的 `RUN_NAMES` 必须等于
+   `ml/availability/__init__.py` 的 `BASE_RUN` / `HIERARCHY_RUN`；② 两个权威 run 的 `h01` 元数据里
+   `trainingPublishedBatchId` 必须等于仓库当前导出的批次号，不等就直接说"retrain into a new directory and
+   repoint"。数据层再重发布一次，套件红在这两条上并给出下一步，而不是像这次红 45 项让人自己猜原因。
+
+**版本号没有升**（考虑过 `0.2.1` / `0.3.1`，否决并记在这里）：已发布指标块仍只有
+`mae/rmse/testSamples/unit`，`modelId` 不变，而"是哪一批次训出来的"本来就有硬判别器——
+`predict.py` 的批次核对会直接拒收错配产物（本轮第 2.1 节就是它的行为演示），升版本只会让第 5 节所有
+引用与 `contracts` 口径的文档多改一遍。真要改，改的是 `__init__.py` 里两个常量。
+
+**跑完的结果**：`Ran 67 tests in 928.305s` / `OK`（退出码 0），原文与时间口径的免责声明在第 5.11 节
+最后一段——那台机器当时被我自己的核对探针压着，所以这个秒数只当"这一轮跑过的分钟数"用。
+
 ## 6. 独立扩展：目前未做，以及做之前需要什么
+
+
 
 按文档「时间不足时先交付基础预测闭环」，本轮把基础线的缺口（复现命令入库、最小推理测试、
 交付说明）补完，未开新任务线。择一建议：
@@ -530,8 +638,10 @@ bundle"这条路上），其余 10 个类仍为绿——含本轮新加的续训
    `tests/test_analytics_api.py` 断言两个 `/predict/*` 必须 503。我按文档要求交付推理代码
    （`AvailabilityForecaster` + 错误码），接入 `service.py` 的动作留给组长；需要组长确认
    注册目录约定与"加载失败仍回 503"的行为。
-4. **是否重跑一遍模型产物**：评估报告已经自带复现命令（`ml_avail_eval_run2_v2`），但**模型 bundle 的
-   `training_report.json` 仍缺 `reproducibleCommand`**（本轮递归读过 24 份确认，详见 3.1），
+4. **是否重跑一遍模型产物**（**这条也已被第 5 条与第 5.12 节消解**：现在绑新批次的 24 份
+   `training_report.json` 每份都带 `reproducibleCommand` 与 `seed`）：当时评估报告已经自带复现命令
+   （`ml_avail_eval_run2_v2`），但**旧模型的 bundle `training_report.json` 仍缺 `reproducibleCommand`**
+   （那一轮递归读过 run1/run2 的 24 份确认，详见 3.1），
    因为 run1/run2 先于这次改动。分两种花法：
    * 只花 **90 秒**重跑 `build_hierarchical`（run2 自己记的是 88.3 s；本轮单个 `--only h01` 实测 4.5 s，
      新目录、分数应逐位相同）→ bundle 带上**构建命令**，但训练命令仍进不了产物；
@@ -544,12 +654,18 @@ bundle"这条路上），其余 10 个类仍为绿——含本轮新加的续训
      重发一次评估报告（第 3 节第 3 步），不能拿旧报告的分数挂新 bundle。
    我倾向：**先不重跑**，等接口/注册口径定了再一次性出重跑版，免得同一批产物出现第三个版本号；
    但这条由组长定。（第 5 条已使这条倾向失效，保留是为了不掩盖我当时怎么判断的。）
-5. **是否按新批次重绑（本轮新增，优先级高于第 4 条）**：上游 PR #64 重发布后，已发布 bundle 在服务
-   路径上会被 `predict.py` 直接拒（第 2.1 节），所以第 4 条里"先不重跑"的倾向**已经不适用了**——
-   要么 B 线按 `analytics-298aa3ee…` 重跑一版新产物（分数预期逐位不变，因为原始包与训练帧都没变；
-   代价就是第 5.8 节实测过的那十几分钟 + 评估报告重发），要么组长确认"重发布换 batchId ⇒ 下游产物全部
-   失效"这条口径是验收想要的（若是，则成员 A 的负荷线产物同样要重绑，这不该由 B 单方面决定）。
-   **我不会为了让测试变绿而去改测试里的批次号**——那条断言存在的意义就是挡这种事。
+   **本轮两处口径要更正**（重绑真的跑了一遍，见第 5.12 节）：① 上面"默认 1× 只会更快"是拿 5× 的空机
+   实测外推的，本轮 1× 在**被别的程序压着的机器**上实测 **5191.8 s**，两个数字不同工况、不可比，
+   所以"更快"当时就不该写；② "跑完仍需重发评估报告"这条照做了，另外还多了两个连带结果——
+   24 份产物的 `artifactSha256` 全部变了（批次号打在 pickle 里），以及出厂层的 k / 点值规则
+   复现到了逐位相同。
+5. **是否按新批次重绑：本轮已执行，选的是"重跑再发"（组长「那你就根据问题来改正」）**。产物、评估报告、
+   预测表全部换成绑 `analytics-298aa3ee…` 的新目录，套件 `Ran 67 tests … OK`；分数与绑定前的对照证据
+   在第 5.12 节。**留给组长的只剩口径问题，不再是"要不要重跑"**：数据层每次重发布都换 `batchId` ⇒
+   下游 ML 产物按纪律全部重绑，这条是不是验收想要的答案？若是，**成员 A 的负荷线产物同样要重绑**
+   （它的 `model_metadata.json` 里也是同一套绑定字段），这不该由 B 单方面决定，也不该由 B 代跑。
+   本轮同时把"下次会先红在哪"补成了机制（`RunPointerTest`，第 5.12 节第 6 点），
+   而不是靠人记得。**我没有为了让测试变绿去改测试里的批次号**——那条断言存在的意义就是挡这种事。
 
 ## 8. 已知局限（不许被汇报口径抹掉）
 
@@ -588,8 +704,8 @@ B 的会话在本分支上短暂重写过 `ml/load/`，用来验证共享数据�
 ## 附录 B：最小推理测试的实际输出
 
 ```
-$ python -m data_analysis.ml.availability.predict --self-check --run-dir data_analysis/outputs/ml_avail_run2
-[self-check] analytics_full_180d_v1 batch analytics-5f8e93429948404099b735999bfb6c4e; 12 bundle(s); sample row 3
+$ python -m data_analysis.ml.availability.predict --self-check --run-dir data_analysis/outputs/ml_avail_run6
+[self-check] analytics_full_180d_v1 batch analytics-298aa3ee1401461fb06ea2bb96930dcf; 12 bundle(s); sample row 3
 [SKIPPED] avail-hier-h01-coldDL: holdout trained without DL
 ... （9 个 coldstart bundle 同样 SKIPPED，原因写在行内）
 [PASS] avail-hier-h01 ST-BJ-01@2026-04-28T19:00:00Z values=[3]
@@ -597,6 +713,10 @@ $ python -m data_analysis.ml.availability.predict --self-check --run-dir data_an
 [PASS] avail-hier-h24 ST-BJ-01@2026-04-28T19:00:00Z values=[3, 3, 3, 3, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3]
 [self-check] 3 passed, 0 failed, 9 skipped
 ```
+
+**本轮重绑前后的唯一差别是第一行的 run 目录与批次号**——三行 `PASS` 给出的整数桩序列一字未变
+（旧记录是 `--run-dir .../ml_avail_run2` + `batch analytics-5f8e9342…`，其余行逐字符相同），
+这是"重绑只动绑定、不动预测"最省事的复核口径。
 
 每个 bundle 检查六件事：产物哈希与元数据一致、按当前发布批次可服务、点数 == 跨度、
 时间戳是参考时刻之后的连续整点、值为 `0..capacity` 的整数、`risk()` 的分布概率和为 1 且

@@ -1,7 +1,10 @@
 """Write out a human-readable forecast table: what the shipped model predicts, hour by hour.
 
     python -m data_analysis.ml.availability.forecast_table \
-        --run-dir data_analysis/outputs/ml_avail_run2 --reference-hours 6
+        --run-dir data_analysis/outputs/ml_avail_run6 --reference-hours 6
+
+(``--run-dir`` defaults to :data:`data_analysis.ml.availability.HIERARCHY_RUN`, the run that is
+authoritative for the batch now in the repository.)
 
 This is a delivery/inspection tool, not a serving path.  It drives the *same* entry points the
 backend adapter would call - :class:`AvailabilityForecaster.predict` for the contracted integer
@@ -30,6 +33,7 @@ from pathlib import Path
 import pandas as pd
 
 from data_analysis.contracts.model import PredictionContext
+from data_analysis.ml.availability import HIERARCHY_RUN
 from data_analysis.ml.availability import predict as serving
 from data_analysis.ml.common import artifacts, forecaster
 from data_analysis.ml.common.data_io import DEFAULT_EXPORT
@@ -103,7 +107,8 @@ def _forecast_rows(forecasters: dict[int, serving.AvailabilityForecaster], frame
 
 
 def _markdown(table: pd.DataFrame, arguments) -> str:
-    lines = ["# 空闲桩预测表（出厂模型，默认 `ml_avail_run2` / 0.3.0）", "", SIMULATED, "",
+    lines = [f"# 空闲桩预测表（出厂模型 {'、'.join(table.attrs['models'])}）", "", SIMULATED, "",
+             f"- 来源 run：`{table.attrs['runDir']}`（`--run-dir`），批次 `{table.attrs['batchId']}`",
              f"- 复现命令：`{table.attrs['command']}`",
              f"- 参考时刻 {table['reference_time'].nunique()} 个："
              f"{table['reference_time'].min()} … {table['reference_time'].max()}",
@@ -118,7 +123,7 @@ def _markdown(table: pd.DataFrame, arguments) -> str:
                      f"{block['within_interval'].mean():.1%} |")
     lines += ["", "> **这一行不能当模型准确率**：它只覆盖上面列出的那几个参考时刻（每行 = 一站一小时），"
               "样本量是几十到几千点，而交付口径的 MAE 是全体 TEST 18,000 / 107,250 / 418,200 点，"
-              "看 `ml_avail_eval_run2_v2/evaluation_report.md` 或各 bundle 的 `model_metadata.json`。"
+              "看该 run 的 `evaluation_report.md` 或各 bundle 的 `model_metadata.json`。"
               "本表的作用是**逐行核对预测是否合法、是否离谱**，不是评分。"]
     finest = table[table["horizonHours"] == table["horizonHours"].min()]
     lines += ["", "## 2. 分站点误差（最细跨度 h01）", "",
@@ -157,7 +162,7 @@ def _markdown(table: pd.DataFrame, arguments) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", default=str(DEFAULT_EXPORT))
-    parser.add_argument("--run-dir", default="data_analysis/outputs/ml_avail_run2")
+    parser.add_argument("--run-dir", default=HIERARCHY_RUN)
     parser.add_argument("--output", required=True)
     parser.add_argument("--reference-hours", type=int, default=6,
                         help="how many of the latest TEST reference times to serve")
@@ -191,6 +196,13 @@ def main(argv: list[str] | None = None) -> int:
           f"{len(moments)} reference times")
     table = _forecast_rows(forecasters, frame, stations, moments)
     table.attrs["command"] = artifacts.invocation(__name__, argv)
+    # The header names what actually served this table rather than a run name written into the
+    # source: after a data re-publication the authoritative run directory moves, and a hardcoded
+    # title would silently describe a batch these numbers do not come from.
+    table.attrs["models"] = [f"`{entry.metadata['modelId']}` / {entry.metadata['modelVersion']}"
+                             for _horizon, entry in sorted(forecasters.items())]
+    table.attrs["runDir"] = Path(arguments.run_dir).name
+    table.attrs["batchId"] = frame.export.published_batch_id
     output.mkdir(parents=True, exist_ok=True)
     table.to_csv(output / "forecasts.csv", index=False, encoding="utf-8-sig")
     (output / "forecast_table.md").write_text(_markdown(table, arguments), encoding="utf-8")

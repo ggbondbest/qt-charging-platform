@@ -1,6 +1,6 @@
 """Assemble the availability training frame and write a data profile.
 
-    python -m data_analysis.ml.availability.prepare_data --output data_analysis/outputs/ml_avail_run1
+    python -m data_analysis.ml.availability.prepare_data --output data_analysis/outputs/ml_avail_run5
 
 No Spark, no SQLite: this reads only the two ML tables plus the hourly and snapshot tables the
 same export bundle already ships, and verifies every shard against ``serving_manifest.json``.
