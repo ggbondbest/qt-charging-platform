@@ -1,5 +1,7 @@
 # 数据层交付与接入
 
+第二阶段正式查询库现使用 **MySQL 8.4**，安装、分权账号、环境变量、发布及回退见 [MySQL 接入说明](docs/mysql_setup.md)。第一阶段 Qt 的 SQLite 不改；旧 SQLite 发布器仅用于离线兼容。
+
 按老师清洗流程补充的执行入口、质量审计、11 个分组维度/3 组双维对比和真实 HDFS 验证，见 [数据清洗与准备验收指南](docs/cleaning_acceptance.md)。继续使用现有 FastAPI，不改变下述已交付的查询表和公共契约。历史验证记录不自动代表新增规则已经在全量或 HDFS 上通过。
 
 180 天交付包 `datasets/analytics_full_180d_v1` 已更新到 2026-09-13 验收批次，完整内容见 [包内说明](datasets/analytics_full_180d_v1/README.md)。新增的清洗明细、规则、质量报告和多维分析也随仓库交付，不只保存在本机 outputs。
@@ -7,7 +9,7 @@
 
 ## 已完成和剩余内容
 
-本次已实现：独立脏数据注入、真实 PySpark 清洗、业务统计、历史特征/未来标签导出、可校验的数据包、只读 SQLite 查询库、10 个 HTTP 路由及公共契约。
+本次已实现：独立脏数据注入、真实 PySpark 清洗、业务统计、历史特征/未来标签导出、可校验的数据包、MySQL 查询批次发布、10 个 HTTP 路由及公共契约。
 Vue 页面、模型训练/评价和真实预测仍由后续开发完成。老师的 Linux/HDFS 环境需最终验收；本地运行通过不等于 HDFS 集群已验收。
 
 ```text
@@ -19,7 +21,7 @@ PySpark 清洗 → clean / rejected / quality_report / _SUCCESS
 PySpark 经营统计 + 24h 历史特征与未来标签
   ↓
 Parquet + CSV.gz + serving_manifest + 文件 SHA256
-  ├─ 发布只读 SQLite → Python API → Vue + ECharts
+  ├─ 发布新 MySQL 批次库 → FastAPI（只读账号）→ Vue + ECharts
   └─ 特征 CSV + 独立标签 CSV → 训练/验证/测试 → 模型接入预测 API
 ```
 
@@ -28,24 +30,16 @@ Parquet + CSV.gz + serving_manifest + 文件 SHA256
 
 ## A. 网页组：直接启动已有统计接口
 
-在仓库根目录执行，不需要安装 Spark 或 Hadoop：
+先按 [MySQL 接入说明](docs/mysql_setup.md) 启动 MySQL 8.4、创建导入/查询账号并配置 `ANALYTICS_MYSQL_*` 环境变量。目标数据库尚不存在，由发布器创建。在仓库根目录执行，不需要安装 Spark 或 Hadoop：
 
 ```text
 python -m pip install -r data_analysis/requirements-api.txt
-python -m data_analysis.publishing.publish --input data_analysis/datasets/analytics_full_180d_v1 --output data_analysis/outputs/web_run1/analytics.sqlite3
+python -m data_analysis.publishing.mysql_publish --input data_analysis/datasets/analytics_full_180d_v1 --report data_analysis/outputs/mysql_run1_publish.json
 ```
 
-Windows PowerShell：
+发布成功后，在新终端配置同一数据库和**只读查询账号**，启动 API：
 
-```powershell
-$env:ANALYTICS_DB = (Resolve-Path data_analysis/outputs/web_run1/analytics.sqlite3).Path
-python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
-```
-
-Linux shell：
-
-```sh
-export ANALYTICS_DB="$PWD/data_analysis/outputs/web_run1/analytics.sqlite3"
+```text
 python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -54,8 +48,8 @@ python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 电站坐标/状态用于地图，按城市/日期的概览和排行、小时/日趋势、排队维修等均已由接口计算，不需在 Vue 扫原始 CSV。
 预测页先读取 `/api/v1/models` 显示模型未就绪，等模型组交付后接真实结果。
 
-小样本改用 `analytics_sample_7d_v1`；一个 SQLite 只对应一个批次，不把两者导入同一个库。
-数据库文件禁止原地覆盖，更新数据时发布新文件并重启 API。默认不含账号鉴权，仅用于本机教学展示；不得直接暴露公网。
+小样本改用 `analytics_sample_7d_v1`；一个 MySQL 数据库只对应一个批次，不把两者导入同一个库。
+禁止覆盖已有库，更新数据时发布新库、验证成功再切换 API 配置并重启。默认不含账号鉴权，仅用于本机教学展示；不得直接暴露公网。
 
 ## B. 模型组：直接使用已导出的数据
 
@@ -95,12 +89,17 @@ python -m data_analysis.charging_data.inject_dirty --input data_analysis/dataset
 大原始表缓存使用磁盘，样本和全量都使用本地双核作业即可；没有 GPU 需求。
 
 ```text
-python -m pip install -r data_analysis/requirements-spark.txt
+python -m pip install -r data_analysis/requirements-spark.txt -r data_analysis/requirements-api.txt
 python -m data_analysis.scripts.run_data_layer --input data_analysis/datasets/charging_sample_7d_v2 --output data_analysis/outputs/sample_all_run1 --driver-memory 2g
+```
+
+全量运行前，将导入终端的 `ANALYTICS_MYSQL_DATABASE` 换成另一个已授权、尚未创建的新库，再执行：
+
+```text
 python -m data_analysis.scripts.run_data_layer --input data_analysis/datasets/charging_full_180d_v2 --output data_analysis/outputs/full_all_run1 --driver-memory 4g
 ```
 
-该便捷入口用于本地路径，产出 processed/、export/、analytics.sqlite3 和发布报告；全链路成功才写根 `_SUCCESS`。
+该便捷入口用于本地路径，产出 processed/、export/ 和发布报告，并将查询批次导入已配置的 MySQL 新库；全链路成功才写根 `_SUCCESS`。运行前先配置 MySQL 导入账号及未存在的新库，每次运行使用不同库名。无 MySQL 的离线回归可显式加 `--database-backend sqlite`，才会生成 `analytics.sqlite3`。
 要展示新注入的清洗过程，把 `--input` 换为 `outputs/dirty_demo_run1`，使用新的独立输出目录。
 如果环境中有多个 Python，`PYSPARK_PYTHON` 应指向正在运行的虚拟环境 Python，防止 Spark 子进程选错版本。
 
@@ -109,7 +108,7 @@ python -m data_analysis.scripts.run_data_layer --input data_analysis/datasets/ch
 ```text
 python -m data_analysis.spark_jobs.pipeline --input 原始批次 --output 新的processed目录 --driver-memory 4g
 python -m data_analysis.spark_jobs.export --input 原始批次 --processed 同一批次processed目录 --output 新的export目录
-python -m data_analysis.publishing.publish --input 新的export目录 --output 新的查询库.sqlite3
+python -m data_analysis.publishing.mysql_publish --input 新的export目录 --report 新的发布报告.json
 ```
 
 单独 export 启动 JVM 前也应配置资源，使用 `PYSPARK_SUBMIT_ARGS=--driver-memory 4g pyspark-shell`，或在 `spark-submit` 中传 `--driver-memory 4g`。
@@ -130,7 +129,7 @@ python -m data_analysis.publishing.publish --input 新的export目录 --output �
 5. 同批 raw 可用 `verify_aggregates` 与独立参考统计对账，见 [Spark 说明](spark_jobs/README.md)。
 
 提交代码并不能替代以上真实环境验证；本次验证记录会明确 HDFS 是否已执行。
-HDFS 是存储层，Spark 是计算层，SQLite 是网页查询快照；各层职责不同，不需要再让每次网页点击触发 Spark。
+HDFS 是存储层，Spark 是计算层，MySQL 是网页查询批次；各层职责不同，不需要再让每次网页点击触发 Spark。
 
 ## F. 交付目录和完成标准
 
@@ -140,7 +139,7 @@ HDFS 是存储层，Spark 是计算层，SQLite 是网页查询快照；各层�
 | `datasets/analytics_full_180d_v1` | 是 | 最新统计/特征/标签 CSV.gz，加上 23 表清洗 Parquet、隔离记录、规则与审计、11 维分析及校验清单 |
 | `datasets/analytics_sample_7d_v1` | 是 | 原有独立 7 天统计/特征/标签 CSV.gz，小样本接入用 |
 | `contracts/` | 是 | 公共字段、OpenAPI、TS 类型、JSON Schema、真实接口样例 |
-| `outputs/` | 不提交 | 各轮本地运行产物、SQLite、失败批次、模型产物、运行日志；经验证的交付内容另行打包进入 datasets |
+| `outputs/` | 不提交 | 各轮本地运行产物、MySQL 发布/核对报告、离线 SQLite、失败批次、模型产物、运行日志；经验证的交付内容另行打包进入 datasets |
 | `docs/data_layer_validation.json` | 是 | 历史数据层批次的实际运行记录 |
 | `docs/cleaning_acceptance_validation.json` | 是 | 2026-09-13 新清洗规则与全量/样本验收记录；真实 HDFS 仍未验证 |
 
@@ -150,6 +149,6 @@ HDFS 是存储层，Spark 是计算层，SQLite 是网页查询快照；各层�
 python -m unittest discover -s data_analysis/tests -v
 ```
 
-未安装 API 依赖会明确跳过其测试；真实 Spark 测试还需 `RUN_SPARK_TESTS=1`。CI 分别运行基础、API/发布/契约和 Spark 套件，避免“跳过”当成“验证通过”。
+未安装 API 依赖会明确跳过其测试；真实 Spark 测试还需 `RUN_SPARK_TESTS=1`，真实 MySQL 集成还需 `RUN_MYSQL_TESTS=1` 和独立测试数据库配置。CI 分别运行基础、API/发布/契约、MySQL 和 Spark 套件，避免“跳过”当成“验证通过”。
 9 项检查的具体分工、第一阶段工作流移除及合并规则说明见 [第二阶段 CI](docs/ci_checks.md)。
 网页、模型两组可并行使用同一发布批次；整合时依照 source hash、版本和 ID 核对，不需要再等待字段设计。

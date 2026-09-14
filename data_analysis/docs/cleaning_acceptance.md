@@ -2,6 +2,8 @@
 
 本次按老师提供的《数据清洗基本流程》补齐“探查、评估、规则、执行、校验、报告”，并把分析维度和对比结果单独导出。原始数据不覆盖，原 FastAPI 和查询表契约继续使用。按组长最新确认，忽略截图中的 Flask 要求，不增加第二套 Web 框架。
 
+当前正式查询层已改为 **MySQL 8.4**，配置与发布见 [MySQL 接入说明](mysql_setup.md)。下面的 2026-09-13 实测段落保留为历史 SQLite 批次记录，不改写成 MySQL 验收证明。
+
 ## 验收要求对应什么
 
 | 要求 | 本项目实现或交接边界 |
@@ -11,15 +13,15 @@
 | 分析维度不少于 8 个 | 提供 11 个真实分组维度，见下表；不把电量、订单数、金额三个指标算成三个维度 |
 | 至少两个维度对比 | 提供三组双维分析；统计口径、日期基准、分母和字段单位随产物保存 |
 | Hadoop 3.x 存储 | 支持 HDFS 输入输出，提供真实 HDFS 验证脚本；须在老师环境实跑后才能标记通过 |
-| Web 请求与响应 | 保留 FastAPI；读不可覆盖的 SQLite 发布快照，不在每次网页请求时重跑 Spark |
+| Web 请求与响应 | 保留 FastAPI；使用只读账号读取已完整发布的 MySQL 批次，不在每次网页请求时重跑 Spark |
 | Node.js 23 及以上、Vue 3 | 网页组的开发与验收要求，本次不宣称网页已经实现 |
 | DataV 和丰富图表 | 网页组可用 DataV 做大屏布局，配合 ECharts；现有接口及本次 CSV/清单提供真实计算数据，不硬编码截图数字 |
 
-截图只说明 MySQL 版本不限制，未明确要求必须用 MySQL。本次不擅自迁移已完成的 SQLite 查询层。
+MySQL 只替换网页查询层，不改变 Spark/HDFS 的清洗和存储职责，也不改变原始数据与统计导出契约。
 
 ## 一次运行可以得到什么
 
-在仓库根目录、Python 3.11/3.12 虚拟环境和 Java 17 就绪后运行。以下命令在 PowerShell 和 Linux shell 都可逐条执行；第一次用小样本。
+在仓库根目录、Python 3.11/3.12 虚拟环境和 Java 17 就绪后运行。先按 MySQL 接入说明配置导入账号及一个尚未存在的新数据库；以下命令在 PowerShell 和 Linux shell 都可逐条执行，第一次用小样本。没有 MySQL 的离线兼容演示须显式加 `--database-backend sqlite`。
 
 ```text
 python -m pip install -r data_analysis/requirements-spark.txt -r data_analysis/requirements-api.txt
@@ -41,7 +43,7 @@ python -m data_analysis.scripts.run_acceptance --input data_analysis/datasets/ch
     reports/quality_report/        兼容已有导出流程的质量摘要
   analysis/                       11个分组维度、3组双维对比，CSV/预览/字段说明
   export/                         现有经营统计、ML特征/独立标签、契约与哈希
-  analytics.sqlite3               FastAPI 可查询的只读快照
+  publication_report.json         MySQL 新库的批次与校验结果；数据库由 MySQL 服务保存
   acceptance_report.json          本轮版本、数量、处理状态
   acceptance_report.md            答辩时按顺序展示的简要记录
   _SUCCESS                        所有本地步骤完成后才生成
@@ -49,15 +51,15 @@ python -m data_analysis.scripts.run_acceptance --input data_analysis/datasets/ch
 
 未完成的目录保留 `_RUNNING` 和失败信息，不应作为成功结果展示。重试须用新目录，不手工补 `_SUCCESS`。运行报告明确区分本地成功、HDFS 尚未验证、网页尚未验收和模型尚未训练。
 
-数据准备成功后，还可实际核对 FastAPI 返回与 SQLite 汇总是否一致，保存独立报告：
+数据准备成功后，换为同一数据库的只读查询账号，还可实际核对 FastAPI 返回与 MySQL 汇总是否一致，保存独立报告：
 
 ```text
-python -m data_analysis.scripts.verify_serving --database data_analysis/outputs/acceptance_sample_run1/analytics.sqlite3 --bundle data_analysis/outputs/acceptance_sample_run1/export --output data_analysis/outputs/acceptance_sample_run1/api_verification.json
+python -m data_analysis.scripts.verify_serving --database-backend mysql --bundle data_analysis/outputs/acceptance_sample_run1/export --output data_analysis/outputs/acceptance_sample_run1/api_verification.json
 ```
 
 这是本地接口验证，不是 Vue 页面验收。正常启动 FastAPI 的命令和跨域配置仍按 [后端说明](../backend/README.md) 执行。
 
-## 本次已实际跑通的结果
+## 2026-09-13 已实际跑通的结果（历史 SQLite 批次）
 
 2026-09-13 已用新流程完成 7 天样本（额外脏数据注入）和 180 天全量批次。全量 23 张表共 5,832,840 行，保留 121,539 条充电会话，隔离及去重 1,917 条，会话及全部表的行数守恒检查通过。11 个分析维度、3 组双维结果和查询快照均已生成。
 
@@ -132,7 +134,7 @@ python -m data_analysis.scripts.verify_hdfs --input hdfs://namenode:9000/chargin
 
 验收保存：HDFS 路径及文件列表、Spark 执行日志、清洗报告、分析 CSV、HDFS 验证 JSON。Spark 使用 `local[2]` 同时读写 HDFS 是真实的 HDFS 存储加单机 Spark 计算，不是多节点计算集群。
 
-网页服务仍从本地查询快照读取。把完成的 export 下载到新的本地目录，再发布 SQLite 并启动 FastAPI；浏览器不直接访问 HDFS。
+把完成的 export 下载到新的本地目录，再发布到 MySQL 新库并启动 FastAPI；浏览器通过 API 查询，不直接访问 MySQL 或 HDFS。
 
 HDFS 命令及 URI 规则依据 [Apache Hadoop FileSystem Shell](https://hadoop.apache.org/docs/r3.4.2/hadoop-project-dist/hadoop-common/FileSystemShell.html)；固定的 Spark/Python/Java 兼容说明见 [PySpark 3.5.6 安装文档](https://spark.apache.org/docs/3.5.6/api/python/getting_started/install.html)。
 

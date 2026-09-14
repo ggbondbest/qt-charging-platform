@@ -89,7 +89,7 @@ def user_counts(snapshot, filters):
     return snapshot.one(f"""SELECT COUNT(*) AS active_users,
         COALESCE(SUM(CASE WHEN session_total >= 2 THEN 1 ELSE 0 END), 0) AS repeat_users
         FROM (SELECT user_id, SUM(session_count) AS session_total FROM user_activity_daily
-              WHERE {clause} GROUP BY user_id)""", values)
+              WHERE {clause} GROUP BY user_id) AS user_totals""", values)
 
 
 def overview(snapshot, filters):
@@ -144,7 +144,7 @@ def station_list(snapshot, filters, query):
             SELECT station_id,
                 CASE WHEN SUM(observed_hours) > 0 THEN SUM(energy_wh) ELSE NULL END AS period_energy_wh,
                 SUM(net_paid_cents) AS period_net_paid_cents,
-                1.0*SUM(complete_charging_samples)/NULLIF(SUM(complete_sample_count), 0) AS period_utilization
+                1e0*SUM(complete_charging_samples)/NULLIF(SUM(complete_sample_count), 0) AS period_utilization
             FROM station_metrics_daily WHERE {daily_clause} GROUP BY station_id)
         SELECT s.*, p.period_energy_wh, COALESCE(p.period_net_paid_cents, 0) AS period_net_paid_cents,
                p.period_utilization

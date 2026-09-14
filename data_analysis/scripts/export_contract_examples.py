@@ -6,14 +6,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
-def export_examples(database, output):
+def export_examples(database, output, *, mysql_settings=None):
     from fastapi.testclient import TestClient
     from data_analysis.backend.app import create_app
 
     target = Path(output)
     if target.exists() or target.is_symlink():
         raise FileExistsError("Choose a new examples directory")
-    with TestClient(create_app(str(database))) as client:
+    with TestClient(create_app(None if database is None else str(database), mysql_settings=mysql_settings)) as client:
         response = client.get("/api/v1/datasets")
         response.raise_for_status()
         dataset = response.json()["data"]["items"][0]
@@ -57,10 +57,13 @@ def export_examples(database, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", required=True)
+    parser.add_argument("--database", help="Explicit offline SQLite compatibility path; default is configured MySQL")
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
-    print(json.dumps(export_examples(args.database, args.output), ensure_ascii=False))
+    try:
+        print(json.dumps(export_examples(args.database, args.output), ensure_ascii=False))
+    except Exception as exc:
+        parser.exit(1, "Contract example export failed (" + type(exc).__name__ + "). Check the published batch and configuration.\n")
 
 
 if __name__ == "__main__":

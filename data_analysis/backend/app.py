@@ -1,6 +1,6 @@
 """Run: uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000.
 
-ANALYTICS_DB selects one immutable published SQLite snapshot. Every response
+ANALYTICS_MYSQL_* selects one immutable published MySQL batch. Every response
 identifies that snapshot; unavailable models never fabricate predictions.
 """
 
@@ -32,11 +32,22 @@ def envelope(request, data=None, code="OK", message="成功"):
     return dict(code=code, message=message, data=data, meta=meta)
 
 
-def create_app(database_path=None):
+def create_app(database_path=None, *, mysql_settings=None):
+    if database_path is not None and mysql_settings is not None:
+        raise ValueError("Choose an explicit offline snapshot or MySQL settings")
     application = FastAPI(title="Charging Analytics API", version=SCHEMA_VERSION,
         description="只读访问已发布的统计批次。金额单位分、电量 Wh；日期 Asia/Shanghai，endDate exclusive。预测尚未实现。",
         docs_url="/docs", redoc_url=None)
-    application.state.database_path = database_path if database_path is not None else os.environ.get("ANALYTICS_DB")
+    application.state.database_path = database_path
+    if database_path is None and mysql_settings is None:
+        from data_analysis.mysql_support import MySQLSettings
+        try:
+            mysql_settings = MySQLSettings.from_env()
+        except ValueError:
+            # OpenAPI and app startup need no database; a request receives a
+            # safe DATA_NOT_READY response for missing/invalid configuration.
+            mysql_settings = None
+    application.state.mysql_settings = mysql_settings
     origins = os.environ.get("ANALYTICS_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     application.add_middleware(CORSMiddleware, allow_origins=[value.strip() for value in origins.split(",") if value.strip()],
                                allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type"],
@@ -72,7 +83,7 @@ def create_app(database_path=None):
         return JSONResponse(status_code=exc.status_code, content=envelope(request, code=code, message=message))
 
     def database(request: Request):
-        with open_snapshot(application.state.database_path) as snapshot:
+        with open_snapshot(application.state.database_path, mysql_settings=application.state.mysql_settings) as snapshot:
             request.state.publication = snapshot.metadata
             yield snapshot
 

@@ -53,7 +53,7 @@ def convert_csv_value(value, column):
             raise ValueError("Invalid integer: " + column["name"])
         result = int(value)
         if not -(2**63) <= result < 2**63:
-            raise ValueError("Integer exceeds SQLite range")
+            raise ValueError("Integer exceeds signed 64-bit range")
         return result
     if kind == "number":
         result = float(value)

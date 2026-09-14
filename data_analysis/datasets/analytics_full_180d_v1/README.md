@@ -45,14 +45,14 @@ analytics_full_180d_v1/
 
 ### 网页组
 
-原有 FastAPI 继续使用 `csv/` 的 10 张契约表，不扫描 23 张明细，也不会导入未来 ML 标签。按原方法发布一个新的查询数据库：
+原有 FastAPI 继续使用 `csv/` 的契约表，不扫描 23 张明细。包中共有 10 张交接表，其中 9 张进入 MySQL 查询库，未来 ML 标签表仅交给模型组。先按 [MySQL 接入说明](../../docs/mysql_setup.md) 配置 MySQL 8.4、导入账号及一个尚未存在的新库，再发布：
 
 ```text
 python -m pip install -r data_analysis/requirements-api.txt
-python -m data_analysis.publishing.publish --input data_analysis/datasets/analytics_full_180d_v1 --output data_analysis/outputs/web_latest_run1/analytics.sqlite3
+python -m data_analysis.publishing.mysql_publish --input data_analysis/datasets/analytics_full_180d_v1 --report data_analysis/outputs/mysql_latest_run1_publish.json
 ```
 
-以上命令在仓库根目录执行。将 `ANALYTICS_DB` 指向新文件并重启 FastAPI，完整启动命令见 [数据层交付指南](../../DATA_LAYER.md)。旧 SQLite 不会因 git pull 自动更新；不要覆盖仍在使用的数据库。
+以上命令在仓库根目录执行。发布通过后，用只读账号配置同一 `ANALYTICS_MYSQL_DATABASE` 并启动 FastAPI，完整启动命令见 [数据层交付指南](../../DATA_LAYER.md)。数据库不会因 git pull 自动更新；不要覆盖仍在使用的批次库。旧 SQLite 命令仅保留为显式离线兼容，不是正式默认入口。
 
 新增维度/对比放在 `analysis/csv/`，没有改动原有七类 chart 路由。大屏要使用这些新结果时，按分析清单接入，不能假定旧路由已自动支持所有新维度。
 
@@ -76,7 +76,7 @@ python -m data_analysis.publishing.acceptance_bundle --verify data_analysis/data
 ```
 
 该命令核对批次、文件完整性、清单和报告一致性，不重新计算百万行数据。包内 Parquet 行数来自清洗审计；本次另用 Spark 实际核对了 23 表行数及字段结构，源验收和对账记录见 [验收记录](../../docs/cleaning_acceptance_validation.json)。
-本次复制交付包后的文件核验、新 SQLite 发布和 59 次 FastAPI 请求核对见 [交付包验证记录](../../docs/dataset_delivery_validation.json)。
+2026-09-13 复制交付包后的文件核验、新 SQLite 发布和 59 次 FastAPI 请求核对见 [历史交付包验证记录](../../docs/dataset_delivery_validation.json)；该历史记录不代表 MySQL 已验收，本轮 MySQL 以新的发布与接口核对报告为准。
 
 本包没有包含本机缓存、重复的统计 Parquet 或查询 SQLite。真实 Hadoop/HDFS、Vue 页面和训练后的模型仍需对应成员验收，不以本次打包成功替代。
 旧版数据可从 Git 历史恢复；7 天样本包本次未更新，属于另一批次，不和本包混合统计。

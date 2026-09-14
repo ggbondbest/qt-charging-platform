@@ -77,7 +77,11 @@ The additional cleaning rule catalog, field-level before/after audit, six-dimens
 quality assessment, 11 grouping dimensions and three cross-dimension comparisons
 are described in [the acceptance guide](../docs/cleaning_acceptance.md).
 `python -m data_analysis.scripts.run_acceptance --input <raw> --output <new-local-output>`
-runs the complete preparation sequence. Existing serving schemas remain unchanged.
+runs the complete preparation sequence. It now publishes to MySQL 8.4 by default:
+configure a publishing account and a fresh database before running, as described in
+[the MySQL guide](../docs/mysql_setup.md). Use `--database-backend sqlite` only for
+explicit offline compatibility. The standalone Spark pipeline/export jobs still
+write files/Parquet; existing serving schemas remain unchanged.
 The rule audit does not infer true accuracy from simulated data or delete genuine
 high demand solely because it is statistically unusual.
 
