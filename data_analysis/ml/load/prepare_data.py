@@ -1,7 +1,9 @@
 """join 好的训练帧落盘前跑两道 parity 审计:重建 vs 导出表、导出表 vs 原始小时表,任一最大差值 >1e-9 退出码 1。
 导出特征是后续训练的唯一起点,lag 错位或 rolling 口径不一致会让指标虚高且难事后发现。
-发布顺序(评审 P2#3):summary 无论如何都写(带 auditPassed 标志);审计通过才原子发布 joined_usable.pkl,
-失败只留诊断、绝不让坏数据变成可训练缓存,也不覆盖此前有效的 pkl。下游用 common.require_prepared 把关。
+发布顺序(评审 P2#3 + 复审 P2#A):先把 auditPassed=False 的 summary 原子落盘把门禁关死,
+审计通过才写 joined_usable.pkl(tmp+replace),最后写"通过 + cacheSha256"的 summary 放行。
+失败只留诊断、绝不让坏数据变成可训练缓存;中途任何失败(含 to_pickle/replace 异常)门禁都停在关闭态。
+下游用 common.require_prepared 把关(批次一致 + 缓存内容 hash 对账)。
 
 用法(仓库根目录):
     python -m data_analysis.ml.load.prepare_data
@@ -9,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -61,18 +64,26 @@ def main() -> int:
 
 
 def publish(usable: "pd.DataFrame", summary: dict, out: "common.Path") -> None:
-    """审计通过才发布可用缓存(评审 P2#3);独立成函数供回归测试直接驱动。
-    summary 无条件写(tmp+replace 防半截 JSON),auditPassed=False 会让 require_prepared 拦下游。"""
+    """两段式发布(复审 P2#A):先把门禁关死(auditPassed=False 的 summary 原子落盘),
+    再写缓存 pkl(tmp+replace),最后才写"通过 + 缓存内容 sha256 绑定"的 summary。
+    任何一步失败(含 to_pickle 磁盘异常)门禁都停在关闭态——不存在"summary 已宣称 B 成功、
+    pkl 还是 A 的身体"的窗口;require_prepared 还会用 hash 对账内容。"""
     out.mkdir(parents=True, exist_ok=True)
-    tmp_summary = out / "prepare_summary.json.tmp"
-    with open(tmp_summary, "w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2)
-    os.replace(tmp_summary, out / "prepare_summary.json")
+
+    def _swap(payload: dict) -> None:
+        tmp_summary = out / "prepare_summary.json.tmp"
+        with open(tmp_summary, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp_summary, out / "prepare_summary.json")
+
+    _swap({**summary, "auditPassed": False, "cacheSha256": None, "gate": "publishing"})
     if not summary["auditPassed"]:
         return
     tmp_pkl = out / "joined_usable.pkl.tmp"
     usable.to_pickle(tmp_pkl)
     os.replace(tmp_pkl, out / "joined_usable.pkl")
+    digest = hashlib.sha256((out / "joined_usable.pkl").read_bytes()).hexdigest()
+    _swap({**summary, "auditPassed": True, "cacheSha256": digest, "gate": "published"})
 
 
 if __name__ == "__main__":

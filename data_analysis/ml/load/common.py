@@ -11,6 +11,7 @@ from __future__ import annotations
 import glob
 import hashlib
 import json
+import os
 import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -292,11 +293,16 @@ def last_week_predictions(frame: pd.DataFrame, power_lookup: pd.Series, horizon:
 
 
 def write_new_json(path: Path, payload: dict) -> None:
-    """冻结评分只许创建不许覆盖:TEST 每模型每批次仅批一次(评审 P2#4)。重跑必须先删或改名,故意留门槛。"""
-    if path.exists():
+    """冻结评分只许创建不许覆盖:TEST 每模型每批次仅批一次(评审 P2#4)。重跑必须先删或改名,故意留门槛。
+    用 O_EXCL 独占创建(复审 P2#B):exists()→write 的check-then-act在并发下两个进程都能通过检查,
+    后写的会静默替换第一份冻结评分;O_CREAT|O_EXCL 由文件系统保证恰好一个创建成功、另一个抛 FileExistsError。"""
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
         raise FileExistsError(f"refusing to overwrite frozen artifact: {path}")
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def require_prepared(manifest: dict) -> Path:
@@ -316,4 +322,13 @@ def require_prepared(manifest: dict) -> Path:
     pkl = out / "joined_usable.pkl"
     if not pkl.exists():
         raise RuntimeError("prepare_summary passed but joined_usable.pkl missing")
+    # 复审 P2#A:通过状态与缓存内容绑定。summary 里的 cacheSha256 是 publish 最后一步对
+    # 落盘 pkl 计算的摘要;pkl 被换/被截/来自更早一半成功的发布,这里都对不上而拒读。
+    digest = summary.get("cacheSha256")
+    actual = hashlib.sha256(pkl.read_bytes()).hexdigest()
+    if not digest or actual != digest:
+        raise RuntimeError(
+            f"joined_usable.pkl content != published summary (digest {str(digest)[:12]}... vs {actual[:12]}...);"
+            " stale or tampered cache, run prepare_data again"
+        )
     return pkl

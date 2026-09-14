@@ -375,3 +375,12 @@ ml/README 允许"168 小时基线需从小时表另建"。`lag168_probe.py` 把"
 5. **P2#5 场景桶 off-by-one**:`target_hour_bucket` 用 `reference+horizon` 归桶,契约第 1 个预测点是 `reference` 起的整点区间,h01 的 18,000 行 TEST 有 3,750 行归晚一小时、错进相邻峰谷桶。修复:偏移改 `horizon-1`,`scenario_analysis` 重跑,`analysis/scenario_analysis.json` 为修正版;受影响的峰谷对比结论以重跑后数字为准。
 
 **未变动项(有意为之)**:24 个模型权重逐比特未变(重训 payload 摘要 `b9d22efa…` 与修复前一致,训练帧、配方、种子同旧);全部 TEST 冻结文件未重写;§12.2 的 168h 探路用的是特征列而非基线锚点,不受 P2#2 影响。CI 侧提醒:generator job 目前不装 numpy/pandas,新测试在该 job 自动 skip;若要在 CI 真实执行,需在 workflow 给该 job 加一行 pip install(涉及 workflow 文件改动,须由持有 `workflow` 权限者提交,组长裁决)。
+
+## 14. 复审修复记录(两个 P2,2026-09-14)
+
+复审基于 `b4d8362` 确认第一轮五个 P2 已闭环,另提出两个仍存在的异常处理窗口,均已修复;回归测试扩到 22 例(同一文件,`test_ml_load_review_fixes.py`)。
+
+1. **P2#A 发布中途失败会放行"新批次身份 + 旧批次内容"**:`publish()` 原先先写 `auditPassed=True` 的 summary、再 `to_pickle`+替换 pkl——若到第 2 步抛异常(磁盘满、序列化失败),summary 已宣称 B 批次成功且批次字段等于 manifest,`require_prepared` 三道检查全绿,下游拿到的是 A 批次的 pkl,跨批训练就这么溜过去。修复:两段式发布——先把 `{auditPassed:false, gate:"publishing"}` 的 summary 原子落盘把门禁关死,再 tmp+`os.replace` 发布 pkl,最后才写"通过 + `cacheSha256`(对落盘 pkl 实时计算的 sha256)"的 summary。任何一步失败门禁都停在关闭态;`require_prepared` 增加第四道对账:summary 的 `cacheSha256` 必须与 pkl 实际内容一致,缺失(旧版发布/人为删字段)或被换/被截都拒读。故障注入测试三路:`to_pickle` 抛 OSError、pkl 的 `os.replace` 抛 OSError、发布后再篡改 pkl——每种失败后都断言"以 B 的身份 `require_prepared` 必须 raise,绝不返回 A 的 pickle";另有用例断言正常换批后旧批次身份反而不可读。真实批次重跑 `prepare_data` 一次完成换发(审计结果与 parity 数字逐字段不变,仅新增 gate/cacheSha256 字段)。
+2. **P2#B `write_new_json` 的 check-then-act 竞争**:先 `path.exists()` 再 `open(w)` 的两个进程可以同时通过 exists 检查,后写者静默替换先冻结的评分。修复:`os.open(O_CREAT|O_EXCL)` 独占创建,竞争由文件系统裁决——恰好一个成功,另一个拿 `FileExistsError`;写完前文件根本不存在,也不留半截 JSON。并发测试用 `threading.Barrier` 两线程同路径各写一份评分:断言结果必为一成功一拒绝,且文件内容恒等于胜出者(第一份评分未被替换)。
+
+**模型与冻结工件零影响**:本两条只动发布顺序与写文件原语,不触特征、训练、评分路径;全部 TEST 冻结文件与 24 个模型权重未重写。CI 提醒仍然成立(复审第 3 点):两个 generator job 因裸 python 缺 numpy/pandas 把 22 例全部 skip,本地 22/22 ≠ 远程已执行;让 CI 真实跑这批轻量回归只需在该 job 加一行 `pip install numpy pandas scikit-learn`(不必重训模型),但 workflow 文件改动需 `workflow` 权限——仍为组长裁决项。

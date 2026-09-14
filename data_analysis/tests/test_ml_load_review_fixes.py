@@ -1,7 +1,10 @@
 """PR 评审 5 个 P2 修复的回归测试(test_ml_load_review_fixes)。
 CI 的 generator job 无 pip install,numpy/pandas/sklearn 缺失时整体自跳,不阻塞发现式收集。
 覆盖:P2#1 .000Z 时间戳等价解析;P2#2 周基线 horizon 对齐;P2#3 审计失败不发布可用缓存;
-P2#4 冻结评分拒绝覆盖;P2#5 场景目标小时 off-by-one。全程用合成小数据,不读数据集、不碰模型。
+P2#4 冻结评分拒绝覆盖;P2#5 场景目标小时 off-by-one;
+复审 P2#A 发布故障注入(任何一步失败都不得以 B 身份读 A)+ 通过状态绑定 cacheSha256;
+复审 P2#B write_new_json O_EXCL 独占创建并发竞争(恰好一个成功,第一份不被替换)。
+全程用合成小数据,不读数据集、不碰模型。
 """
 
 import unittest
@@ -190,11 +193,41 @@ class PreparedGate(unittest.TestCase):
                 common.require_prepared(self.manifest)
 
     def test_passing_returns_pickle_path(self):
-        root = self._write_summary('{"auditPassed": true, "publishedBatchId": "analytics-B"}')
+        import hashlib
+
+        digest = hashlib.sha256(b"x").hexdigest()  # 复审 P2#A:通过状态绑定缓存内容摘要
+        root = self._write_summary(
+            '{"auditPassed": true, "publishedBatchId": "analytics-B", "cacheSha256": "%s"}' % digest
+        )
         pkl = root / "outputs" / "ml_load" / "joined_usable.pkl"
         pkl.write_bytes(b"x")
         with mock.patch.object(common, "DATA_ANALYSIS_ROOT", root):
             self.assertEqual(common.require_prepared(self.manifest), pkl)
+
+    def test_summary_without_digest_rejected(self):
+        # 旧版 publish 留下的无摘要 summary(或人为删了字段)一律不放行,必须先重跑 prepare
+        root = self._write_summary('{"auditPassed": true, "publishedBatchId": "analytics-B"}')
+        pkl = root / "outputs" / "ml_load" / "joined_usable.pkl"
+        pkl.write_bytes(b"x")
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", root):
+            with self.assertRaises(RuntimeError):
+                common.require_prepared(self.manifest)
+
+    def test_tampered_pickle_rejected(self):
+        import hashlib
+        import json
+
+        root = self._write_summary('{"auditPassed": true, "publishedBatchId": "analytics-B"}')
+        pkl = root / "outputs" / "ml_load" / "joined_usable.pkl"
+        pkl.write_bytes(b"x")
+        summary_path = root / "outputs" / "ml_load" / "prepare_summary.json"
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        payload["cacheSha256"] = hashlib.sha256(b"x").hexdigest()
+        summary_path.write_text(json.dumps(payload), encoding="utf-8")
+        pkl.write_bytes(b"evil-substitute")  # summary 之后 pkl 被换掉
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", root):
+            with self.assertRaises(RuntimeError):
+                common.require_prepared(self.manifest)
 
 
 @unittest.skipUnless(HAS_DEPS, "numpy/pandas not installed")
@@ -221,6 +254,112 @@ class ScenarioHourBucket(unittest.TestCase):
         )  # 北京 13:00 → daytime;+5h 到 18:00 → evening peak
         self.assertEqual(self.bucket(1, frame["reference_dt"]).iloc[0], "daytime_10_16")
         self.assertEqual(self.bucket(6, frame["reference_dt"]).iloc[0], "evening_peak_17_21")
+
+
+@unittest.skipUnless(HAS_DEPS, "numpy/pandas not installed")
+class PublishFaultInjection(unittest.TestCase):
+    """复审 P2#A:发布过程中任何一步失败(to_pickle 磁盘异常、replace 失败),
+    门禁必须停在关闭态——绝不出现"summary 已宣称 B 批次通过、pkl 还是 A 批次内容",
+    即任何失败后都不能以 B 的身份读取 A 的缓存。"""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.out = self.root / "outputs" / "ml_load"
+        self.frame_a = pd.DataFrame({"a": [1.0, 2.0]})
+        self.frame_b = pd.DataFrame({"a": [9.0, 8.0]})
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _publish(self, frame, batch: str):
+        from data_analysis.ml.load.prepare_data import publish
+
+        publish(frame, {"auditPassed": True, "publishedBatchId": batch}, self.out)
+
+    def test_to_pickle_failure_blocks_new_batch_reading_old_cache(self):
+        self._publish(self.frame_a, "analytics-A")
+        good_bytes = (self.out / "joined_usable.pkl").read_bytes()
+        with mock.patch.object(pd.DataFrame, "to_pickle", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self._publish(self.frame_b, "analytics-B")
+        # A 的缓存内容未被污染
+        self.assertEqual((self.out / "joined_usable.pkl").read_bytes(), good_bytes)
+        manifest_b = {"publishedBatchId": "analytics-B"}
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", self.root):
+            # 以 B 身份:必须拒读,而不是拿 A 的 pkl 放行
+            with self.assertRaises(RuntimeError):
+                common.require_prepared(manifest_b)
+            # 以 A 身份:发布中途把门禁关了,同样拒读,直到重跑成功发布
+            with self.assertRaises(RuntimeError):
+                common.require_prepared({"publishedBatchId": "analytics-A"})
+
+    def test_replace_failure_blocks_gate(self):
+        self._publish(self.frame_a, "analytics-A")
+        import os as _os
+
+        calls = {"n": 0}
+
+        def flaky_replace(src, dst, **kw):
+            calls["n"] += 1
+            # B 批次发布内 os.replace 顺序:①关门禁 summary ②pkl 原子替换 ③放行 summary。
+            # 在第②步注入失败:pkl 保持 A 的内容,门禁停在关闭态。
+            if calls["n"] == 2:
+                raise OSError("rename failed")
+            return _os.replace(src, dst, **kw)
+
+        with mock.patch("data_analysis.ml.load.prepare_data.os.replace", side_effect=flaky_replace):
+            with self.assertRaises(OSError):
+                self._publish(self.frame_b, "analytics-B")
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", self.root):
+            with self.assertRaises(RuntimeError):
+                common.require_prepared({"publishedBatchId": "analytics-B"})
+
+    def test_success_binds_digest_and_swaps_to_new_batch(self):
+        self._publish(self.frame_a, "analytics-A")
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", self.root):
+            path_a = common.require_prepared({"publishedBatchId": "analytics-A"})
+            self.assertEqual(pd.read_pickle(path_a)["a"].tolist(), [1.0, 2.0])
+        self._publish(self.frame_b, "analytics-B")
+        with mock.patch.object(common, "DATA_ANALYSIS_ROOT", self.root):
+            path_b = common.require_prepared({"publishedBatchId": "analytics-B"})
+            self.assertEqual(pd.read_pickle(path_b)["a"].tolist(), [9.0, 8.0])
+            with self.assertRaises(RuntimeError):  # A 已被 B 取代,旧批次不能再读
+                common.require_prepared({"publishedBatchId": "analytics-A"})
+
+
+@unittest.skipUnless(HAS_DEPS, "numpy/pandas not installed")
+class FrozenCreationRace(unittest.TestCase):
+    """复审 P2#B:同一路径并发创建 write_new_json,恰好一个成功、另一个 FileExistsError,
+    且第一份(胜出者)评分不被替换(O_EXCL 由文件系统保证,不是先 check 后 write)。"""
+
+    def test_concurrent_create_exactly_one_winner(self):
+        import json
+        import threading
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "test_frozen_score.json"
+            barrier = threading.Barrier(2)
+            outcomes = {}
+
+            def worker(name: str):
+                barrier.wait()
+                try:
+                    common.write_new_json(path, {"model": name, "f1": 0.5})
+                    outcomes[name] = "ok"
+                except FileExistsError:
+                    outcomes[name] = "exists"
+
+            threads = [threading.Thread(target=worker, args=(n,)) for n in ("w1", "w2")]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            self.assertEqual(sorted(outcomes.values()), ["exists", "ok"])
+            winner = next(name for name, result in outcomes.items() if result == "ok")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["model"], winner)  # 内容 = 胜出者,未被落败者覆盖
 
 
 if __name__ == "__main__":
