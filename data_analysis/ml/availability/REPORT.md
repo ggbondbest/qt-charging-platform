@@ -100,9 +100,10 @@ python -m data_analysis.ml.availability.predict \
   都会带 `reproducibleCommand`（含全部命令行参数）与 `seed`，`evaluate.py` 的报告头同样自带复现命令行
   （`ml_avail_eval_run2_v2` 已是这样产出的）。`-m` 运行的模块名从 run spec 还原，不会写成 `__main__`
   ——这条由 `InvocationRecordTest` 锁住，因为一份写着 `-m __main__` 的报告等于没有复现命令。
-- **已发布的 run1 / run2 不含该字段**（它们先于这次改动）。本轮逐个读过 `ml_avail_run1`、`ml_avail_run2`
-  全部 15 份 `training_report.json` 与两份 run 级文件：`reproducibleCommand` **全部为空**，
-  run2 的 bundle 连 `seed` 也没写（run 级 `hierarchical_report.json` 有 seed）。
+- **已发布的 run1 / run2 不含该字段**（它们先于这次改动）。本轮递归读过 `ml_avail_run1`、`ml_avail_run2`
+  全部 **24 份** `training_report.json`（每个 run 是 3 个主跨度 + 3 座留出城市 × 3 = 12 个 bundle）：
+  `reproducibleCommand` **24/24 为空**；`seed` 只有 run1 的 12 份写了（`20260913`），
+  run2 的 12 份为 `null`（当时 `build_hierarchical` 只在 run 级 `hierarchical_report.json` 记 seed）。
   补齐的代价分两层，别混为一谈（这是上一版本报告写错的地方）：
   * **服务产物（run2 的 12 个 bundle）重跑只要 90 秒**——它们由 `build_hierarchical` 产出，
     当时日志记录的实测耗时是 **88.3 s**。但重跑写进 bundle 的是**构建命令**，
@@ -274,13 +275,15 @@ OK          # 退出码 0
    这 36 个用例是本次全部"机械核查"的落点，建议加一个装科学计算包、跑
    `python -m unittest discover -s data_analysis/ml/tests -t .` 的 job，并新增一份
    `data_analysis/requirements-ml.txt`（**此文件尚不存在**）。CI workflow 与 requirements 都是共享文件，
-   我不改，只提案；建议的最小补丁我可以随 PR 附上。
+   我不改，只提案；依赖清单草案已落在 **我线目录内**：`data_analysis/ml/requirements-draft.txt`
+   （钉住本轮真实环境 numpy 2.4.4 / pandas 2.3.3 / scikit-learn 1.7.2 / joblib 1.5.2，
+   并写明"3.11 能否加载本批 pickle 未实测"这条风险），组长认可后可直接 `mv` 到 `data_analysis/` 下改名采用。
 3. **模型注册入口缺失**：`backend` 目前无 `MODEL_REGISTRY` / `ANALYTICS_MODELS_DIR`，
    `tests/test_analytics_api.py` 断言两个 `/predict/*` 必须 503。我按文档要求交付推理代码
    （`AvailabilityForecaster` + 错误码），接入 `service.py` 的动作留给组长；需要组长确认
    注册目录约定与"加载失败仍回 503"的行为。
 4. **是否重跑一遍模型产物**：评估报告已经自带复现命令（`ml_avail_eval_run2_v2`），但**模型 bundle 的
-   `training_report.json` 仍缺 `reproducibleCommand`**（本轮逐个读过 15 份报告确认，详见 3.1），
+   `training_report.json` 仍缺 `reproducibleCommand`**（本轮递归读过 24 份确认，详见 3.1），
    因为 run1/run2 先于这次改动。分两种花法：
    * 只花 **90 秒**重跑 `build_hierarchical`（新目录、分数应逐位相同）→ bundle 带上**构建命令**，
      但训练命令仍进不了产物；
