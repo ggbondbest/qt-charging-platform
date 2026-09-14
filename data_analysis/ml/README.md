@@ -42,7 +42,7 @@ HTTP 成功结构已定义，实际推理仍待接入；不在数据层填充假
 | 线 | 目录 | 模型 | 状态 |
 | --- | --- | --- | --- |
 | 站点负荷预测 | [load/](load/) | hgb-q50-history24-v1 v0.4（24 步长分模型 + 分位数区间工件） | 已推送待合入；评测见 [load/EVALUATION.md](load/EVALUATION.md) |
-| 充电过程异常筛查 | [anomaly/](anomaly/) | context-baseline-rankfuse-v4 v0.4（语境基线信号 rank 融合；前史 v1 会话均值→v2 点级→v3 融合） | TEST 首盲（v4 独立）：**F1 0.3095 / precision 0.479，THERMAL_STRESS 召回 100%**，为 v1（0.147）的 2.1 倍、随机参照 6.1 倍；v2/v3 负结果如实归档，EARLY_STOP/DERATING 检出留 v5；成绩口径为**每批固定 ~2% 告警预算的离线批筛**（transductive 秩融合，非在线固定阈值，见 README 勘误）；见 [anomaly/README.md](anomaly/README.md) |
+| 充电过程异常筛查 | [anomaly/](anomaly/) | context-weather-fixedthr-v5 v0.5（气象上下文期望表 + TRAIN 定死固定阈值；前史 v1 均值→v2 点级→v3 融合→v4 语境基线） | TEST 首盲（v5 独立）已冻结：**F1 0.3655 / precision 1.0（91 告警 91 中 0 误报），THERMAL_STRESS 召回 100%**，随机参照 30 倍；告警率 TRAIN 1.0%/VAL 0.88%/TEST 0.92% 跨窗稳定（固定阈值部署形态，v3/v4 的 transductive 口径债在 v5 还清，旧冻结不追改）；EARLY_STOP/DERATING 仍未检出（如实归档，欠账留 v6+）；见 [anomaly/README.md](anomaly/README.md) |
 | 用户流失预测 | [churn/](churn/) | gbdt-churn-user-v2 v0.2（14 天窗口二分类） | v2 TEST 首盲已冻结：**AUC 0.7366 / PR-AUC 0.326 / 十分位 lift 2.32**，胜 recency 基线（0.613）；v1 经自查评审实锤两处窗口越界（排队特征泄入标签窗、标签窗超尾误标 106 人），已隔离作废、留档审计；见 [churn/README.md](churn/README.md) |
 
 > 站点推荐线（gbdt-rank-incity-v1）曾按"同城 5 站排序"完整交付并冻结过盲评

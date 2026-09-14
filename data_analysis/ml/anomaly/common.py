@@ -46,6 +46,19 @@ TRAIN_METRICS_PATH_V4 = OUT_DIR / f"train_metrics_{MODEL_ID_V4}.json"
 TEST_METRICS_PATH_V4 = OUT_DIR / f"test_metrics_{MODEL_ID_V4}.json"
 BUNDLE_PATH_V4 = OUT_DIR / f"{MODEL_ID_V4}.joblib"
 
+# v5:气象上下文 + TRAIN 定死阈值。实锤诊断:TRAIN 是 2-4 月(均温 7.4°C),TEST 是 5 月中下旬
+# (23.1°C),v4 的温度超额在 TEST 全体会话虚抬 +2.9°C——热浪冒充过热的 FP 放大器。v5 把气温建进
+# 期望表(温度 charger×电流档×三档气温、压差 charger×三档气温,TRAIN 中位数,空格退低阶表;
+# 点级 g 与二维表两个候选结构被"跨窗虚抬"机制指标淘汰,对照存 context_meta_v5.pkl);评分改为
+# "TRAIN 稳健标准化(med/MAD)+ TRAIN 分位数定阈值"的固定决策函数,sweep 只在 VALIDATION,
+# TEST 上告警率是真实部署结果、如实披露(不再 split 内秩化自稀释)。独立 model_id、独立首盲。
+MODEL_ID_V5 = "context-weather-fixedthr-v5"
+MODEL_VERSION_V5 = "0.5.0"
+WEATHER_CTX_TABLE = OUT_DIR / "context_signals_v5.pkl"
+TRAIN_METRICS_PATH_V5 = OUT_DIR / f"train_metrics_{MODEL_ID_V5}.json"
+TEST_METRICS_PATH_V5 = OUT_DIR / f"test_metrics_{MODEL_ID_V5}.json"
+BUNDLE_PATH_V5 = OUT_DIR / f"{MODEL_ID_V5}.joblib"
+
 TRAIN_END_EXCLUSIVE = pd.Timestamp("2026-05-01")
 VALID_END_EXCLUSIVE = pd.Timestamp("2026-05-15")
 TEST_END_EXCLUSIVE = pd.Timestamp("2026-05-30")
