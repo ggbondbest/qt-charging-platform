@@ -28,13 +28,17 @@ import type {
 import Icon from "./components/Icon.vue";
 import StationMap from "./components/StationMap.vue";
 import Chart from "./components/Chart.vue";
+import AnalyticsDashboard from "./components/AnalyticsDashboard.vue";
+import ForecastPanel from "./components/ForecastPanel.vue";
+import ManagementInsights from "./components/ManagementInsights.vue";
 
-type Tab = "explore" | "trip" | "lab" | "admin";
+type Tab = "dashboard" | "explore" | "trip" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
+  { id: "dashboard", label: "运营总览", icon: "chart" },
   { id: "explore", label: "智能找站", icon: "compass" },
   { id: "trip", label: "我的行程", icon: "trip" },
-  { id: "lab", label: "模型实验室", icon: "chart" },
-  { id: "admin", label: "运营控制台", icon: "sliders" },
+  { id: "lab", label: "智能分析", icon: "lab" },
+  { id: "admin", label: "模拟控制台", icon: "sliders" },
 ];
 const tripSteps: { label: string; statuses: TripStatus[] }[] = [
   { label: "前往电站", statuses: ["EN_ROUTE"] },
@@ -42,7 +46,7 @@ const tripSteps: { label: string; statuses: TripStatus[] }[] = [
   { label: "充电中", statuses: ["CHARGING"] },
   { label: "支付完成", statuses: ["PENDING_PAYMENT", "COMPLETED"] },
 ];
-const tab = ref<Tab>("explore");
+const tab = ref<Tab>("dashboard");
 const boot = ref<Bootstrap>();
 const stations = ref<Station[]>([]);
 const cityId = ref("");
@@ -63,10 +67,6 @@ const errorMessage = ref("");
 const toast = ref("");
 const models = ref<JsonObject>();
 const experiments = ref<JsonObject>();
-const load = ref<JsonObject>();
-const loadMessage = ref("");
-const loadStationId = ref("");
-const loadLoading = ref(false);
 const clockTime = ref("");
 const clock = ref<Clock>();
 const latestRefresh = ref("");
@@ -303,7 +303,7 @@ async function refreshStations() {
   }
 }
 async function refreshVisible() {
-  if (document.hidden || polling || busyAction.value || initialLoading.value)
+  if (tab.value === "dashboard" || document.hidden || polling || busyAction.value || initialLoading.value)
     return;
   polling = true;
   const results = await Promise.allSettled([
@@ -349,7 +349,6 @@ async function initialize() {
           longitude: selectedCity.value.longitude,
         }
       : undefined;
-    loadStationId.value ||= data.stations[0]?.stationId || "";
     adminStationId.value ||= data.stations[0]?.stationId || "";
     latestRefresh.value = clockTime.value;
     const results = await Promise.allSettled([
@@ -535,56 +534,6 @@ async function showRoute() {
     routeLoading.value = false;
   }
 }
-async function loadForecast() {
-  if (!loadStationId.value || loadLoading.value) return;
-  loadLoading.value = true;
-  loadMessage.value = "";
-  load.value = undefined;
-  try {
-    load.value = receive(
-      await request<JsonObject>(
-        `/load?stationId=${encodeURIComponent(loadStationId.value)}&horizonHours=6`,
-      ),
-    );
-  } catch (error) {
-    loadMessage.value = errorText(error);
-  } finally {
-    loadLoading.value = false;
-  }
-}
-const loadOption = computed(() => ({
-  color: ["#237d67"],
-  grid: { left: 55, right: 25, top: 35, bottom: 35 },
-  tooltip: {
-    trigger: "axis",
-    valueFormatter: (v: number) => `${number(v, 2)} kW`,
-  },
-  xAxis: {
-    type: "category",
-    data: (load.value?.points || []).map((p: JsonObject) =>
-      localTime(p.timestamp),
-    ),
-    axisLine: { lineStyle: { color: "#dce4de" } },
-    axisLabel: { color: "#7e8b82" },
-    axisTick: { show: false },
-  },
-  yAxis: {
-    type: "value",
-    name: "kW",
-    splitLine: { lineStyle: { color: "#edf1eb" } },
-    axisLabel: { color: "#7e8b82" },
-  },
-  series: [
-    {
-      type: "line",
-      data: (load.value?.points || []).map((p: JsonObject) => p.value),
-      smooth: false,
-      symbolSize: 7,
-      lineStyle: { width: 3 },
-      areaStyle: { color: "#237d6716" },
-    },
-  ],
-}));
 const experimentOption = computed(() => ({
   color: ["#ccd6cd", "#21745f"],
   legend: {
@@ -757,13 +706,13 @@ onBeforeUnmount(() => {
     <header class="topbar">
       <button
         class="brand"
-        @click="tab = 'explore'"
-        aria-label="ChargePilot 首页"
+        @click="tab = 'dashboard'"
+        aria-label="充能智析首页"
       >
         <span class="brand-mark"><Icon name="bolt" :size="25" /></span
         ><span
-          >Charge<span class="brand-light">Pilot</span
-          ><small>让充电顺路发生</small></span
+          >充能<span class="brand-light">智析</span
+          ><small>CHARGE INSIGHT · 运营与决策</small></span
         >
       </button>
       <nav class="main-nav" aria-label="主导航">
@@ -786,7 +735,7 @@ onBeforeUnmount(() => {
     </header>
 
     <main>
-      <div v-if="errorMessage" class="error-banner" role="alert">
+      <div v-if="errorMessage && tab !== 'dashboard'" class="error-banner" role="alert">
         <Icon name="info" :size="18" /><span>{{ errorMessage }}</span
         ><button v-if="!boot" class="text-button" @click="initialize">
           重新连接</button
@@ -795,6 +744,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <AnalyticsDashboard v-if="tab === 'dashboard'" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">
@@ -1156,6 +1106,9 @@ onBeforeUnmount(() => {
                     ><span
                       >当前资源占用率
                       <b>{{ percent(candidate.loadRatio) }}</b></span
+                    ><span v-if="candidate.loadForecast"
+                      >到站所在小时负荷
+                      <b>{{ number(candidate.loadForecast.meanPowerKw, 1) }} kW</b></span
                     ><span
                       >预计总用时
                       <b>{{ number(candidate.totalMinutes) }} 分钟</b></span
@@ -1185,6 +1138,13 @@ onBeforeUnmount(() => {
                   <p>
                     预计 {{ localTime(candidate.arrivalTime) }} 抵达 ·
                     {{ candidate.resolutionMinutes }} 分钟预测分辨率
+                  </p>
+                  <p v-if="candidate.loadForecast">
+                    均衡项同时参考资源占用和小时预测负荷：
+                    {{ localTime(candidate.loadForecast.timestamp) }} 起的小时均值
+                    {{ number(candidate.loadForecast.meanPowerKw, 1) }} kW /
+                    额定 {{ number(candidate.loadForecast.ratedCapacityKw, 1) }} kW。
+                    小时功率不替代分钟级空桩预测。
                   </p>
                   <p>
                     {{
@@ -1638,14 +1598,17 @@ onBeforeUnmount(() => {
         <section class="page-heading">
           <div>
             <div class="eyebrow">PREDICTIONS WITH EVIDENCE</div>
-            <h1>每一个推荐，都有依据</h1>
-            <p>查看实际模型状态、预测结果与同一场景下的策略对比。</p>
+            <h1>从看见趋势，到做出判断</h1>
+            <p>负荷与空闲预测、服务风险筛查、到站决策，在同一个入口使用。</p>
           </div>
           <span class="simulation-chip"
             ><Icon name="lab" :size="16" />模拟数据实验</span
           >
         </section>
-        <div class="lab-grid">
+        <ForecastPanel />
+        <ManagementInsights />
+        <details class="model-evidence" open><summary><h2>智能找站 · 模型依据与策略验证</h2><span class="tiny-tag">展开 / 收起</span></summary>
+        <div class="lab-grid single-evidence">
           <section class="card model-card">
             <div class="section-top">
               <span class="model-icon"><Icon name="compass" :size="25" /></span
@@ -1734,55 +1697,6 @@ onBeforeUnmount(() => {
               </summary>
               <pre>{{ pretty(models.arrival) }}</pre>
             </details>
-          </section>
-          <section class="card model-card load-card">
-            <div class="section-top">
-              <span class="model-icon mint"
-                ><Icon name="bolt" :size="25" /></span
-              ><span
-                class="status-tag"
-                :class="{ ready: models?.load?.status === 'READY' }"
-                >{{
-                  models?.load?.status === "READY"
-                    ? "PR66 模型已加载"
-                    : "模型产物未加载"
-                }}</span
-              >
-            </div>
-            <div class="eyebrow">STATION LOAD FORECAST</div>
-            <h2>未来 6 小时，负荷怎么走</h2>
-            <p>复用 PR66 负荷模型与历史特征契约，不填充随机预测值。</p>
-            <div class="inline-form">
-              <select v-model="loadStationId" aria-label="负荷预测电站">
-                <option
-                  v-for="station in stations"
-                  :key="station.stationId"
-                  :value="station.stationId"
-                >
-                  {{ station.stationName }}
-                </option></select
-              ><button
-                class="button secondary"
-                :disabled="loadLoading || !loadStationId"
-                @click="loadForecast"
-              >
-                {{ loadLoading ? "预测中…" : "查看预测" }}
-              </button>
-            </div>
-            <Chart
-              v-if="load?.points?.length"
-              :option="loadOption"
-              label="真实负荷模型未来六小时预测曲线，单位千瓦"
-            />
-            <div v-else class="chart-empty">
-              <Icon name="chart" :size="28" />
-              <p>{{ loadMessage || "选择电站，查看已发布模型的实际预测。" }}</p>
-              <span>模型未就绪时保持空白，不生成替代曲线。</span>
-            </div>
-            <p v-if="load" class="tiny-note">
-              {{ load.modelId }} · {{ load.modelVersion }} · 单位
-              {{ load.unit }} · 模拟预测
-            </p>
           </section>
         </div>
         <section class="card experiment-card">
@@ -1979,8 +1893,8 @@ onBeforeUnmount(() => {
             )
           }}</pre>
         </details>
+        </details>
       </template>
-
       <template v-if="tab === 'admin'">
         <section class="page-heading">
           <div>
@@ -2336,8 +2250,8 @@ onBeforeUnmount(() => {
     <footer class="footer">
       <div>
         <span class="footer-brand"
-          ><Icon name="bolt" :size="16" />ChargePilot</span
-        ><span>让每一次充电，都更有把握。</span>
+          ><Icon name="bolt" :size="16" />充能智析</span
+        ><span>从运营数据，到智能决策。</span>
       </div>
       <div>
         <span>模拟运营数据</span><i></i><span>Asia/Shanghai</span><i></i

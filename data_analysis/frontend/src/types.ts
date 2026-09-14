@@ -53,6 +53,9 @@ export interface Candidate extends Station {
   forecastTime: string;
   resolutionMinutes: number;
   loadRatio: number;
+  loadForecast?: { modelId: string; referenceTime: string; timestamp: string; meanPowerKw: number; ratedCapacityKw: number; targetSemantics: string };
+  balancePressure?: number;
+  balancePolicy?: string;
   rewardPoints: number;
   scoreBreakdown: Record<string, number>;
   reasons: string[];

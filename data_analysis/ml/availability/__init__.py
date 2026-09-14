@@ -1,33 +1,12 @@
-"""Availability forecasting: future free-charger count per station hour.
+"""Future hourly free-charger counts; current reproducible delivery output locations.
 
-``BASE_RUN`` / ``HIERARCHY_RUN`` name the run directories that are authoritative **for the batch
-currently in the repository**.  They live here, once, instead of being copy-pasted into argument
-defaults, module docstrings and test paths, because a re-publication of the data layer mints a new
-``publishedBatchId`` and every bundle trained against the old one is then refused by
-``predict.AvailabilityForecaster`` (``BATCH_MISMATCH``) -- a stale name buried in a default would
-quietly describe numbers that were never produced.
-
-History of that pointer, kept in one place:
-
-===========================================  ==========================================
-directory                                    what it is
-===========================================  ==========================================
-``ml_avail_run1`` / ``ml_avail_run2``        bound to ``analytics-5f8e9342…`` (superseded
-                                             by the refresh on develop, PR #64; still on
-                                             disk, and the resume tests use them precisely
-                                             because ``run2`` is the only published run
-                                             whose bundles record no ``seed``, and neither
-                                             legacy run records ``payloadEntry``)
-``ml_avail_run3_r5`` / ``run4_r5_resume``    5x boosting-budget experiments (``-r5``), never
-                                             published; also on the superseded batch
-``ml_avail_run5`` / ``ml_avail_run6``        **current**: same recipe, same seed, same rows,
-                                             re-bound to ``analytics-298aa3ee…``; every
-                                             published metric stayed bit-identical (measured in
-                                             ``REPORT.md`` section 5.12)
-===========================================  ==========================================
+These artifacts are generated locally, not copied from a contributor's ignored run
+directories. See DELIVERY.md for the two training commands and serving semantics.
+Old run1..run6 names belong only to the historical experiments in REPORT.md.
+A different dataset publication still requires retraining, never metadata relabelling.
 """
 
-#: ordered-classification estimators + cold-city holdouts, the input the shipped wrapper reuses
-BASE_RUN = "data_analysis/outputs/ml_avail_run5"
+#: the three complete 1/6/24-hour base estimators, without redundant cold-city research runs
+BASE_RUN = "data_analysis/outputs/ml_availability_delivery_base"
 #: the serving artefacts: base estimators plus the per-layer prior and the chosen point rule
-HIERARCHY_RUN = "data_analysis/outputs/ml_avail_run6"
+HIERARCHY_RUN = "data_analysis/outputs/ml_availability_delivery"

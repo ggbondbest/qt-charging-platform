@@ -113,7 +113,7 @@ function fit() {
           (s) => [s.latitude, s.longitude] as [number, number],
         ),
       ),
-      { padding: [80, 80], maxZoom: 13 },
+      { padding: [80, 80], maxZoom: 13, animate: false },
     );
   else map.setView([center.value.latitude, center.value.longitude], 11);
 }
@@ -132,6 +132,9 @@ onMounted(() => {
   map = L.map(mapElement.value, {
     zoomControl: false,
     attributionControl: true,
+    zoomAnimation: false,
+    fadeAnimation: false,
+    markerZoomAnimation: false,
   }).setView([center.value.latitude, center.value.longitude], 11);
   const tile = L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -190,7 +193,9 @@ watch(
 onBeforeUnmount(() => {
   window.clearTimeout(tileTimer);
   observer?.disconnect();
+  map?.stop();
   map?.remove();
+  map = undefined;
 });
 </script>
 <template>

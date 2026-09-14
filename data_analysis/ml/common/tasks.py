@@ -47,9 +47,9 @@ AVAILABILITY = Task(
     risk_label="depletion",
     risk_definition="P(zero free chargers at the last sample of the predicted hour, hh:55)",
     notes=(
-        "Free charger count is ordinal over {0..capacity}; the point prediction is the modelled "
-        "expectation (a decimal is allowed but must be labelled 预计空闲桩数), and the risk head "
-        "reports P(0 free) instead of pretending a fractional stock is real."
+        "Free charger count is ordinal over {0..capacity}; the point prediction is an integer "
+        "median/mode. Distribution expectation is a separate estimated value, not inventory; "
+        "the risk head reports P(0 free)."
     ),
 )
 

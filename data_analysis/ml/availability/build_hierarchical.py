@@ -153,6 +153,7 @@ def _reuse(target: Path, *, base_bundle: Path, source: Path, frame, seed: int) -
         raise SystemExit(f"[resume] {target} cannot be reused: {artifact.name} does not match the hash "
                          f"recorded in {artifacts.METADATA_NAME}")
     base, base_metadata = artifacts.load_bundle(base_bundle)
+    forecaster.validate_bundle_frame(base, base_metadata, frame)
     relative = base_bundle.relative_to(source).as_posix()
     _, version, rounds = _naming(base)
     expected = {
@@ -271,6 +272,7 @@ def _entry_from_report(report: dict, *, relative: str) -> dict:
 
 def _build(frame, data: pd.DataFrame, directory: Path, source: Path, target: Path, relative: str) -> dict:
     bundle, metadata = artifacts.load_bundle(directory)
+    forecaster.validate_bundle_frame(bundle, metadata, frame)
     base_model = bundle["model"]
     horizon = int(bundle["horizonHours"])
     holdout = bundle["excludeCity"]

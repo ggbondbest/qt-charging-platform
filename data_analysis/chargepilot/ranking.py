@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import math
+import threading
 import uuid
 
 DEFAULT_WEIGHTS = {"availability": .30, "wait": .25, "travel": .20,
@@ -65,7 +66,7 @@ def score_candidates(candidates, config=None):
                       "travel": 1-clip(c["etaMinutes"]/60),
                       "price": 1-clip(c["pricePerKwh"]/3),
                       "power": clip(c["powerKw"]/120),
-                      "balance": 1-clip(c["loadRatio"])}
+                      "balance": 1-clip(c.get("balancePressure", c["loadRatio"]))}
         c["scoreBreakdown"] = {key: round(dimensions[key]*weights[key]*100, 3) for key in weights}
         c["score"] = round(sum(c["scoreBreakdown"].values()), 2)
         c["totalMinutes"] = round(c["etaMinutes"]+c["waitMinutes"]+c.get("chargingMinutes", 0), 2)
@@ -77,6 +78,8 @@ def score_candidates(candidates, config=None):
                          f"行驶约{c['etaMinutes']:.1f}分钟，{c['pricePerKwh']:.2f}元/度"]
         if c.get("operationalAdjustment", {}).get("countShift"):
             c["reasons"].append("已考虑当前演示订单和排队承诺；该修正为保守规则")
+        if c.get("loadForecast"):
+            c["reasons"].append(f"到站所在小时预计平均负荷{c['loadForecast']['meanPowerKw']:.1f}kW，已用于均衡评分（非即时功率）")
         output.append(c)
     output.sort(key=lambda c: (-c["score"], c["etaMinutes"], c["stationId"]))
     for rank, candidate in enumerate(output, 1):
@@ -87,8 +90,65 @@ def score_candidates(candidates, config=None):
 
 
 class RecommendationService:
-    def __init__(self, predictor, store, routing):
+    def __init__(self, predictor, store, routing, load_adapter=None):
         self.predictor, self.store, self.routing = predictor, store, routing
+        self.load_adapter = load_adapter
+        self._load_cache = {}
+        self._load_lock = threading.RLock()
+
+    def load_context(self, station, reference, arrival_time, occupied_ratio):
+        """PR66 forecasts only help the 5% balancing dimension, not availability.
+
+        Features end strictly before the current complete-hour boundary. The
+        forecast for the arrival's hour remains an hourly mean, not arrival kW.
+        No failed/missing model is replaced by a fabricated prediction.
+        """
+        if self.load_adapter is None or self.load_adapter.report["status"] != "READY":
+            return {}
+        ref = datetime.fromisoformat(reference.replace("Z", "+00:00")).replace(minute=0, second=0, microsecond=0)
+        hour = ref.isoformat().replace("+00:00", "Z")
+        key = (station["stationId"], hour)
+        from .store import DomainError
+        try:
+            rated = float(station["ratedCapacityKw"])
+            if not math.isfinite(rated) or rated <= 0:
+                return {}
+            with self._load_lock:
+                if key not in self._load_cache:
+                    result = self.load_adapter.predict(station["stationId"], hour, 6)
+                    from data_analysis.contracts import CONTRACT_VERSION, FEATURE_VERSION
+                    metadata = self.load_adapter.report.get("metadata", {})
+                    if (result.get("unit") != "kW" or result.get("schemaVersion") != CONTRACT_VERSION or
+                            result.get("featureVersion") != FEATURE_VERSION or
+                            result.get("modelId") != self.load_adapter.report.get("modelId") or
+                            result.get("modelVersion") != metadata.get("modelVersion") or
+                            result.get("referenceTime") != hour or len(result.get("points", [])) != 6):
+                        return {}
+                    for step, point in enumerate(result["points"]):
+                        expected = (ref + timedelta(hours=step)).isoformat().replace("+00:00", "Z")
+                        value = point.get("value")
+                        if (point.get("timestamp") != expected or type(value) not in (int, float) or
+                                not math.isfinite(value) or not 0 <= value <= rated):
+                            return {}
+                    self._load_cache[key] = result
+                    if len(self._load_cache) > 150:
+                        self._load_cache.pop(next(iter(self._load_cache)))
+                result = self._load_cache[key]
+            arrival = datetime.fromisoformat(arrival_time.replace("Z", "+00:00"))
+            index = int((arrival - ref).total_seconds() // 3600)
+            if not 0 <= index < len(result["points"]):
+                return {}
+            point = result["points"][index]
+            power = float(point["value"])
+            if not math.isfinite(power) or rated <= 0 or not 0 <= power <= rated:
+                return {}
+            return {"loadForecast": {"modelId": result["modelId"], "referenceTime": hour,
+                    "timestamp": point["timestamp"], "meanPowerKw": power, "ratedCapacityKw": rated,
+                    "targetSemantics": "MEAN_POWER_DURING_HOUR"},
+                    "balancePressure": .5 * clip(occupied_ratio) + .5 * clip(power / rated),
+                    "balancePolicy": "HALF_CURRENT_OCCUPANCY_HALF_FORECAST_POWER"}
+        except (DomainError, ValueError, KeyError, RuntimeError):
+            return {}
 
     def recommend(self, user_id, city_id, origin, energy_kwh, max_eta):
         from .store import DomainError
@@ -115,8 +175,9 @@ class RecommendationService:
             except ValueError as exc:
                 raise DomainError("MODEL_WINDOW_UNAVAILABLE", "回放时间超出模型历史范围，请启动新的演示数据库", 409) from exc
             adjusted = adjusted_prediction(prediction, station)
+            load = self.load_context(station, reference, adjusted["arrivalTime"], adjusted["loadRatio"])
             quoted_price = self.predictor.price(station["stationId"], adjusted["arrivalTime"])
-            candidates.append({**station, **route, **adjusted, "pricePerKwh": quoted_price,
+            candidates.append({**station, **route, **adjusted, **load, "pricePerKwh": quoted_price,
                 "pricePolicy": "ARRIVAL_TARIFF_FIXED_QUOTE",
                 "chargingMinutes": round(energy_kwh/max(.1, station["powerKw"])*60, 2)})
         candidates = score_candidates(candidates, config)
@@ -131,6 +192,10 @@ class RecommendationService:
             "当前演示订单修正属于保守规则，原模型测试指标不等于干预后的准确率。"])
         nearest = min(candidates, key=lambda c: (c["distanceKm"], c["stationId"]))
         best = candidates[0]
+        if any(not c.get("loadForecast") for c in candidates):
+            warnings.append("部分小时负荷模型不可用，均衡项只使用当前占用率；未伪造负荷预测。")
+        else:
+            warnings.append("复用小时负荷预测辅助5%的均衡评分；到站空桩和等待仍由分钟模型独立预测。")
         created = datetime.fromisoformat(reference.replace("Z", "+00:00"))
         payload = {"recommendationId": uuid.uuid4().hex, "createdAt": reference,
             "expiresAt": (created+timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),

@@ -137,9 +137,9 @@ jobs:
         run: python -m unittest ${{ matrix.module }} -v
 
   chargepilot:
-    name: ChargePilot / ML and MySQL
+    name: Integrated delivery / ML and MySQL
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       mysql:
         image: mysql:8.4
@@ -165,10 +165,11 @@ jobs:
           cache-dependency-path: |
             data_analysis/requirements-api.txt
             data_analysis/requirements-chargepilot.txt
-      - run: python -m pip install -r data_analysis/requirements-chargepilot.txt
-      - name: Train real CPU models from committed CLEAN dataset, including reused PR66
-        run: python -m data_analysis.chargepilot.cli train
-      - name: No-leak ML, route/scoring, real HTTP and concurrent MySQL state machine
+            data_analysis/requirements-delivery.txt
+      - run: python -m pip install -r data_analysis/requirements-delivery.txt
+      - name: Train all real CPU models from committed CLEAN data, not optional skipped model tests
+        run: python -m data_analysis.delivery.cli train
+      - name: Integrated analytics, forecast, insights, real HTTP and concurrent MySQL state machine
         env:
           RUN_MYSQL_TESTS: '1'
           MYSQL_TEST_HOST: '127.0.0.1'
@@ -181,12 +182,18 @@ jobs:
           data_analysis.tests.test_chargepilot_store
           data_analysis.tests.test_chargepilot_integration
           data_analysis.tests.test_chargepilot_experiment
-          data_analysis.tests.test_ml_load_review_fixes -v
+          data_analysis.tests.test_ml_load_review_fixes
+          data_analysis.tests.test_availability_adapter
+          data_analysis.tests.test_ml_anomaly_churn
+          data_analysis.tests.test_ml_insights_delivery
+          data_analysis.tests.test_delivery_forecasts
+          data_analysis.tests.test_delivery_integration
+          data_analysis.ml.tests.test_delivery_safety -v
       - name: Calculate bounded paired simulation (no hard-coded improvement)
         run: python -m data_analysis.chargepilot.cli experiment --users 100 --seed 42
 
   chargepilot-web:
-    name: ChargePilot / Vue
+    name: Integrated delivery / Vue
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     defaults:

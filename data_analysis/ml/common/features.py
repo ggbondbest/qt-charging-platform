@@ -69,7 +69,9 @@ def valid_hour_mask(hourly: pd.DataFrame) -> pd.Series:
         hourly["is_complete"].astype("boolean").fillna(False).astype(bool)
         & power.notna() & np.isfinite(power) & (power >= 0)
         & capacity.notna() & (capacity > 0)
-        & available.notna() & (available >= 0) & (available <= capacity)
+        & np.isfinite(capacity) & (capacity % 1 == 0)
+        & available.notna() & np.isfinite(available) & (available >= 0) & (available <= capacity)
+        & (available % 1 == 0)
     )
 
 

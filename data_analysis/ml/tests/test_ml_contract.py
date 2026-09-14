@@ -34,7 +34,7 @@ EXPORT_DIR = DATA_ANALYSIS / "datasets" / "analytics_full_180d_v1"
 #: re-publication mints a new ``publishedBatchId`` and ``predict`` then refuses the old bundles, so
 #: these names move with the batch; ``RunPointerTest`` below fails if they drift apart from the
 #: ``BASE_RUN`` / ``HIERARCHY_RUN`` constants the modules themselves use as defaults.
-RUN_NAMES = ("ml_avail_run5", "ml_avail_run6")
+RUN_NAMES = ("ml_availability_delivery_base", "ml_availability_delivery")
 #: Every published run is checked the same way, but a run missing from this machine is silently
 #: omitted from the bundle iteration (``_bundle_directories``) rather than failing - which is only
 #: safe because ``RunPointerTest`` below stops a half-present pair from passing for a complete one.

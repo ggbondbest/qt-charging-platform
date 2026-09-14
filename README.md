@@ -19,12 +19,14 @@ SQLite
 首阶段暂不开发 Web 大数据大屏和机器学习子系统。必须先完成用户端、管理端、数据库与
 “预约 → 充电 → 计费 → 结算”闭环。
 
-## 第二阶段：数据分析基础
+## 第二阶段：运营分析与智能找桩
 
 第二阶段在独立的 [data_analysis](data_analysis/README.md) 中开发：已提供五城市、180 天、
 23 类关联数据：有来源依据的模拟充电、带署名的气象背景、Python 生成校验与 PySpark 清洗统计；不改动一期 Qt 业务。
-数据清洗、经营统计、查询 API、ML 特征/标签和公共契约已实现；Vue 大屏与真实模型继续开发。
-当前自动 CI 已切换为第二阶段的 9 项检查，说明见 [第二阶段 CI](data_analysis/docs/ci_checks.md)。
+现已整合 Vue 运营大屏、小时负荷/空闲桩预测、到站推荐、异常/流失分析，以及独立 MySQL 行程闭环。
+**运行完整第二阶段项目请先看 [统一交付指南](data_analysis/delivery/README.md)**，统一入口为 `python -m data_analysis.delivery.cli serve`。
+全部运营数据和资金均为模拟；模型实际训练，不代表真实充电设备验证。
+自动 CI 保留第二阶段原 9 项检查，并增加完整模型/MySQL 和 Vue 测试，说明见 [第二阶段 CI](data_analysis/docs/ci_checks.md)。
 第一阶段 Ubuntu/Qt 自动工作流已移除，Qt 6.2.4 兼容要求、测试代码和下面的手工验收命令仍保留。
 一期历史文档中“必须通过 Qt CI”的描述是原阶段流程，不再代表当前 PR 的自动合并检查。
 

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,29 +96,62 @@ class Export:
         spec = self.manifest["tables"].get(name)
         if spec is None:
             raise ExportError(f"table {name!r} is not part of {self.published_batch_id}")
-        stamp = f"{self.published_batch_id}_{name}_{spec['rows']}_{_short(self.manifest_sha256)}"
+        # Verify the actual source even when a local cache exists. A manifest-named cache
+        # alone does not prove that its source shards still match that manifest.
+        self._verified_paths(spec)
+        stamp = hashlib.sha256(f"{self.root}:{name}:{self.manifest_sha256}".encode()).hexdigest()
         cache = CACHE_ROOT / f"{stamp}.parquet"
-        if use_cache and cache.exists():
-            frame = pd.read_parquet(cache)
-        else:
+        sidecar = cache.with_suffix(".json")
+        trusted_cache = False
+        if use_cache and cache.exists() and sidecar.exists():
+            try:
+                identity = json.loads(sidecar.read_text(encoding="utf-8"))
+                trusted_cache = identity == {"manifestSha256": self.manifest_sha256,
+                                             "cacheSha256": _sha256(cache)}
+            except (OSError, ValueError):
+                trusted_cache = False
+        if trusted_cache:
+            try:
+                frame = pd.read_parquet(cache)
+            except Exception:
+                trusted_cache = False  # damaged cache is rebuildable, not an alternate data source
+        if not trusted_cache:
             frame = self._read_shards(name, spec)
-            CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-            frame.to_parquet(cache)
+            if use_cache:
+                CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=CACHE_ROOT, suffix=".parquet", delete=False) as temporary:
+                    temporary_path = Path(temporary.name)
+                try:
+                    frame.to_parquet(temporary_path)
+                    identity = {"manifestSha256": self.manifest_sha256, "cacheSha256": _sha256(temporary_path)}
+                    os.replace(temporary_path, cache)
+                    sidecar.write_text(json.dumps(identity), encoding="utf-8")
+                finally:
+                    temporary_path.unlink(missing_ok=True)
         if len(frame) != spec["rows"]:
             raise ExportError(f"{name}: manifest declares {spec['rows']} rows, read {len(frame)}")
+        expected_columns = [column["name"] for column in spec["columns"]]
+        if list(frame.columns) != expected_columns:
+            raise ExportError(f"{name}: columns differ from the manifest")
         return frame
 
-    def _read_shards(self, name: str, spec: dict) -> pd.DataFrame:
-        frames = []
+    def _verified_paths(self, spec: dict) -> list[Path]:
+        paths = []
         for entry in spec["files"]:
-            path = self.root / entry["path"]
+            path = (self.root / entry["path"]).resolve()
+            if not path.is_relative_to(self.root.resolve()):
+                raise ExportError("shard path escapes the export directory")
             if not path.exists():
                 raise ExportError(f"missing shard {entry['path']}")
             if path.stat().st_size != entry["bytes"]:
                 raise ExportError(f"{entry['path']}: size does not match the manifest")
             if _sha256(path) != entry["sha256"]:
                 raise ExportError(f"{entry['path']}: sha256 does not match the manifest")
-            frames.append(pd.read_csv(path))
+            paths.append(path)
+        return paths
+
+    def _read_shards(self, name: str, spec: dict) -> pd.DataFrame:
+        frames = [pd.read_csv(path) for path in self._verified_paths(spec)]
         if not frames:
             raise ExportError(f"{name}: manifest lists no shards")
         frame = pd.concat(frames, ignore_index=True)
@@ -161,6 +196,8 @@ def open_export(export_dir: Path | str = DEFAULT_EXPORT) -> Export:
     if manifest["mlSplits"].get("usable") is not True:
         raise ExportError(f"{root}: mlSplits.usable is false, this batch cannot train a model")
     source_root = DATA_ANALYSIS / "datasets" / manifest["datasetId"]
+    if source_root.resolve().parent != (DATA_ANALYSIS / "datasets").resolve():
+        raise ExportError("datasetId must name a local dataset directory")
     source_manifest = source_root / "manifest.json"
     if not source_manifest.exists():
         raise ExportError(f"raw manifest {source_manifest} is missing; batches cannot be traced")

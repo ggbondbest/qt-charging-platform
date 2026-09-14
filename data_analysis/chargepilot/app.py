@@ -113,7 +113,7 @@ def create_app(settings=None, *, predictor=None, store=None, routing=None, load_
         except (OSError, ValueError, KeyError, TypeError):
             # A corrupt/absent optional load bundle must not lock users out of trips.
             load_adapter = LoadAdapter.unavailable("负荷模型校验失败，请重新准备受信任工件；其他功能可继续使用")
-    service = RecommendationService(predictor, store, routing)
+    service = RecommendationService(predictor, store, routing, load_adapter)
     limiter = WindowLimiter()
     experiment_state = {"running": False, "error": None}
     experiment_lock = threading.Lock()
@@ -143,6 +143,7 @@ def create_app(settings=None, *, predictor=None, store=None, routing=None, load_
         routing.close()
 
     app = FastAPI(title="ChargePilot 智能找桩实验室", version="1.0.0", lifespan=lifespan,
+                  docs_url="/api/v1/chargepilot/docs", openapi_url="/api/v1/chargepilot/openapi.json", redoc_url=None,
                   description="独立MySQL、历史模拟回放、CPU机器学习；支付与积分均为演示，不发生真实资金交易。")
     app.state.store, app.state.predictor = store, predictor
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.allowed_origins),

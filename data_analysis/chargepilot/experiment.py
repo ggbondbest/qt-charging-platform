@@ -194,6 +194,7 @@ def run_experiment(predictor, users=1000, seed=42, output=None, config=None):
     nearest, ai = results
     report = {"status": "READY", "users": users, "seed": seed, "dataSource": "SIMULATED",
         "policyConfig": config, "simulatorVersion": "capacity-insertion-v2-causal-lease",
+        "policyScope": "ARRIVAL_MODEL_AND_INCENTIVE_BASELINE_WITHOUT_HOURLY_LOAD_ENRICHMENT",
         "utilizationDefinition": "resource unavailability including reservation/maintenance/offline, not charging-only utilization",
         "requestHash": request_hash, "generatedAt": stamp(datetime.now(timezone.utc)),
         "modelId": predictor.metadata.get("modelId"), "modelArtifactSha256": predictor.metadata.get("artifacts", {}).get("arrival.joblib", {}).get("sha256"),
@@ -201,6 +202,7 @@ def run_experiment(predictor, users=1000, seed=42, output=None, config=None):
         "changes": {"waitReductionPercent": round((nearest["meanWaitMinutes"]-ai["meanWaitMinutes"])/max(.001,nearest["meanWaitMinutes"])*100, 2),
                     "totalTimeReductionPercent": round((nearest["meanTotalMinutes"]-ai["meanTotalMinutes"])/max(.001,nearest["meanTotalMinutes"])*100, 2)},
         "notes": ["固定随机种子、相同请求、相同背景负荷，策略分别运行。",
+                  "此固定基线实验不含统一交付新增的小时负荷均衡项，不用于声称完整在线策略收益。",
                   "TEST期间2026-05-06，1000为默认人数；起点、5–15kWh需求和80%积分接受率是预设情景，不是真实用户实验。",
                   "未来状态仅供仿真环境检查连续容量；推荐输入使用出发前数据及固定承诺租约，不读取未来实际成功/失败。",
                   "承诺租约在选择时固定为ETA+120分钟+目标充电时长，即使提前完成也不缩短；属于保守对照情景。",
