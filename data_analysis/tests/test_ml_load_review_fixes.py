@@ -8,6 +8,7 @@ P2#4 冻结评分拒绝覆盖;P2#5 场景目标小时 off-by-one;
 """
 
 import unittest
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -297,6 +298,7 @@ class PublishFaultInjection(unittest.TestCase):
     def test_replace_failure_blocks_gate(self):
         self._publish(self.frame_a, "analytics-A")
         import os as _os
+        real_replace = _os.replace
 
         calls = {"n": 0}
 
@@ -306,11 +308,14 @@ class PublishFaultInjection(unittest.TestCase):
             # 在第②步注入失败:pkl 保持 A 的内容,门禁停在关闭态。
             if calls["n"] == 2:
                 raise OSError("rename failed")
-            return _os.replace(src, dst, **kw)
+            return real_replace(src, dst, **kw)
 
         with mock.patch("data_analysis.ml.load.prepare_data.os.replace", side_effect=flaky_replace):
             with self.assertRaises(OSError):
                 self._publish(self.frame_b, "analytics-B")
+        self.assertEqual(calls["n"], 2)
+        summary = json.loads((self.out / "prepare_summary.json").read_text())
+        self.assertFalse(summary["auditPassed"])
         with mock.patch.object(common, "DATA_ANALYSIS_ROOT", self.root):
             with self.assertRaises(RuntimeError):
                 common.require_prepared({"publishedBatchId": "analytics-B"})

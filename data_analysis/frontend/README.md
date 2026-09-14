@@ -1,38 +1,28 @@
-# 充能智析可视化大屏
+# ChargePilot Vue 网页
 
-基于 Vue 3、Vite 和 ECharts 的第二阶段 Web 可视化端，包含：
+Vue 3 + TypeScript + Vite + ECharts + Leaflet，需要 Node.js ≥ 23。
 
-- 智慧运营大屏：核心指标、小时负荷、城市贡献、净收款、站点排行和设备状态。
-- 运营与数据质量：Spark 清洗质量、隔离原因和数据处理链路。
-- AI 模型预测：按公共契约预留负荷和空闲桩数预测入口；模型未交付时明确显示未就绪。
-
-页面会优先请求同源 `/api/v1`。FastAPI 未启动时进入“演示数据模式”，用于独立开发 UI；所有演示数据均明确标注为模拟数据。
-
-## 在 VS Code 中启动
-
-打开本目录，在终端执行：
-
-```powershell
-npm.cmd install
-npm.cmd run dev
+```bash
+cd data_analysis/frontend
+npm ci
+npm run dev
 ```
 
-浏览器访问 `http://localhost:5173`。PowerShell 若拦截 `npm.ps1`，始终使用 `npm.cmd`。
+打开 `http://127.0.0.1:5173`。Vite 将 `/api` 请求代理到 `http://127.0.0.1:8000`；先按 `../chargepilot/` 说明启动真实 Python/MySQL 业务服务。
 
-## 连接 FastAPI
-
-另开终端，从仓库根目录启动后端：
-
-```powershell
-python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
+```bash
+npm run build
+npm test
 ```
 
-Vite 已将 `/api` 代理到 `http://127.0.0.1:8000`。MySQL 凭据只配置在后端，不写进本目录。
+页面包括智能找站与地图、推荐解释、充电行程/排队/支付/积分、真实模型评价与负荷预测、配对实验、管理员模拟时钟/资源占用/激励配置。
 
-## 构建
+普通用户首次推荐时建立演示会话，token 存入本机 localStorage。管理员令牌由操作者输入，只存当前页面内存；没有预置密钥。服务器维护身份、推荐资格、充电计量、费用和奖励，网页不会自行生成成功订单或积分。
 
-```powershell
-npm.cmd run build
-```
+全站明确标记历史模拟回放，时间按 Asia/Shanghai 展示。前台每 2 秒读取站点和当前行程；隐藏页面暂停，卸载时清理定时器。有效推荐到期后在找站页自动重新计算，过期推荐不能被选择。后台配对实验返回 RUNNING 时继续等待实际报告。
 
-构建产物在 `dist/`，该目录不应提交到 Git。
+地图使用 OpenStreetMap 标准瓦片并保留署名。瓦片尚未加载或不可达时，立即显示可交互的经纬位置示意；虚线只是直线距离，不冒充道路。行程路线通过服务器接口获取，腾讯服务降级时明确标注直线示意。字体使用设备本地可用字体，离线时不会阻止页面渲染。
+
+模型指标只显示后端返回的实际结果；TEST 与验证集记录分别保留。条件等待只对成功的非预约样本评估，零等待基线与模型 MAE 同时展示。实验表中的资源占用率包括保留/离线/维护等不可用资源，不等同于实际充电利用率。
+
+HTTP 契约见 `../chargepilot/CONTRACT.md`。此网页只使用独立 ChargePilot 路由，不修改原分析 API 或 Qt TCP 契约。
