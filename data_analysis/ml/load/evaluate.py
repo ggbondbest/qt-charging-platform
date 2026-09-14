@@ -119,10 +119,14 @@ def main() -> int:
         }
     report["perCityContractHorizons"] = per_city
 
-    # one output file per graded model so the v0.2 first-blind artifact stays
-    # frozen on disk next to any later confirmatory (non-blind) gradings
+    # one output file per graded model AND training batch, so every frozen
+    # grading (first-blind, confirmatory, post-data-refresh rebaselines)
+    # stays on disk side by side without overwrites
     report["modelId"] = str(bundle["model_id"])
-    metrics_path = OUT_DIR / f"test_metrics_{bundle['model_id']}.json"
+    batch = str(bundle["metadata"].get("trainingPublishedBatchId", "unknownbatch"))
+    report["trainingPublishedBatchId"] = batch
+    suffix = batch.removeprefix("analytics-")[:8]
+    metrics_path = OUT_DIR / f"test_metrics_{bundle['model_id']}_{suffix}.json"
     with open(metrics_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
 
