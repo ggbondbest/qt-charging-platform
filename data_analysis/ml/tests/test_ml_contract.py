@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import shutil
 import sys
 import tempfile
 import types
@@ -46,6 +47,13 @@ def _depends_available() -> bool:
 requires_stack = unittest.skipUnless(_depends_available(), "pandas/numpy/scikit-learn/joblib not installed")
 requires_run = unittest.skipUnless(any(directory.exists() for directory in RUN_DIRS),
                                    "no trained run under data_analysis/outputs; run ml.availability.train")
+#: the resume tests need one bundle of each generation: a base estimator and the wrapped version of it
+requires_both_runs = unittest.skipUnless(all(
+    (DATA_ANALYSIS / "outputs" / run / "h01" / "model_metadata.json").exists() for run in
+    ("ml_avail_run1", "ml_avail_run2")), "needs both ml_avail_run1 and ml_avail_run2 on disk")
+#: the end-to-end tests below train, which needs the exported batch itself, not just a published run
+requires_export = unittest.skipUnless((EXPORT_DIR / "serving_manifest.json").exists(),
+                                      f"no exported batch at {EXPORT_DIR}")
 
 if _depends_available():
     import numpy as np
@@ -53,6 +61,7 @@ if _depends_available():
 
     from data_analysis.contracts.model import PredictionContext, validate_prediction
     from data_analysis.ml.availability import build_hierarchical, evaluate, predict, train
+    from data_analysis.ml.availability import model as model_module
     from data_analysis.ml.availability.model import blend, point_value
     from data_analysis.ml.availability.prior import (
         GLOBAL_LEVEL,
@@ -658,12 +667,416 @@ class RunDirectoryGuardTest(unittest.TestCase):
             build_hierarchical.main(["--source-run", str(published), "--output", str(published)])
         self.assertIn("already has content", str(stopped.exception))
 
+    def test_a_finished_run_cannot_be_resumed_into(self):
+        """``--resume`` relaxes the bundle check, never the summary: quoted numbers stay closed."""
+        with self.assertRaises(SystemExit) as stopped:
+            train.main(["--output", str(self._published()), "--resume"])
+        self.assertIn("already holds", str(stopped.exception))
+
     def test_a_profile_written_first_does_not_make_a_run_directory_look_published(self):
         """``prepare_data`` is documented to write into the run directory before training does."""
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             (directory / "data_profile.json").write_text("{}", encoding="utf-8")
             self.assertEqual(artifacts.bundle_directories(directory), [])
+
+
+@requires_stack
+class BoostingBudgetTest(unittest.TestCase):
+    """``--rounds-multiplier`` is the boosted-tree version of "train longer", and it is opt-in.
+
+    Gradient boosting has no epochs: one round is one tree, and early stopping ends the fit early.
+    A run therefore has to be able to say what budget it was fitted with, and the published recipe
+    has to stay reachable without editing a constant.
+    """
+
+    def test_the_published_recipe_is_pinned_in_the_code(self):
+        self.assertEqual(model_module.BASE_PARAMS, {
+            "max_iter": 250, "learning_rate": 0.06, "max_leaf_nodes": 31, "min_samples_leaf": 40,
+            "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 15})
+
+    def test_multiplier_one_is_the_published_recipe_unchanged(self):
+        self.assertEqual(model_module.scaled_rounds(1.0), model_module.BASE_PARAMS)
+
+    def test_a_stretched_budget_scales_patience_as_well_as_rounds(self):
+        """Stopping after 15 fruitless rounds makes a 1250-round budget unreachable, so patience moves too."""
+        stretched = model_module.scaled_rounds(5.0)
+        self.assertEqual(stretched["max_iter"], 1250)
+        self.assertEqual(stretched["n_iter_no_change"], 75)
+        self.assertEqual(stretched["learning_rate"], model_module.BASE_PARAMS["learning_rate"],
+                         "the learning rate is not part of 'train longer' and must not drift")
+
+    def test_a_shrunken_budget_rounds_to_whole_trees(self):
+        budget = model_module.scaled_rounds(0.4)
+        self.assertEqual(budget["max_iter"], 100)
+        self.assertEqual(budget["n_iter_no_change"], 6)
+
+    def test_a_negative_or_zero_multiplier_is_refused(self):
+        for multiplier in (0.0, -1.0):
+            with self.assertRaises(ValueError):
+                model_module.scaled_rounds(multiplier)
+
+    def test_a_stretched_bundle_is_named_apart_from_the_published_one(self):
+        self.assertEqual(train._variant(1.0), "")
+        self.assertEqual(train._variant(5.0), "-r5")
+
+    def test_a_wrapped_bundle_inherits_its_base_rounds_tag(self):
+        """A 0.3.0 wrapper around a 5x-budget estimator is not the published hierarchical model."""
+        plain = build_hierarchical._naming({"horizonHours": 1, "excludeCity": None})
+        self.assertEqual(plain, ("avail-hier-h01", "0.3.0", 1.0))
+        stretched = build_hierarchical._naming({"horizonHours": 6, "excludeCity": "DL", "roundsMultiplier": 5.0})
+        self.assertEqual(stretched, ("avail-hier-h06-r5-coldDL", "0.3.0-r5", 5.0))
+
+
+@requires_stack
+class ResumeGuardTest(unittest.TestCase):
+    """Reusing a checkpoint is allowed by ``--resume``, but only the checkpoint this command made.
+
+    Everything here is synthetic: the saved bundle and the expected recipe are built from the same
+    placeholder batch, so each case changes exactly one field and asserts what the guard says about
+    it.  The values themselves are not the point and are not read off disk.
+    """
+
+    RECIPE = {
+        "modelVersion": "0.2.0",
+        "featureVersion": "history24-v1",
+        "datasetId": "dataset-under-test",
+        "trainingPublishedBatchId": "batch-under-test",
+        "sourceManifestSha256": "a" * 64,
+        "seed": 20260913,
+        "horizonHours": 1,
+        "holdoutCity": None,
+        "roundsMultiplier": 1.0,
+        "steps": ["1"],
+        "featureColumns": ["lag_available_h01", "hour_of_day"],
+    }
+
+    def _frame(self):
+        export = types.SimpleNamespace(
+            feature_version=self.RECIPE["featureVersion"], dataset_id=self.RECIPE["datasetId"],
+            published_batch_id=self.RECIPE["trainingPublishedBatchId"],
+            source_manifest_sha256=self.RECIPE["sourceManifestSha256"])
+        return types.SimpleNamespace(export=export, feature_columns=list(self.RECIPE["featureColumns"]))
+
+    def _bundle(self, directory: Path, **overrides) -> dict:
+        """Write a complete bundle whose sidecars record ``overrides`` as how it was made."""
+        recipe = dict(self.RECIPE)
+        recipe.update(overrides)
+        metadata = artifacts.build_metadata(
+            model_id="avail-ord-h01", model_version=recipe["modelVersion"], target="availability",
+            feature_version=recipe["featureVersion"], dataset_id=recipe["datasetId"],
+            source_manifest_sha256=recipe["sourceManifestSha256"],
+            training_published_batch_id=recipe["trainingPublishedBatchId"],
+            splits={"trainEnd": "2026-04-01", "validationEnd": "2026-04-20", "end": "2026-05-27"},
+            feature_columns=recipe["featureColumns"], artifact_file=artifacts.ARTIFACT_NAME,
+            artifact_sha256="0" * 64, supported_horizons=[recipe["horizonHours"]],
+            metrics={"mae": 0.5, "rmse": 0.8, "testSamples": 100, "unit": "chargers"})
+        report = {
+            "modelId": "avail-ord-h01", "horizonHours": recipe["horizonHours"],
+            "holdoutCity": recipe["holdoutCity"], "seed": recipe["seed"],
+            "roundsMultiplier": recipe["roundsMultiplier"],
+            "perStep": {step: {"boostingRounds": 114} for step in recipe["steps"]},
+            "pooledTest": {"mae": 0.5, "points": 100}, "preparedAt": artifacts.stamp(),
+        }
+        artifacts.save_bundle(directory, {"model": "not a fitted estimator"}, metadata, report)
+        return recipe
+
+    def _reuse(self, directory: Path, **command):
+        return train._reuse(directory, self._frame(), horizon=command.pop("horizon", 1),
+                            seed=command.pop("seed", self.RECIPE["seed"]),
+                            exclude_city=command.pop("exclude_city", None),
+                            available_steps=command.pop("steps", [1]),
+                            rounds_multiplier=command.pop("rounds_multiplier", 1.0))
+
+    def test_a_bundle_from_the_same_recipe_is_reused_untouched(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory)
+            digest = artifacts.sha256_file(directory / artifacts.ARTIFACT_NAME)
+            entry = self._reuse(directory)
+            self.assertTrue(entry["reused"])
+            self.assertEqual(entry["pooled"]["mae"], 0.5)
+            self.assertEqual(entry["modelId"], "avail-ord-h01")
+            self.assertEqual(set(entry["boostingRounds"]), {"min", "max", "budget"},
+                             "a reused checkpoint is reported in the same shape as a freshly fitted one")
+            self.assertEqual(artifacts.sha256_file(directory / artifacts.ARTIFACT_NAME), digest,
+                             "reusing a checkpoint must not rewrite it")
+
+    def test_nothing_saved_is_not_a_refusal(self):
+        """An empty slot is the normal case for a resumed run: it is what still has to be trained."""
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertIsNone(self._reuse(Path(temporary) / "h06"))
+
+    def test_a_different_seed_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory, seed=99)
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            self.assertIn("seed", str(stopped.exception))
+
+    def test_a_different_batch_or_manifest_is_refused(self):
+        for key, value in (("datasetId", "another-dataset"),
+                           ("trainingPublishedBatchId", "another-batch"),
+                           ("sourceManifestSha256", "b" * 64)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary) / "h01"
+                self._bundle(directory, **{key: value})
+                with self.assertRaises(SystemExit) as stopped:
+                    self._reuse(directory)
+                self.assertIn(key, str(stopped.exception))
+
+    def test_a_stretched_round_budget_cannot_be_reused_by_the_published_recipe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory, roundsMultiplier=5.0, modelVersion="0.2.0-r5")
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            message = str(stopped.exception)
+            self.assertIn("roundsMultiplier", message)
+            self.assertIn("modelVersion", message)
+            # ...and the other way round: the -r5 command must not claim the plain bundle either.
+            self._bundle(directory)
+            with self.assertRaises(SystemExit):
+                self._reuse(directory, rounds_multiplier=5.0)
+
+    def test_a_bundle_from_another_horizon_or_holdout_city_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory, horizonHours=6)
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            self.assertIn("horizonHours", str(stopped.exception))
+            self._bundle(directory, holdoutCity="DL")
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            self.assertIn("holdoutCity", str(stopped.exception))
+
+    def test_a_bundle_fitted_for_fewer_steps_is_refused(self):
+        """A ``--limit-steps`` smoke bundle only holds some of the hours a horizon has to serve."""
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h24"
+            self._bundle(directory, steps=["1", "2"])
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory, horizon=24, steps=list(range(1, 25)))
+            self.assertIn("steps", str(stopped.exception))
+
+    def test_a_half_saved_bundle_is_reported_as_unusable_rather_than_refitted(self):
+        """Metadata without its report is an interrupted write; the recipe cannot be checked at all."""
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory)
+            (directory / artifacts.REPORT_NAME).unlink()
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            self.assertIn("interrupted save", str(stopped.exception))
+
+    def test_a_corrupted_artefact_is_refused_before_it_is_loaded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "h01"
+            self._bundle(directory)
+            artifact = directory / artifacts.ARTIFACT_NAME
+            artifact.write_bytes(artifact.read_bytes() + b"tampered")
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(directory)
+            self.assertIn("does not match the hash", str(stopped.exception))
+
+    def test_a_directory_that_does_not_exist_yet_holds_nothing_published(self):
+        """``--output`` names a directory training is about to create, so the scan must not raise."""
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(train.published_content(Path(temporary) / "ml_avail_run_new"), [])
+
+    def test_only_bundles_and_a_summary_count_as_published_content(self):
+        """``prepare_data`` writes its profile into the run directory first; that is not evidence."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "data_profile.json").write_text("{}", encoding="utf-8")
+            self._bundle(root / "h01")
+            self.assertEqual(train.published_content(root), ["h01"])
+            (root / "train_summary.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(train.published_content(root), ["train_summary.json", "h01"])
+
+
+@requires_stack
+@requires_both_runs
+class HierarchicalResumeTest(unittest.TestCase):
+    """``build_hierarchical --resume`` keeps a wrapped bundle only if it names this base and batch.
+
+    The fixtures are the published artefacts themselves - ``ml_avail_run1`` as the base estimators and
+    ``ml_avail_run2`` as the wrapped output - copied into a temporary directory and edited there, so
+    what the guard reads is the real report shape a resumed run has to face, not an approximation.
+    """
+
+    BASE = DATA_ANALYSIS / "outputs" / "ml_avail_run1"
+    WRAPPED = DATA_ANALYSIS / "outputs" / "ml_avail_run2"
+
+    def _copy(self, root: Path, **report_edits) -> Path:
+        target = root / "h01"
+        target.mkdir(parents=True, exist_ok=True)
+        for name in (artifacts.ARTIFACT_NAME, artifacts.METADATA_NAME, artifacts.REPORT_NAME):
+            shutil.copyfile(self.WRAPPED / "h01" / name, target / name)
+        if report_edits:
+            report = json.loads((target / artifacts.REPORT_NAME).read_text(encoding="utf-8"))
+            report.update(report_edits)
+            (target / artifacts.REPORT_NAME).write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        return target
+
+    def _frame(self, **override):
+        metadata = json.loads((self.WRAPPED / "h01" / artifacts.METADATA_NAME).read_text(encoding="utf-8"))
+        export = types.SimpleNamespace(
+            feature_version=override.get("featureVersion", metadata["featureVersion"]),
+            dataset_id=override.get("datasetId", metadata["datasetId"]),
+            published_batch_id=override.get("trainingPublishedBatchId", metadata["trainingPublishedBatchId"]),
+            source_manifest_sha256=override.get("sourceManifestSha256", metadata["sourceManifestSha256"]))
+        return types.SimpleNamespace(export=export)
+
+    def _reuse(self, target: Path, frame=None, *, seed=20260913):
+        return build_hierarchical._reuse(target, base_bundle=self.BASE / "h01", source=self.BASE,
+                                         frame=frame or self._frame(), seed=seed)
+
+    def test_a_bundle_that_records_no_seed_is_not_claimed(self):
+        """``ml_avail_run2`` predates seed recording, so nothing may be resumed on top of it."""
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertIsNone(json.loads((self.WRAPPED / "h01" / artifacts.REPORT_NAME)
+                                         .read_text(encoding="utf-8")).get("seed"))
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(self._copy(Path(temporary)))
+            self.assertIn("seed", str(stopped.exception))
+
+    def test_the_same_bundle_with_a_recorded_seed_is_reused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            entry = self._reuse(self._copy(Path(temporary), seed=20260913))
+            self.assertTrue(entry["reused"])
+            self.assertEqual(entry["directory"], "h01")
+            self.assertEqual(entry["test"]["mae"], 0.4816)
+            self.assertEqual(entry["testModelAlone"]["mae"], 0.5274)
+            self.assertEqual(entry["pointRule"], "median")
+            self.assertEqual(list(entry["pseudoCount"]), ["1"])
+
+    def test_a_bundle_wrapped_from_another_base_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = self._copy(Path(temporary), seed=20260913, reusedEstimatorFrom="ml_avail_run9/h06")
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(target)
+            self.assertIn("reusedEstimatorFrom", str(stopped.exception))
+
+    def test_a_row_the_run_wrote_down_is_read_back_instead_of_rebuilt(self):
+        """``payloadEntry`` is the row the finished run published, so it wins over any recomputation."""
+        published = self._published_entry()
+        stored = dict(published, pointRule="a-rule-no-rebuild-would-choose")
+        with tempfile.TemporaryDirectory() as temporary:
+            entry = self._reuse(self._copy(Path(temporary), seed=20260913, payloadEntry=stored))
+        self.assertEqual({key: value for key, value in entry.items() if key != "reused"}, stored)
+        self.assertEqual(entry["pointRule"], "a-rule-no-rebuild-would-choose",
+                         "the row was not read back, it was recomputed from the metrics")
+
+    def test_a_row_rebuilt_from_an_older_bundle_matches_the_published_one(self):
+        """The published 0.3.0 run recorded no ``payloadEntry``, and rebuilding it must still be exact.
+
+        Every column - including the two derived percentages, which are the ones a four-decimal MAE
+        cannot reproduce - has to come back as the run wrote it, or ``--resume`` on that run would
+        print different numbers than the report everyone quoted.
+        """
+        published = self._published_entry()
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertNotIn("payloadEntry", json.loads((self.WRAPPED / "h01" / artifacts.REPORT_NAME)
+                                                        .read_text(encoding="utf-8")))
+            entry = self._reuse(self._copy(Path(temporary), seed=20260913))
+        self.assertEqual({key: value for key, value in entry.items() if key != "reused"}, published)
+
+    def _published_entry(self) -> dict:
+        payload = json.loads((self.WRAPPED / "hierarchical_report.json").read_text(encoding="utf-8"))
+        return {key: value for key, value in payload["bundles"]["h01"].items() if key != "reused"}
+
+    def test_a_bundle_bound_to_another_batch_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = self._copy(Path(temporary), seed=20260913)
+            with self.assertRaises(SystemExit) as stopped:
+                self._reuse(target, self._frame(datasetId="another-dataset"))
+            self.assertIn("datasetId", str(stopped.exception))
+
+    def test_a_resumed_run_renders_the_published_report_unchanged(self):
+        """A resumed run has to produce the same ``hierarchical_report.md``, or the resume lied."""
+        published_markdown = (self.WRAPPED / "hierarchical_report.md").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temporary:
+            entry = self._reuse(self._copy(Path(temporary), seed=20260913))
+        payload = json.loads((self.WRAPPED / "hierarchical_report.json").read_text(encoding="utf-8"))
+        payload["bundles"]["h01"] = entry
+        self.assertEqual(build_hierarchical._markdown(payload), published_markdown)
+
+    def test_a_partial_run_says_so_instead_of_printing_nan(self):
+        """An in-domain-only run has no cold-start evidence to average, and must not write ``nan``."""
+        payload = json.loads((self.WRAPPED / "hierarchical_report.json").read_text(encoding="utf-8"))
+        payload["bundles"] = {name: entry for name, entry in payload["bundles"].items()
+                              if not entry["holdoutCity"]}
+        markdown = build_hierarchical._markdown(payload)
+        self.assertIn("冷启动包（0 个）", markdown)
+        self.assertNotIn("nan", markdown)
+
+
+def _without_wall_clock(path: Path) -> str:
+    """A rendered report with the line stating how long its run took removed.
+
+    Two runs of the same command differ there and nowhere else, so that line is the one thing a
+    resumed run is allowed to print differently.
+    """
+    return "\n".join(line for line in path.read_text(encoding="utf-8").splitlines()
+                     if "耗时" not in line)
+
+
+@requires_stack
+@requires_export
+class ResumeEndToEndTest(unittest.TestCase):
+    """``--resume`` on the real command line against a checkpoint, not against a stub.
+
+    The guard tests above prove what a recipe mismatch refuses.  This proves the thing a member B
+    actually bets on when a long run dies halfway: continuing it from disk finishes the run and
+    changes no artefact, no score and no rendered table.
+    """
+
+    def test_an_interrupted_train_run_continues_from_its_checkpoints(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fitted, continued = root / "run", root / "continued"
+            train.main(["--output", str(fitted), "--horizons", "1"])
+            first = json.loads((fitted / "train_summary.json").read_text(encoding="utf-8"))
+            shutil.copytree(fitted, continued)
+            artifact = continued / "h01" / artifacts.ARTIFACT_NAME
+            digest = artifacts.sha256_file(artifact)
+            # What an interrupted run really looks like: bundles on disk, no summary claiming them.
+            (continued / "train_summary.json").unlink()
+
+            with self.assertRaises(SystemExit) as refused:
+                train.main(["--output", str(continued), "--horizons", "1", "--seed", "7", "--resume"])
+            self.assertIn("seed", str(refused.exception))
+            self.assertEqual(artifacts.sha256_file(artifact), digest, "a refusal must not touch the checkpoint")
+
+            train.main(["--output", str(continued), "--horizons", "1", "--resume"])
+            again = json.loads((continued / "train_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(again["resumedBundles"], [str(continued / "h01")])
+            self.assertEqual(again["run"]["h01"]["pooled"], first["run"]["h01"]["pooled"])
+            self.assertEqual(again["modelVersion"], first["modelVersion"])
+            self.assertEqual(artifacts.sha256_file(artifact), digest, "a reused bundle is not refitted")
+
+    def test_an_interrupted_wrapping_run_prints_the_same_table(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base, fresh, continued = root / "base", root / "fresh", root / "continued"
+            train.main(["--output", str(base), "--horizons", "1", "--limit-steps", "2"])
+            build_hierarchical.main(["--source-run", str(base), "--output", str(fresh), "--only", "h01"])
+            shutil.copytree(fresh, continued)
+            (continued / "hierarchical_report.json").unlink()
+
+            build_hierarchical.main(["--source-run", str(base), "--output", str(continued),
+                                     "--only", "h01", "--resume"])
+            payload = json.loads((continued / "hierarchical_report.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["reusedBundles"], ["h01"])
+            self.assertEqual(artifacts.sha256_file(continued / "h01" / artifacts.ARTIFACT_NAME),
+                             artifacts.sha256_file(fresh / "h01" / artifacts.ARTIFACT_NAME),
+                             "the resumed run wrapped nothing again, so no artefact may differ")
+            self.assertEqual(_without_wall_clock(continued / "hierarchical_report.md"),
+                             _without_wall_clock(fresh / "hierarchical_report.md"),
+                             "a resumed run has to print the table the finished run printed")
 
 
 @requires_stack

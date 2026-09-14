@@ -6,6 +6,18 @@ Only the rows the export marks TRAIN are fitted, VALIDATION calibrates the inter
 TEST is touched once at the end for the numbers that go into ``model_metadata.json``.  A
 ``--holdout-city`` run additionally trains without that city at all and scores it as if it were
 a station that had just opened, which is the cold-start evidence the load-only run cannot give.
+
+Two flags exist for the questions "a training pass is an hour long, what if it dies?" and "did you
+actually train enough?":
+
+* ``--resume`` keeps the bundles already saved in ``--output`` and retrains only the missing ones.
+  A saved bundle is reused only when it says it came from this same recipe - same batch, manifest,
+  feature version, seed, model version, steps and round budget - and anything that does not match
+  is refused rather than overwritten.  ``train_summary.json`` marks a finished, quotable run, so a
+  directory holding one is never resumable.
+* ``--rounds-multiplier 5`` fits each hour model with five times the boosting rounds and five times
+  the early-stopping patience, and stamps the bundles ``-r5`` so a stretched model cannot be
+  mistaken for the published one.  ``1.0`` reproduces the shipped recipe exactly.
 """
 
 from __future__ import annotations
@@ -18,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data_analysis.ml.availability.model import OrdinalForecastModel
+from data_analysis.ml.availability.model import OrdinalForecastModel, scaled_rounds
 from data_analysis.ml.common import artifacts, forecaster, metrics
 from data_analysis.ml.common.data_io import DEFAULT_EXPORT
 from data_analysis.ml.common.tasks import AVAILABILITY
@@ -37,15 +49,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--nominal-coverage", type=float, default=0.80)
     parser.add_argument("--holdout-city", action="append", default=[], help="train without this city and score it as new")
     parser.add_argument("--limit-steps", type=int, default=0, help="debug: only train the first N steps")
+    parser.add_argument("--rounds-multiplier", type=float, default=1.0,
+                        help="fit each hour model with this many times the published 250 boosting rounds "
+                             "(early-stopping patience scales with it); 1.0 is the shipped recipe")
+    parser.add_argument("--resume", action="store_true",
+                        help="continue an interrupted run in --output instead of starting a new one: reuse "
+                             "every saved bundle whose recorded recipe matches this command")
     arguments = parser.parse_args(argv)
+
+    if not arguments.rounds_multiplier > 0:
+        parser.error(f"--rounds-multiplier must be positive, got {arguments.rounds_multiplier}")
 
     started = time.time()
     RUN_CONTEXT.update({"command": artifacts.invocation(__name__, argv)})
     output = Path(arguments.output)
-    # A published run is evidence, not a build artefact, so this entry refuses to rewrite one.  The
-    # test is for bundles rather than for a non-empty directory because ``prepare_data`` is allowed
-    # to have written ``data_profile.json`` here first - that is the documented order of operations.
-    if artifacts.bundle_directories(output) or (output / "train_summary.json").exists():
+    # A published run is evidence, not a build artefact, so this entry refuses to rewrite one.
+    # ``--resume`` relaxes the bundle half of that check, never the summary half: once
+    # ``train_summary.json`` exists the numbers in it have been quoted somewhere.
+    occupied = published_content(output)
+    if "train_summary.json" in occupied or (occupied and not arguments.resume):
         raise SystemExit(f"{output} already holds saved bundles or a train summary; pass a new --output "
                          f"directory instead of rewriting a published run")
     frame = forecaster.build_frame(Path(arguments.export))
@@ -61,10 +83,12 @@ def main(argv: list[str] | None = None) -> int:
         "sourceManifestSha256": frame.export.source_manifest_sha256,
         "servingManifestSha256": frame.export.manifest_sha256,
         "featureVersion": frame.export.feature_version,
-        "modelVersion": MODEL_VERSION,
+        "modelVersion": f"{MODEL_VERSION}{_variant(arguments.rounds_multiplier)}",
         "seed": arguments.seed,
         "reproducibleCommand": RUN_CONTEXT.get("command"),
         "nominalCoverage": arguments.nominal_coverage,
+        "roundsMultiplier": arguments.rounds_multiplier,
+        "boostingRoundsBudget": scaled_rounds(arguments.rounds_multiplier)["max_iter"],
         "featureColumns": columns,
         "run": {},
         "holdout": {},
@@ -74,13 +98,25 @@ def main(argv: list[str] | None = None) -> int:
         summary["run"][f"h{horizon:02d}"] = _train_horizon(
             frame, horizon, output / f"h{horizon:02d}", seed=arguments.seed,
             coverage=arguments.nominal_coverage, steps=arguments.limit_steps,
+            rounds_multiplier=arguments.rounds_multiplier, resume=arguments.resume,
         )
         for city in arguments.holdout_city:
             summary["holdout"].setdefault(city, {})[f"h{horizon:02d}"] = _train_horizon(
                 frame, horizon, output / f"coldstart_{city}" / f"h{horizon:02d}",
                 seed=arguments.seed, coverage=arguments.nominal_coverage,
                 exclude_city=city, steps=arguments.limit_steps,
+                rounds_multiplier=arguments.rounds_multiplier, resume=arguments.resume,
             )
+
+    trained = list(summary["run"].values()) + [entry for per_city in summary["holdout"].values()
+                                               for entry in per_city.values()]
+    summary["resumedBundles"] = [entry["directory"] for entry in trained if entry.get("reused")]
+    if summary["resumedBundles"]:
+        # Stated rather than left to whoever reads the summary: the recorded command re-runs the
+        # fitted half of this run, and only ``--resume`` against this directory reproduces the rest.
+        summary["reproducibleCommandNote"] = (
+            f"{len(summary['resumedBundles'])} of {len(trained)} bundles were loaded from {output} by --resume "
+            f"instead of being fitted by this command; they are listed in resumedBundles")
 
     summary["elapsedSeconds"] = round(time.time() - started, 1)
     (output / "train_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -89,11 +125,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage: float,
-                   exclude_city: str | None = None, steps: int = 0) -> dict:
+                   exclude_city: str | None = None, steps: int = 0,
+                   rounds_multiplier: float = 1.0, resume: bool = False) -> dict:
     data = frame.data
     columns = frame.feature_columns
     split_column = frame.export.split_column(horizon)
-    available_steps = range(1, (steps or horizon) + 1)
+    available_steps = list(range(1, (steps or horizon) + 1))
+
+    if resume:
+        reused = _reuse(directory, frame, horizon=horizon, seed=seed, exclude_city=exclude_city,
+                        available_steps=available_steps, rounds_multiplier=rounds_multiplier)
+        if reused is not None:
+            return reused
 
     keep = pd.Series(True, index=data.index)
     if exclude_city:
@@ -112,14 +155,19 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
     )
     validation_labels: dict[int, np.ndarray] = {}
     per_step: dict[int, dict] = {}
+    budget = scaled_rounds(rounds_multiplier)
     for step in available_steps:
         label = AVAILABILITY.label_column(step)
         y_train = data.loc[train_rows, label].astype(int)
-        model.fit_step(step, x_train, y_train, seed=seed)
+        model.fit_step(step, x_train, y_train, seed=seed, rounds_multiplier=rounds_multiplier)
         validation_labels[step] = data.loc[validation_rows, label].to_numpy(dtype=float)
         x_test = data.loc[scored_rows, columns]
         y_test = data.loc[scored_rows, label].to_numpy(dtype=float)
         per_step[step] = score_step(model, step, x_test, y_test, data.loc[scored_rows])
+        # What early stopping actually spent, so "train longer" is answerable from the artefact
+        # instead of from the budget the command asked for.
+        per_step[step]["boostingRounds"] = int(model.steps[step].n_iter_)
+        per_step[step]["maxBoostingRounds"] = int(budget["max_iter"])
 
     calibration = model.calibrate(data.loc[validation_rows, columns], validation_labels)
     # Re-score with the calibrated levels so the reported coverage is the shipped behaviour.
@@ -131,13 +179,15 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
         per_step[step]["calibration"] = calibration[step]
 
     pooled = pool_metrics(per_step)
-    model_id = f"{AVAILABILITY.id_prefix}-ord-h{horizon:02d}" + (f"-cold{exclude_city}" if exclude_city else "")
+    version = f"{MODEL_VERSION}{_variant(rounds_multiplier)}"
+    model_id = (f"{AVAILABILITY.id_prefix}-ord-h{horizon:02d}{_variant(rounds_multiplier)}"
+                + (f"-cold{exclude_city}" if exclude_city else ""))
     bundle = {
         "model": model,
         "target": AVAILABILITY.target,
         "horizonHours": horizon,
         "modelId": model_id,
-        "modelVersion": MODEL_VERSION,
+        "modelVersion": version,
         "featureVersion": frame.export.feature_version,
         "featureColumns": list(columns),
         "cities": frame.cities,
@@ -147,10 +197,11 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
         "publishedBatchId": frame.export.published_batch_id,
         "excludeCity": exclude_city,
         "capacity": model.capacity,
+        "roundsMultiplier": rounds_multiplier,
     }
     metadata = artifacts.build_metadata(
         model_id=model_id,
-        model_version=MODEL_VERSION,
+        model_version=version,
         target=AVAILABILITY.target,
         feature_version=frame.export.feature_version,
         dataset_id=frame.export.dataset_id,
@@ -166,10 +217,13 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
     )
     report = {
         "modelId": model_id,
+        "modelVersion": version,
         "horizonHours": horizon,
         "holdoutCity": exclude_city,
         "seed": seed,
         "reproducibleCommand": RUN_CONTEXT.get("command"),
+        "roundsMultiplier": rounds_multiplier,
+        "estimatorParams": dict(budget),
         "splits": {
             "train": int(train_rows.sum()),
             "validation": int(validation_rows.sum()),
@@ -181,10 +235,127 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
         "preparedAt": artifacts.stamp(),
     }
     artifacts.save_bundle(directory, bundle, metadata, report)
+    spent = [entry["boostingRounds"] for entry in per_step.values()]
     print(f"[h{horizon:02d}{'' if not exclude_city else f' cold:{exclude_city}'}] "
           f"TEST MAE {pooled['mae']:.3f} RMSE {pooled['rmse']:.3f} coverage@{coverage:.0%} "
-          f"{pooled['coverage']:.3f} depletionAUC {pooled['depletionAUC']:.3f} n={pooled['points']}")
-    return {"modelId": model_id, "directory": str(directory), "pooled": report["pooledTest"]}
+          f"{pooled['coverage']:.3f} depletionAUC {pooled['depletionAUC']:.3f} n={pooled['points']} "
+          f"rounds {min(spent)}-{max(spent)}/{budget['max_iter']}")
+    return {"modelId": model_id, "directory": str(directory), "pooled": report["pooledTest"],
+            "reused": False, "boostingRounds": {"min": min(spent), "max": max(spent),
+                                                "budget": int(budget["max_iter"])}}
+
+
+def published_content(output: Path) -> list[str]:
+    """What is already sitting in a run directory that makes it evidence somebody may have quoted.
+
+    Only two things count: saved bundles and ``train_summary.json``.  ``prepare_data`` writes
+    ``data_profile.json`` into the same directory before training starts, and a directory that does
+    not exist yet is the normal case - ``--output`` names a path this command is about to create, so
+    the existence check happens here rather than letting :func:`artifacts.bundle_directories` raise.
+    """
+    found = []
+    if (output / "train_summary.json").exists():
+        found.append("train_summary.json")
+    if output.is_dir():
+        found += [directory.name for directory in artifacts.bundle_directories(output)]
+    return found
+
+
+def _variant(rounds_multiplier: float) -> str:
+    """Name tag that keeps a stretched round budget from claiming the published ``modelId``."""
+    return "" if rounds_multiplier == 1.0 else f"-r{rounds_multiplier:g}"
+
+
+def _expected_recipe(frame, horizon: int, *, seed: int, exclude_city: str | None,
+                     available_steps: list[int], rounds_multiplier: float) -> dict:
+    """What a bundle sitting in ``--output`` has to record to be reusable by this command."""
+    export = frame.export
+    return {
+        "modelVersion": f"{MODEL_VERSION}{_variant(rounds_multiplier)}",
+        "featureVersion": export.feature_version,
+        "datasetId": export.dataset_id,
+        "trainingPublishedBatchId": export.published_batch_id,
+        "sourceManifestSha256": export.source_manifest_sha256,
+        "featureColumns": list(frame.feature_columns),
+        "seed": seed,
+        "horizonHours": horizon,
+        "holdoutCity": exclude_city,
+        "roundsMultiplier": rounds_multiplier,
+        "steps": sorted(str(step) for step in available_steps),
+    }
+
+
+def _saved_recipe(directory: Path) -> tuple[dict, dict, str | None]:
+    """The recipe a saved bundle records about itself, the report, and why it cannot be trusted.
+
+    Read from the two JSON sidecars rather than from the pickle, so a bundle whose ``model.joblib``
+    is corrupt is caught by the hash check and never loaded.
+    """
+    try:
+        metadata = json.loads((directory / artifacts.METADATA_NAME).read_text(encoding="utf-8"))
+        report = json.loads((directory / artifacts.REPORT_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return {}, {}, (f"{artifacts.METADATA_NAME} or {artifacts.REPORT_NAME} cannot be read ({error}); "
+                        f"this looks like an interrupted save")
+    artifact = directory / metadata.get("artifactFile", artifacts.ARTIFACT_NAME)
+    if not artifact.is_file():
+        return {}, {}, f"{artifact.name} is missing"
+    if artifacts.sha256_file(artifact) != metadata.get("artifactSha256"):
+        return {}, {}, f"{artifact.name} does not match the hash recorded in {artifacts.METADATA_NAME}"
+    saved = {
+        "modelVersion": metadata.get("modelVersion"),
+        "featureVersion": metadata.get("featureVersion"),
+        "datasetId": metadata.get("datasetId"),
+        "trainingPublishedBatchId": metadata.get("trainingPublishedBatchId"),
+        "sourceManifestSha256": metadata.get("sourceManifestSha256"),
+        "featureColumns": metadata.get("featureColumns"),
+        "seed": report.get("seed"),
+        "horizonHours": report.get("horizonHours"),
+        "holdoutCity": report.get("holdoutCity"),
+        "roundsMultiplier": report.get("roundsMultiplier", 1.0),
+        "steps": sorted(str(step) for step in report.get("perStep", {})),
+    }
+    if saved["seed"] is None:
+        # A bundle that does not say which seed made it cannot be claimed as this command's output.
+        saved["seed"] = "<unrecorded>"
+    return saved, report, None
+
+
+def _reuse(directory: Path, frame, *, horizon: int, seed: int, exclude_city: str | None,
+           available_steps: list[int], rounds_multiplier: float) -> dict | None:
+    """The summary entry for a saved bundle this command may load instead of retraining, if any.
+
+    Returns ``None`` when nothing is saved here yet, and refuses outright when something is saved
+    but is not this model: silently replacing a half-finished run's artefacts with different ones is
+    exactly what the no-overwrite rule exists to stop.
+    """
+    if not (directory / artifacts.METADATA_NAME).exists():
+        return None
+    saved, report, problem = _saved_recipe(directory)
+    label = f"h{horizon:02d}" + ("" if not exclude_city else f" cold:{exclude_city}")
+    if problem:
+        raise SystemExit(f"[resume] {directory} cannot be reused: {problem}. {label} will not be "
+                         f"overwritten in place - delete that directory or pass a new --output")
+    expected = _expected_recipe(frame, horizon, seed=seed, exclude_city=exclude_city,
+                                available_steps=available_steps, rounds_multiplier=rounds_multiplier)
+    differences = [(key, saved.get(key), value) for key, value in expected.items() if saved.get(key) != value]
+    if differences:
+        detail = "; ".join(f"{key} saved={old!r} this command={new!r}" for key, old, new in differences)
+        raise SystemExit(f"[resume] {directory} was fitted by a different recipe, so --resume will not "
+                         f"overwrite it: {detail}")
+    pooled = report.get("pooledTest", {})
+    per_step = report.get("perStep", {})
+    recorded = [value for value in (entry.get("boostingRounds") for entry in per_step.values())
+                if value is not None]
+    budget = (report.get("estimatorParams") or {}).get("max_iter")
+    score = f"TEST MAE {pooled['mae']:.4f}, " if "mae" in pooled else "no recorded metrics, "
+    print(f"[resume] {label} reusing {directory} ({score}{len(per_step)} hour-model(s), unchanged on disk)")
+    # Same shape as the fitted path's entry, so a summary can be read without knowing which bundles
+    # came from disk; ``None`` says the reused bundle predates round recording.
+    return {"modelId": report.get("modelId"), "directory": str(directory), "pooled": pooled,
+            "reused": True, "savedAt": report.get("preparedAt"),
+            "boostingRounds": {"min": min(recorded) if recorded else None,
+                               "max": max(recorded) if recorded else None, "budget": budget}}
 
 
 def score_step(model, step: int, x, y: np.ndarray, rows: pd.DataFrame,
@@ -214,6 +385,7 @@ def pool_metrics(per_step: dict) -> dict:
     points = sum(entry["points"] for entry in per_step.values())
     weights = np.array([entry["points"] for entry in per_step.values()], dtype=float)
     weights /= weights.sum()
+
     def average(key):
         return float(np.average([entry[key] for entry in per_step.values()], weights=weights))
     return {

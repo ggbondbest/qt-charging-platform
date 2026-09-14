@@ -18,7 +18,7 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 
 | 文档对 B 的要求 | 交付位置 | 状态 |
 | --- | --- | --- |
-| 建立 `ml/availability/` | `data_analysis/ml/availability/`（7 个模块 2,341 行；共享层 `ml/common/` 6 个模块 901 行；测试 `ml/tests/test_ml_contract.py` 723 行 / 36 个用例） | 完成 |
+| 建立 `ml/availability/` | `data_analysis/ml/availability/`（9 个模块 3,246 行；共享层 `ml/common/` 6 个模块 901 行；测试 `ml/tests/test_ml_contract.py` 1,136 行 / 65 个用例） | 完成 |
 | 预测各未来小时**最后采样时刻**的空闲桩数 | `model.py` 标签 `label_available_count_hNN` = 应答小时最后采样时刻的空闲桩数；口径由 `train.py` 与 `test_the_label_is_the_free_count_of_the_hour_it_answers` 双向锁定 | 完成 |
 | 先建基线，再训练树模型 | `evaluate.py` 六级基线阶梯（重复上小时 / 站点×小时中位数 / 站点×小时经验分布 / 场站类型×小时 / 城市×小时 / 全局中位数），只在 TRAIN 拟合 | 完成 |
 | 树模型 | `train.py`（0.2.0 纯分类器）+ `build_hierarchical.py`（0.3.0 出厂先验版，复用 0.2.0 的估计器，只在 VALIDATION 上选 k、区间级别和点值规则） | 完成 |
@@ -30,7 +30,11 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 | 模型文件及预处理器 | `data_analysis/outputs/ml_avail_run2/{h01,h06,h24}/model.joblib`（bundle 内含特征列顺序、站点/日历/城市档案、先验表 → 预处理与模型同包，不需要第二个文件） | 完成 |
 | `model_metadata.schema.json` 要求的元数据 | 每 bundle 的 `model_metadata.json`，由 `artifacts.build_metadata()` 生成并 `validate_metadata()` 校验；`metrics` 严格只含 `mae/rmse/testSamples/unit` | 完成 |
 | 可复现训练命令 | 本文件第 3 节，且评估报告头部现在自带复现命令行；代码侧 `artifacts.invocation()` 把命令与种子写入此后每次训练产出的 `training_report.json`（run1/run2 先于该字段，见 3.1） | 完成 |
-| 最小推理测试 | `python -m data_analysis.ml.availability.predict --self-check --run-dir ...`，并同步为 `ml/tests` 的 `MinimalInferenceTest`（4 个用例）；另有 `RunDirectoryGuardTest`（4 个，锁"不覆盖已发布 run"）与 `InvocationRecordTest`（3 个，锁复现命令本身可执行） | 完成 |
+| 最小推理测试 | `python -m data_analysis.ml.availability.predict --self-check --run-dir ...`，并同步为 `ml/tests` 的 `MinimalInferenceTest`（4 个用例）；另有 `RunDirectoryGuardTest`（5 个，锁"不覆盖已发布 run"）与 `InvocationRecordTest`（3 个，锁复现命令本身可执行） | 完成 |
+| 应组长追问「能不能用更好的模型」 | `model_search.py` → `outputs/ml_avail_exp_h01_v1`、`ml_avail_exp_h06_v1`、`ml_avail_exp_h24_v1`、`ml_avail_exp_h06_test1`（第 5.7 节。结论：赢的是**特征**不是估计器，且两种做法不叠加；因此**未**发布 0.4.0，理由写在同节） | 完成（未发版，待组长定） |
+| 应组长要求「先训练 5 个 epoch」 | 树模型没有 epoch，如实换算成 `--rounds-multiplier`（第 5.8 节）；5× 预算全量重训已跑完 → `outputs/ml_avail_run3_r5`（模型改名 `-r5`，不冒充已发布身份） | 完成（结论：不值得发版） |
+| 应组长要求「可以断点续训」 | `train.py --resume` 与 `build_hierarchical.py --resume`（第 5.9 节：829.7 s 的全量训练断在第 6 个 bundle，续跑 380.7 s 补完，12 个 bundle 与一口气跑完逐位相同；配方不符即拒绝且不动 checkpoint） | 完成 |
+| 应用侧可直接看的预测表 | `outputs/ml_avail_forecasts_v1/forecast_table.md` + `forecasts.csv`（4,650 行，`forecast_table.py` 产出，第 5.10 节） | 完成 |
 | 独立扩展（择一） | **未做**。按「时间不足时先交付基础预测闭环」，先把基础线补完；扩展建议与数据前提见第 6 节 | 待组长定 |
 
 ## 2. 输入批次与绑定（全部实测，非文档转抄）
@@ -59,10 +63,17 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 # 0) 数据画像（可选，只读导出包并逐分片校验 manifest）
 python -m data_analysis.ml.availability.prepare_data --output data_analysis/outputs/ml_avail_run1
 
-# 1) 树模型：纯有序分类器 + 三个城市的冷启动留出（约 70 分钟，seed 20260913）
+# 1) 树模型：纯有序分类器 + 三个城市的冷启动留出（seed 20260913）
 python -m data_analysis.ml.availability.train \
     --output data_analysis/outputs/ml_avail_run1 \
     --holdout-city DL --holdout-city SY --holdout-city SZ
+
+# 1b) 同一件事，但把 boosting 预算放大 5 倍（"再训久一点"在这条线上的正确形态，见 5.8；
+#     全 12 个 bundle 实测 829.7 s，产物 `ml_avail_run3_r5`）；
+#     中途断了把这条命令原样重敲、末尾加 --resume 即可接着跑（见 5.9）
+python -m data_analysis.ml.availability.train \
+    --output data_analysis/outputs/ml_avail_run3_r5 --rounds-multiplier 5 \
+    --holdout-city DL --holdout-city SY --holdout-city SZ --resume
 
 # 2) 出厂先验版：复用第 1 步的估计器，只在 VALIDATION 上选每层 k / 区间级别 / 点值规则（约 88 秒）
 python -m data_analysis.ml.availability.build_hierarchical \
@@ -86,8 +97,10 @@ python -m data_analysis.ml.availability.predict \
 
 三个**会写产物**的入口（`train` / `build_hierarchical` / `evaluate`）都在装载数据帧之前拒绝覆盖：
 目标目录已有 bundle、已有 `train_summary.json` 或已有 `evaluation_report.*` 时直接退出，要求写新目录；
-`predict` 不写文件，改由 `--self-check` 的退出码把关。这三条拒绝各有单元测试（`RunDirectoryGuardTest`
-与 `AuditScriptTest`），所以"不覆盖已发布产物"是可核查的约定，不是口头承诺。
+`predict` 不写文件，仍由 `--self-check` 的退出码把关。这三条拒绝各有单元测试
+（`RunDirectoryGuardTest` 与 `AuditScriptTest`），所以"不覆盖已发布产物"是可核查的约定，不是口头承诺。
+`train` / `build_hierarchical` 的 `--resume` 只放开"目录里已有 bundle"这一半：只要汇总文件还在，
+仍然拒绝——续跑不能把一份已经被引用过的数字变成混合产物（第 5.9 节）。
 
 ### 3.1 可复现性的现状与边界（如实说明）
 
@@ -108,8 +121,13 @@ python -m data_analysis.ml.availability.predict \
   * **服务产物（run2 的 12 个 bundle）重跑只要 90 秒**——它们由 `build_hierarchical` 产出，
     当时日志记录的实测耗时是 **88.3 s**。但重跑写进 bundle 的是**构建命令**，
     仍然不含训练命令，因为 `--source-run` 指向的 run1 没记下自己的命令。
-  * **要让产物真的带着训练命令，必须重跑 `train`**（run1 目录时间戳跨度 21:34:32→22:43:27，
-    约 **69 分钟**，含 3 个主模型 + 9 个冷启动），随后再 build + evaluate。
+  * **要让产物真的带着训练命令，必须重跑 `train`**——本轮已经实测了这条命令的代价：全 12 个 bundle
+    在 **5× 预算**下 **829.7 s**（`ml_avail_run3_r5/train_summary.json`，1× 只会更快），
+    而不是上一版这里写的"约 69 分钟"。那个 69 分钟是 run1 目录的时间戳跨度
+    （21:34:32→22:43:27，当时那一坐里夹着别的工作），**不等于纯训练时间**，本轮没能复现它，
+    它也不该被拿去当重跑预算。
+  * 携带性已被证实：`ml_avail_run3_r5` 的 12 份 `training_report.json` **每一份**都带
+    `reproducibleCommand` 与 `seed`（当场可核，`grep` 即可），run1/run2 则一份都没有。
   上面第 3 节的命令按各 run 报告里记录的参数与模块默认值重建，等价但不逐字节证明当时输入。
   是否值得为这个字段重跑，请组长拍板；**当前状态下的可复现路径是"照第 3 节敲命令"，不是"打开产物看命令"。**
 - 训练是确定性的（同一 seed、同一批次、同一 sklearn 版本 ⇒ 同一 MAE）。**跨版本不可加载**：
@@ -215,22 +233,175 @@ python -m data_analysis.ml.availability.predict \
 "主模型同城 MAE" 逐位相同，是同一批行的两条独立渲染路径，互为校验。
 误差最大的站点（h01，每站 720 点）：`ST-DL-04` 0.7736、`ST-SZ-04` 0.7667、`ST-SH-04` 0.7611、
 `ST-BJ-04` 0.7569、`ST-SY-04` 0.7153，其余 20 站 ≤0.5153——**最差的前五名恰好是每城的 04 号站**，
-说明误差不是均匀分布的。为什么是 04 号站**未经证实**（推测是这批站的空闲数在 0..3 全区间摆动更多），
+说明误差不是均匀分布的。本轮把"为什么"量到底了（`probe_cell_floor.py` / `probe_difficulty.py`，
+临时脚本未入库，数字抄在这里）：
+
+| 04 号站 | 类型 | 只用该站历史的**最好常数**预测 MAE | **(站×小时) 查表中位数** MAE | 出厂模型 MAE | 模型−查表 |
+| --- | --- | --- | --- | --- | --- |
+| ST-SZ-04 | transit | 0.8931 | 0.7931 | 0.7667 | −0.0264 |
+| ST-SY-04 | transit | 0.8014 | 0.7431 | 0.7153 | −0.0278 |
+| ST-SH-04 | transit | 0.8403 | 0.7403 | 0.7611 | +0.0208 |
+| ST-DL-04 | transit | 0.8458 | 0.7403 | 0.7736 | +0.0333 |
+| ST-BJ-04 | transit | 0.8347 | 0.7264 | 0.7569 | +0.0305 |
+| 其余 20 站 | 混合 | 0.7361…1.1153 | 0.3833…0.5458 | ≤0.5153 | — |
+
+三条结论，先前那句"推测摆动更多"已被实测替换：
+
+1. **不是"分布更平"**：按该站 TRAIN 历史算边际熵，transit 五站逐站 1.831–1.971 bit，
+   transit 均值 1.8934 与 residential 均值 1.8892 无差别；常数下限最高的其实是 shopping
+   （`ST-SY-02` 1.1153、`ST-DL-02` 1.0403）。
+2. **是"小时规律本身不稳"**：查表能把 shopping 五站的 0.9917 压到 0.4850（−0.51 桩），对 transit
+   五站却只能把 0.8431 压到 0.7486（−0.09 桩）——(站×小时) 这一族规则能拿到的收益，
+   恰好就在它们身上最小。
+3. **模型没有在这五站失职**：出厂模型与"该站该小时的查表中位数"互有胜负 ±0.03 桩，而每站 720 点
+   的 MAE 标准误约 0.026 桩，差异在噪声内。也就是说这 0.25 桩的额外误差不是重训一个更强的
+   (站×小时) 模型能消掉的，需要新的信息源（例如小时内实时占用/在途会话）。
+
 接入侧若要按站点做告警阈值，应先单独看这几站的曲线，不要把城市级 MAE 当站点级用。
 
-### 5.7 测试执行记录（`outputs/` 不进 git，故把跑测结果也抄在这里）
+### 5.7 「能不能用更好的模型」——检索结果与不发版理由（应组长追问，本轮新增）
+
+问的是模型，答案落在特征上。检索脚本 `model_search.py`（本轮入库）在**同一批行、同一划分、同一 seed**
+上比较配置，只在 VALIDATION 上选型，TEST 最后一次性确认（`--confirm-test` 才会碰 TEST，且单独写目录）：
+
+| 跨度 | `control`（现行配方，无先验特征） | `cell_features`（把 (站×小时) 历史分布当 8 列特征喂进去） | 变化 |
+| --- | --- | --- | --- |
+| h01 VALIDATION | 0.4984 | 0.4867 | −2.3% |
+| h06 VALIDATION | 0.5307 | 0.5145 | −3.1% |
+| h24 VALIDATION | 0.5416 | 0.5241 | −3.2% |
+| h06 **TEST**（一次性确认） | 0.5147 | 0.4992 | −3.0% |
+
+四点如实说明：
+
+1. h24 的 24 个 step **全部**改善（h06 6/6、h01 1/1），符号检验 p≈6e-8，不是某一步走运；
+2. 换估计器没用：h06 上 `cell_features` 与它的三个变体（深预算 0.5144、有序目标 0.5139、
+   ExtraTrees 0.5144）挤在 0.0006 桩以内——**收益全部来自那 8 列特征，与用哪个树无关**；
+3. 与我上一轮说的"唯一值得再跑的一件事"相反，**两种做法不叠加**：把先验查表同时做成特征和混合项
+   （`cell_plus_prior`）相对只做特征毫无改进（h01 0.4866 vs 0.4867、h24 0.5238 vs 0.5241）。
+   问题是同一个，治一次就够了；
+4. 纯查表 `table_only` 在三跨度都**输给现行模型**（h01 0.5462、h06 0.5478、h24 0.5482），
+   所以这不是"回归到统计基线"，模型仍带独立信息。
+
+**为什么没有据此发 0.4.0**（这是范围判断，不是效果判断）：那 8 列是 (站×小时) 的历史统计，
+线上必须**在线按 `reference_time` 之前的 TRAIN 窗口推导**，否则就是把未来写进特征——`predict.py`
+与后端特征构造现在都没有这个口径，要新增一个先验表 profile 块、防泄漏测试和契约核对；
+相对收益（−1.1% vs 现行服务版 0.5047）不足以单凭本轮就动服务侧。若组长要，我可以按第 5.9 节的
+断点续训把它跑成正式批次，工作量在**在线特征口径**而不在训练。
+
+### 5.8 「先训练 5 个 epoch」——树模型没有 epoch，实测换算（本轮新增）
+
+交接文档里 B 线用的是 HistGradientBoosting：**一轮 = 一棵树，一个 bundle 里每个应答小时各训一个模型**，
+早停（`n_iter_no_change=15`）通常在预算用完前就收工，所以"epoch"在这条线上没有对应物。
+能对应"训练更久"的量是 boosting 预算，本轮把它做成显式开关 `--rounds-multiplier`：
+预算与耐心**同时**放大（只放大 `max_iter` 而留着 15 棵的耐心，早停会在原处停下，等于没加），
+学习率等其余参数一字不动，且产物改名（`avail-ord-h01-r5` / `modelVersion 0.2.0-r5`），
+不允许一个拉长预算的模型顶着已发布身份进注册表。
+
+实测（`ml_avail_run3_r5`，5× 预算 = 1250 棵、耐心 75 棵，全 12 个 bundle、同 seed 20260913，
+**总用时 829.7 秒 ≈ 13.8 分钟**，记在 `train_summary.json` 的 `elapsedSeconds`）：
+
+| bundle | 5× 实际用掉的轮数 / 预算 | 5× TEST MAE | 已发布 0.2.0（1×）TEST MAE | 差（正=变差） |
+| --- | --- | --- | --- | --- |
+| h01 | 189 / 1250 | 0.5291 | 0.5274 | +0.0017 |
+| h06 | 200–308 / 1250 | 0.5654 | 0.5658 | −0.0004 |
+| h24 | 199–346 / 1250 | 0.5791 | 0.5780 | +0.0011 |
+| 9 个冷启动 bundle | 154–361 / 1250 | 0.5056–0.6176 | 0.5039–0.6192 | −0.0016 ~ +0.0049 |
+
+三点读法：
+
+1. **预算放开后早停仍然提前收工**：每步实际用掉 154–361 棵，只占 1250 棵预算的 12%–29%——
+   "再训久一点"这件事模型自己投了反对票，它找不到还能减少验证损失的树；
+2. 12 个 bundle **8 个变差、4 个变好**，最大一格 0.0049 桩（半个桩的 1%），量级完全在改点值规则
+   （第 5.2 节，−8%~−9%）之下；
+3. 与第 5.7 节第 2 点独立吻合：h06 深预算变体 VALIDATION 0.5144 vs 250 棵的 0.5145（实际用掉 162 棵）。
+   **加深预算换不来分数，所以 5× 版不发**；开关留在代码里，产物名字自己会说明身份（`-r5`）。
+
+对照资格说明：`ml_avail_run1` 与 `ml_avail_run3_r5` 是同一批导出行、同一划分、同一 seed、同一特征列，
+唯一变量是预算；今天重跑的**默认**（1×）配方与 run1 逐位相同
+（`outputs/ml_avail_recipe_check_v1/h01/model_metadata.json` 与 `ml_avail_run1/h01/model_metadata.json`
+完全一致：`mae 0.5274 / rmse 0.7259 / n 18000`），所以上表的差值不是两版代码的差值。
+
+### 5.9 断点续训（应组长要求，本轮新增）
+
+两个长入口（`train`、`build_hierarchical`）本来就**每 bundle 落一次盘**（`train` 全量 12 次、
+`build_hierarchical` 12 次），缺的只是"敢不敢接着用"。加 `--resume` 后：
+
+- **守卫只放宽一半**：目录里已有 bundle 时允许续跑；已有 `train_summary.json` /
+  `hierarchical_report.json` 时**照样拒绝**——那份汇总数字已经被引用过，续跑会把它变成混合产物。
+  要新结果就换目录（`RunDirectoryGuardTest` 第 5 个用例锁住这条）。
+- **复用要先验明配方**：`train` 比对 modelVersion / featureVersion / datasetId / 发布批次 ID /
+  原始 manifest 哈希 / 特征列 / seed / 跨度 / 留出城市 / `roundsMultiplier` / steps；
+  `build_hierarchical` 另比 `reusedEstimatorFrom` 与 `sourceModelId`，并从**基座 bundle** 推导期望值
+  （不拿自己证明自己）。任一项不符直接退出并打印 `saved=... this command=...`。
+- **复用不改一个字节**：bundle 的 `model.joblib` 先按 `model_metadata.json` 里的 sha256 复核，
+  加载基座也走同一道校验；被复用的 bundle 在汇总里列进 `resumedBundles`，并额外记
+  `reproducibleCommandNote` 说明"这一份是复用来的"。
+- **表格不会被续跑改数**：`build_hierarchical` 现在把每个 bundle 在汇总里的**那一行**原样存进自己的
+  `training_report.json`（`payloadEntry`），续跑读回来，而不是拿四位小数的 MAE 反推百分比
+  （反推会把已发布的 `+0.57%` 变成 `+0.56%`）。更早、没写这个字段的已发布 run2 bundle 走重算路径，
+  重算用的是报告里保留的全精度每小时 MAE，逐位等于当时发布的那一行——这条由
+  `test_a_row_rebuilt_from_an_older_bundle_matches_the_published_one` 锁住。
+- 半路断（bundle 有、报告缺）与文件被改动（哈希不符）都**不静默降级**，直接报错退出。
+
+实测（`train` 一律是那条 5× 命令，只差 `--resume`）：
+
+| 场景 | 用时 | 结果 |
+| --- | --- | --- |
+| 全 12 个 bundle 一口气跑完 → `ml_avail_run3_r5` | 829.7 s | 基准 |
+| **同样命令，但目录里已经躺着 6 个 bundle** → `ml_avail_run4_r5_resume` | **380.7 s** | `[resume]` 复用 6 个（`model.joblib` 逐字节未动），重训缺的 6 个；**12 个 bundle 的 `metrics` 与 run3 逐位相同，连重训那 6 个的产物哈希也一样** —— 续跑与一口气跑完不可区分 |
+| 已完成的 run（有 `train_summary.json`）上再 `--resume` | 1.2 s | 装载数据帧之前就拒绝：`already holds saved bundles or a train summary` |
+| `train --horizons 1` 单 bundle 跑完再 `--resume` | 9.3 s → 1.9 s | `resumedBundles` 命中、`pooledTest` 逐位相同、产物哈希不变 |
+| `build_hierarchical --only h01` 跑完再 `--resume` | 4.5 s → 2.1 s | `hierarchical_report.md` 除"生成耗时"一行外逐字符相同 |
+| 配方不符（把 seed 改成 7 再续跑） | 装载数据帧后、任何写入前退出 | 打印 `seed saved=... this command=...`，checkpoint 未被触碰——这一格是 `ResumeEndToEndTest` 第一段在真批次上断言的（含"拒绝后 `model.joblib` 哈希不变"），不是手跑记录的 |
+
+「重训出来的 6 个与一口气跑的 6 个连 pickle 字节都一样」这句值得单独说：它意味着 `--resume` 的
+正确性检验可以做到"整目录比对"这种强度，也意味着 5× 预算下 sklearn 在这台机器上仍是确定的
+（同 seed、同版本、同批次）。**这条只对本批产物成立**，换 numpy/scikit-learn 版本后不能拿它当前提。
+
+守护用例：`ResumeGuardTest` 11 个（复用/拒绝的每种组合、半断、篡改、`published_content` 对不存在目录
+不再炸）、`HierarchicalResumeTest` 8 个、`ResumeEndToEndTest` 2 个（真命令行 + 真批次，不用 stub）。
+
+顺手修掉一个真实缺陷：`artifacts.bundle_directories()` 对**不存在**的目录会抛 `FileNotFoundError`，
+而 `--output` 指着一个还没建的目录正是正常首发场景，旧守卫会当场崩；现在由 `published_content()`
+先判 `is_dir()`，并有对应用例。
+
+### 5.10 预测表（应组长要求「把预测表发给我看看」，本轮新增）
+
+`forecast_table.py` 用**已发布的服务 bundle**（`ml_avail_run2` / 0.3.0）走真实推理路径
+（`AvailabilityForecaster.predict()`，不是重新实现一遍），对 25 个站在 6 个参考时刻上各出一张表，
+写到 `outputs/ml_avail_forecasts_v1/`：
+
+- `forecasts.csv`：4,650 行，每行 = 一个 bundle × 一站 × 一个参考时刻 × 一个未来小时；列含对外的整数
+  `predicted_chargers`、区间 `interval_low/high`、预计值 `expected_chargers`、`p_no_charger`、完整分布
+  `distribution`，以及对照用的 `actual_chargers` / `abs_error` / `within_interval`；
+- `forecast_table.md`：窗口偏差表、分站误差表、单站 24 小时曲线、站×小时的预测/实际对照网格。
+
+这一段窗口上预测与真实值的平均绝对偏差：h01 0.4333（150 点）、h06 0.3533（900 点）、
+h24 0.5011（3,600 点）桩。**这几格不是模型准确率**——样本只有几百到几千点，且只覆盖表头列出的那几个
+参考时刻；交付口径的准确率是第 5.1 节全 TEST（18,000 / 107,250 / 418,200 点）上的
+0.4816 / 0.5047 / 0.5120。表的作用是**逐行核对预测合法不合法、离不离谱**，两个口径不要混。
+表里出现的都是整数桩数，小数只在 `risk()` 的预计值侧信道（第 4 节）。
+
+### 5.11 测试执行记录（`outputs/` 不进 git，故把跑测结果也抄在这里）
 
 ```
-$ python -m unittest discover -s data_analysis/ml/tests -t . -v
-Ran 36 tests in 768.718s
+$ python -m unittest discover -s data_analysis/ml/tests -t .
+Ran 65 tests in 139.041s
 OK          # 退出码 0
 ```
 
 环境：Python 3.13.9 / scikit-learn 1.7.2 / pandas 2.3.3 / numpy 2.4.4（与 `model_metadata.json`
-的 `dependencies` 同一台机器同一环境）。**耗时 769 s 不是 flaky，是真的在 107,425 行的发布批次上
-建特征、拟合小样本并加载 12 个 bundle**；因此 CI 目前不跑它（第 7 节第 2 条）等于这一层没有守护。
+的 `dependencies` 同一台机器同一环境）。
 
-36 个用例按主题分布（`ml/tests/test_ml_contract.py`）：
+**上一版这里写的 `Ran 36 tests in 768.718s` 是失真的，本轮更正**：那次测量时同机还挂着三个模型筛选
+任务在抢 CPU（第 5.7 节的 h01/h06/h24 检索），不是这套用例的代价。同一台机器、空闲时的三次记录是：
+36 个用例（上一版）→ 52 个用例 **108.2 s** → 现在 65 个用例 **139.0 s**。新增的 13 个里有两个
+"真训练 + 真续跑"的端到端用例（`ResumeEndToEndTest`），代价主要在反复装载 107,425 行的批次上，
+所以 +13 个用例 ≈ +31 s。这条更正同时改掉第 7 节第 2 条里"这个 job 太贵"的暗示：分钟级；缺科学栈时
+整套 skip（测试文件开头的 `_depends_available()` 守卫），缺导出批次时只有绑数据的那几个类 skip，
+所以新加的这个 CI job 在没有数据的 job 上也不会变红。
+
+65 个用例按主题分布（`ml/tests/test_ml_contract.py`）：
 
 | 测试类 | 个数 | 锁住的是什么（按用例名如实列，不夸大） |
 | --- | --- | --- |
@@ -238,7 +409,11 @@ OK          # 退出码 0
 | `PriorShrinkageTest` | 8 | 查表单元按"它描述的小时"而非"它被写下的时刻"取键；支持度只数 TRAIN 的小时；历史越多越偏向查表（run1 老报告把这个方向写反了）；每级用自己的伪计数；没见过的行退回模型；借来的单元按缺失的那个站池化；并列分布上中数优于众数；混合结果仍是合法 pmf 且能取到端点 |
 | `FeatureTransformTest` | 5 | 在线特征与离线导出逐列一致；滞后窗口止于第一个应答小时前一刻；历史不完整/非法即拒；标签=应答小时最后采样时刻的空闲桩数；标签列与划分列不得出现在输入里 |
 | `MinimalInferenceTest` | 4 | `--self-check` 下每个已发布 bundle 要么 PASS 要么被显式 SKIPPED；对外值是 `0..capacity` 的整数（小数只走 `risk()`）；改掉 `artifactSha256` 必须变 FAIL；命令本身退出码为 0 |
-| `RunDirectoryGuardTest` | 4 | `train` 拒绝已放 bundle 的目录；拒绝"写了一半"的 run；`build_hierarchical` 同样拒绝有内容的目录；`prepare_data` 先写的 `data_profile.json` 不算已发布（否则正常流程会被自己的守卫挡住） |
+| `RunDirectoryGuardTest` | 5 | `train` 拒绝已放 bundle 的目录；拒绝"写了一半"的 run；拒绝把 `--resume` 用在一份已完成的汇总上；`build_hierarchical` 同样拒绝有内容的目录；`prepare_data` 先写的 `data_profile.json` 不算已发布（否则正常流程会被自己的守卫挡住） |
+| `ResumeGuardTest` | 11 | 配方一致的 checkpoint 原样复用（哈希不变、`boostingRounds` 形状齐）；没存过就返回"没有"；seed / 批次+manifest / `roundsMultiplier`+modelVersion / 跨度+留出城市 / steps 任一不符即拒；半断（报告缺）与哈希不符各自报错；`published_content` 对不存在的目录返回空（旧实现在这里抛 `FileNotFoundError`）；`data_profile.json` 不计入、bundle 与汇总计入 |
+| `HierarchicalResumeTest` | 8 | 出厂 0.3.0 产物（无 seed 字段）不被冒领；补上 seed 才复用；从别的基座/别的批次包的直接拒；`payloadEntry` 存在时**原样读回**而非重算；不存在时按报告里全精度每小时 MAE 重算，逐位等于当时发布的那一行；续跑的 `hierarchical_report.md` 与已发布版逐字符相同；只跑主城的部分 run 不印 `nan` |
+| `ResumeEndToEndTest` | 2 | 真命令行 + 真批次：断掉的 train 续跑后 `pooledTest` 与分数逐位相同、`model.joblib` 哈希不变、改 seed 的续跑被拒且没碰 checkpoint；断掉的先验包装跑后表格除"生成耗时"一行外逐字符相同 |
+| `BoostingBudgetTest` | 7 | 已发布配方在代码里钉死；×1 与钉死值一字不差；×5 同时放大耐心（1250/75）且不动学习率；×0.4 取整为 100/6；0 与负数拒绝；`-r5` 改名；包一层时继承基座的 `-r5` 名字 |
 | `DataBindingTest` | 3 | 导出必须绑到原始包 manifest（成员 A 旧产物正是把 serving manifest 当成了它）；无法核验的导出直接拒绝；`ml_targets_hourly` 永不进服务库 |
 | `AuditScriptTest` | 3 | 审计脚本自己的收缩方向与取键口径；已发布报告不被就地改写 |
 | `InvocationRecordTest` | 3 | `-m` 运行记录模块名而不是 `__main__`；直接按文件路径运行时记录路径；命令行参数逐字记录 |
@@ -272,12 +447,15 @@ OK          # 退出码 0
    **都不含 numpy / pandas / scikit-learn / joblib**（已逐个 grep 确认）。也就是说本线代码的运行环境
    目前只写在每个产物的 `model_metadata.json.dependencies` 里，从仓库里**装不出来**，
    换一台干净机器照第 3 节敲命令会在 `import pandas` 就断。
-   这 36 个用例是本次全部"机械核查"的落点，建议加一个装科学计算包、跑
+   这 65 个用例是本次全部"机械核查"的落点，建议加一个装科学计算包、跑
    `python -m unittest discover -s data_analysis/ml/tests -t .` 的 job，并新增一份
    `data_analysis/requirements-ml.txt`（**此文件尚不存在**）。CI workflow 与 requirements 都是共享文件，
    我不改，只提案；依赖清单草案已落在 **我线目录内**：`data_analysis/ml/requirements-draft.txt`
    （钉住本轮真实环境 numpy 2.4.4 / pandas 2.3.3 / scikit-learn 1.7.2 / joblib 1.5.2，
    并写明"3.11 能否加载本批 pickle 未实测"这条风险），组长认可后可直接 `mv` 到 `data_analysis/` 下改名采用。
+   **耗时口径本轮更正**（见 5.11）：上一版记的 769 s 是三个模型筛选任务同机抢 CPU 时测的，
+   空机上同一套用例是**分钟级**（65 个 139.0 s），且缺科学栈时整套 skip、缺导出批次时只跳过绑数据的
+   几个类，所以这个 job 进得起 CI。
 3. **模型注册入口缺失**：`backend` 目前无 `MODEL_REGISTRY` / `ANALYTICS_MODELS_DIR`，
    `tests/test_analytics_api.py` 断言两个 `/predict/*` 必须 503。我按文档要求交付推理代码
    （`AvailabilityForecaster` + 错误码），接入 `service.py` 的动作留给组长；需要组长确认
@@ -285,11 +463,14 @@ OK          # 退出码 0
 4. **是否重跑一遍模型产物**：评估报告已经自带复现命令（`ml_avail_eval_run2_v2`），但**模型 bundle 的
    `training_report.json` 仍缺 `reproducibleCommand`**（本轮递归读过 24 份确认，详见 3.1），
    因为 run1/run2 先于这次改动。分两种花法：
-   * 只花 **90 秒**重跑 `build_hierarchical`（新目录、分数应逐位相同）→ bundle 带上**构建命令**，
-     但训练命令仍进不了产物；
-   * 花 **约 69 分钟**重跑 `train` + build + evaluate（新目录 `ml_avail_run3`）→ 每个 bundle 才真正
-     自带训练命令与 seed。`HistGradientBoosting` 只在同版本、同 seed 下确定性，所以"分数逐位相同"
-     是预期而非保证，重跑后要重发评估报告。
+   * 只花 **90 秒**重跑 `build_hierarchical`（run2 自己记的是 88.3 s；本轮单个 `--only h01` 实测 4.5 s，
+     新目录、分数应逐位相同）→ bundle 带上**构建命令**，但训练命令仍进不了产物；
+   * 花 **十几分钟**重跑 `train` + build + evaluate（新目录 `ml_avail_run3`）→ 每个 bundle 才真正
+     自带训练命令与 seed。代价已实测：全 12 个 bundle 在 **5× 预算**下 **829.7 s**，默认 1× 只会更快。
+     `HistGradientBoosting` 只在同版本、同 seed 下确定性——本轮这条从"预期"升级成"实测"：
+     `ml_avail_run4_r5_resume` 里 6 个**重训**的 bundle 与 `ml_avail_run3_r5` 一口气跑出来的那 6 个
+     连 `model.joblib` 哈希都逐位一致（同 seed、同 sklearn 版本、同批次）。真要重跑，跑完仍需按新目录
+     重发一次评估报告（第 3 节第 3 步），不能拿旧报告的分数挂新 bundle。
    我倾向：**先不重跑**，等接口/注册口径定了再一次性出 `run3`，免得同一批产物出现第三个版本号；
    但这条由组长定。
 

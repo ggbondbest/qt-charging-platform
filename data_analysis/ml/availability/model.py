@@ -44,6 +44,35 @@ LEVEL_GRID = np.round(np.arange(0.50, 0.995, 0.025), 4)
 POINT_RULES = ("median", "mode")
 #: Levels the mixture can be shrunk towards; ``global`` always has zero support, so it never is.
 PRIOR_LEVELS = [level for level, _ in KEY_LEVELS] + [GLOBAL_LEVEL]
+#: The budget every published bundle was fitted with (``ml_avail_run1`` 0.2.0, ``ml_avail_run2`` 0.3.0).
+#: ``fit_step`` reproduces it exactly at ``rounds_multiplier=1.0``, so the only way to change a
+#: shipped number is to ask for it out loud in the command and in the bundle's report.
+BASE_PARAMS = {
+    "max_iter": 250,
+    "learning_rate": 0.06,
+    "max_leaf_nodes": 31,
+    "min_samples_leaf": 40,
+    "early_stopping": True,
+    "validation_fraction": 0.1,
+    "n_iter_no_change": 15,
+}
+
+
+def scaled_rounds(multiplier: float) -> dict:
+    """:data:`BASE_PARAMS` with the boosting budget stretched by ``multiplier``.
+
+    Gradient boosting has no epochs - one "epoch" of it is one tree, and early stopping already ends
+    the fit well before ``max_iter``.  The honest equivalent of "train five times longer" is
+    therefore a larger round budget *and* a proportionally more patient stopping rule, otherwise the
+    extra budget is never reached.  ``multiplier=1.0`` returns :data:`BASE_PARAMS` untouched.
+    """
+    if not multiplier > 0:
+        raise ValueError(f"rounds multiplier must be positive, got {multiplier}")
+    params = dict(BASE_PARAMS)
+    if multiplier != 1.0:
+        params["max_iter"] = max(1, int(round(params["max_iter"] * multiplier)))
+        params["n_iter_no_change"] = max(1, int(round(params["n_iter_no_change"] * multiplier)))
+    return params
 
 
 def point_value(classes: np.ndarray, probability: np.ndarray, rule: str) -> np.ndarray:
@@ -92,17 +121,11 @@ class OrdinalForecastModel:
     #: bundles saved before 0.3.0 have no stored rule and behaved as ``mode``
     point_rule: str = "mode"
 
-    def fit_step(self, step: int, x_train, y_train, seed: int) -> None:
-        model = HistGradientBoostingClassifier(
-            max_iter=250,
-            learning_rate=0.06,
-            max_leaf_nodes=31,
-            min_samples_leaf=40,
-            early_stopping=True,
-            validation_fraction=0.1,
-            n_iter_no_change=15,
-            random_state=seed + step,
-        )
+    def fit_step(self, step: int, x_train, y_train, seed: int, *,
+                 rounds_multiplier: float = 1.0) -> None:
+        """Fit one hour's classifier; ``rounds_multiplier`` is recorded in the report by the caller."""
+        model = HistGradientBoostingClassifier(random_state=seed + step,
+                                               **scaled_rounds(rounds_multiplier))
         model.fit(x_train, y_train)
         self.steps[step] = model
 
