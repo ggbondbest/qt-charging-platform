@@ -15,7 +15,9 @@ directory                                    what it is
 ``ml_avail_run1`` / ``ml_avail_run2``        bound to ``analytics-5f8e9342…`` (superseded
                                              by the refresh on develop, PR #64; still on
                                              disk, and the resume tests use them precisely
-                                             because they predate ``seed``/``payloadEntry``)
+                                             because ``run2`` is the only published run
+                                             whose bundles record no ``seed``, and neither
+                                             legacy run records ``payloadEntry``)
 ``ml_avail_run3_r5`` / ``run4_r5_resume``    5x boosting-budget experiments (``-r5``), never
                                              published; also on the superseded batch
 ``ml_avail_run5`` / ``ml_avail_run6``        **current**: same recipe, same seed, same rows,

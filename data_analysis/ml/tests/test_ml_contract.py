@@ -35,11 +35,16 @@ EXPORT_DIR = DATA_ANALYSIS / "datasets" / "analytics_full_180d_v1"
 #: these names move with the batch; ``RunPointerTest`` below fails if they drift apart from the
 #: ``BASE_RUN`` / ``HIERARCHY_RUN`` constants the modules themselves use as defaults.
 RUN_NAMES = ("ml_avail_run5", "ml_avail_run6")
-#: Every published run is checked the same way; a run that has not been trained yet is skipped.
+#: Every published run is checked the same way, but a run missing from this machine is silently
+#: omitted from the bundle iteration (``_bundle_directories``) rather than failing - which is only
+#: safe because ``RunPointerTest`` below stops a half-present pair from passing for a complete one.
 RUN_DIRS = [DATA_ANALYSIS / "outputs" / name for name in RUN_NAMES]
 #: Superseded runs, trained against ``analytics-5f8e9342…``.  Kept pointed at by name because two
-#: resume cases exist precisely to prove the guards work on artefacts that predate ``seed`` and
-#: ``payloadEntry`` - nothing newer has that shape.
+#: resume cases exist precisely to prove the guards work on artefacts that predate the resume
+#: record, and measured on disk, only these do: ``ml_avail_run2`` is the one published run whose
+#: bundles carry no ``seed`` (run1's record 20260913), and neither legacy run records
+#: ``payloadEntry`` - that field is written by ``build_hierarchical.py``, so only ``ml_avail_run6``
+#: has it.  Nothing newer can drive those branches.
 LEGACY_RUN_NAMES = ("ml_avail_run1", "ml_avail_run2")
 
 # Exported doubles travel through Spark's CSV text representation, so parity is asserted to the
@@ -56,8 +61,8 @@ requires_stack = unittest.skipUnless(_depends_available(), "pandas/numpy/scikit-
 requires_run = unittest.skipUnless(any(directory.exists() for directory in RUN_DIRS),
                                    "no trained run under data_analysis/outputs; run ml.availability.train")
 #: the legacy-compat resume cases need one bundle of each generation: a base estimator and the
-#: wrapped version of it, both from the superseded batch, because that pair is the only artefact on
-#: disk that carries no ``seed`` and no ``payloadEntry``
+#: wrapped version of it, both from the superseded batch, because ``ml_avail_run2`` is the only
+#: published run that carries no ``seed`` and neither legacy run carries a ``payloadEntry``
 requires_legacy_runs = unittest.skipUnless(all(
     (DATA_ANALYSIS / "outputs" / run / "h01" / "model_metadata.json").exists() for run in
     LEGACY_RUN_NAMES), f"needs {' and '.join(LEGACY_RUN_NAMES)} on disk (superseded batch)")
@@ -952,8 +957,10 @@ class HierarchicalResumeTest(unittest.TestCase):
     def test_a_bundle_that_records_no_seed_is_not_claimed(self):
         """``ml_avail_run2`` predates seed recording, so nothing may be resumed on top of it."""
         with tempfile.TemporaryDirectory() as temporary:
-            self.assertIsNone(json.loads((self.WRAPPED / "h01" / artifacts.REPORT_NAME)
-                                         .read_text(encoding="utf-8")).get("seed"))
+            # notIn, not assertIsNone(get(...)): the shipped artefact omits the key entirely, and a
+            # null-valued seed would be a different bug (a run that recorded "no seed" on purpose).
+            self.assertNotIn("seed", json.loads((self.WRAPPED / "h01" / artifacts.REPORT_NAME)
+                                                .read_text(encoding="utf-8")))
             with self.assertRaises(SystemExit) as stopped:
                 self._reuse(self._copy(Path(temporary)))
             self.assertIn("seed", str(stopped.exception))
@@ -1155,8 +1162,13 @@ class RunPointerTest(unittest.TestCase):
     is imported - so the first case is the seam that turns a silent split into a failure.  The second
     is the one that matters to a reviewer: the data layer re-publishes by minting a new
     ``publishedBatchId`` (PR #64 did exactly that), after which every older bundle is dead on the
-    serving path.  Without this case that shows up as forty-odd confusing failures; with it, the
-    suite says which directory stopped being bound to which batch.
+    serving path.  Without this case that shows up as the 45 confusing failures PR #64 actually
+    caused; with it, the suite says which directory stopped being bound to which batch.
+
+    The second case skips only when *neither* authoritative directory is trained.  A half-present
+    pair fails instead: re-binding is a two-step job (``train.py``, then ``build_hierarchical.py``
+    on top of it), so one directory on disk and one missing is a re-bind that stopped halfway, not
+    an absent optional input - and the failure names which one is missing.
     """
 
     def test_the_test_pointers_match_the_module_constants(self):
@@ -1164,13 +1176,26 @@ class RunPointerTest(unittest.TestCase):
 
     def test_the_authoritative_runs_are_bound_to_the_batch_in_the_repository(self):
         export = forecaster.open_export(EXPORT_DIR)
-        for run in RUN_DIRS:
-            if not (run / "h01" / artifacts.METADATA_NAME).exists():
-                self.skipTest(f"{run.name} has not been trained on this machine")
-            metadata = json.loads((run / "h01" / artifacts.METADATA_NAME).read_text(encoding="utf-8"))
-            self.assertEqual(metadata["trainingPublishedBatchId"], export.published_batch_id,
-                             f"{run.name} is bound to a superseded batch: retrain into a new "
-                             f"directory and repoint RUN_NAMES / BASE_RUN / HIERARCHY_RUN")
+        trained = [run for run in RUN_DIRS if (run / "h01" / artifacts.METADATA_NAME).exists()]
+        if not trained:
+            # a clone that never ran the pipeline: nothing here claims to be bound to anything
+            self.skipTest(f"none of {' / '.join(RUN_NAMES)} is trained on this machine")
+        # A half-present pair is not a reason to skip: the re-bind stopped halfway, and whichever
+        # directory is missing is one the module constants still claim is the authoritative one.
+        # Naming it here beats letting it surface as a missing-bundle error somewhere else.
+        missing = [run.name for run in RUN_DIRS if run not in trained]
+        self.assertEqual(
+            len(trained), len(RUN_DIRS),
+            f"only part of the authoritative pair is on disk (present: "
+            f"{[run.name for run in trained]}, missing: {missing}); finish the re-bind before "
+            "trusting the batch check")
+        for run in trained:
+            with self.subTest(run=run.name):
+                metadata = json.loads(
+                    (run / "h01" / artifacts.METADATA_NAME).read_text(encoding="utf-8"))
+                self.assertEqual(metadata["trainingPublishedBatchId"], export.published_batch_id,
+                                 f"{run.name} is bound to a superseded batch: retrain into a new "
+                                 f"directory and repoint RUN_NAMES / BASE_RUN / HIERARCHY_RUN")
 
 
 if __name__ == "__main__":
