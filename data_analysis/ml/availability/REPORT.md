@@ -1,9 +1,11 @@
 # 空闲桩数可用性预测 · 交付说明（机器学习成员 B）
 
 读者：组长（用于接后端注册、评审与冻结验收）。
-代码基线：`feature/phase2-data-layer @ 444b3fd`（已合入 `develop 067f7b9`）。
-本地分支：`feature/phase2-ml-load`，**尚未推送、无上游**；分支名写的是 load，本分支实际内容是
-availability（B 线），建议改名，见第 7 节。
+代码基线：本轮已 rebase 到 `origin/develop @ d8b5fa2`（含 PR #63 清洗验收、#64 180 天交付重发布、
+#65 分析服务化迁 MySQL）；此前版本基于 `444b3fd`（已合入 `develop 067f7b9`）。
+本地分支：`feature/phase2-ml-load`，**本轮已按组长要求推送到 `origin` 并建立上游追踪**；分支名写的是
+load，本分支实际内容是 availability（B 线），建议改名，见第 7 节。
+**rebase 带来的后果不是零**：已发布产物与服务批次的绑定现在会被推理入口拒绝，见第 2.1 节与第 5.11 节末。
 
 > 全部指标为模拟数据测试结果（第二阶段发布批次），不代表真实运营数据表现。
 
@@ -13,6 +15,9 @@ availability（B 线），建议改名，见第 7 节。
 HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径 TEST MAE
 **0.4816 / 0.5047 / 0.5120 桩**，输出合法率 **1.0000**，`predict()` 直接通过
 `contracts/model.py:validate_prediction`，**不改任何契约**。
+
+> **本轮状态提示（rebase 之后）**：上游把数据批次重发布了，我这些已发布 bundle 与服务批次的绑定
+> 现在会被推理入口拒绝——**分数本身一分没变**，变的是批次号，处理办法在第 2.1 节与第 7 节第 5 条。
 
 ## 1. 对照交接文档的交付清单
 
@@ -57,6 +62,33 @@ HistGradientBoosting 全分布 + 站点×小时层级经验先验，服务口径
 `test_bundle_is_bound_to_the_batch_it_reads` 明确断言二者不相等——负荷线 0.1.0 产物正是把后者
 误写进了前者（见附录 A）。
 
+### 2.1 rebase 到 develop 之后：上游把批次重发布了（本轮实测，未修）
+
+本分支 rebase 到 `origin/develop`（`d8b5fa2`，含 PR #64 `data(analysis): refresh 180-day cleaned
+delivery`、PR #65 MySQL 服务化）后，`data_analysis/datasets/analytics_full_180d_v1/` 里的导出被换成
+新的一次发布：
+
+| 字段 | 我的产物记录的值 | 现在仓库里的值 |
+| --- | --- | --- |
+| `publishedBatchId` | `analytics-5f8e93429948404099b735999bfb6c4e` | `analytics-298aa3ee1401461fb06ea2bb96930dcf` |
+| `pipelineRunId` | `spark-625439908b6d4bcca1ae72e2e35ef27f` | `spark-6ed381b125034f9e95d726a74befb121` |
+| `sourceManifestSha256` | `1f03e37c…` | `1f03e37c…`（**未变**：原始包没换，变的只是这次 Spark 重跑导出的批次号与各分片哈希） |
+| 训练帧 | 107,425 行 × 75 特征，TRAIN/VAL/TEST 70,800/18,000/18,000 | 同左，**一字未变** |
+
+后果按事实记：**这套用例现在在本分支上是红的**（逐条计数见第 5.11 节）。45 个红项拆开是
+24 项 `test_bundle_is_bound_to_the_batch_it_reads` 子项的直接断言
+（`'analytics-5f8e…' != 'analytics-298a…'`）、19 项在构造特征、给出任何预测之前就抛出的
+`PredictionError: BATCH_MISMATCH`（含那条"请求不能偷渡答案"的防泄漏用例——它现在到不了断言）、1 项
+`--self-check` 退出码非 0、外加 1 项连带失败的聚合断言（"所有已发布 bundle 要么 PASS 要么显式
+SKIPPED"——因为没有一个 PASS）。
+**没有任何一条模型质量断言变红**。而 `ResumeEndToEndTest` 那两条真命令行用例恰好在重训：同 seed
+（20260913，`train.py` 的默认值）+ 同配方在新批次上现训 h01，日志打印
+`TEST MAE 0.527 / RMSE 0.726 / n=18000`、续跑复用那份打印 `0.5274`——与已发布 run1 h01 记录的
+`mae 0.5274 / rmse 0.7259 / n 18000` 一致（该用例自己断言的是"续跑 == 现训"，与 run1 的相等是我照着
+两边数字对读出来的，不是它断言的）。所以这是**批次号变更导致的重新绑定问题**，不是数据内容变了、
+也不是分数塌了。两条出路（要组长定，见第 7 节第 5 条）：把 B 线产物按新批次重跑一遍再发，
+或者数据层确认"每次重发布都换 batchId、下游产物随之失效"这条口径本身是否是验收想要的答案。
+
 ## 3. 启动方法（仓库根目录执行，需 numpy/pandas/scikit-learn/joblib）
 
 ```bash
@@ -94,6 +126,9 @@ python -m data_analysis.ml.availability.predict \
     --station ST-BJ-01 --reference-time 2026-04-28T19:00:00Z --horizon 6 \
     --export data_analysis/datasets/analytics_full_180d_v1
 ```
+
+**rebase 到 `d8b5fa2` 之后第 4、5 步会直接失败**（`PredictionError: the served batch differs from the
+trained batch`，原因与处理见第 2.1 节）；第 1~3 步照跑，只是产物会绑上新批次号。
 
 三个**会写产物**的入口（`train` / `build_hierarchical` / `evaluate`）都在装载数据帧之前拒绝覆盖：
 目标目录已有 bundle、已有 `train_summary.json` 或已有 `evaluation_report.*` 时直接退出，要求写新目录；
@@ -390,8 +425,39 @@ Ran 65 tests in 139.041s
 OK          # 退出码 0
 ```
 
+（这次跑在 rebase **之前**：那时仓库里的 `data_analysis/datasets/analytics_full_180d_v1/` 还是
+`067f7b9` 版导出，批次号与我的产物一致；rebase 之后的记录见下一段。）
+
 环境：Python 3.13.9 / scikit-learn 1.7.2 / pandas 2.3.3 / numpy 2.4.4（与 `model_metadata.json`
 的 `dependencies` 同一台机器同一环境）。
+
+**rebase 到 `origin/develop`（`d8b5fa2`）之后同一条命令的记录，本轮实测，如实抄在这里**：
+
+```
+$ python -m unittest discover -s data_analysis/ml/tests -t .
+Ran 65 tests in 741.462s
+FAILED (failures=38, errors=7)      # 退出码 1
+```
+
+45 个红项逐条归类（原因只有一条，见第 2.1 节）：
+
+| 用例 | 红项数 | 报错原文（截断） |
+| --- | --- | --- |
+| `ShippedBundleTest.test_bundle_is_bound_to_the_batch_it_reads` | 24 | `AssertionError: 'analytics-5f8e…' != 'analytics-298a…'` |
+| `ShippedBundleTest.test_prediction_satisfies_the_public_contract` | 6 | `PredictionError: the served batch differs from the trained batch` |
+| `ShippedBundleTest.test_a_request_cannot_smuggle_the_answer_in_as_history` | 1 | 同上（防泄漏那条也跑不到断言就抛了） |
+| `MinimalInferenceTest.test_every_shipped_bundle_passes_or_is_explicitly_skipped` | 6 + 1 | 前 6 项同上；那 1 项是聚合断言 `an ordinary 1/6/24-hour bundle is missing`，因为已经没有一个 PASS |
+| `MinimalInferenceTest.test_served_values_are_whole_chargers_within_the_station_capacity` | 6 | 同上 |
+| `MinimalInferenceTest.test_the_self_check_command_exits_zero_on_a_shipped_bundle` | 1 | 命令退出码 `1 != 0`，输出 `[self-check] 0 passed, 1 failed, 0 skipped` |
+
+合计 24 + 6 + 1 + (6+1) + 6 + 1 = **45**，与上面的 `failures=38, errors=7` 对得上（errors 是
+`ShippedBundleTest` 里那 7 个抛异常的子项）。
+
+**12 个测试类里只有 `ShippedBundleTest` 与 `MinimalInferenceTest` 两个变红**（两个都在"读已发布
+bundle"这条路上），其余 10 个类仍为绿——含本轮新加的续训、boosting 预算、特征变换、先验收缩、
+数据绑定与审计脚本类，也包括在合成小帧上跑的真训练端到端用例。
+741.5 s 与上面 139.0 s 的差**没有归因**——本机当时并非我记录的"空闲"状态，这条只按实测抄两个数，
+不解释成用例变贵（上一段那次更正的教训同样适用）。
 
 **上一版这里写的 `Ran 36 tests in 768.718s` 是失真的，本轮更正**：那次测量时同机还挂着三个模型筛选
 任务在抢 CPU（第 5.7 节的 h01/h06/h24 检索），不是这套用例的代价。同一台机器、空闲时的三次记录是：
@@ -437,9 +503,13 @@ OK          # 退出码 0
 
 ## 7. 需要组长拍板的事（我只提案，不动共享文件）
 
-1. **分支名**：`feature/phase2-ml-load` 未推送，内容与名字不符（实为 B 的可用性线）。
-   建议 `git branch -m feature/phase2-ml-availability`；若 A 也要用同名分支请改 A 的。
-   另外 `data_analysis/ml/PLAN.md`（未跟踪）是一份以**成员 A 负荷线**为主角的调研稿，与 B 的交付无关，
+1. **分支名**：`feature/phase2-ml-load` 内容与名字不符（实为 B 的可用性线）。**本轮已按组长要求
+   rebase 到 `origin/develop` 并推送了这个名字**，所以改名现在要多花两步：本地
+   `git branch -m feature/phase2-ml-availability` → 推新名 → 删远端旧分支（PR 若已开需改 base 引用）。
+   现在改仍然便宜，合入之后再改就麻烦了。另外这轮 fetch 看到远端**新增**了
+   `origin/feature/ml-load-forecast`（不在 develop 里，看名字像是成员 A 的负荷线）——若确实如此，
+   B 的分支叫 `ml-load` 就更该改了，两条线会撞同一个词。
+   另外 `data_analysis/ml/PLAN.md`（仍未跟踪）是一份以**成员 A 负荷线**为主角的调研稿，与 B 的交付无关，
    请定：删掉、移交成员 A，还是标注为"A 线调研（由 B 的会话代查）"。
 2. **CI 不跑 ml 测试，也没有任何地方声明 ML 依赖**：`.github/workflows/data-analysis.yml` 只有
    `generator` / `api` / `spark` 三个 job（已逐个看过），**没有一个跑 `data_analysis/ml/tests`**；
@@ -465,14 +535,21 @@ OK          # 退出码 0
    因为 run1/run2 先于这次改动。分两种花法：
    * 只花 **90 秒**重跑 `build_hierarchical`（run2 自己记的是 88.3 s；本轮单个 `--only h01` 实测 4.5 s，
      新目录、分数应逐位相同）→ bundle 带上**构建命令**，但训练命令仍进不了产物；
-   * 花 **十几分钟**重跑 `train` + build + evaluate（新目录 `ml_avail_run3`）→ 每个 bundle 才真正
+   * 花 **十几分钟**重跑 `train` + build + evaluate（新目录；`ml_avail_run3_r5` / `ml_avail_run4_r5_resume`
+     已被第 5.8/5.9 节的预算实验占用，下一份正式产物请用 `ml_avail_run5` 之类的新名字）→ 每个 bundle 才真正
      自带训练命令与 seed。代价已实测：全 12 个 bundle 在 **5× 预算**下 **829.7 s**，默认 1× 只会更快。
      `HistGradientBoosting` 只在同版本、同 seed 下确定性——本轮这条从"预期"升级成"实测"：
      `ml_avail_run4_r5_resume` 里 6 个**重训**的 bundle 与 `ml_avail_run3_r5` 一口气跑出来的那 6 个
      连 `model.joblib` 哈希都逐位一致（同 seed、同 sklearn 版本、同批次）。真要重跑，跑完仍需按新目录
      重发一次评估报告（第 3 节第 3 步），不能拿旧报告的分数挂新 bundle。
-   我倾向：**先不重跑**，等接口/注册口径定了再一次性出 `run3`，免得同一批产物出现第三个版本号；
-   但这条由组长定。
+   我倾向：**先不重跑**，等接口/注册口径定了再一次性出重跑版，免得同一批产物出现第三个版本号；
+   但这条由组长定。（第 5 条已使这条倾向失效，保留是为了不掩盖我当时怎么判断的。）
+5. **是否按新批次重绑（本轮新增，优先级高于第 4 条）**：上游 PR #64 重发布后，已发布 bundle 在服务
+   路径上会被 `predict.py` 直接拒（第 2.1 节），所以第 4 条里"先不重跑"的倾向**已经不适用了**——
+   要么 B 线按 `analytics-298aa3ee…` 重跑一版新产物（分数预期逐位不变，因为原始包与训练帧都没变；
+   代价就是第 5.8 节实测过的那十几分钟 + 评估报告重发），要么组长确认"重发布换 batchId ⇒ 下游产物全部
+   失效"这条口径是验收想要的（若是，则成员 A 的负荷线产物同样要重绑，这不该由 B 单方面决定）。
+   **我不会为了让测试变绿而去改测试里的批次号**——那条断言存在的意义就是挡这种事。
 
 ## 8. 已知局限（不许被汇报口径抹掉）
 
