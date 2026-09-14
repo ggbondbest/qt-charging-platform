@@ -1,6 +1,6 @@
 # ChargePilot 接口与集成说明
 
-ChargePilot 使用 Vue、FastAPI 和独立运营 MySQL，API 前缀为 `/api/v1/chargepilot`。电站、充电、支付和积分均为模拟演示；历史预测与本次用户行程分开维护，不连接真实电桩、真实支付或一期 Qt。启动配置见 [README](README.md)，运行后的交互式接口文档为 `/docs`。
+ChargePilot 使用 Vue、FastAPI 和独立运营 MySQL，API 前缀为 `/api/v1/chargepilot`。电站、充电、支付和积分均为模拟演示；历史预测与本次用户行程分开维护，不连接真实电桩、真实支付或一期 Qt。启动配置见 [README](README.md)，本子系统交互式接口文档为 `/api/v1/chargepilot/docs`；统一服务的统计/智能分析文档仍为 `/docs`。
 
 ## 通用约定
 

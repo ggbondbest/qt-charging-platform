@@ -66,7 +66,7 @@ Linux激活命令换成 `source data_analysis/.venv/bin/activate`。训练只读
 CREATE DATABASE chargepilot_demo CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
 CREATE USER 'chargepilot_app'@'127.0.0.1' IDENTIFIED BY '替换为自己的密码';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX
-ON chargepilot_demo.* TO 'chargepilot_app'@'127.0.0.1';
+ON `chargepilot\_demo`.* TO 'chargepilot_app'@'127.0.0.1';
 ```
 
 如果已有同名库，请复用并检查权限或另起新名字，**不要删除旧库**。程序幂等建 `cp_*` 表，保留已有行程与积分；无需向这个库导入上百万行CLEAN。
@@ -95,7 +95,7 @@ python -m data_analysis.chargepilot.cli check
 python -m data_analysis.chargepilot.cli serve
 ```
 
-浏览器打开 **http://127.0.0.1:8000/**；接口文档 **http://127.0.0.1:8000/docs**。开发前端可另开终端 `cd data_analysis/frontend`、`npm run dev`，打开5173端口，Vite代理同机8000。局域网验证时按需 `serve --host 0.0.0.0`，配合防火墙仅开放给组员，不暴露MySQL。
+浏览器打开 **http://127.0.0.1:8000/**；业务接口文档 **http://127.0.0.1:8000/api/v1/chargepilot/docs**（统一服务的 `/docs` 为统计与智能分析文档）。开发前端可另开终端 `cd data_analysis/frontend`、`npm run dev`，打开5173端口，Vite代理同机8000。局域网验证时按需 `serve --host 0.0.0.0`，配合防火墙仅开放给组员，不暴露MySQL。
 
 ### 3.4 地图和 ETA
 
