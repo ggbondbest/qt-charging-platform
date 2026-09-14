@@ -84,13 +84,18 @@ def rank_within_groups(scores: np.ndarray, onehot_labels: np.ndarray) -> np.ndar
 
 
 def write_new_json(path: Path, payload: dict) -> None:
-    """冻结语义:文件已存在就拒绝,首盲分数不可被重跑覆盖(与负荷线同一纪律)。"""
+    """冻结语义:文件已存在就拒绝,首盲分数不可被重跑覆盖(与负荷线同一纪律)。
+    O_EXCL 独占创建,并发同路径恰好一个成功——exists()->open(w) 的 check-then-act
+    两个进程能同时过检,后写者静默替换首盲评分(负荷线复审 P2#B 同款修复)。"""
     path = Path(path)
-    if path.exists():
-        raise FileExistsError(f"拒绝覆盖已冻结产物: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        raise FileExistsError(f"拒绝覆盖已冻结产物: {path}")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def ensure_out_dir() -> None:

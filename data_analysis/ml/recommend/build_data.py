@@ -9,6 +9,8 @@ ABANDONED/FAILED 不进标签,只汇入站点侧滚动统计(弃单率、排队)
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -240,9 +242,15 @@ def main() -> int:
         "warmupNaNShare": {c: round(float(cand[c].isna().mean()), 4)
                            for c in feature_columns if cand[c].isna().any()},
     }
-    cand.to_pickle(common.LONG_TABLE)
-    with open(common.SUMMARY_PATH, "w", encoding="utf-8") as handle:
+    # 两件套都走 tmp+os.replace(负荷线复审同款纪律):中断只留 .tmp,不留半截表/半截 JSON;
+    # summary 最后替换——下游若以 summary 为准,看到的永远是对应一份完整表的摘要。
+    tmp_table = Path(str(common.LONG_TABLE) + ".tmp")
+    cand.to_pickle(tmp_table)
+    os.replace(tmp_table, common.LONG_TABLE)
+    tmp_summary = Path(str(common.SUMMARY_PATH) + ".tmp")
+    with open(tmp_summary, "w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
+    os.replace(tmp_summary, common.SUMMARY_PATH)
     print(f"events={len(events)} rows={len(cand)} -> {common.LONG_TABLE}")
     print(json.dumps({k: summary[k] for k in ("splitEvents", "splits")}, ensure_ascii=False))
     return 0

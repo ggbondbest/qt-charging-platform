@@ -4,9 +4,8 @@
 
 import unittest
 
-import numpy as np
-
 try:
+    import numpy as np
     import pandas as pd
 
     from data_analysis.ml.recommend import common
@@ -61,6 +60,48 @@ class SplitBoundaries(unittest.TestCase):
         out = common.split_of(pd.Series(ts)).tolist()
         self.assertEqual(out, ["TRAIN", "VALIDATION", "VALIDATION",
                                "TEST", "TEST", "EXCLUDED"])
+
+
+@unittest.skipUnless(HAS_DEPS, "numpy/pandas not installed")
+class FrozenCreation(unittest.TestCase):
+    """首盲评分只许创建:拒绝覆盖 + 同路径并发恰好一个成功(负荷线复审 P2#B 同款)。"""
+
+    def test_refuses_overwrite_and_race_has_one_winner(self):
+        import json
+        import threading
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sub" / "test_metrics.json"
+            common.write_new_json(path, {"model": "first", "ndcg": 0.5})
+            with self.assertRaises(FileExistsError):
+                common.write_new_json(path, {"model": "second", "ndcg": 0.9})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["model"], "first")
+
+            barrier = threading.Barrier(2)
+            outcomes = {}
+
+            def worker(name: str):
+                race_path = Path(tmp) / "race.json"
+                barrier.wait()
+                try:
+                    common.write_new_json(race_path, {"model": name})
+                    outcomes[name] = "ok"
+                except FileExistsError:
+                    outcomes[name] = "exists"
+
+            threads = [threading.Thread(target=worker, args=(n,)) for n in ("w1", "w2")]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(sorted(outcomes.values()), ["exists", "ok"])
+            winner = next(n for n, r in outcomes.items() if r == "ok")
+            self.assertEqual(
+                json.loads((Path(tmp) / "race.json").read_text(encoding="utf-8"))["model"],
+                winner,
+            )
 
 
 if __name__ == "__main__":
