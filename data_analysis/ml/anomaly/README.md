@@ -1,48 +1,54 @@
-# 充电过程异常检测线(iforest-session-battery-v1)
+# 充电过程异常检测线(契约 P2,盲评链 v1→v4)
 
-契约 P2 项:IsolationForest 无监督识别**会话级**电池/充电异常,
-`anomaly_labels` 只在评测时关联,绝不进训练(契约原文要求)。
+IsolationForest 无监督识别**会话级**电池/充电异常,`anomaly_labels` 只在评测时关联,
+绝不进训练(契约原文)。正例口径全程一致:会话内出现任一标签事件即为正
+(121,539 会话,TEST 段 407 正例、告警预算约 190)。
 
-## 协议
+## 最终成绩(v4,独立首盲一次已冻结)
 
-- 样本单元 = 会话:1,217,829 条 5 分钟电池采样 → 121,539 个会话 × 22 个曲线汇总特征
-  (电压/电流统计、片间压差、温度 spread 与爬升、单位时间 SOC/能量、soc 增益等)。
-  同会话窗口天然同侧(按 started_at 落时间三段),满足"不拆两边"纪律。
-- TRAIN 拟合 scaler+IF(300 树,seed 42;中位数插补只从 TRAIN 学);
-  阈值 = TRAIN 分数分布上分位,分位点从 {88..99} 在 **VALIDATION** 按 F1 选(选中 97)。
-- 时间三段与负荷/推荐线同边界:05-01 / 05-15 / 05-30。TEST 407 正例,首盲一次已冻结。
-
-## 结果(会话级,正例率 4%)
-
-| | precision | recall | F1 |
+| 版本 | model_id | TEST F1 | 说明 |
 | --- | --- | --- | --- |
-| VALIDATION | 0.161 | 0.142 | **0.151** |
-| TEST(首盲) | 0.154 | 0.140 | **0.147** |
-| 规则基线(p99 温度/压差) | 0 | 0 | 0(验证/测试期一次未触发) |
+| v1 | iforest-session-battery-v1 | 0.147 | 会话均值 × 22 特征 |
+| v2 | iforest-pointmax-battery-v2 | 0.096 | 点级+会话内 z(负结果,见机制) |
+| v3 | iforest-session-rankfuse-v3 | 0.149 | 7 信号融合,贪心退回纯 v1(负结果) |
+| **v4** | **context-baseline-rankfuse-v4** | **0.3095** | precision 0.479 / recall 0.229 |
 
-分型召回(TEST):EARLY_STOP **26.5%**、POWER_DERATING 5.3%、THERMAL_STRESS 5.5%。
+v4 分型召回(TEST):**THERMAL_STRESS 100%**(91/91 全中,误报仅 101)、
+EARLY_STOP 0、POWER_DERATING 1.3%。随机参照同告警预算 F1≈0.05,即 **6.1 倍**。
+每一版都是独立 model_id、独立 TEST 首盲、重跑逐字节等价校验;前一版成绩不追改。
 
-## 诚实结论:这是弱结果,且原因明确
+## 为什么中间两版是负的,以及 v4 凭什么赢
 
-1. **会话均值稀释瞬时异常**:三类标签都是"发生在会话中途某时刻"的事件
-   (labels 带 recorded_at),而 v1 把 ~10 个采样点平均成一行;一次 5 分钟的热失控尖峰
-   在会话均值里只剩 ~1/10 的高度,IF 自然抓不住。分型召回完全吻合这个机制:
-   EARLY_STOP 改变整条曲线形态(提前终止→soc 增益/dV 特征全体漂移)所以最可检;
-   DERATING/THERMAL 是瞬时段,会话级几乎不可检。
-2. 无监督 vs 4% 稀薄正例的天花板本来就低(随机排序 F1≈0.04,模型 0.147 是 3.7 倍但远不够用)。
-3. 规则基线用 TRAIN p99 过拟合分布尾,验证期一次都不触发——阈值分位必须在全量分布上校准,
-   这个写法留作反面教材。
+- v1(会话均值):抓得住"整条曲线形态改变"(EARLY_STOP 召回 26.5%),
+  但 ~10 点均值把瞬时事件稀释 ~10 倍(热应力仅 5.5%)。
+- v2(会话内 robust z + 点级 TopK):与标签同粒度打分,预期"稀释消失"——实际更差。
+  机制:**会话内重归一化恰好抹掉"持续偏移"**——尾段电流减半时中位数自己跟着挪,
+  z 分数看不见(POWER_DERATING 召回 0.7%,实锤)。
+- v3(两视角 rank 融合):假设互补,VALIDATION 贪心却证明叠加只有稀释——
+  最优子集退回纯 v1(0.149≈0.147)。互补性要等参照系换对才出现。
+- v4(**语境参照**):逐点对比"(charger_id × SOC 档) 期望电流 / 温度 / 压差"中位数表,
+  参考分布只在 TRAIN 点上学。过热不再被任何"自身基线"抹掉——temp_excess 单信号
+  VALID F1 0.292 就超过 v1/v2/v3 全部,贪心到它为止(加别的反而降)。
+  诚实边界:这是**单信号强、多类型仍不全**——EARLY_STOP/DERATING 的检出需要
+  曲线截断/电流洼地的专门语境特征,留作 v5 方向(新 id 新首盲,不追改 v4 分)。
 
-**改进路径(未在本 v1 里做,避免为 TEST 刷分)**:采样点级打 IF 分、会话取 max/TopK——
-与"事件型标签"同粒度;或把 labels 的 recorded_at 邻域窗口特征(均值化会抹掉的部分)
-作为 v2 的评测目标。v2 若上线将作为新 model_id 走独立首盲。
+## 协议(全链共用)
+
+- 时间三段与负荷/推荐线同边界:05-01 / 05-15 / 05-30;会话按 started_at 整段落侧,
+  满足"同一会话不拆两边"。
+- 插补中位数、StandardScaler、IsolationForest(300 树,seed 42)、阈值分位:只在 TRAIN 拟合;
+  候选/子集/阈值只在 VALIDATION 按 F1 选(PERCENTILE 网格 × topk × 特征集 × 融合子集)。
+- 规则基线(TRAIN p99 温度/压差)在验证期一次未触发——阈值必须在部署分布校准,反面教材。
 
 ## 复现
 
 ```bash
-python -m data_analysis.ml.anomaly.detect
+python -m data_analysis.ml.anomaly.detect        # v1
+python -m data_analysis.ml.anomaly.detect_v2     # v2(点级+TopK 候选池)
+python -m data_analysis.ml.anomaly.detect_v3     # v3(rank 融合)
+python -m data_analysis.ml.anomaly.detect_v4     # v4(语境基线,最终)
 python -m unittest data_analysis.tests.test_ml_anomaly_churn
 ```
 
-产物:`outputs/ml_anomaly/`(bundle、train_metrics、冻结 test_metrics、session_features 缓存)。
-重跑对冻结文件做逐字节等价校验,不等价必失败(本会话真拦下过一次文案漂移)。
+产物:`outputs/ml_anomaly/`(各 bundle、train_metrics、四份冻结 test_metrics、
+session/point/context 三张特征缓存)。合成数据,表述上限"模拟数据测试结果"。

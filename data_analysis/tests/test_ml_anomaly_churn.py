@@ -119,5 +119,40 @@ class SessionFeatures(unittest.TestCase):
         self.assertAlmostEqual(feats.loc["A", "avg_power_kw"], 6.0, places=6)  # 1kWh/10min
 
 
+@unittest.skipUnless(HAS_DEPS, "pandas not installed")
+class V2Helpers(unittest.TestCase):
+    def test_topk_scores_max_and_mean(self):
+        s = pd.Series([0.1, 0.9, 0.5, 0.2], index=["A", "A", "A", "B"])
+        top = ac.topk_scores(s, 1)
+        self.assertAlmostEqual(top["A"], 0.9)
+        self.assertAlmostEqual(top["B"], 0.2)
+        top2 = ac.topk_scores(s, 2)
+        self.assertAlmostEqual(top2["A"], 0.7)  # (0.9+0.5)/2
+        self.assertAlmostEqual(top2["B"], 0.2)  # 单点组不足 k 也安全
+
+    def test_point_features_z_is_session_relative(self):
+        t0 = pd.Timestamp("2026-01-01")
+        cur = [100.0, 500.0, 100.0, 100.0, 100.0, 100.0]  # 尖峰只在 A 会话中段
+        samples = pd.DataFrame({
+            "session_id": ["A"] * 3 + ["B"] * 3,
+            "charger_id": ["CH1"] * 6,
+            "recorded_at": pd.to_datetime([t0 + pd.Timedelta(minutes=5 * i) for i in range(6)]),
+            "soc_pct": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            "pack_voltage_v": [300.0] * 6,
+            "charge_current_a": cur,
+            "max_cell_voltage_v": [3.7] * 6, "min_cell_voltage_v": [3.68] * 6,
+            "max_temperature_c": [30.0] * 6, "min_temperature_c": [28.0] * 6,
+        })
+        sessions = pd.DataFrame({"session_id": ["A", "B"],
+                                 "started_at": [t0, t0 + pd.Timedelta(minutes=15)]})
+        pts = ac.point_features(samples, sessions).set_index("session_id")
+        # 组内 z:A 中位数=100、插值 IQR=200 → 尖峰 z=400/148.26;B 全程平稳 z=0
+        self.assertAlmostEqual(pts[pts.index == "A"]["z_charge_current_a"].max(),
+                               400.0 / (0.7413 * 200 + 1e-9), places=6)
+        self.assertEqual(float(pts[pts.index == "B"]["z_charge_current_a"].abs().max()), 0.0)
+        # 差分只在组内:A 的 dvolt 全 0(电压恒定),不应被 B 的会话边界污染
+        self.assertEqual(float(pts[pts.index == "A"]["dvolt"].abs().max()), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

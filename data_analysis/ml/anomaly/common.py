@@ -19,6 +19,32 @@ DATASET_ID = "analytics_full_180d_v1"
 MODEL_ID = "iforest-session-battery-v1"
 MODEL_VERSION = "0.1.0"
 
+# v2:采样点级打分 + 会话内聚合。标签是带 recorded_at 的"事件",v1 的会话均值把它稀释掉;
+# v2 与标签同粒度打分、同会话取极值,独立 model_id、独立 TEST 首盲,v1 冻结文件不挪不动。
+MODEL_ID_V2 = "iforest-pointmax-battery-v2"
+MODEL_VERSION_V2 = "0.2.0"
+POINT_TABLE = OUT_DIR / "point_features_v2.pkl"
+BUNDLE_PATH_V2 = OUT_DIR / f"{MODEL_ID_V2}.joblib"
+TRAIN_METRICS_PATH_V2 = OUT_DIR / f"train_metrics_{MODEL_ID_V2}.json"
+TEST_METRICS_PATH_V2 = OUT_DIR / f"test_metrics_{MODEL_ID_V2}.json"
+
+# v3:会话级"信号并集"——v1(绝对曲线形态)、v2(瞬时尖峰)、压流/高温定向信号做 rank 融合,
+# 子集与权重只在 VALIDATION 贪心选;又一独立 model_id、独立 TEST 首盲。
+MODEL_ID_V3 = "iforest-session-rankfuse-v3"
+MODEL_VERSION_V3 = "0.3.0"
+TRAIN_METRICS_PATH_V3 = OUT_DIR / f"train_metrics_{MODEL_ID_V3}.json"
+TEST_METRICS_PATH_V3 = OUT_DIR / f"test_metrics_{MODEL_ID_V3}.json"
+BUNDLE_PATH_V3 = OUT_DIR / f"{MODEL_ID_V3}.joblib"
+
+# v4:语境基线特征——逐点对"同充电器×同SOC档的期望曲线"(参考分布只在 TRAIN 学),
+# 持续偏移不再被会话中位数抹掉。rank 融合框架沿用 v3。
+MODEL_ID_V4 = "context-baseline-rankfuse-v4"
+MODEL_VERSION_V4 = "0.4.0"
+CTX_TABLE = OUT_DIR / "context_signals_v4.pkl"
+TRAIN_METRICS_PATH_V4 = OUT_DIR / f"train_metrics_{MODEL_ID_V4}.json"
+TEST_METRICS_PATH_V4 = OUT_DIR / f"test_metrics_{MODEL_ID_V4}.json"
+BUNDLE_PATH_V4 = OUT_DIR / f"{MODEL_ID_V4}.joblib"
+
 TRAIN_END_EXCLUSIVE = pd.Timestamp("2026-05-01")
 VALID_END_EXCLUSIVE = pd.Timestamp("2026-05-15")
 TEST_END_EXCLUSIVE = pd.Timestamp("2026-05-30")
@@ -91,6 +117,56 @@ def session_features(samples: pd.DataFrame, sessions: pd.DataFrame) -> pd.DataFr
     out["avg_power_kw"] = out["energy_wh"] / 1000.0 / (out["dur_min"] / 60.0).replace(0, np.nan)
     out["split"] = split_of(out["started_at"])
     return out
+
+
+# 点级特征:瞬时量 + 会话内差分 + "相对本会话中位数"的稳健 z 分数(尖峰放大器)
+Z_BASES = ["charge_current_a", "pack_voltage_v", "celldiff", "temp_spread", "max_temperature_c", "dsoc"]
+FEATURES_V2 = (["soc_pct", "charge_current_a", "pack_voltage_v", "celldiff", "temp_spread",
+                "max_temperature_c", "min_temperature_c", "dsoc", "dvolt", "dcur", "dtemp", "gap_min"]
+               + [f"z_{c}" for c in Z_BASES])
+# 变体:只用"相对本会话"的对比特征——绝对量会把不同会话类型先分开,稀释瞬时尖峰信号
+FEATURES_V2C = ([f"z_{c}" for c in Z_BASES] + ["dsoc", "dvolt", "dcur", "dtemp", "gap_min"])
+
+
+def point_features(samples: pd.DataFrame, sessions: pd.DataFrame) -> pd.DataFrame:
+    """1.2M 条电池采样逐条成特征行。差分严格组内;robust z = (x-会话中位数)/(0.7413*IQR),
+    IQR=0 时退化为 0 除保护,|z| 截到 10。不碰 anomaly_labels(契约:标签只进评测)。"""
+    s = samples.sort_values(["session_id", "recorded_at"]).copy()
+    s["recorded_at"] = pd.to_datetime(s["recorded_at"])
+    g = s.groupby("session_id", sort=False)
+    s["celldiff"] = s["max_cell_voltage_v"] - s["min_cell_voltage_v"]
+    s["temp_spread"] = s["max_temperature_c"] - s["min_temperature_c"]
+    s["gap_min"] = g["recorded_at"].diff().dt.total_seconds() / 60.0
+    s["dsoc"] = g["soc_pct"].diff()
+    s["dvolt"] = g["pack_voltage_v"].diff()
+    s["dcur"] = g["charge_current_a"].diff()
+    s["dtemp"] = g["max_temperature_c"].diff()
+    for c in ("dsoc", "dvolt", "dcur", "dtemp", "gap_min"):
+        s[c] = s[c].fillna(0.0)
+    # 整表分组分位数(cython 路径)再按 session 广播回逐条,避免 121k 组上跑 UDF
+    med = s.groupby("session_id", sort=False)[Z_BASES].median()
+    iqr = s.groupby("session_id", sort=False)[Z_BASES].quantile(0.75) - \
+        s.groupby("session_id", sort=False)[Z_BASES].quantile(0.25)
+    for c in Z_BASES:
+        s[f"z_{c}"] = ((s[c] - s.session_id.map(med[c]))
+                       / (0.7413 * s.session_id.map(iqr[c]) + 1e-9)).clip(-10, 10)
+    ses = sessions[["session_id", "started_at"]].copy()
+    ses["started_at"] = pd.to_datetime(ses["started_at"])
+    s = s.merge(ses, on="session_id", how="left")
+    s["split"] = split_of(s["started_at"])
+    return s
+
+
+def topk_scores(score_by_session: pd.Series, k: int) -> pd.Series:
+    """会话分 = 组内 TopK 点分均值(k=1 即 max,抑制单点误报靠 K 平滑)。
+    用排序+cumcount 实现:groupby.apply 在无名索引上会带出重复 MultiIndex 尾巴。"""
+    df = pd.DataFrame({"session_id": score_by_session.index.to_numpy(),
+                       "score": score_by_session.to_numpy(dtype=float)})
+    if k == 1:
+        return df.groupby("session_id")["score"].max()
+    df = df.sort_values(["session_id", "score"], ascending=[True, False], kind="stable")
+    df["rk"] = df.groupby("session_id", sort=False).cumcount()
+    return df[df.rk < k].groupby("session_id")["score"].mean()
 
 
 def prf(scores: np.ndarray, y: np.ndarray, threshold: float) -> dict:
