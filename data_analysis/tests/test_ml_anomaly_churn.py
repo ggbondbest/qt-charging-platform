@@ -56,6 +56,18 @@ class Splits(unittest.TestCase):
         # 同一输入两次切分必须一致(哈希切分,不吃随机流)
         self.assertTrue((cc.user_split(ids) == first).all())
 
+    def test_churn_split_golden_buckets(self):
+        """钉死具体用户落桶:seed、摘要截取方式(hexdigest[:8])或桶界挪动都会立刻暴露,
+        否则全体用户 TEST 成员资格换一遍、历史冻结产物静默作废。"""
+        import hashlib
+
+        pins = ["U-DL-000001", "U-DL-000004", "U-DL-000003"]  # TRAIN/VALIDATION/TEST 各一
+        self.assertEqual(cc.user_split(pd.Series(pins)).tolist(),
+                         ["TRAIN", "VALIDATION", "TEST"])
+        for uid, want in zip(pins, ["TRAIN", "VALIDATION", "TEST"]):
+            bucket = int(hashlib.sha1(f"42:{uid}".encode()).hexdigest()[:8], 16) % 100
+            self.assertEqual("TRAIN" if bucket < 70 else "VALIDATION" if bucket < 85 else "TEST", want)
+
 
 @unittest.skipUnless(HAS_DEPS, "pandas not installed")
 class FreezeReuse(unittest.TestCase):

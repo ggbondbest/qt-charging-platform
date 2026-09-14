@@ -18,8 +18,10 @@ CLEAN_DIR = DATA_ANALYSIS_ROOT / "datasets" / "analytics_full_180d_v1" / "clean"
 OUT_DIR = DATA_ANALYSIS_ROOT / "outputs" / "ml_churn"
 
 DATASET_ID = "analytics_full_180d_v1"
-MODEL_ID = "gbdt-churn-user-v1"
-MODEL_VERSION = "0.1.0"
+# v2:自查评审实锤 v1 两处窗口越界(queues_90 无上界泄进特征;标签窗无上界误标 106 人),
+# v1 冻结件按纪律不追改、标记隔离;v2 修口径后走独立 TEST 首盲。
+MODEL_ID = "gbdt-churn-user-v2"
+MODEL_VERSION = "0.2.0"
 
 OBSERVE_END = pd.Timestamp("2026-05-15")
 LABEL_HORIZON_DAYS = 14
@@ -33,6 +35,17 @@ TEST_METRICS_PATH = OUT_DIR / f"test_metrics_{MODEL_ID}.json"
 
 CATEGORICAL = ["home_city_id", "segment", "membership", "acquisition_channel", "vehicle_class"]
 NON_FEATURE = {"user_id", "split", "churned_14d", "first_attempt", "last_attempt"}
+# 入模列白名单:build_user_table 的产出一旦扩列,必须显式加进这里并复批,
+# 防止"顺手加一列"绕过评审就溜进模型(黑名单模式是敞口)。
+FEATURE_COLUMNS = [
+    "home_city_id", "segment", "acquisition_channel", "membership",
+    "attempts_90", "attempts_60", "attempts_30", "attempts_14", "started_90",
+    "days_since_last", "days_since_last_start", "distinct_stations",
+    "energy_kwh_90", "spend_yuan_90", "fee_per_kwh_90", "avg_session_kwh",
+    "campaign_share", "gap_mean", "gap_std", "gap_max", "gap_mean_last5",
+    "gap_recent_vs_overall", "sessions_per_week", "queues_90", "queue_abandon_share",
+    "battery_kwh", "max_charge_kw", "vehicle_class", "account_age_days",
+]
 
 
 def load_table(name: str) -> pd.DataFrame:
@@ -66,7 +79,10 @@ def build_user_table() -> pd.DataFrame:
 
     a = att[att.attempted_at < OBSERVE_END].copy()
     a["is_start"] = (a.outcome == "STARTED").astype(float)
-    past = att[att.attempted_at >= OBSERVE_END]
+    # 标签窗 = [OBSERVE_END, OBSERVE_END + 14 天),必须有上界:否则数据尾超出 14 天的
+    # 用户(实测 106 人)在超窗期才回来、却被判"未流失",等于把标签泄漏进来。
+    label_end = OBSERVE_END + pd.Timedelta(days=LABEL_HORIZON_DAYS)
+    past = att[(att.attempted_at >= OBSERVE_END) & (att.attempted_at < label_end)]
 
     def wc(mask: pd.Series) -> pd.Series:
         return a[mask].groupby("user_id").size()
@@ -100,7 +116,8 @@ def build_user_table() -> pd.DataFrame:
     feats["gap_mean_last5"] = tail5.groupby(ss.loc[tail5.index, "user_id"]).mean()
     feats["gap_recent_vs_overall"] = feats.gap_mean_last5 / feats.gap_mean.replace(0, np.nan)
     feats["sessions_per_week"] = s90.groupby("user_id").size() / 13.0  # 90d≈13周
-    q90 = queue[queue.joined_at >= t_end - pd.Timedelta(days=90)]
+    # 上界必须加:排队记录会延伸进标签窗(实测 2,576 条、2,005 用户),漏了就等于把未来行为喂进特征
+    q90 = queue[(queue.joined_at >= t_end - pd.Timedelta(days=90)) & (queue.joined_at < OBSERVE_END)]
     feats["queues_90"] = q90.groupby("user_id").size()
     qall = queue[queue.joined_at < OBSERVE_END]
     feats["queue_abandon_share"] = (qall.assign(ab=qall.status.eq("ABANDONED"))

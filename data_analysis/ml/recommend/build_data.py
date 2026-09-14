@@ -143,7 +143,7 @@ def main() -> int:
     events["split"] = common.split_of(events["reference_time"])
 
     # ---- 用户全局历史(全部 attempt 流;当事行自身即"截至 t"口径)----
-    a_sorted = att.sort_values("attempted_at").copy()
+    a_sorted = att.sort_values(["attempted_at", "attempt_id"]).copy()  # 次级键定序:同刻并列也可复算
     a_sorted["pair_attempts_incl"] = a_sorted.groupby(["user_id", "station_id"]).cumcount() + 1
     a_sorted["pair_started_incl"] = a_sorted.groupby(["user_id", "station_id"])["started_flag"].cumsum()
     a_sorted["user_attempts_before"] = a_sorted.groupby("user_id").cumcount() + 1  # 含当事
@@ -161,8 +161,11 @@ def main() -> int:
     cand = cand.rename(columns={"station_id": "cand_station_id"})
     cand = cand.sort_values(["event_id", "cand_station_id"]).reset_index(drop=True)
     cand["row_key"] = np.arange(len(cand))
-    assert len(cand) == 5 * len(events), "候选展开不是 5 倍,reshape 前提不成立"
-    assert cand.groupby("event_id", sort=False)["label"].sum().eq(1).all(), "存在无正例事件"
+    # 运行期必查(不用 assert:python -O 会静默剥掉,而这两条是 reshape(n,5) 的正确性前提)
+    if len(cand) != 5 * len(events):
+        raise RuntimeError("候选展开不是 5 倍,reshape 前提不成立")
+    if not cand.groupby("event_id", sort=False)["label"].sum().eq(1).all():
+        raise RuntimeError("存在无正例/多正例事件")
 
     # ---- 静态与匹配 ----
     ch = chargers.groupby("station_id")["rated_power_kw"].agg(
@@ -185,7 +188,10 @@ def main() -> int:
     cand["day_of_week"] = cand["reference_time"].dt.dayofweek
     cand["is_weekend"] = (cand["day_of_week"] >= 5).astype(int)
 
-    # ---- 站点滚动(事件前一日起算)----
+    # ---- 站点滚动 ----
+    # 口径如实记:_rolled 行 d 已只含 ≤d-1(join 键再退一天到 D-1),最终窗口是
+    # [D-29, D-2]——比"截至昨日"保守一天,无泄漏但放弃了预测力最强的昨日;
+    # v1 首盲已冻结不动,若要收回该日信号属 v2 数值变更(新 id 新首盲)。
     cand["day_shift"] = (cand["reference_time"] - pd.Timedelta(days=1)).dt.normalize()
     sdf = station_rolling_features(att, sess, rev, queue, station_ids, days).reset_index()
     cand = cand.merge(sdf, left_on=["cand_station_id", "day_shift"],

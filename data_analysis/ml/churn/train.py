@@ -1,4 +1,5 @@
-"""流失训练:HistGB 二分类(class_weight=balanced)学 P(14天内不再来);
+"""流失训练:HistGB 二分类,class_weight=balanced(排序指标选型用;该权重使
+predict_proba 偏离真实边际概率,Brier 只反映畸变值,不可与未加权模型对比校准)。
 VALIDATION 上报 AUC/PR-AUC/Brier/top-decile 提升,基线是纯 recency 规则与随机;TEST 一行不看。
 用法(仓库根目录):python -m data_analysis.ml.churn.train
 """
@@ -30,7 +31,13 @@ PARAMS = {
 
 
 def feature_columns(table: pd.DataFrame) -> list[str]:
-    return [c for c in table.columns if c not in common.NON_FEATURE]
+    """白名单校验:缺列/多列都直接拒,新列必须先过 FEATURE_COLUMNS 才能入模。"""
+    have = [c for c in table.columns if c not in common.NON_FEATURE]
+    missing = sorted(set(common.FEATURE_COLUMNS) - set(have))
+    extra = sorted(set(have) - set(common.FEATURE_COLUMNS))
+    if missing or extra:
+        raise ValueError(f"特征列与白名单不符 missing={missing} extra={extra}")
+    return list(common.FEATURE_COLUMNS)
 
 
 def as_frame(table: pd.DataFrame, columns: list[str]) -> pd.DataFrame:

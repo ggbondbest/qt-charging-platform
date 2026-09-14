@@ -76,6 +76,8 @@ def rank_within_groups(scores: np.ndarray, onehot_labels: np.ndarray) -> np.ndar
     n_candidates = 5
     matrix = np.asarray(scores, dtype=float).reshape(-1, n_candidates)
     onehot = np.asarray(onehot_labels, dtype=float).reshape(-1, n_candidates)
+    if not np.isfinite(matrix).all():
+        raise ValueError("分数含 NaN/Inf:NaN 会让比较全 False、名次塌成 0,mrr 出现 inf")
     if not np.all(onehot.sum(axis=1) == 1):
         raise ValueError("每个事件必须恰有一个正候选")
     chosen = (matrix * onehot).sum(axis=1, keepdims=True)

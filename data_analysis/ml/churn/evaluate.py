@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -38,6 +40,13 @@ def main() -> int:
         "modelId": common.MODEL_ID, "modelVersion": common.MODEL_VERSION,
         "datasetId": common.DATASET_ID,
         "note": "流失预测 TEST 首盲;OBSERVE_END 与标签窗口见 bundle.metadata,重跑要求逐字节等价",
+        # provenance 绑定:这组数字对应哪一版 bundle、哪一版特征表
+        "bundleSha256": hashlib.sha256(common.BUNDLE_PATH.read_bytes()).hexdigest(),
+        "userTableSha256": hashlib.sha256(common.USER_TABLE.read_bytes()).hexdigest(),
+        "metricCaveats": "class_weight=balanced 使概率畸变,Brier 仅为畸变值;AUC/PR-AUC/lift 不受影响",
+        "lineage": {"v1Quarantined": "v1(0.744 AUC)实锤两处越界:queues_90 泄入标签窗 + 标签窗超尾误标106人;"
+                                      "v1 冻结件保留供审计但结论作废;v2 修口径后独立首盲",
+                    "labelWindowFix": "标签窗 [OBSERVE_END, +14d) 双侧封闭;queues_90 加上界"},
         "testUsers": int(len(test)),
         "model": common.ranking_free_metrics(y, p),
         "recencyRule": common.ranking_free_metrics(
