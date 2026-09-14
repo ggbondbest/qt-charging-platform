@@ -27,7 +27,7 @@ QUANTILES = (0.1, 0.5, 0.9)
 CONTRACT_HORIZONS = (1, 6, 24)
 MODEL_ID = "hgb-quantile-history24-v1"
 MODEL_VERSION = "0.1.0"
-BASE_MODEL_ID = common.MODEL_ID  # 已上线点模型 hgb-deep-history24-v1,沿用其 metadata 做批次溯源
+BASE_MODEL_ID = common.MODEL_ID  # 已上线点模型(v0.4 hgb-q50),沿用其 metadata 做批次溯源
 
 OUT_DIR = common.DATA_ANALYSIS_ROOT / "outputs" / "ml_load"
 RACE2_DIR = OUT_DIR / "race2"

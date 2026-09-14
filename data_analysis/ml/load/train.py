@@ -101,18 +101,11 @@ def clip_to_capacity(values: np.ndarray, frame: pd.DataFrame, index) -> np.ndarr
     return np.clip(values, 0.0, limits)
 
 
-def last_week_predictions(frame: pd.DataFrame, power_lookup: pd.Series) -> np.ndarray:
-    # 保留 tz-aware 类型(不要 .to_numpy()), 否则 reindex 丢时区后对不上 UTC 索引
-    wanted = pd.MultiIndex.from_arrays(
-        [frame["station_id"], frame["reference_dt"] - pd.Timedelta(days=7)]
-    )
-    return power_lookup.reindex(wanted).to_numpy(dtype=float)
-
-
 def main() -> int:
     started = time.time()
     manifest = common.read_manifest()
-    frame = pd.read_pickle(OUT_DIR / "joined_usable.pkl")
+    # 审计没过或批次不对就不许吃缓存(评审 P2#3);周基线函数挪去 common 并加 horizon(评审 P2#2)。
+    frame = pd.read_pickle(common.require_prepared(manifest))
     hourly = common.load_hourly_metrics()
     power_lookup = hourly.set_index(["station_id", "recorded_at"])["mean_power_kw"]
 
@@ -150,7 +143,7 @@ def main() -> int:
             y_valid, np.clip(persistence, 0.0, None)
         )
 
-        week = last_week_predictions(frame.loc[valid_ok], power_lookup)
+        week = common.last_week_predictions(frame.loc[valid_ok], power_lookup, horizon)
         found = np.isfinite(week)
         entry["same_hour_last_week"] = regression_metrics(y_valid[found], week[found])
         entry["same_hour_last_week"]["coverage"] = float(found.mean())

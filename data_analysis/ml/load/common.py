@@ -18,6 +18,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from data_analysis.contracts.serving import parse_utc as _contract_parse_utc
+
 DATA_ANALYSIS_ROOT = Path(__file__).resolve().parents[2]
 DATASET_DIR = DATA_ANALYSIS_ROOT / "datasets" / "analytics_full_180d_v1"
 BUSINESS_TZ_OFFSET = timedelta(hours=8)
@@ -85,7 +87,8 @@ def load_training_frame() -> pd.DataFrame:
 
 
 def parse_utc(stamp: str) -> datetime:
-    return datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    # 复用公共契约解析器:API 允许 .000Z 等小数秒整点,自己 strptime 固定格式会误拒合法请求(评审 P2#1)。
+    return _contract_parse_utc(stamp)
 
 
 def format_utc(stamp: datetime) -> str:
@@ -203,11 +206,12 @@ def build_feature_row(
     # 只用原始小时重算,与离线导出表逐列同构(audit_offline_parity 成立的前提)。
     # 小时字段来自 station_hourly_metrics,rated_capacity_kw 来自 station_snapshot;校验不过抛错,宁拒不喂半截。
     ref = parse_utc(reference_time)
-    ordered = sorted(history, key=lambda row: row["recorded_at"])
+    # 排连续性与比对全部用解析后的时间点:同一时刻的 `.000Z`/`Z` 字符串不相等,按字符串会误判窗口断裂。
+    ordered = sorted(history, key=lambda row: parse_utc(row["recorded_at"]))
     if len(ordered) != 24:
         raise ValueError(f"HISTORY_TOO_SHORT: expected 24 complete hours, got {len(ordered)}")
-    expected = [format_utc(ref - timedelta(hours=offset)) for offset in range(24, 0, -1)]
-    stamps = [row["recorded_at"] for row in ordered]
+    expected = [ref - timedelta(hours=offset) for offset in range(24, 0, -1)]
+    stamps = [parse_utc(row["recorded_at"]) for row in ordered]
     if stamps != expected:
         raise ValueError("history hours are not the 24 consecutive intervals before reference_time")
     powers = np.array([float(row["mean_power_kw"]) for row in ordered], dtype=float)
@@ -275,3 +279,41 @@ def audit_offline_parity(frame: pd.DataFrame, sample: int | None = None) -> dict
         column: float(np.abs(frame[column].to_numpy(dtype=float) - values).max())
         for column, values in rebuilt.items()
     }
+
+
+def last_week_predictions(frame: pd.DataFrame, power_lookup: pd.Series, horizon: int) -> np.ndarray:
+    """第 h 小时目标锚在 reference+(h-1)h,周基线取同一小时的上周值:回看 168-(h-1) 小时。
+    不修正偏移的话 h06/h24 会拿早 5/23 小时的值当基线,MAE 虚高、提升率虚报(评审 P2#2)。
+    保留 tz-aware 索引(不要 .to_numpy()),否则 reindex 丢时区对不上 UTC 键。"""
+    wanted = pd.MultiIndex.from_arrays(
+        [frame["station_id"], frame["reference_dt"] - pd.Timedelta(hours=168 - (horizon - 1))]
+    )
+    return power_lookup.reindex(wanted).to_numpy(dtype=float)
+
+
+def write_new_json(path: Path, payload: dict) -> None:
+    """冻结评分只许创建不许覆盖:TEST 每模型每批次仅批一次(评审 P2#4)。重跑必须先删或改名,故意留门槛。"""
+    if path.exists():
+        raise FileExistsError(f"refusing to overwrite frozen artifact: {path}")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def require_prepared(manifest: dict) -> Path:
+    """训练/评估读缓存前的门禁:审计通过标志 + 批次一致,缺一不可(评审 P2#3)。"""
+    out = DATA_ANALYSIS_ROOT / "outputs" / "ml_load"
+    summary_path = out / "prepare_summary.json"
+    if not summary_path.exists():
+        raise RuntimeError("missing prepare_summary.json; run python -m data_analysis.ml.load.prepare_data")
+    with open(summary_path, encoding="utf-8") as handle:
+        summary = json.load(handle)
+    if not summary.get("auditPassed"):
+        raise RuntimeError(f"prepare audit not passed ({summary_path}); cache not usable")
+    if summary.get("publishedBatchId") != manifest["publishedBatchId"]:
+        raise RuntimeError(
+            f"cache batch {summary.get('publishedBatchId')} != manifest {manifest['publishedBatchId']}"
+        )
+    pkl = out / "joined_usable.pkl"
+    if not pkl.exists():
+        raise RuntimeError("prepare_summary passed but joined_usable.pkl missing")
+    return pkl

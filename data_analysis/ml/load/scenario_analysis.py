@@ -1,5 +1,5 @@
-"""冻结 hgb-deep 评分的场景切片(post-hoc 描述性报告,不参与模型决策);契约时距各按自己的 split 列计分。
-切片维度:weekend、holiday、workday、target_hour_bucket(按目标小时的北京时刻度 reference_dt+horizon+8h:
+"""冻结评分的场景切片(post-hoc 描述性报告,不参与模型决策);契约时距各按自己的 split 列计分。
+切片维度:weekend、holiday、workday、target_hour_bucket(按目标小时的北京时刻度 reference_dt+(h-1)h+8h:
 0-6/7-9/10-16/17-21/22-23)、capacity_tertile(全网额定功率仅 74/187 kW 两值,两个 quantile cutoff 均落在 187,
 mid 桶恒空,属数据性质;small=74、large=187)、city_id。格子指标 MAE/RMSE/P95abs/n,n<MIN_CELL_N 打 low_n 标记。
 预测管线与 evaluate.py 相同;TEST 数字与冻结 test_metrics.json 交叉核对,对不上=切片代码或数据漂移。
@@ -28,8 +28,9 @@ MIN_CELL_N = 30
 
 
 def target_hour_bucket(horizon: int, reference_dt: pd.Series) -> pd.Series:
-    """被预测小时(reference + horizon)折算北京时间后归入小时桶。"""
-    hour = (reference_dt + pd.Timedelta(hours=horizon) + common.BUSINESS_TZ_OFFSET).dt.hour
+    """被预测小时 = reference + (horizon-1)h(契约第 1 个预测点是 reference 起的整点区间);
+    用 +horizon 会把目标整体归晚一小时,h01 有 1/5 的行走错桶(评审 P2#5)。"""
+    hour = (reference_dt + pd.Timedelta(hours=horizon - 1) + common.BUSINESS_TZ_OFFSET).dt.hour
     bins = pd.cut(
         hour,
         bins=[-1, 6, 9, 16, 21, 23.999],

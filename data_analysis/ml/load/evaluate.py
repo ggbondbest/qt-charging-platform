@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from . import common
-from .train import BUNDLE_PATH, last_week_predictions
+from .train import BUNDLE_PATH
 
 import joblib
 
@@ -46,7 +46,7 @@ def regression_metrics(y_true, y_pred):
 def main() -> int:
     bundle = joblib.load(BUNDLE_PATH)
     models = bundle["models"]
-    frame = pd.read_pickle(OUT_DIR / "joined_usable.pkl")
+    frame = pd.read_pickle(common.require_prepared(common.read_manifest()))
     hourly = common.load_hourly_metrics()
     power_lookup = hourly.set_index(["station_id", "recorded_at"])["mean_power_kw"]
 
@@ -65,7 +65,7 @@ def main() -> int:
             frame.loc[mask, "rated_capacity_kw"].to_numpy(dtype=float),
         )
         persistence = frame.loc[mask, "lag_power_kw_h01"].to_numpy(dtype=float)
-        week = last_week_predictions(frame.loc[mask], power_lookup)
+        week = common.last_week_predictions(frame.loc[mask], power_lookup, horizon)
         found = np.isfinite(week)
 
         entry = {
@@ -110,8 +110,8 @@ def main() -> int:
     report["trainingPublishedBatchId"] = batch
     suffix = batch.removeprefix("analytics-")[:8]
     metrics_path = OUT_DIR / f"test_metrics_{bundle['model_id']}_{suffix}.json"
-    with open(metrics_path, "w", encoding="utf-8") as handle:
-        json.dump(report, handle, ensure_ascii=False, indent=2)
+    # 已存在=这个模型/批次已批过 TEST,直接拒绝(评审 P2#4);想重评请换批次或显式改名归档。
+    common.write_new_json(metrics_path, report)
 
     print(f"{'horizon':8}{'GBDT MAE':>10}{'RMSE':>9}{'persist':>9}{'week(7d)':>10}{'n':>8}")
     for horizon in range(1, 25):

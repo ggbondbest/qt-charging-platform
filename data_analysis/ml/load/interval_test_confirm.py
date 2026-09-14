@@ -93,8 +93,8 @@ def main() -> int:
         "test": report,
         "pooled": pooled,
     }
-    with open(OUT_PATH, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    # 确认性评分同样一次性的:文件存在即拒绝重写(评审 P2#4 的同一规则)
+    common.write_new_json(OUT_PATH, payload)
     print(f"-> {OUT_PATH}")
     return 0
 

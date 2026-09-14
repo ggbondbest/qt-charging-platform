@@ -1,5 +1,7 @@
 """join 好的训练帧落盘前跑两道 parity 审计:重建 vs 导出表、导出表 vs 原始小时表,任一最大差值 >1e-9 退出码 1。
 导出特征是后续训练的唯一起点,lag 错位或 rolling 口径不一致会让指标虚高且难事后发现。
+发布顺序(评审 P2#3):summary 无论如何都写(带 auditPassed 标志);审计通过才原子发布 joined_usable.pkl,
+失败只留诊断、绝不让坏数据变成可训练缓存,也不覆盖此前有效的 pkl。下游用 common.require_prepared 把关。
 
 用法(仓库根目录):
     python -m data_analysis.ml.load.prepare_data
@@ -8,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 from . import common
@@ -46,17 +49,30 @@ def main() -> int:
         "rawHourlyAlignment": raw_audit,
     }
 
+    summary["auditPassed"] = bool(worst <= 1e-9)
     out = common.DATA_ANALYSIS_ROOT / "outputs" / "ml_load"
-    out.mkdir(parents=True, exist_ok=True)
-    usable.to_pickle(out / "joined_usable.pkl")
-    with open(out / "prepare_summary.json", "w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2)
+    publish(usable, summary, out)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    if worst > 1e-9:
-        print("PARITY AUDIT FAILED", file=sys.stderr)
+    if not summary["auditPassed"]:
+        print("PARITY AUDIT FAILED; usable cache NOT published", file=sys.stderr)
         return 1
     print("offline rebuild matches exported features; frame saved to", out / "joined_usable.pkl")
     return 0
+
+
+def publish(usable: "pd.DataFrame", summary: dict, out: "common.Path") -> None:
+    """审计通过才发布可用缓存(评审 P2#3);独立成函数供回归测试直接驱动。
+    summary 无条件写(tmp+replace 防半截 JSON),auditPassed=False 会让 require_prepared 拦下游。"""
+    out.mkdir(parents=True, exist_ok=True)
+    tmp_summary = out / "prepare_summary.json.tmp"
+    with open(tmp_summary, "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, ensure_ascii=False, indent=2)
+    os.replace(tmp_summary, out / "prepare_summary.json")
+    if not summary["auditPassed"]:
+        return
+    tmp_pkl = out / "joined_usable.pkl.tmp"
+    usable.to_pickle(tmp_pkl)
+    os.replace(tmp_pkl, out / "joined_usable.pkl")
 
 
 if __name__ == "__main__":
