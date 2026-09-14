@@ -6,3 +6,5 @@ pydantic==2.13.5
 uvicorn==0.52.4
 # HTTP test client; no network calls are made by the unit tests.
 httpx==0.28.1
+# MySQL 8.4 serving and publication; rsa supports caching_sha2_password.
+PyMySQL[rsa]==1.2.0

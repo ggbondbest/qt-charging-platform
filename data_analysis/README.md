@@ -9,6 +9,7 @@
 HDFS 接入代码已预留实际路径参数，但老师提供的 Linux/Hadoop 环境仍需单独验证。
 
 网页/模型组请先看 [数据层交付指南](DATA_LAYER.md) 和 [公共契约](contracts/README.md)。
+第二阶段正式查询库使用 **MySQL 8.4**，安装、账号、发布与启动步骤见 [MySQL 接入说明](docs/mysql_setup.md)；FastAPI 公共契约不变，第一阶段 Qt 的 SQLite 不改。
 按老师流程演示数据清洗，请看 [数据清洗与准备验收指南](docs/cleaning_acceptance.md)：
 补充逐字段质量探查、清洗前后对比、规则与血缘、11 个分组维度和 3 组双维对比；继续使用 FastAPI。
 仓库附 `analytics_full_180d_v1` / `analytics_sample_7d_v1` 两个可直接使用的统计包；
@@ -78,7 +79,7 @@ data_analysis/
   spark_jobs/            真正执行清洗和统计的 PySpark 作业
   backend/               已实现的只读统计 HTTP API；模型尚未就绪时明确返回 503
   contracts/             OpenAPI、TS 类型、表结构、预测/模型契约和真实响应示例
-  publishing/            CSV校验、便携包、不可覆盖的只读 SQLite 发布
+  publishing/            CSV校验、便携包、不可覆盖的 MySQL 批次发布；SQLite 离线兼容
   scripts/               一键运行数据层、生成实际接口示例
   frontend/              后续 Vue + ECharts 页面边界说明
   ml/                    预测任务、训练切分和防泄漏约定
@@ -136,7 +137,7 @@ PySpark：明确类型 → 修正规范 → 隔离坏行 → 去重 → 分组�
 clean / rejected / statistics：Parquet + 质量报告 + _SUCCESS
   ↓
 经营统计 / 历史特征 / 独立未来标签 → CSV.gz + 批次清单
-  ├─ 已实现只读 SQLite / Python API → 后续 Vue 智慧大屏
+  ├─ MySQL 已发布批次 / FastAPI 只读查询 → 后续 Vue 智慧大屏
   └─ 后续模型训练与评估 → 按公共契约接入预测 API → 网页输入/输出
 ```
 

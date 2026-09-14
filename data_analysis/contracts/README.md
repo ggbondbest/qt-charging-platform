@@ -20,7 +20,7 @@
 
 ## 2. 公共字段，不得各自变更
 
-- HTTP/JSON 字段为 `camelCase`；CSV/Parquet/SQLite 列为 `snake_case`。例如 `energy_wh → energyWh`，由 API 转换，数据库不直接返回页面。
+- HTTP/JSON 字段为 `camelCase`；CSV/Parquet/MySQL 列为 `snake_case`（SQLite 离线兼容同样保留）。例如 `energy_wh → energyWh`，由 API 转换，数据库不直接返回页面。第二阶段切换 MySQL 不改变下列公共契约。
 - `schemaVersion=1.0.0`：第二阶段发布/API 版本；`featureVersion=history24-v1`：模型特征版本。原始数据 `schema_version=1.1.0` 是另一层格式，不要混用。
 - `datasetId` 标识原始模拟数据集；`pipelineRunId` 标识一次清洗；`publishedBatchId` 标识一次统计发布。它们不相等。相同 raw 重跑统计也会得到新发布 ID。
 - `sourceManifestSha256` 绑定原始数据清单。全量与 7 天样本是独立模拟批次，不能拼起来累计，也不能拿不同批次的特征和标签配对。

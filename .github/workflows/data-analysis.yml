@@ -50,7 +50,22 @@ jobs:
           - os: windows-latest
             python: '3.12'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      mysql:
+        # An empty image disables the service on Windows. Real MySQL is tested
+        # on Linux; Windows still runs the portable API/contract regressions.
+        image: ${{ matrix.os == 'ubuntu-22.04' && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-only-password --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -71,6 +86,19 @@ jobs:
           data_analysis.tests.test_contracts
           data_analysis.tests.test_json_schemas
           data_analysis.tests.test_contract_drift -v
+      - name: Real MySQL 8.4 publication, API and verification
+        if: matrix.os == 'ubuntu-22.04'
+        env:
+          RUN_MYSQL_TESTS: '1'
+          MYSQL_TEST_HOST: '127.0.0.1'
+          MYSQL_TEST_PORT: ${{ job.services.mysql.ports['3306'] }}
+          MYSQL_TEST_USER: root
+          MYSQL_TEST_PASSWORD: ci-only-password
+        run: >-
+          python -m unittest
+          data_analysis.tests.test_mysql_publishing
+          data_analysis.tests.test_mysql_api
+          data_analysis.tests.test_mysql_verification -v
 
   spark:
     name: Spark / ${{ matrix.suite }}

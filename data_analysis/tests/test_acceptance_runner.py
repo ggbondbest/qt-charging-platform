@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from data_analysis.scripts.run_acceptance import local_roots, prepare_acceptance, report_markdown, validate_evidence
 from data_analysis.scripts.verify_hdfs import require_hdfs_uri
+from data_analysis.mysql_support import MySQLSettings
 
 
 class AcceptancePreparationTests(unittest.TestCase):
@@ -48,11 +50,45 @@ class AcceptancePreparationTests(unittest.TestCase):
     def test_failed_pipeline_keeps_failure_evidence_without_success(self):
         with patch("data_analysis.spark_jobs.pipeline.run_pipeline", side_effect=ValueError("test failure")):
             with self.assertRaisesRegex(ValueError, "test failure"):
-                prepare_acceptance(Mock(), self.source, self.output)
+                prepare_acceptance(Mock(), self.source, self.output, database_backend="sqlite")
         self.assertTrue((self.output / "_RUNNING").is_file())
         self.assertFalse((self.output / "_SUCCESS").exists())
         self.assertEqual(json.loads((self.output / "failure_report.json").read_text())["status"], "FAILED")
         self.assertEqual((self.source / "manifest.json").read_text(), '{}')
+
+    def test_default_mysql_configuration_is_required_before_spark_work(self):
+        with patch.dict(os.environ, {}, clear=True), patch("data_analysis.spark_jobs.pipeline.run_pipeline") as pipeline:
+            with self.assertRaises(ValueError):
+                prepare_acceptance(Mock(), self.source, self.output)
+        pipeline.assert_not_called()
+        self.assertFalse(self.output.exists())
+
+    def test_consistency_is_checked_before_any_mysql_publication(self):
+        quality = dict(input_rows={"charging_sessions": 2}, clean_session_rows=1, rejected_session_rows=0, pipeline_run_id="run1")
+        settings = MySQLSettings(user="importer", database="newbatch")
+        with patch("data_analysis.spark_jobs.pipeline.run_pipeline", return_value=quality), \
+                patch("data_analysis.spark_jobs.acceptance_analysis.export_acceptance_analysis", return_value={}), \
+                patch("data_analysis.scripts.run_acceptance.validate_evidence", return_value={}), \
+                patch("data_analysis.spark_jobs.export.export_data", return_value={"pipelineRunId": "run1"}), \
+                patch("data_analysis.publishing.mysql_publish.publish_mysql") as publish:
+            with self.assertRaisesRegex(ValueError, "conservation"):
+                prepare_acceptance(Mock(), self.source, self.output, mysql_settings=settings)
+        publish.assert_not_called()
+        self.assertFalse((self.output / "_SUCCESS").exists())
+
+    def test_database_failure_keeps_safe_report_and_no_local_success(self):
+        quality = dict(input_rows={"charging_sessions": 1}, clean_session_rows=1, rejected_session_rows=0, pipeline_run_id="run1")
+        settings = MySQLSettings(user="importer", database="newbatch")
+        with patch("data_analysis.spark_jobs.pipeline.run_pipeline", return_value=quality), \
+                patch("data_analysis.spark_jobs.acceptance_analysis.export_acceptance_analysis", return_value={}), \
+                patch("data_analysis.scripts.run_acceptance.validate_evidence", return_value={}), \
+                patch("data_analysis.spark_jobs.export.export_data", return_value={"pipelineRunId": "run1"}), \
+                patch("data_analysis.publishing.mysql_publish.publish_mysql", side_effect=RuntimeError("unit-test-secret-credential")):
+            with self.assertRaises(RuntimeError):
+                prepare_acceptance(Mock(), self.source, self.output, mysql_settings=settings)
+        self.assertTrue((self.output / "_RUNNING").exists())
+        self.assertFalse((self.output / "_SUCCESS").exists())
+        self.assertNotIn("unit-test-secret-credential", (self.output / "failure_report.json").read_text(encoding="utf-8"))
 
     def evidence_fixture(self):
         folder = self.output / "processed" / "reports"

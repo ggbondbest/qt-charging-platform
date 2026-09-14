@@ -1,17 +1,19 @@
 # 只读统计 API
 
-HTTP 服务已实现，直接读取发布完成的 SQLite 快照，不在请求中启动 Spark，也不扫描数百万行 raw CSV。预测仅提供严格的请求结构与能力声明，**尚未训练模型，不返回预测值**。该接口不复用 Qt TCP JSON 契约。
+HTTP 服务已实现，默认使用只读账号读取发布完成的 MySQL 批次，不在请求中启动 Spark，也不扫描数百万行 raw CSV。预测仅提供严格的请求结构与能力声明，**尚未训练模型，不返回预测值**。该接口不复用 Qt TCP JSON 契约，第一阶段 Qt 的 SQLite 不变。
 
 ## 启动与测试
 
-需要 Python 3.10 及以上，建议在项目虚拟环境中安装：
+验收使用 Python 3.11 或 3.12，在项目虚拟环境中安装：
 
 ```text
 python -m pip install -r data_analysis/requirements-api.txt
 python -m unittest data_analysis.tests.test_analytics_api -v
 ```
 
-先完成数据发布，再把环境变量 `ANALYTICS_DB` 设为已发布 SQLite 文件的绝对路径。一个数据库只对应一个数据集与一个已发布批次；切换文件后重启服务，不覆盖正在服务的批次。
+按 [MySQL 接入说明](../docs/mysql_setup.md) 安装 MySQL 8.4，并用导入账号执行 `publishing.mysql_publish`。API 终端配置 `ANALYTICS_MYSQL_HOST`、`ANALYTICS_MYSQL_PORT`、`ANALYTICS_MYSQL_DATABASE`、`ANALYTICS_MYSQL_USER`、`ANALYTICS_MYSQL_PASSWORD`，使用仅有该库 SELECT 权限的账号。密码交互输入，不提交仓库。
+
+一个数据库只对应一个数据集与一个已发布批次；更新时先发布并验证新库，再切换数据库名并重启服务。默认入口不再读取 `ANALYTICS_DB` 或自动退回 SQLite；缺少 MySQL 配置或未完成发布明确返回 503。显式传入 SQLite 文件路径的 `create_app` 仅保留给离线兼容与旧测试。
 
 ```text
 python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
@@ -24,7 +26,7 @@ python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 | 路由 | 内容 |
 | --- | --- |
 | `GET /api/v1/health` | 发布数据是否可读；未配置或未发布返回 503 |
-| `GET /api/v1/datasets` | 当前文件中的单个数据集及来源哈希、日期范围 |
+| `GET /api/v1/datasets` | 当前数据库中的单个数据集及来源哈希、日期范围 |
 | `GET /api/v1/cities` | 城市目录与坐标 |
 | `GET /api/v1/stations` | 电站目录、最新快照、筛选日期内的经营摘要 |
 | `GET /api/v1/pipeline/runs` | 已发布批次、各原始表规模、清洗数量／原因／脱敏样本，不暴露物理目录 |
@@ -34,7 +36,7 @@ python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 | `POST /api/v1/predict/load` | 负荷预测接口声明，合法请求返回 `MODEL_NOT_READY` / 503 |
 | `POST /api/v1/predict/availability` | 可用性预测接口声明，同样不返回假预测 |
 
-查询字段统一使用 camelCase：`datasetId`、`publishedBatchId`、`cityId`、`stationId`、`startDate`、`endDate`。批次字段可省略以选当前文件；显式批次不一致返回 409，防止悄悄切到别批数据。城市／站点不存在返回 404，二者不匹配返回 400。无效参数、未知排序、日期越界返回 422。
+查询字段统一使用 camelCase：`datasetId`、`publishedBatchId`、`cityId`、`stationId`、`startDate`、`endDate`。批次字段可省略以选当前数据库；显式批次不一致返回 409，防止悄悄切到别批数据。城市／站点不存在返回 404，二者不匹配返回 400。无效参数、未知排序、日期越界返回 422。
 
 日期按 `Asia/Shanghai`：`startDate` 包含当天，`endDate` **不包含当天**。省略时使用完整发布范围。日期筛选对经营、事件及用户统计一致生效；城市目录本身没有时间变化。
 
@@ -73,4 +75,4 @@ python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000
 python -m data_analysis.backend.app --export-openapi 新的输出文件.json
 ```
 
-也可调用 `export_openapi(path)`；无需启动数据库或 Spark，输出路径已存在时拒绝覆盖。接口测试使用独立构造的 SQLite 小样本，覆盖分母、跨站去重、日期边界、空结果、只读保护、注入输入、错误脱敏和未就绪模型。
+也可调用 `export_openapi(path)`；无需启动数据库或 Spark，输出路径已存在时拒绝覆盖。迁移不改变既有 OpenAPI/TypeScript 公共契约。SQLite 小样本回归保留分母、跨站去重、日期边界、空结果等检查；真实 MySQL 发布、API 查询、只读访问及服务核对另由 MySQL 集成测试执行，未启动服务时的跳过不算通过。

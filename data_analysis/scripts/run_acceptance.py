@@ -90,14 +90,17 @@ def report_markdown(report):
         "3. processed/reports/cleaning_audit.json：字段探查、六维质量指标、修正/隔离样例和前后对比。",
         "4. processed/clean 与 rejected：实际 Spark Parquet 结果，原始层保持不变。",
         "5. analysis/：按不同维度统计的 CSV、双维对比、字段单位和预览。",
-        "6. export/：网页查询及 ML 特征/标签交接；analytics.sqlite3：只读查询快照。",
+        "6. export/：网页查询及 ML 特征/标签交接；publication_report.json：查询数据库发布记录。",
         "7. 启动 FastAPI 接口，调用 health、overview、charts；Vue 3 + DataV 网页由网页组接入。", "",
         "## 本轮清洗原因统计", "", "| 原因 | 行数 |", "| --- | ---: |"]
     for reason, count in sorted(quality["rejectionReasons"].items()):
         lines.append(f"| {reason} | {count} |")
     if not quality["rejectionReasons"]:
         lines.append("| 无隔离记录 | 0 |")
-    lines += ["", "## 尚需现场验证的内容", "",
+    lines += ["", "## 查询数据库", "",
+        "- 查询后端：" + report.get("storageBackend", "sqlite（历史离线批次）") + "。",
+        "- MySQL 仅在完整校验并提交就绪标志后可查询；正式 API 使用 SELECT-only 账号。",
+        "", "## 尚需现场验证的内容", "",
         "- 本轮只验证本地 Spark，不是 HDFS 或多节点集群验收。",
         "- 在老师的 Hadoop 3.x 环境运行 verify_hdfs，保存独立验证报告。",
         "- 网页的 Vue 3、DataV、图表交互及 Node.js 版本需网页组实际验收。",
@@ -106,13 +109,19 @@ def report_markdown(report):
     return "\n".join(lines)
 
 
-def prepare_acceptance(spark, input_root, output_root, *, inject_rate=None, seed=42):
+def prepare_acceptance(spark, input_root, output_root, *, inject_rate=None, seed=42,
+                       database_backend="mysql", mysql_settings=None):
     source, root = local_roots(input_root, output_root)
     if inject_rate is not None and (type(inject_rate) not in (float, int) or
             not math.isfinite(inject_rate) or not 0 <= inject_rate <= 1):
         raise ValueError("inject-rate must be a finite number between 0 and 1")
     if type(seed) is not int or not 0 <= seed <= 2**32 - 1:
         raise ValueError("seed must be an integer between 0 and 2**32-1")
+    if database_backend not in {"mysql", "sqlite"}:
+        raise ValueError("database-backend must be mysql or explicit offline sqlite")
+    if database_backend == "mysql":
+        from data_analysis.mysql_support import MySQLSettings
+        mysql_settings = mysql_settings or MySQLSettings.from_env()
     from data_analysis.charging_data.inject_dirty import inject_dataset
     from data_analysis.spark_jobs.pipeline import run_pipeline
     from data_analysis.spark_jobs.acceptance_analysis import export_acceptance_analysis
@@ -131,7 +140,6 @@ def prepare_acceptance(spark, input_root, output_root, *, inject_rate=None, seed
         analysis = export_acceptance_analysis(spark, str(raw), str(root / "processed"), str(root / "analysis"))
         evidence = validate_evidence(root, quality, analysis)
         serving = export_data(spark, str(raw), str(root / "processed"), str(root / "export"))
-        publication = publish_dataset(root / "export", root / "analytics.sqlite3")
         conserved = (quality["input_rows"]["charging_sessions"] ==
             quality["clean_session_rows"] + quality["rejected_session_rows"])
         if not conserved:
@@ -140,12 +148,19 @@ def prepare_acceptance(spark, input_root, output_root, *, inject_rate=None, seed
             raise ValueError("Source manifest changed during preparation")
         if serving["pipelineRunId"] != quality["pipeline_run_id"]:
             raise ValueError("Serving and cleaning run identities differ")
+        if database_backend == "mysql":
+            from data_analysis.publishing.mysql_publish import publish_mysql
+            publication = publish_mysql(root / "export", mysql_settings)
+        else:
+            publication = publish_dataset(root / "export", root / "analytics.sqlite3")
+        write_json(root / "publication_report.json", publication)
         report = {
             "reportVersion": "acceptance-1.0.0", "status": "LOCAL_DATA_READY",
             "generatedAt": datetime.now(timezone.utc).isoformat(),
             "datasetId": quality["dataset_id"], "pipelineRunId": quality["pipeline_run_id"],
             "publishedBatchId": serving["publishedBatchId"],
-            "source": "SIMULATED", "pythonVersion": sys.version.split()[0], "sparkVersion": spark.version,
+            "source": "SIMULATED", "storageBackend": database_backend,
+            "pythonVersion": sys.version.split()[0], "sparkVersion": spark.version,
             "originalManifestSha256": original_manifest_hash,
             "sourceManifestSha256": quality["source_manifest_sha256"],
             "dirtyInjection": {"enabled": inject_rate is not None, "rate": inject_rate, "seed": seed},
@@ -168,7 +183,8 @@ def prepare_acceptance(spark, input_root, output_root, *, inject_rate=None, seed
         return report
     except Exception as exc:
         write_json(root / "failure_report.json", {"status": "FAILED", "errorType": type(exc).__name__,
-            "message": str(exc), "note": "Preserved for diagnosis. Choose a new output directory for retry."})
+            "message": "Preparation failed; no local success marker. Inspect the failing stage without publishing credentials.",
+            "note": "Choose a fresh output directory and, for MySQL, a fresh database for retry."})
         raise
 
 
@@ -182,6 +198,8 @@ def main(argv=None):
     parser.add_argument("--master", default="local[2]")
     parser.add_argument("--shuffle-partitions", type=int, default=8)
     parser.add_argument("--driver-memory", default=None)
+    parser.add_argument("--database-backend", choices=["mysql", "sqlite"], default="mysql",
+        help="MySQL is the serving default; sqlite is explicit offline compatibility only")
     args = parser.parse_args(argv)
     try:
         local_roots(args.input, args.output)
@@ -189,14 +207,21 @@ def main(argv=None):
             raise ValueError("inject-rate must be between 0 and 1")
         if not 0 <= args.seed <= 2**32 - 1:
             raise ValueError("seed must be between 0 and 2**32-1")
+        mysql_settings = None
+        if args.database_backend == "mysql":
+            from data_analysis.mysql_support import MySQLSettings
+            mysql_settings = MySQLSettings.from_env()
         from data_analysis.spark_jobs.pipeline import create_spark
         spark = create_spark("charging-cleaning-acceptance", args.master, args.shuffle_partitions, args.driver_memory)
     except (ValueError, FileExistsError) as exc:
         parser.error(str(exc))
     try:
-        report = prepare_acceptance(spark, args.input, args.output, inject_rate=args.inject_rate, seed=args.seed)
+        report = prepare_acceptance(spark, args.input, args.output, inject_rate=args.inject_rate, seed=args.seed,
+                                    database_backend=args.database_backend, mysql_settings=mysql_settings)
         print(json.dumps({"status": report["status"], "datasetId": report["datasetId"],
             "report": str(Path(args.output).resolve() / "acceptance_report.md"), "hdfs": report["hdfs"]["status"]}, ensure_ascii=False))
+    except Exception as exc:
+        parser.exit(1, "Preparation failed (" + type(exc).__name__ + "). No API switch was made; inspect stage evidence and verify any uncertain publication before retrying.\n")
     finally:
         spark.stop()
 
