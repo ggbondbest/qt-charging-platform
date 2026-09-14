@@ -1,35 +1,26 @@
-"""B1 lean feature-pruned candidate sweep (VALIDATION selection only).
+"""B1 精简特征剪枝候选扫描(选择只看 VALIDATION)。
 
-Prunes the 39-column shipped ``hgb-deep`` feature set using the permutation
-importance ranking produced by ``python -m data_analysis.ml.load.feature_importance``
-(VALIDATION-only), refits the winner recipe (per-horizon
-HistGradientBoostingRegressor, max_iter=600 / lr=0.03 / 63 leaves / min_samples_leaf=20
-/ l2=0.5 / no early stopping / seed 42, ``categorical_features="from_dtype"``)
-for three candidate subsets plus a full-39 control, and scores every contract
-horizon on VALIDATION with [0, rated_capacity_kw] clipping under TWO slice
-conventions: (a) "contract" -- each horizon under its own split column
-(h01->split_1h, h06->split_6h, h24->split_24h), as prescribed by this task's
-procedure, and (b) "split24h" -- all horizons on the split_24h VALIDATION
-window, which is the convention the shipped 13.2938 baseline and the race
-ablation numbers were actually computed under (train.py). The recomputed
-full-39 control makes both comparisons apples-to-apples on identical slices.
+按 feature_importance 产出的 permutation importance 排名(VALIDATION-only),
+对已交付 39 列 hgb-deep 特征集剪出 3 个候选子集,用冠军配方(逐时距
+HistGradientBoostingRegressor,max_iter=600 / lr=0.03 / 63 leaves /
+min_samples_leaf=20 / l2=0.5 / 不开 early stopping / seed 42,
+categorical_features="from_dtype")重拟合,连同全 39 对照一起给
+h01/h06/h24 在 VALIDATION 打分,预测裁剪到 [0, rated_capacity_kw]。
+两套切片口径并列打分: "contract" = 每时距用各自 split 列
+(h01->split_1h, h06->split_6h, h24->split_24h),任务规定的约定;
+"split24h" = 所有时距统一用 split_24h VALIDATION,已交付 13.2938 基线
+和竞赛消融数字的实际口径(train.py)。两口径下都重算全 39 对照,比较同切片。
+选择规则: contract 口径下 L1/L2/L3 三合同时距 VALIDATION 平均 MAE 最低者胜出;
+split24h 数字并列报告,两口径赢家不一致会被显式暴露。
+胜出子集存 race2/hgb-lean-v1-candidate.joblib,结构与已交付 bundle 一致,
+feature_columns 换子集,featureVersion 改 "history24-lean-v1" 并记录被弃特征。
+parity 检查: 5 个随机 VALIDATION 窗口经 common.build_feature_row(在线服务
+路径)从小时级历史重建子集特征行,与离线表逐位一致 — 防离线/在线特征构造漂移。
 
-Selection rule: lowest VALIDATION mean MAE over the three contract horizons
-among L1/L2/L3 under the prescribed "contract" convention (the full-39 control
-is reference only; split24h-convention numbers are reported alongside, and a
-disagreement between the two would be surfaced). The winning subset is
-saved as ``race2/hgb-lean-v1-candidate.joblib``, a bundle dict identical in
-shape to the shipped one but with ``feature_columns`` = the subset, metadata
-adapted (featureVersion "history24-lean-v1", dropped features recorded). A
-final parity check rebuilds the subset matrix for 5 random VALIDATION windows
-from raw hourly history via ``common.build_feature_row`` (the online code
-path) and verifies exact agreement with the offline table values.
+HARD RULES: 只在 split_24h=="TRAIN" 且标签非空有限行拟合; 比较只用 VALIDATION;
+TEST 不读取、不打分。
 
-HARD RULES honored here: models fit only on ``split_24h == "TRAIN"`` rows with
-a non-null finite label; all comparisons use VALIDATION only; TEST rows are
-never read, scored, or touched.
-
-Usage (repo root):
+用法(仓库根目录):
     KMP_DUPLICATE_LIB_OK=TRUE python -m data_analysis.ml.load.train_lean
 """
 
@@ -73,10 +64,8 @@ CANDIDATE_FEATURE_VERSION = "history24-lean-v1"
 CONTRACT_HORIZONS = (1, 6, 24)
 BASELINE_TO_BEAT = 13.2938
 
-# L1/L2 are defined as "drop the N lowest-importance features"; L3 is the
-# literal recent-lags-style spec from the task brief (lags h01-h06, the three
-# 24h-window rolling stats, all calendar columns, and the city/station/
-# capacity columns including last_available_count which is a station column).
+# L1/L2 = 砍掉重要性最低的 N 个特征; L3 = 任务书逐字给出的 recent-lags 清单:
+# 滞后 h01-h06、三个 24h 滚动统计、全部日历列、city/station/容量列(last_available_count 算 station 列,计入 L3)。
 L1_DROP_COUNT = 15
 L2_DROP_COUNT = 20
 L3_FEATURES = [
@@ -98,13 +87,12 @@ L3_FEATURES = [
 
 
 def canonical_order(columns: list[str]) -> list[str]:
-    """Subset columns re-ordered to the canonical FEATURE_COLUMNS order."""
+    """子集列按 common.FEATURE_COLUMNS 相对次序重排,保证各剪枝路径列序一致、可横向比较。"""
     return [c for c in common.FEATURE_COLUMNS if c in set(columns)]
 
 
 def load_ranking() -> list[str]:
-    """Feature names sorted by importance rank (1 first) from the committed
-    permutation-importance report."""
+    """读 permutation-importance 报告, 返回按排名(第 1 名在前)的特征名列表。"""
     with open(IMPORTANCE_REPORT_PATH, encoding="utf-8") as handle:
         report = json.load(handle)
     table = sorted(report["ranking"], key=lambda row: row["rank"])
@@ -141,8 +129,7 @@ def evaluate_subset(
     frame: pd.DataFrame,
     full_matrix: pd.DataFrame,
 ) -> dict:
-    """Fit 24 winner-recipe models on TRAIN and score the contract horizons
-    on VALIDATION under each horizon's own split column, clipped."""
+    """split_24h==TRAIN 拟合 24 个冠军配方模型, h01/h06/h24 按 contract/split24h 两口径在 VALIDATION 打分, 预测裁剪到额定容量。"""
     matrix = full_matrix[subset]
     mask_train = frame["split_24h"] == "TRAIN"
     per_horizon: dict[str, dict] = {}
@@ -157,14 +144,8 @@ def evaluate_subset(
         models[horizon] = model
 
         if horizon in CONTRACT_HORIZONS:
-            # Two VALIDATION conventions, same model, same clipping:
-            #  * "contract": each horizon under its own split column
-            #    (h01->split_1h, h06->split_6h, h24->split_24h) -- the
-            #    convention this task's procedure prescribes.
-            #  * "split24h": all horizons on the split_24h VALIDATION window
-            #    -- the convention the shipped 13.2938 baseline and the race
-            #    ablation numbers were computed under, recomputed here so the
-            #    comparison is apples-to-apples on identical slices.
+            # 同模型同裁剪走两口径: "contract"=每时距各自 split 列(任务规定);
+            # "split24h"=统一 split_24h VALIDATION, 即 13.2938 基线与消融数字的口径。
             for convention, split_col in (
                 ("contract", common.HORIZON_SPLITS[horizon]),
                 ("split24h", "split_24h"),
@@ -231,8 +212,7 @@ def parity_check(
     subset: list[str],
     calendar: dict,
 ) -> dict:
-    """Rebuild 5 random VALIDATION windows through the online code path and
-    verify the subset columns agree with the offline feature table exactly."""
+    """5 个随机 VALIDATION 窗口走在线服务路径 (common.build_feature_row) 重建子集特征, 与离线表精确一致 — 防上线后特征构造漂移。"""
     pool = frame[frame["split_24h"] == "VALIDATION"]
     hourly_by_station = {key: group for key, group in hourly.groupby("station_id")}
     candidates = pool.sample(n=40, random_state=13)
@@ -257,8 +237,7 @@ def parity_check(
                 "recorded_at": common.format_utc(rec.recorded_at.to_pydatetime()),
                 "mean_power_kw": float(rec.mean_power_kw),
                 "capacity": int(rec.capacity),
-                # rated_capacity_kw is a station attribute, taken from the
-                # joined frame row exactly like predict.py's smoke test.
+                # rated_capacity_kw 是场站属性, 取自 joined frame 行, 与 predict.py smoke test 同法。
                 "rated_capacity_kw": float(row.rated_capacity_kw),
                 "end_available_count": int(rec.end_available_count),
             }
@@ -351,10 +330,8 @@ def build_bundle(
             "joblib": joblib.__version__,
         },
     }
-    # NOTE: featureVersion "history24-lean-v1" is a deliberate candidate-side
-    # deviation, so model_metadata.schema.json (which pins featureVersion to
-    # the const "history24-v1") does NOT validate this block; promotion to a
-    # shipped artifact requires a schema/featureVersion release decision.
+    # featureVersion "history24-lean-v1" 有意偏离 schema(其锁 const "history24-v1"), 该段校验不过;
+    # 转正为交付产物需先做 schema/featureVersion 版本发布决策。
     payload = {
         "models": models,
         "feature_columns": list(subset),
@@ -395,10 +372,8 @@ def main() -> int:
     winner = min(("L1", "L2", "L3"), key=lambda name: results[name]["meanValMaeContract"])
     winner_result = results[winner]
     val_mean = winner_result["meanValMaeContract"]
-    # The task gate: improved only if the winning VALIDATION mean beats the
-    # shipped hgb-deep baseline 13.2938 by >= 0.05 kW. Note the 13.2938 figure
-    # was produced on the split_24h slice (see results json); the contract
-    # convention reproduces the full-39 control at `baseline_contract`.
+    # 改进判定: winner 的 contract 口径 VALIDATION 平均 MAE 须比基线 13.2938 至少好 0.05 kW;
+    # 13.2938 是 split_24h 切片口径(见 results json), contract 口径下全 39 对照值 = baseline_contract。
     improved = val_mean <= BASELINE_TO_BEAT - 0.05
     split24h_gate = winner_result["meanValMaeSplit24h"] <= baseline_split24h - 0.05
     winner_agreement = (

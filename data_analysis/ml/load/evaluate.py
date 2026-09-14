@@ -1,24 +1,9 @@
-"""Hold-out evaluation on TEST: model vs persistence vs same-hour-last-week.
-
-Each contract horizon is scored under its own split column (split_1h/6h/24h),
-so the numbers match exactly what the serving batch guarantees. Metrics are
-results on synthetic simulation data only (模拟数据测试结果).
-
-Non-contract horizons (h02-h05, h07-h23) fall back to ``split_24h==TEST``
-because only the 24h serving batch guarantees their labels; the actual column
-used is recorded per entry as ``splitColumn``. This script is a deliberate
-post-selection holdout report: nothing here feeds back into model selection,
-which happened only on VALIDATION in train.py.
-
-ENRICHMENT NOTE (v0.2): this run only ADDS derived distributional metrics
-(wape, smape, p90abs, p95abs) to each horizon entry of the already-frozen
-v0.2 grading. It is NOT a new grading: same shipped bundle, same rows, same
-predictions, same models (all deterministic), so every pre-existing field
-(mae, rmse, n, coverage, rangeLegalRate, splitColumn) reproduces byte-for-byte.
-The pre-enrichment file is preserved as test_metrics_pre_enrichment_v0.2.json.
-
-Usage (repo root, after training):
-    python -m data_analysis.ml.load.evaluate
+"""TEST 留出评测:GBDT vs 持续性基线 vs 上周同时刻;契约时距各按自己的 split 列(split_1h/6h/24h)计分。
+非契约时距(h02-h05/h07-h23)回退 split_24h==TEST(只有 24h 批次承诺其标签),实际列记在 splitColumn。
+数字只做报告,不回填选型。
+v0.2 增补:只向已冻结评分 ADD 分布指标(wape/smape/p90abs/p95abs),原有字段须逐字节复现,
+复现不上=上游变了;增补前文件保留为 test_metrics_pre_enrichment_v0.2.json。
+用法(仓库根目录,先完成训练):python -m data_analysis.ml.load.evaluate
 """
 
 from __future__ import annotations
@@ -49,8 +34,8 @@ def regression_metrics(y_true, y_pred):
         "mae": round(float(abs_err.mean()), 3),
         "rmse": round(float(np.sqrt((error**2).mean())), 3),
         "n": int(len(y_true)),
-        # distributional metrics (v0.2 enrichment): relative mass of error,
-        # symmetric percent-error, and tail of the absolute error distribution
+        # WAPE=总绝对误差/总真实值量;sMAPE 分母加 SMAPE_EPS 防 0/0,但近零样本上单点误差被推到
+        # 上限、少量近零行即抬高整列均值,须配 MAE 读;P90/P95=绝对误差尾部。
         "wape": round(float(abs_err.sum() / total_abs_y), 4) if total_abs_y > 0 else None,
         "smape": round(float((2.0 * abs_err / denom).mean()), 4),
         "p90abs": round(float(np.quantile(abs_err, 0.90)), 3),
@@ -99,7 +84,7 @@ def main() -> int:
         if horizon in KEY_HORIZONS:
             report.setdefault("contractHorizons", {})[f"h{horizon:02d}"] = entry
 
-    # per-city breakdown for the three contract horizons
+    # 契约时距分城市(per-city)拆解:整体 MAE 达标不代表各城市达标
     per_city: dict = {}
     for horizon in KEY_HORIZONS:
         label_col = f"label_power_kw_h{horizon:02d}"
@@ -119,9 +104,7 @@ def main() -> int:
         }
     report["perCityContractHorizons"] = per_city
 
-    # one output file per graded model AND training batch, so every frozen
-    # grading (first-blind, confirmatory, post-data-refresh rebaselines)
-    # stays on disk side by side without overwrites
+    # TEST 每模型只批一次;文件名带 model_id+训练批次做隔离,重跑/换批不覆盖历史冻结评分
     report["modelId"] = str(bundle["model_id"])
     batch = str(bundle["metadata"].get("trainingPublishedBatchId", "unknownbatch"))
     report["trainingPublishedBatchId"] = batch

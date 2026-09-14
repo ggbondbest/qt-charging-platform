@@ -1,19 +1,9 @@
-"""Permutation feature importance for the shipped hgb-deep bundle (VALIDATION only).
-
-Runs ``sklearn.inspection.permutation_importance`` (n_repeats=5, seed=42,
-scoring=negative MAE) on the full ``split_24h == "VALIDATION"`` slice with a
-non-null target, for each contract horizon model (h01/h06/h24) of the shipped
-bundle ``hgb-deep-history24-v1.joblib``. No fitting happens here and TEST rows
-are never read. Per horizon, raw importance drops are clipped at 0 and
-rescaled to sum to 1 (a normalized share); a feature's final score is the mean
-of its three horizon shares, which is what the ranked table sorts by.
-
-Note: the baseline MAE reported per horizon is the raw model score on
-VALIDATION (no [0, rated_capacity_kw] clipping), so it can sit a hair above
-the clipped delivery numbers in ``train_metrics.json``.
-
-Usage (repo root):
-    python -m data_analysis.ml.load.feature_importance
+"""出厂 hgb-deep bundle 的 permutation importance,只在 split_24h==VALIDATION 完整切片(目标非空、不抽样)上跑
+n_repeats=5、seed=42、scoring 负 MAE;不拟合、不读 TEST。
+每时距原始降幅 clip 到 0 后归一化为份额,特征得分=三时距份额均值。
+单列重要性≈0 多因强相关列分摊信息,单列为零不等于整块特征可删,整块去留须做组级消融重训。
+baseline MAE 是 VALIDATION 裸分(未 clip 到 [0, rated_capacity_kw]),比 train_metrics.json 的交付数字略高,口径差非 bug。
+用法(仓库根目录):python -m data_analysis.ml.load.feature_importance
 """
 
 from __future__ import annotations
@@ -41,7 +31,7 @@ REPORT_PATH = ANALYSIS_DIR / "feature_importance.json"
 
 
 def validation_slice(frame: pd.DataFrame, horizon: int) -> tuple[pd.DataFrame, np.ndarray]:
-    """VALIDATION rows (split_24h window) with a non-null target for *horizon*."""
+    """取 split_24h 窗口下、*horizon* 目标非空的 VALIDATION 行(含离线特征矩阵)。"""
     label_col = f"label_power_kw_h{horizon:02d}"
     ok = (frame["split_24h"] == "VALIDATION") & frame[label_col].notna()
     matrix = common.features_matrix(frame.loc[ok])
@@ -73,7 +63,7 @@ def main() -> int:
             random_state=SEED,
             n_jobs=-1,
         )
-        # sklearn 1.7 drops baseline_score from the result; recompute directly.
+        # sklearn 1.7 删了 baseline_score 字段;基线 MAE 用未置换预测重算(与内部同口径)
         baseline_mae = float(
             np.abs(models[horizon].predict(x_valid) - y_valid).mean()
         )
@@ -97,8 +87,8 @@ def main() -> int:
             f"  rows={len(y_valid)}  ({time.time() - started:.0f}s elapsed)"
         )
 
-    # Normalized per-horizon share (drop clipped at 0, renormalized to sum 1),
-    # then averaged across the three horizons for the ranking score.
+    # clip 负值(降幅为负=抽样噪声)再除以总和,使不同量纲时距可比;
+    # 份额是相对量,低份额只说明单列置换时相关列仍撑得住,不说明信息冗余
     shares = {
         horizon: {
             column: values["importance_mean"] for column, values in per_feature.items()

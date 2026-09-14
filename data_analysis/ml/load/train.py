@@ -1,32 +1,22 @@
-"""Train one gradient-boosting model per forecast horizon (h01..h24).
+"""按预测时距 (h01..h24) 各训一个 HistGradientBoostingRegressor,
+配方 = v0.4 "hgb-q50": loss="quantile", quantile=0.5, max_iter=600, lr=0.03,
+max_leaf_nodes=63, min_samples_leaf=20, l2=0.5, early_stopping=False, seed=42。
+quantile=0.5 转正自 L2: 中位数损失直接优化 MAE (合同对外汇报指标),
+VALIDATION 上赢了 v0.2 L2 竞赛冠军 "hgb-deep" (EVALUATION.md §9/§10)。
+特征为共享 ml_features_hourly 列, city_id/station_id 走原生 categorical。
+24 个模型都只在 split_24h==TRAIN 上拟合 (24h 远期标签完整, 训练面一致),
+打分统一在 split_24h==VALIDATION 且标签非空行; 预测裁剪到
+[0, rated_capacity_kw], 与在线预测器同口径; persistence / 上周同时段
+基线与每个模型一并记录。
+schema 只允许一个 metrics 对象, 放 h01/h06/h24 的 VALIDATION 汇总, TEST 从未打分;
+testSamples 为 schema 遗留字段名, 实为 VALIDATION 打分对数 (行 x 时距), 与 TEST 无关;
+逐时距明细在 train_metrics.json。artifactSha256 是 payload 摘要
+(common.canonical_payload_digest), 文件不能内嵌自身字节哈希; bundle 先做
+pickle 往返稳定化再以 plain protocol-5 落盘, 字节稳定, 消费方可从交付文件
+重算同一摘要 (joblib.load 透明可读); 整文件哈希见 artifactFileSha256。
+metadata 另存 <model_id>.metadata.json (合同 README §6)。
 
-Recipe = v0.4 "hgb-q50": HistGradientBoostingRegressor per horizon
-(loss="quantile", quantile=0.5, max_iter=600, lr=0.03, max_leaf_nodes=63,
-min_samples_leaf=20, l2=0.5, early_stopping=False, seed=42). The median
-objective directly optimizes MAE — the metric the contract reports — and beat
-the v0.2 L2-loss race winner "hgb-deep" on VALIDATION (see EVALUATION.md §9/§10).
-On the shared ``ml_features_hourly`` columns
-with city_id/station_id as native categoricals. All 24 models fit on the
-strictest ``split_24h`` TRAIN window so every model only ever saw samples with
-complete 24h-ahead labels, and are all scored on ``split_24h`` VALIDATION rows
-with a non-null target. Persistence and same-hour-last-week baselines are
-recorded next to each model. Predictions are clipped to
-[0, rated_capacity_kw], exactly what the online predictor will do.
-
-The bundle carries ``model_metadata.schema.json``-conformant metadata under
-``metadata`` and, as a file, ``<model_id>.metadata.json`` next to the joblib
-(contract README §6: deliver schema metadata with the model file). The
-schema's single ``metrics`` object holds the pooled VALIDATION numbers of the
-three contract horizons (h01/h06/h24) — TEST was never scored — and
-``testSamples`` is the count of scored (row, horizon) pairs on VALIDATION;
-per-horizon detail lives in ``train_metrics.json``. ``artifactSha256`` is the
-canonical payload digest from :func:`common.canonical_payload_digest` (a file
-cannot embed the hash of its own bytes); the bundle is therefore written as
-plain protocol-5 pickle — stabilized once so the digest is re-computable by
-any consumer — which ``joblib.load`` reads transparently. The whole-file
-SHA-256 is recorded in ``train_metrics.json`` as ``artifactFileSha256``.
-
-Usage (repo root):
+用法(仓库根目录):
     python -m data_analysis.ml.load.train
 """
 
@@ -78,8 +68,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, floa
 
 
 def contract_metrics(metrics: dict[str, dict], horizon_counts: dict[int, int]) -> dict:
-    """Pool VALIDATION MAE/RMSE of the three contract horizons into the single
-    ``metrics`` object that model_metadata.schema.json allows."""
+    """三个合同时距 VALIDATION 数字汇总进 schema 唯一的 metrics 对象; RMSE 按平方均值开根合并, 不能对 RMSE 取算术平均。"""
     maes = [metrics[f"h{h:02d}"]["gbdt"]["mae"] for h in CONTRACT_HORIZONS]
     rmses = [metrics[f"h{h:02d}"]["gbdt"]["rmse"] for h in CONTRACT_HORIZONS]
     samples = sum(horizon_counts[h] for h in CONTRACT_HORIZONS)
@@ -92,7 +81,7 @@ def contract_metrics(metrics: dict[str, dict], horizon_counts: dict[int, int]) -
 
 
 def validate_metadata(metadata: dict) -> None:
-    """Hard-check the emitted metadata against the shipped JSON schema."""
+    """校验 metadata 符合仓库分发的 JSON schema; 宁可在此报错, 不交出不合规产物。"""
     with open(SCHEMA_PATH, encoding="utf-8") as handle:
         schema = json.load(handle)
     required = [key for key in schema["required"] if key not in metadata]
@@ -101,7 +90,7 @@ def validate_metadata(metadata: dict) -> None:
         raise AssertionError(f"metadata not schema-conformant: missing={required} extra={extra}")
     try:
         import jsonschema
-    except ImportError:  # contract-test dep absent: structural check above still ran
+    except ImportError:  # 结构化检查(必填/多余键)已过, 只是不做全量 jsonschema 校验
         print("jsonschema not installed; skipped full schema validation")
         return
     jsonschema.validate(metadata, schema)
@@ -113,7 +102,7 @@ def clip_to_capacity(values: np.ndarray, frame: pd.DataFrame, index) -> np.ndarr
 
 
 def last_week_predictions(frame: pd.DataFrame, power_lookup: pd.Series) -> np.ndarray:
-    # keep tz-aware dtypes (no .to_numpy()) so reindex aligns with the UTC index
+    # 保留 tz-aware 类型(不要 .to_numpy()), 否则 reindex 丢时区后对不上 UTC 索引
     wanted = pd.MultiIndex.from_arrays(
         [frame["station_id"], frame["reference_dt"] - pd.Timedelta(days=7)]
     )
@@ -201,7 +190,7 @@ def main() -> int:
         "supportedHorizons": list(CONTRACT_HORIZONS),
         "featureColumns": list(common.FEATURE_COLUMNS),
         "artifactFile": BUNDLE_PATH.name,
-        "artifactSha256": "0" * 64,  # replaced below, after one stabilization round-trip
+        "artifactSha256": "0" * 64,  # 占位符, 稳定化往返后替换
         "metrics": contract_metrics(metrics, {h: metrics[f"h{h:02d}"]["gbdt"]["n"] for h in CONTRACT_HORIZONS}),
         "dependencies": {
             "python": platform.python_version(),
@@ -211,9 +200,8 @@ def main() -> int:
             "joblib": joblib.__version__,
         },
     }
-    # Stabilize the serialization once: plain-pickle bytes taken from a loaded
-    # state are byte-stable (unlike fresh-fit objects and joblib streams), so
-    # the recorded artifact digest is re-computable from the delivered file.
+    # 稳定化往返: load 回来再 dumps 的 plain-pickle 字节才逐字节稳定
+    # (刚 fit 的对象与 joblib 压缩流都不行), artifactSha256 因此可从交付文件重算。
     pre_bundle = {**payload, "metadata": schema_meta}
     canonical = pickle.loads(pickle.dumps(pre_bundle, protocol=5))
     clean_payload = {key: value for key, value in canonical.items() if key != "metadata"}

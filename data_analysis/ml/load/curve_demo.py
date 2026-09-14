@@ -1,28 +1,9 @@
-"""Curve demo: actual vs predicted 24h load curve with the 80% quantile band.
-
-Picks ONE VALIDATION station-hour window with a fixed random seed (never TEST),
-then draws, for lead hours 1..24 of that reference instant:
-
-- the actual curve  = label_power_kw_h01..h24 (solid blue line);
-- the model forecast at the three supported contract horizons {+1h, +6h, +24h}
-  = median of ``hgb-quantile-history24-v1`` (orange marker + 80% interval
-  error bar; dashed connector between the three points is visual only), after
-  the shared protocol: clip to [0, rated_capacity_kw] then sort so
-  lower <= median <= upper;
-- for reference, the shipped point model ``hgb-deep-history24-v1`` (v0.2)
-  predictions at the same three horizons are printed and saved to the summary
-  JSON (not drawn, to keep a two-series chart).
-
-Feature rows are taken from the offline matrix (common.features_matrix), the
-path used at training time; online/offline parity of both bundles is audited
-by ``intervals.py`` and ``train_lean.py`` (max diff <= 1.42e-14).
-
-Outputs (new files only):
-  data_analysis/outputs/ml_load/analysis/curve_demo.png
-  data_analysis/outputs/ml_load/analysis/curve_demo_summary.json
-
-Usage (repo root):
-    python -m data_analysis.ml.load.curve_demo
+"""真实 vs 预测的 24h 负荷曲线演示,带 80% 分位数区间带。
+固定 seed 只从 VALIDATION(split_24h)取一个站点-小时窗口(不读 TEST);真实曲线=label_power_kw_h01..h24,
+预测=分位数 bundle 在 {+1,+6,+24h} 的中位数 ± q0.1/q0.9,先 clip 到 [0, rated_capacity_kw] 再排序
+保证 lower<=median<=upper(各分位列独立预测,可能交叉);虚线仅视觉连接,中间小时无预测。
+出厂点模型 v0.2 同三时距预测只打印/写 JSON 不画;特征走离线矩阵,在线/离线一致性已审计(max diff <= 1.42e-14)。
+用法(仓库根目录):python -m data_analysis.ml.load.curve_demo
 """
 
 from __future__ import annotations
@@ -58,7 +39,7 @@ SHIPPED_BUNDLE = (
 
 SEED = 20260913
 
-# Validated reference palette (light surface), slots 1/2; band is slot-2 alpha.
+# 已验收的参考配色(浅色底):实际线用 1 号槽、预测用 2 号槽;区间带=2 号槽加透明度。
 INK_PRIMARY = "#0b0b0b"
 INK_MUTED = "#52514e"
 GRID = "#e8e7e3"
@@ -68,7 +49,7 @@ SERIES_PRED = "#eb6834"
 
 
 def pick_validation_row(frame: pd.DataFrame) -> pd.Index:
-    """One VALIDATION row (split_24h) with all 24 hourly labels finite."""
+    """取一行 24 个小时标签全部有限非空的 VALIDATION(split_24h)记录,固定 seed 可复现。"""
     labels = frame[common.TARGET_COLUMNS]
     pool = frame[
         (frame["split_24h"] == "VALIDATION")
@@ -131,7 +112,7 @@ def main() -> int:
         markerfacecolor="white", markeredgecolor=SERIES_ACTUAL, markeredgewidth=1.5,
         label="实际负荷(逐小时)", zorder=3,
     )
-    # Visual-only connector through the three modeled leads.
+    # 纯视觉连接线:模型只在这三个时距上有预测,虚线不代表中间小时也有输出。
     ax.plot(
         horizons, medians, color=SERIES_PRED, lw=1.6, ls="--", zorder=3,
         label="模型预测(仅 +1/+6/+24h,虚线为视觉连接)",

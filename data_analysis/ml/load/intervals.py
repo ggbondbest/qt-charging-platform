@@ -1,35 +1,8 @@
-"""Quantile (interval) models for the three contract horizons (h01/h06/h24).
-
-For each horizon and each quantile in {0.1, 0.5, 0.9} we fit an independent
-``HistGradientBoostingRegressor(loss="quantile", quantile=q)`` with the race
-winner recipe (hgb-deep: max_iter=600, lr=0.03, max_leaf_nodes=63,
-min_samples_leaf=20, l2=0.5, early_stopping=False, seed=42, native
-categoricals) on ``split_24h == "TRAIN"`` rows whose target is finite, using
-``common.features_matrix`` for X (identical offline feature path to train.py).
-
-VALIDATION protocol (TEST never touched): predict the three quantiles, clip
-each to [0, rated_capacity_kw], then sort per sample so that
-lower <= median <= upper (quantile crossing of independent pinball models is
-common; clipping preserves order but the sort makes the invariant explicit).
-Reported per horizon: pinball loss at 0.1/0.5/0.9 on the clipped-and-sorted
-predictions, 80%-interval coverage (target ~0.80) and mean interval width kW.
-
-Artifacts (race2/ only):
-  hgb-quantile-history24-v1.joblib  bundle dict
-      {quantile_models, feature_columns, category_levels, calendar,
-       model_id, model_version, metadata}
-      metadata carries trainingPublishedBatchId taken from the shipped
-      hgb-deep bundle metadata, plus the VALIDATION interval metrics.
-  interval_metrics.json             full reproducible metrics report.
-
-Online serving: :class:`IntervalLoadForecaster` rebuilds every model input
-from the 24 raw history dicts via ``common.build_feature_row`` (same code
-path as the point predictor) and returns one
-{timestamp, value, lower, upper} point per supported horizon <= the requested
-horizon_hours.
-
-Usage (repo root):
-    python -m data_analysis.ml.load.intervals
+"""契约三步长(h01/h06/h24)× q{0.1,0.5,0.9} 各拟合一个 HistGradientBoostingRegressor(loss="quantile"),
+hgb-deep 配方(见 PARAMS),只用 TRAIN 行,X 与 train.py 同一特征路径。
+VALIDATION 评测(TEST 全程不参与):预测 clip 到 [0, rated_capacity_kw] 后按样本排序消分位数交叉,报告 pinball、80% coverage、平均宽度 kW。
+产出只写 race2/:hgb-quantile-history24-v1.joblib、interval_metrics.json;在线服务见 IntervalLoadForecaster。
+用法: python -m data_analysis.ml.load.intervals(仓库根目录)
 """
 
 from __future__ import annotations
@@ -54,7 +27,7 @@ QUANTILES = (0.1, 0.5, 0.9)
 CONTRACT_HORIZONS = (1, 6, 24)
 MODEL_ID = "hgb-quantile-history24-v1"
 MODEL_VERSION = "0.1.0"
-BASE_MODEL_ID = common.MODEL_ID  # hgb-deep-history24-v1
+BASE_MODEL_ID = common.MODEL_ID  # 已上线点模型 hgb-deep-history24-v1,沿用其 metadata 做批次溯源
 
 OUT_DIR = common.DATA_ANALYSIS_ROOT / "outputs" / "ml_load"
 RACE2_DIR = OUT_DIR / "race2"
@@ -86,8 +59,7 @@ def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, quantile: float) -> flo
 
 
 def ordered_interval(raw: np.ndarray, limits: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """raw is (n,3) = [q10, q50, q90]; clip each column to [0, limit] then
-    sort across the three columns so lower <= median <= upper per sample."""
+    """raw (n,3)=[q10,q50,q90] 先按列 clip 到 [0,limit] 再沿轴排序,强制 lower<=median<=upper:clip 单调不改顺序,独立 pinball 模型的分位数交叉只能靠排序消。"""
     clipped = np.clip(raw, 0.0, limits[:, None])
     sorted_vals = np.sort(clipped, axis=1)
     return sorted_vals[:, 0], sorted_vals[:, 1], sorted_vals[:, 2]
@@ -98,7 +70,7 @@ def evaluation_report(
     matrix: pd.DataFrame,
     frame: pd.DataFrame,
 ) -> dict:
-    """All metrics on split_24h==VALIDATION rows with a finite target."""
+    """全部指标只在 split_24h==VALIDATION 且目标有限的行上计算,TEST 不参与。"""
     mask_valid = frame["split_24h"] == "VALIDATION"
     report: dict[str, dict] = {}
     for horizon in CONTRACT_HORIZONS:
@@ -131,7 +103,7 @@ def evaluation_report(
 def train_quantile_models(
     matrix: pd.DataFrame, frame: pd.DataFrame
 ) -> tuple[dict, dict]:
-    """Fit the 9 quantile models on TRAIN rows only. Returns (models, train_info)."""
+    """只在 TRAIN 行上拟合 9 个分位数模型(3 步长 × 3 分位数)。返回 (models, train_info)。"""
     mask_train = frame["split_24h"] == "TRAIN"
     models: dict[tuple[int, float], HistGradientBoostingRegressor] = {}
     train_info: dict[str, dict] = {}
@@ -155,19 +127,7 @@ def train_quantile_models(
 
 
 class IntervalLoadForecaster:
-    """Online interval predictor; loads one trusted bundle, never arbitrary pickle.
-
-    ``predict_interval`` mirrors :class:`predict.LoadForecastPredictor`: it
-    rebuilds every feature from the 24 raw history dicts through
-    ``common.build_feature_row`` (same code path as offline training data).
-    Returns one point per supported horizon <= context.horizon_hours, i.e.
-    [{1}] for horizon_hours=1, [{1,6}] for 6, [{1,6,24}] for 24. Each point is
-    {timestamp (interval-start UTC of that lead hour), value (median), lower,
-    upper}, with lower <= value <= upper and all three inside
-    [0, rated_capacity_kw]. This is an interval extension of the point
-    contract, so ``validate_prediction`` (which pins exactly {timestamp,
-    value}) is applied to the median-only view of each point.
-    """
+    """在线区间预测器:只加载受信任 bundle(pickle 加载即执行任意代码);特征与点预测器同经 common.build_feature_row 从 24 条原始 history 重建,与离线同一代码路径,parity 由此保证。"""
 
     def __init__(self, bundle_path=None):
         bundle_path = bundle_path or BUNDLE_PATH
@@ -215,8 +175,7 @@ class IntervalLoadForecaster:
 
 
 def _parity_check(models, frame, matrix, calendar, category_levels, hourly) -> int:
-    """Serve 2 random VALIDATION windows online and compare with the offline
-    matrix for all 9 quantile outputs. TEST rows are never touched."""
+    """抽 8 个 VALIDATION 窗口(跳过历史不完整的)在线重算,9 个分位数原始输出与离线矩阵逐一比对 parity;TEST 不碰。"""
     pool = frame[frame["split_24h"] == "VALIDATION"]
     hourly_by_station = {k: g for k, g in hourly.groupby("station_id")}
     max_diff = 0.0

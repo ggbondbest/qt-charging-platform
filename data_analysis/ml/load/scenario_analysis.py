@@ -1,30 +1,9 @@
-"""Scenario breakdown of the shipped hgb-deep bundle (descriptive reporting only).
-
-Post-hoc slicing of the ALREADY-FROZEN scoring for the three contract horizons
-(h01/h06/h24, each under its own split column split_1h/split_6h/split_24h).
-Nothing here feeds model selection: predictions use the identical pipeline as
-evaluate.py (bundle model predict, then clip to [0, rated_capacity_kw]) and the
-TEST numbers are cross-checked against the frozen ``test_metrics.json``.
-
-Slice dimensions per horizon and split (TEST and VALIDATION):
-  weekend           is_weekend == True / False
-  holiday           is_public_holiday == 1 vs 0
-  workday           not weekend and not holiday vs the rest
-  target_hour_bucket  Beijing-time hour of the *predicted* hour
-                    (reference_dt + horizon + 8h): late_night 0-6,
-                    morning_peak 7-9, daytime 10-16, evening_peak 17-21,
-                    night 22-23
-  capacity_tertile  quantile(1/3)/quantile(2/3) cutoffs on rated_capacity_kw.
-                    NOTE: the fleet has only two distinct ratings (74 / 187 kW)
-                    so both cutoffs land on 187 and the "mid" bin is empty;
-                    small == 74 kW stations, large == 187 kW stations.
-  city_id           one cell per city
-
-Metrics per cell: MAE, RMSE, P95abs (95th percentile of |error|), n.
-Cells with n < MIN_CELL_N are still reported but flagged ``low_n``.
-
-Usage (repo root):
-    python -m data_analysis.ml.load.scenario_analysis
+"""冻结 hgb-deep 评分的场景切片(post-hoc 描述性报告,不参与模型决策);契约时距各按自己的 split 列计分。
+切片维度:weekend、holiday、workday、target_hour_bucket(按目标小时的北京时刻度 reference_dt+horizon+8h:
+0-6/7-9/10-16/17-21/22-23)、capacity_tertile(全网额定功率仅 74/187 kW 两值,两个 quantile cutoff 均落在 187,
+mid 桶恒空,属数据性质;small=74、large=187)、city_id。格子指标 MAE/RMSE/P95abs/n,n<MIN_CELL_N 打 low_n 标记。
+预测管线与 evaluate.py 相同;TEST 数字与冻结 test_metrics.json 交叉核对,对不上=切片代码或数据漂移。
+用法(仓库根目录):python -m data_analysis.ml.load.scenario_analysis
 """
 
 from __future__ import annotations
@@ -32,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 
-# Must precede pandas/sklearn imports in this Anaconda/Windows environment.
+# 须先于 pandas/sklearn 导入:Anaconda/Windows 下两套 OpenMP 运行时同时加载会崩进程
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import joblib
@@ -49,7 +28,7 @@ MIN_CELL_N = 30
 
 
 def target_hour_bucket(horizon: int, reference_dt: pd.Series) -> pd.Series:
-    """Beijing-time hour bucket of the predicted hour (reference + horizon)."""
+    """被预测小时(reference + horizon)折算北京时间后归入小时桶。"""
     hour = (reference_dt + pd.Timedelta(hours=horizon) + common.BUSINESS_TZ_OFFSET).dt.hour
     bins = pd.cut(
         hour,
@@ -107,7 +86,7 @@ def dimension_tables(sub: pd.DataFrame, y: np.ndarray, pred: np.ndarray, horizon
 
 
 def digest_of(slices: dict) -> dict:
-    """Compact worst-cell facts derived from the tables (no new modeling)."""
+    """从切片表提炼 worst/best 格子摘要,纯归纳,无新建模或新预测。"""
     digest: dict = {}
     for split in SPLITS:
         per_horizon: dict = {}
@@ -188,7 +167,7 @@ def main() -> int:
         "digest": digest_of(slices),
     }
 
-    # consistency check against the frozen TEST grading (post-hoc only)
+    # 一致性核对:同批行同管线,MAE/n 应与冻结 TEST 评分完全相等;不等=切片代码漂移
     frozen_path = OUT_DIR.parent / "test_metrics.json"
     if frozen_path.exists():
         frozen = json.loads(frozen_path.read_text(encoding="utf-8"))

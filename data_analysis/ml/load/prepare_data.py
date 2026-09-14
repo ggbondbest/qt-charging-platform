@@ -1,6 +1,7 @@
-"""Materialize the joined training frame and audit feature reconstruction.
+"""join 好的训练帧落盘前跑两道 parity 审计:重建 vs 导出表、导出表 vs 原始小时表,任一最大差值 >1e-9 退出码 1。
+导出特征是后续训练的唯一起点,lag 错位或 rolling 口径不一致会让指标虚高且难事后发现。
 
-Usage (repo root):
+用法(仓库根目录):
     python -m data_analysis.ml.load.prepare_data
 """
 
@@ -22,9 +23,8 @@ def main() -> int:
 
     audit = common.audit_offline_parity(usable)
     worst = max(audit.values())
-    # audit_offline_parity is blind to a whole-block time-shift of the lag
-    # columns (it recomputes rolling stats from the same lags), so also join
-    # every usable row back to the raw hourly table at reference_dt - k hours.
+    # parity 的 rolling 就是从 lag 列重算,lag 块整块平移它检不出;
+    # 补一道:按 reference_dt - k 小时回连原始小时表直接核对。
     raw_audit = common.audit_raw_alignment(usable, common.load_hourly_metrics())
     worst = max(worst, raw_audit["worstAbsDiff"], float(raw_audit["missingRawHistoryHours"]))
     calendar = common.build_calendar_lookup(usable[usable["split_1h"] != "EXCLUDED"])

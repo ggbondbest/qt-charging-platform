@@ -1,1 +1,1 @@
-"""Station-level hourly load forecasting (task A line)."""
+"""充电站级逐小时负荷预测(任务 A 建模线)。"""

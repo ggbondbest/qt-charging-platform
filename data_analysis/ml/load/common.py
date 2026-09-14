@@ -1,12 +1,9 @@
-"""Shared loading and feature construction for the load forecasting task.
-
-Conventions verified against ``analytics_full_180d_v1`` (see prepare_data.py):
-- ``rolling_std_kw_24h`` is the population standard deviation (ddof=0).
-- ``hour_of_day`` / ``day_of_week`` / ``is_weekend`` follow Asia/Shanghai,
-  while ``reference_time`` and table timestamps stay in UTC.
-- Online inference rebuilds every model input from the 24 raw station hours
-  through :func:`build_feature_row`, and :func:`audit_offline_parity` proves
-  that reconstruction matches the exported feature table before training.
+"""负荷预测任务共用的数据加载与特征构造代码。
+约定已对照 analytics_full_180d_v1 逐条验证(验证脚本见 prepare_data.py):
+- rolling_std_kw_24h 用总体标准差(ddof=0),同导出口径,线上重算必须一致,否则特征系统性偏差。
+- hour_of_day/day_of_week/is_weekend 按北京时间算(负荷跟当地作息走);
+  reference_time 与表内时间戳仍存 UTC,两套口径不混。
+- build_feature_row 从最近 24 个原始电站小时重建模型输入;audit_offline_parity 训练前校验重建与导出表的 parity。
 """
 
 from __future__ import annotations
@@ -47,10 +44,8 @@ FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERIC_FEATURES
 TARGET_COLUMNS = [f"label_power_kw_h{i:02d}" for i in range(1, 25)]
 HORIZON_SPLITS = {1: "split_1h", 6: "split_6h", 24: "split_24h"}
 
-# Shipped recipe: per-horizon HistGradientBoostingRegressor. v0.2 was the
-# L2-loss race winner "hgb-deep"; v0.4 promotes the round-2 finding that a
-# quantile-0.5 (median) objective directly optimizes the MAE metric the
-# contract reports, beating hgb-deep on VALIDATION (12.942 vs 13.294 kW mean).
+# 每 horizon 单训一个 HistGradientBoostingRegressor;v0.2 选 L2 损失最优的 hgb-deep,
+# v0.4 换 quantile-0.5(中位数):直接优化合同考核的 MAE,VALIDATION 12.942 vs 13.294 kW。
 MODEL_ID = "hgb-q50-history24-v1"
 MODEL_VERSION = "0.4.0"
 
@@ -61,7 +56,7 @@ def read_manifest() -> dict:
 
 
 def load_table(name: str) -> pd.DataFrame:
-    """Read every shard of one exported table, never just the first part file."""
+    """glob 拼接导出表的全部 *.csv.gz 分片;只读单个 part 会静默丢数据。"""
     files = sorted(glob.glob(str(DATASET_DIR / "csv" / name / "*.csv.gz")))
     if not files:
         raise FileNotFoundError(f"No shards found for table {name} under {DATASET_DIR}")
@@ -75,9 +70,11 @@ def load_hourly_metrics() -> pd.DataFrame:
 
 
 def load_training_frame() -> pd.DataFrame:
-    """Join features and targets 1:1 and attach horizon split columns."""
+    """特征表与目标表按 (station_id, reference_time) 1:1 join,带各 horizon 切分列。"""
     features = load_table("ml_features_hourly")
     targets = load_table("ml_targets_hourly")
+    # one_to_one 在重复/缺配时直接报错,防导出有问题时无声训练。
+    # split_1h/6h/24h 按时间标 TRAIN/VALIDATION/TEST/EXCLUDED,防未来数据预测过去。
     frame = features.merge(
         targets[["station_id", "reference_time", *TARGET_COLUMNS, *HORIZON_SPLITS.values()]],
         on=["station_id", "reference_time"],
@@ -96,14 +93,9 @@ def format_utc(stamp: datetime) -> str:
 
 
 def split_end_exclusive_utc(manifest: dict) -> dict[str, str]:
-    """Split boundaries from ``mlSplits`` as Z-suffixed UTC instants.
-
-    Per the dataset manifest, split dates are Asia/Shanghai calendar dates with
-    start inclusive / end exclusive, so an end date D maps to the instant
-    ``D 00:00:00+08:00`` expressed in UTC (e.g. trainEnd ``2026-03-30`` ->
-    ``2026-03-29T16:00:00Z``). Verified against the frame: no TRAIN row has a
-    business reference date at or after ``trainEnd``.
-    """
+    """把 mlSplits 的切分日期换算成带 Z 后缀的 UTC 字符串。"""
+    # manifest 规定:日期是北京时间日历日,start inclusive / end exclusive,边界 = D 00:00+08 转 UTC(-8h),
+    # 如 2026-03-30 -> 2026-03-29T16:00:00Z;用 UTC 零点会错 8h。训练帧验证:无 TRAIN 行业务日期 ≥ trainEnd 当天。
     splits = manifest["mlSplits"]
 
     def boundary(date_str: str) -> str:
@@ -120,22 +112,9 @@ def split_end_exclusive_utc(manifest: dict) -> dict[str, str]:
 
 
 def canonical_payload_digest(bundle: dict) -> str:
-    """SHA-256 of the canonical pickle-protocol-5 serialization of the bundle
-    with the ``metadata`` entry removed, taken in stabilized state.
-
-    A file cannot carry the hash of its own bytes, so ``artifactSha256`` in
-    ``model_metadata.schema.json`` records this payload digest instead. Fitted
-    sklearn objects do not re-serialize byte-identically straight out of a
-    fresh ``fit`` and a joblib stream is not byte-stable across load/dump
-    cycles, but a plain-pickle stream is byte-stable after one round-trip, so
-    the digest is defined as ``sha256(pickle.dumps(pickle.loads(pickle.dumps(
-    payload, 5), 5)))`` — idempotent from any already-loaded state. The
-    delivered bundle is therefore written as plain protocol-5 pickle (which
-    ``joblib.load`` reads transparently); verify with
-    ``canonical_payload_digest(joblib.load(bundle_path))``. The plain
-    whole-file hash is additionally recorded in ``train_metrics.json`` under
-    ``artifactFileSha256`` for transport checks.
-    """
+    """bundle 去 metadata 稳定化,对 protocol-5 pickle 字节求 SHA-256;bundle 即普通 pickle,joblib.load 可读。"""
+    # 稳定化必需:fit 后 sklearn 对象与 joblib 压缩流不保证字节稳定,普通 pickle 往返一次后才幂等。
+    # artifactSha256 记此摘要而非文件哈希;整文件哈希另见 train_metrics.json:artifactFileSha256(传输完整性)。
     payload = {key: value for key, value in bundle.items() if key != "metadata"}
     stabilized = pickle.loads(pickle.dumps(payload, protocol=5))
     return hashlib.sha256(pickle.dumps(stabilized, protocol=5)).hexdigest()
@@ -144,17 +123,9 @@ def canonical_payload_digest(bundle: dict) -> str:
 def audit_raw_alignment(
     frame: pd.DataFrame, hourly: pd.DataFrame, sample: int | None = None
 ) -> dict:
-    """Prove the exported lag block really sits in the strict past.
-
-    :func:`audit_offline_parity` recomputes rolling stats *from* the exported
-    lags, so it cannot see a whole-block time-shift of the lag columns onto the
-    label hour. This closes that gap independently of the export: every usable
-    row is joined back to raw ``station_hourly_metrics`` at
-    ``reference_dt - k hours`` for each of the 24 lags, plus
-    ``last_available_count`` at ``reference_dt - 1 hour``, and the max absolute
-    difference is reported. Any missing history hour for a row with a
-    non-null lag also counts as a mismatch.
-    """
+    """证明 24 列 lag 特征全落在参考时刻之前的严格过去,报导出值与原始表的最大绝对差。"""
+    # 补 parity 盲区:其 rolling 由 lag 列重算,lag 块平移贴到标签小时(泄漏、指标虚高)检不出,故直接核对原始表。
+    # last_available_count 按 -1h 回连同查;有 lag 值但对应原始历史小时缺失也计不一致(missingRawHistoryHours)。
     if sample is not None:
         frame = frame.sample(n=min(sample, len(frame)), random_state=7)
     lookup = hourly.set_index(["station_id", "recorded_at"])
@@ -195,7 +166,8 @@ def audit_raw_alignment(
 
 
 def build_calendar_lookup(frame: pd.DataFrame) -> dict[tuple[str, str], tuple[int, int]]:
-    """(city_id, business_date) -> (is_public_holiday, is_adjusted_workday)."""
+    """构建 (city_id, business_date) -> (is_public_holiday, is_adjusted_workday) 查找表。"""
+    # key 带 city_id:导出表日历按城市给出;同 key 标记矛盾直接抛错,宁可失败也不用错日历。
     lookup: dict[tuple[str, str], tuple[int, int]] = {}
     for city, date, holiday, workday in frame[
         ["city_id", "business_date", "is_public_holiday", "is_adjusted_workday"]
@@ -210,7 +182,8 @@ def build_calendar_lookup(frame: pd.DataFrame) -> dict[tuple[str, str], tuple[in
 
 
 def rolling_from_powers(powers: np.ndarray) -> dict[str, float]:
-    """powers must be ordered oldest -> newest, covering lag h24 .. h01."""
+    """从 24 个功率值重算全部 rolling 统计量。"""
+    # powers 须按时间旧->新、恰覆盖 h24..h01:3h/6h 窗口取数组末尾,反了全错。std 用 ddof=0,同导出口径。
     return {
         "rolling_mean_kw_3h": float(powers[-3:].mean()),
         "rolling_mean_kw_6h": float(powers[-6:].mean()),
@@ -226,14 +199,9 @@ def build_feature_row(
     calendar_lookup: dict[tuple[str, str], tuple[int, int]],
     rated_capacity_kw: float | None = None,
 ) -> dict:
-    """Rebuild one model input row from the 24 raw station hours before *reference_time*.
-
-    Each history entry is a station-hour dict with ``recorded_at`` (UTC hour
-    start), ``mean_power_kw``, ``capacity``, ``rated_capacity_kw`` and
-    ``end_available_count`` — the hourly fields the API can read from
-    ``station_hourly_metrics`` plus the station kW rating from
-    ``station_snapshot``.
-    """
+    """线上推理入口:用 reference_time 前 24 个原始电站小时重建一行模型输入。"""
+    # 只用原始小时重算,与离线导出表逐列同构(audit_offline_parity 成立的前提)。
+    # 小时字段来自 station_hourly_metrics,rated_capacity_kw 来自 station_snapshot;校验不过抛错,宁拒不喂半截。
     ref = parse_utc(reference_time)
     ordered = sorted(history, key=lambda row: row["recorded_at"])
     if len(ordered) != 24:
@@ -274,7 +242,8 @@ def build_feature_row(
 
 
 def features_matrix(frame: pd.DataFrame) -> pd.DataFrame:
-    """Model input matrix from the exported feature table (offline path)."""
+    """从导出特征表(离线路径)拼出模型输入矩阵。"""
+    # 转 category 是为配合 categorical_features;训练和评估同走此函数,防两条路径列不一致。
     matrix = frame[FEATURE_COLUMNS].copy()
     for column in CATEGORICAL_FEATURES:
         matrix[column] = matrix[column].astype("category")
@@ -282,7 +251,8 @@ def features_matrix(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def audit_offline_parity(frame: pd.DataFrame, sample: int | None = None) -> dict[str, float]:
-    """Recompute rebuilt-vs-table differences for numeric model inputs (vectorized)."""
+    """向量化重算数值特征,报告重建值 vs 导出表值的最大绝对差(parity)。"""
+    # 差值应≈0(调用方以 1e-9 判失败)。注意:看不出 lag 块整体平移,那一面由 audit_raw_alignment 负责。
     if sample is not None:
         frame = frame.sample(n=min(sample, len(frame)), random_state=7)
     lag_matrix = frame[[f"lag_power_kw_h{i:02d}" for i in range(24, 0, -1)]].to_numpy()

@@ -1,15 +1,9 @@
-"""Contract-compatible online predictor for the load task.
+"""在线负荷预测器,实现 data_analysis.contracts.model 的 Predictor 接口。
+history 是 reference_time 之前严格连续的 24 个电站小时原始记录
+(station_hourly_metrics),特征全部经 common.build_feature_row 现场重建,
+与离线训练同一份代码路径,杜绝线上线下特征分叉导致的指标失真。
 
-Implements ``Predictor`` from data_analysis.contracts.model:
-    predict(history: list[dict], context: PredictionContext) -> dict
-
-``history`` holds the 24 raw station hours (station_hourly_metrics fields)
-strictly before ``context.reference_time``; every model input is rebuilt here
-from that window, so the offline/online feature transformation is one and the
-same code path (audited by prepare_data and by the smoke test below).
-
-Smoke test (repo root, after training):
-    python -m data_analysis.ml.load.predict
+冒烟测试(仓库根目录): python -m data_analysis.ml.load.predict
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ from . import common
 
 
 class LoadForecastPredictor:
-    """Loads one trusted bundle; never evaluates arbitrary pickle."""
+    """只加载本项目训练脚本产出的受信任 bundle:joblib/pickle 加载即执行任意代码,来源不明的 .joblib 不能进这条路径。"""
 
     def __init__(self, bundle_path=None):
         bundle_path = bundle_path or common.DATA_ANALYSIS_ROOT / "outputs" / "ml_load" / f"{common.MODEL_ID}.joblib"
@@ -79,9 +73,7 @@ class LoadForecastPredictor:
 
 
 def _smoke_test() -> int:
-    """Serve 3 random VALIDATION windows through the predictor and compare
-    against the offline table-feature path, then validate the contract end to
-    end. TEST rows are never touched."""
+    """抽 3 个 VALIDATION 窗口走在线预测,特征与输出逐项 parity,再跑 validate_prediction 校验契约;TEST 不碰,防止污染唯一一次首盲 TEST 评分。"""
     out = common.DATA_ANALYSIS_ROOT / "outputs" / "ml_load"
     frame = pd.read_pickle(out / "joined_usable.pkl")
     pool = frame[frame["split_24h"] == "VALIDATION"].reset_index(drop=True)
@@ -133,7 +125,7 @@ def _smoke_test() -> int:
         )
         offline_cap = float(getattr(row, "rated_capacity_kw"))
         for offset in range(24):
-            # online points are clipped to [0, rated_capacity_kw]; compare like for like
+            # 在线输出被 clip 到 [0, rated_capacity_kw],离线值同口径 clip 后再比,否则 diff 是口径不一致的假阳性
             offline_value = float(
                 np.clip(predictor.models[offset + 1].predict(offline)[0], 0.0, offline_cap)
             )

@@ -1,22 +1,7 @@
-"""ONE confirmatory (non-blind) TEST grading of the quantile interval artifact.
-
-The quantile bundle ``hgb-quantile-history24-v1`` is promoted as an *analysis
-artifact* (intervals; it does not replace the shipped point model, which stays
-``hgb-deep-history24-v1`` v0.2 — v0.2 owns the one first-blind TEST grading in
-``test_metrics.json``). This script performs the single disclosed confirmation
-pass reserved to the finalization agent: TEST 80%-interval coverage / width /
-pinball for the three contract horizons, on the contract split columns
-(h01->split_1h, h06->split_6h, h24->split_24h, rows labelled TEST with a
-finite target), using the identical protocol as ``intervals.py`` (predict
-q0.1/q0.5/q0.9, clip to [0, rated_capacity_kw], sort so lower<=median<=upper).
-
-No fitting, no model selection happens here; this is descriptive scoring of an
-already-frozen artifact after its VALIDATION promotion decision was made.
-
-Output: data_analysis/outputs/ml_load/race2/interval_test_summary.json
-
-Usage (repo root):
-    python -m data_analysis.ml.load.interval_test_confirm
+"""对区间产出物 hgb-quantile-history24-v1 做唯一一次确认性(非盲)TEST 评分。
+切分按契约列取(h01->split_1h、h06->split_6h、h24->split_24h,TEST 且目标有限),协议与 intervals.py 一致:clip 到 [0, rated_capacity_kw] 后按样本排序消交叉。
+不拟合、不选型:VALIDATION 晋升已定,这是对冻结产出物的描述性评分,只批这一次且必须披露;本任务首盲归点模型 hgb-deep v0.2(test_metrics.json),TEST 再被用于选型或多看一次都会让泛化指标失真。
+输出 data_analysis/outputs/ml_load/race2/interval_test_summary.json;用法(仓库根目录): python -m data_analysis.ml.load.interval_test_confirm
 """
 
 from __future__ import annotations
