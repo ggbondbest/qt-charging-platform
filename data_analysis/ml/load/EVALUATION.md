@@ -303,3 +303,16 @@ python -m data_analysis.ml.load.curve_demo             # -> analysis/curve_demo.
 - **§9.7 相应修正**:"未据此改判交付"自本节起失效,保留原文以忠实记录决策时序。分位数区间工件(q10/q90)继续作为附加分析工件与 v0.4 点预测配套使用。
 
 复现:`python -m data_analysis.ml.load.train && python -m data_analysis.ml.load.predict`(种子 42,重跑逐位一致;evaluate 仅在明确需要时再跑,输出文件名已按模型隔离,不会覆盖任何历史评分工件)。
+
+## 11. 数据批次刷新整合记录(2026-09-14)
+
+上游 PR #63/#64 合并后,分析组刷新了 180 天清洗交付。本线完成整合并全链复验:
+
+- **新批次标识**(本包所有工件的溯源以此为准,旧批次 5f8e93… 已过时):
+  datasetId `charging_full_180d_v2`(不变)/ publishedBatchId `analytics-298aa3ee1401461fb06ea2bb96930dcf` / pipelineRunId `spark-6ed381b125034f9e95d726a74befb121`。
+- **结构零漂移**:拼接后仍 107,425 行、missingLags=0,三个切分列计数与旧批次完全一致(70800/18000/18000/625 等);清洗改动只触及数值,不触及形状。
+- **审计复绿**:新批次上离线重建 parity 最大差 2.84e-14、原始小时对账 worstAbsDiff=0.0、missingRawHistoryHours=0;train→predict 冒烟契约通过、在线/离线预测差 0.00e+00。
+- **配方冻结重训**:v0.4(quantile 0.5)不重调参直接重拟合(332.2 秒),VALIDATION 池化 MAE 12.942(旧批次 12.942,漂移 <0.001)。
+- **TEST 重基线评分(新批次上唯一一次)**:`test_metrics_hgb-q50-history24-v1_298aa3ee.json`,三个契约时延 MAE 11.977/12.975/13.181(mean 12.711),与旧批次逐位一致——清洗刷新未触及 TEST 切片的特征与标签,故 §10 结论(含提升%与合法率 1.0)原样成立,模型工件无需换版。
+- 旧批次评分文件已改名归档:`test_metrics_hgb-q50-history24-v1_5f8e9342.json`;v0.2 首次盲测文件 `test_metrics.json` 未动。evaluate.py 输出名现自带训练批次段,历史评分互不覆盖。
+- 本分支已 rebase 到 develop@d3b29a0,五个交付提交线性重放、无冲突。
