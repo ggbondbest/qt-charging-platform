@@ -665,18 +665,28 @@ IDE / 微信 / 虚拟机，前两次还叠了我自己的核对探针，所以�
 
 ## 6. 独立扩展：目前未做，以及做之前需要什么
 
-
-
 按文档「时间不足时先交付基础预测闭环」，本轮把基础线的缺口（复现命令入库、最小推理测试、
 交付说明）补完，未开新任务线。择一建议：
 
-- **推荐：会话级异常筛查（新 `ml/screening/`）**。素材已在仓库 raw 批次里：
-  `battery_samples` 1,217,829 行、`charger_telemetry` 3,888,000 行、`charging_sessions` 123,456 行、
-  `charging_attempts` 169,154 行、`vehicle_energy_intervals` 169,254 行、`anomaly_labels` 4,865 行。
-  致命陷阱必须先说清：`charging_sessions.stop_reason` 近似标签本身（`USER_STOPPED → EARLY_STOP`
-  精确率 98.9%），`anomaly_labels` 只能进**评价**不能进特征；因此特征只能取自会话**中途**的
-  telemetry/电池窗口。此外 raw 批次没有 clean Parquet，需要 Linux 成员给出已验收的清洗批次号，
-  否则第 3 天拿不到可训数据。
+- **推荐：会话级异常筛查（新 `ml/screening/`）**。**更正**：本节上一版说"素材只在 raw 批次里、
+  raw 批次没有 clean Parquet、要等 Linux 成员给清洗批次号才能训"——那是只看了 raw 包
+  （`charging_full_180d_v2/preview/*.csv`，几 KB 预览）没看导出包 `clean/` 目录的错判。实测：
+  **六张表在当前批次 `analytics_full_180d_v1/clean/` 里就是清洗好的 Parquet**，行数为
+  `charging_sessions` 121,539（上一版写的 123,456 是**清洗前**的会话数，差额在 `rejected/` 的 16 片里）、
+  `battery_samples` 1,217,829、`charger_telemetry` 3,888,000、`charging_attempts` 169,154、
+  `vehicle_energy_intervals` 169,254、`anomaly_labels` 4,865。`anomaly_labels` 的 4,865 个 `session_id`
+  **100.0000% 能关联到会话表**（每会话一条标签，正样本率 4,865 / 121,539 = 4.00%），
+  电池与遥测两张明细也都带 `session_id`。**因此这个扩展不需要等任何人，今天就能开工。**
+- 泄漏陷阱（在 clean 批次上重测，比上一版的结论更强）：`anomaly_labels.anomaly_type` 三类
+  `POWER_DERATING` 1,844 / `EARLY_STOP` 1,817 / `THERMAL_STRESS` 1,204；而 `charging_sessions.stop_reason`
+  只有三个取值，其中 **`USER_STOPPED` 的 1,805 条全部是 `EARLY_STOP`（精确率 1.0000，对该类召回
+  1,805/1,817 = 99.34%）**。也就是说把 `stop_reason` 当特征，EARLY_STOP 这一类会**直接刷满分**。
+  另外两类更狡猾：它们在 `TARGET_REACHED` 里几乎对半（`POWER_DERATING` 997 vs `THERMAL_STRESS` 1067），
+  在 `DURATION_LIMIT` 里是 847 vs 137——所以 `stop_reason` 既不能进特征，也不能当"简单任务已完成"的依据。
+  结论不变且更硬：**特征只能取自会话中途的 telemetry / 电池窗口**，`anomaly_labels` 只进**评价**。
+- 新增的数据缺口（上一版没发现，会影响验收口径）：`anomaly_labels.severity` **全部是 `MEDIUM`**
+  （4,865/4,865），没有严重度分层，因此只能评二分类 / 三分类的 precision-recall-F1，
+  **不要承诺做分级告警**。会话时长 p10/p50/p90 也需要在 `prepare_data.py` 里实测后再定"中途窗口"取多长。
 - 偏好推荐 / 结合预测的站点选择：依赖文档第 6 页所列的曝光点击与路网数据准备，当前批次不具备，
   换名字不解决问题。
 - 若组长批准开新任务：按文档要求**独立准备数据、新增契约**，不会强塞进
