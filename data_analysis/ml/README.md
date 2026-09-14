@@ -36,3 +36,14 @@ LSTM 是与随机森林比较的扩展，若实测不如基线也如实展示，
 
 模型类、输入/输出、单位、版本、模型元数据和时间边界的最终要求见 [公共契约第 5–6 节](../contracts/README.md)。
 HTTP 成功结构已定义，实际推理仍待接入；不在数据层填充假预测值。
+
+## 已交付模型登记
+
+| 线 | 目录 | 模型 | 状态 |
+| --- | --- | --- | --- |
+| 站点负荷预测 | [load/](load/) | hgb-q50-history24-v1 v0.4（24 步长分模型 + 分位数区间工件） | 已推送待合入；评测见 [load/EVALUATION.md](load/EVALUATION.md) |
+| 选址个性化推荐 | [recommend/](recommend/) | gbdt-rank-incity-v1 v0.1（同城 5 站 pointwise 排序） | TEST 首盲已冻结：hit@1 0.593 / MRR 0.756 / NDCG@5 0.818，全面胜过人气、评分、忠诚度、用户历史次数基线；协议与限制见 [recommend/README.md](recommend/README.md) |
+| 充电过程异常筛查 | [anomaly/](anomaly/) | context-baseline-rankfuse-v4 v0.4（语境基线信号 rank 融合；前史 v1 会话均值→v2 点级→v3 融合） | TEST 首盲（v4 独立）：**F1 0.3095 / precision 0.479，THERMAL_STRESS 召回 100%**，为 v1（0.147）的 2.1 倍、随机参照 6.1 倍；v2/v3 负结果如实归档，EARLY_STOP/DERATING 检出留 v5；成绩口径为**每批固定 ~2% 告警预算的离线批筛**（transductive 秩融合，非在线固定阈值，见 README 勘误）；见 [anomaly/README.md](anomaly/README.md) |
+| 用户流失预测 | [churn/](churn/) | gbdt-churn-user-v2 v0.2（14 天窗口二分类） | v2 TEST 首盲已冻结：**AUC 0.7366 / PR-AUC 0.326 / 十分位 lift 2.32**，胜 recency 基线（0.613）；v1 经自查评审实锤两处窗口越界（排队特征泄入标签窗、标签窗超尾误标 106 人），已隔离作废、留档审计；见 [churn/README.md](churn/README.md) |
+
+推荐线只用"截至事件时刻已发生"的站点统计做特征，不做空闲/可用性预测，与空闲桩任务无重叠。
