@@ -159,7 +159,7 @@ def ranking_free_metrics(y: np.ndarray, p: np.ndarray) -> dict:
 
 
 def write_new_json(path: Path, payload: dict) -> None:
-    """冻结语义:不存在才写;已存在要求逐字节等价(确定性重跑通过),不等价必拒——首盲不可被追改。"""
+    """冻结语义:不存在才写;已存在要求语义等价(json 往返后 ==,非严格逐字节),不等价必拒——首盲不可被追改。"""
     path = Path(path)
     if path.exists():
         normalized = json.loads(json.dumps(payload, ensure_ascii=False, default=float))

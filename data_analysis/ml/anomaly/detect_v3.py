@@ -52,7 +52,11 @@ def session_signals() -> dict[str, pd.Series]:
 
 
 def rank_in_split(sig: pd.Series, sid_by_split: dict) -> dict:
-    # fillna(0):信号缺失的会话按"最不异常"处理,避免 NaN 污染分位数计算
+    """fillna(0):缺信号会话按"最不异常"钉底(旧 NaN 语义是静默 FN,两都不完美,缺失数进
+    train_metrics 披露)。评审实锤的口径边界:融合分是 split 内百分位秩——TRAIN 的 p96 阈值
+    恒≈0.96,套到任何窗口都是"固定告警预算"的 transductive 批筛,不是可部署的固定决策函数;
+    "阈值在 TRAIN 拟合"仅对纯 v1/v2 原始分候选成立。v3 首盲已冻结,此语义以勘误形式记录,
+    追改冻结件=违盲评纪律;带固定阈值部署形态的下一代(若做)必须新 model_id 新首盲。"""
     return {s: sig.reindex(sid_by_split[s]).rank(pct=True).fillna(0.0).to_numpy() for s in SPLITS}
 
 
@@ -78,6 +82,10 @@ def main() -> int:
     y_by_split = {s: ses[ses.split == s].y.to_numpy() for s in SPLITS}
 
     signals = session_signals()
+    all_sid = pd.Index(ses.session_id)
+    missing = {n: int(s.reindex(all_sid).isna().sum()) for n, s in signals.items()}
+    if any(missing.values()):
+        print("missing-signal counts (fillna(0) 钉底,详见 rank_in_split 注释):", missing)
     ranks = {name: rank_in_split(s, sid_by_split) for name, s in signals.items()}
     print("single-signal validation best:")
     singles = {}
@@ -138,7 +146,8 @@ def main() -> int:
     with open(common.TRAIN_METRICS_PATH_V3, "w", encoding="utf-8") as handle:
         json.dump({"singles": singles, "greedyHistory": history,
                    "chosenSignals": chosen, "chosenPercentile": best_pct,
-                   "validation": chosen_entry,
+                   "validation": chosen_entry, "missingSignalCounts": missing,
+                   "thresholdSemantics": "split 内秩融合 = 固定告警预算的批筛口径(transductive),非可部署固定阈值;见 detect_v3.rank_in_split",
                    "seconds": round(time.time() - started, 1)},
                   handle, ensure_ascii=False, indent=2)
     joblib.dump({"signals": chosen, "percentile": best_pct, "threshold": threshold,

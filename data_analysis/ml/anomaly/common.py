@@ -184,7 +184,8 @@ def prf(scores: np.ndarray, y: np.ndarray, threshold: float) -> dict:
 
 
 def write_new_json(path: Path, payload: dict) -> None:
-    """冻结语义:文件不存在才写入;已存在则要求逐字节等价(确定性重跑可通过,
+    """冻结语义:文件不存在才写入;已存在则要求"语义等价"(json 往返后 ==,确定性重跑可通过;
+    注意不是严格逐字节——int/float 型变可过,评审 P2-2 勘误),
     上游变过导致的差异必须显式归档新文件名,绝不静默覆盖首盲分数)。"""
     path = Path(path)
     if path.exists():

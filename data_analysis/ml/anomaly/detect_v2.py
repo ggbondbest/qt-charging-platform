@@ -72,6 +72,9 @@ def main() -> int:
     # v1 会话分(仅作为候选融合项;它的 TEST 盲评早已消耗,这里只复用其打分函数)
     b1 = joblib.load(common.BUNDLE_PATH)
     sf = pd.read_pickle(common.FEATURE_TABLE)
+    # 血统对账:两代缓存混用会让 blend 全 NaN→候选族静默 F1=0(评审 P2-4),宁可硬失败
+    if set(sf.session_id) != set(ses.session_id):
+        raise RuntimeError("FEATURE_TABLE 与 POINT_TABLE 会话集不一致:删两张缓存 pkl 重建后再跑")
     x1 = b1["scaler"].transform(sf[b1["features"]].astype(float).fillna(b1["medians"]))
     s1 = pd.Series(-b1["model"].score_samples(x1), index=sf.session_id.to_numpy())
 
@@ -109,7 +112,9 @@ def main() -> int:
     print("validation top10:", {k: v["f1"] for k, v in top10})
     threshold = float(np.percentile(candidates[best_cand]["TRAIN"], best_pct))
 
-    # 随机参照:同一告警预算下随机排序的期望 F1(seed 固定,可复算)
+    # 随机参照:同一告警预算下随机排序的期望 F1(seed 固定,可复算)。
+    # 评审 P2-5 勘误:第 n_flag 大值配 prf 的严格 ">" 实标 n_flag-1 个,预算差一
+    # (量级 1/515,不改结论;v2 已冻结不能改算法,下一代随机参照应用 np.nextafter 下探)。
     y_valid = y_by_split["VALIDATION"]
     n_flag = int(chosen["flagged"])
     rng = np.random.default_rng(SEED)

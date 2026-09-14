@@ -53,7 +53,7 @@ Brier=0.167 为 class_weight=balanced 畸变口径,只做自身对比用(冻结�
 
 ```bash
 python -m data_analysis.ml.churn.train      # 建表(缓存)+训练+验证表
-python -m data_analysis.ml.churn.evaluate   # TEST 首盲,重跑要求逐字节等价
+python -m data_analysis.ml.churn.evaluate   # TEST 首盲,重跑要求语义等价(json 往返后 ==)
 ```
 
 产物:`outputs/ml_churn/`(user_features 缓存、bundle、train_metrics、冻结 test_metrics)。

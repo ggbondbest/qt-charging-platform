@@ -32,6 +32,8 @@ def context_signals() -> pd.DataFrame:
     if common.CTX_TABLE.exists():
         return pd.read_pickle(common.CTX_TABLE)
     pts = pd.read_pickle(common.POINT_TABLE).copy()
+    if pts[["soc_pct", "charge_current_a", "max_temperature_c", "celldiff"]].isna().any().any():
+        raise RuntimeError("battery_samples 关键列含 NaN:整除分箱会硬崩,需先定插补口径(且数值变更要升 model_id)")
     pts["socb"] = (pts["soc_pct"] // 10).clip(0, 9)
     pts["curb"] = (pts["charge_current_a"] // 50).astype(int)
     tr = pts[pts.split == "TRAIN"]
@@ -85,6 +87,12 @@ def main() -> int:
     signals["ctxTempExcess"] = ctx["tempExcessMax"]
     signals["ctxCellExcess"] = ctx["cellExcessMax"]
     signals["ctxIF"] = mixed_iforest(ctx)
+    # 缺失披露:新 charger/新 (charger,socb) 格 → 语境列 NaN → 秩 0 钉底,漂移最重的会话
+    # 恰最不可告警(P2 已知边界);expCur.clip(lower=1) 在涓流格会含义反转,当前数据 0 命中。
+    all_sid = pd.Index(ses.session_id)
+    missing = {n: int(s.reindex(all_sid).isna().sum()) for n, s in signals.items()}
+    if any(missing.values()):
+        print("missing-signal counts:", missing)
     ranks = {n: rank_in_split(s, sid_by_split) for n, s in signals.items()}
 
     singles = {}
@@ -146,6 +154,8 @@ def main() -> int:
     with open(common.TRAIN_METRICS_PATH_V4, "w", encoding="utf-8") as handle:
         json.dump({"singles": singles, "greedyHistory": history, "chosenSignals": chosen,
                    "chosenPercentile": best_pct, "validation": chosen_entry,
+                   "missingSignalCounts": missing,
+                   "thresholdSemantics": "split 内秩融合 = 固定告警预算的批筛口径(transductive),非可部署固定阈值;v4 冻结件的 0.98 阈值按此解读",
                    "seconds": round(time.time() - started, 1)}, handle, ensure_ascii=False, indent=2)
     joblib.dump({"signals": chosen, "percentile": best_pct, "threshold": threshold,
                  "model_id": common.MODEL_ID_V4, "model_version": common.MODEL_VERSION_V4,
