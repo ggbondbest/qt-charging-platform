@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -186,16 +187,25 @@ def prf(scores: np.ndarray, y: np.ndarray, threshold: float) -> dict:
 def write_new_json(path: Path, payload: dict) -> None:
     """冻结语义:文件不存在才写入;已存在则要求"语义等价"(json 往返后 ==,确定性重跑可通过;
     注意不是严格逐字节——int/float 型变可过,评审 P2-2 勘误),
-    上游变过导致的差异必须显式归档新文件名,绝不静默覆盖首盲分数)。"""
+    上游变过导致的差异必须显式归档新文件名,绝不静默覆盖首盲分数)。
+    创建走 tmp 全量落盘 + os.link 原子挂入(负荷线复审 P2#B 同款修复的加强版):
+    exists()->open(w) 两进程可双双过检;O_EXCL+随后写仍留"文件已在、内容未写完"的
+    中间态,复用比对会读到半截文件——os.link 目标已存在即 FileExistsError,
+    路径只随完整内容原子出现,并发同路径恰好一个成功。"""
     path = Path(path)
-    if path.exists():
-        # 与"序列化之后"比:int 键/numpy 标量在 json 往返后会变形,直接 == 会误判
-        normalized = json.loads(json.dumps(payload, ensure_ascii=False, default=float))
+    # 与"序列化之后"比:int 键/numpy 标量在 json 往返后会变形,直接 == 会误判
+    normalized = json.loads(json.dumps(payload, ensure_ascii=False, default=float))
+    tmp = path.with_name(f"{path.name}.tmpcreate.{os.getpid()}.{os.urandom(4).hex()}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.link(tmp, path)
+    except FileExistsError:
         same = json.loads(path.read_text(encoding="utf-8")) == normalized
         if not same:
             raise FileExistsError(f"拒绝覆盖已冻结产物且重算不等价: {path}")
         print(f"复用已冻结文件(与重算一致): {path.name}")
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    finally:
+        tmp.unlink(missing_ok=True)

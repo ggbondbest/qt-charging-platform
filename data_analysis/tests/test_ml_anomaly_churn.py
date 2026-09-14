@@ -7,9 +7,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import numpy as np
-
 try:
+    import numpy as np
     import pandas as pd
 
     from data_analysis.ml.anomaly import common as ac
@@ -100,6 +99,33 @@ class FreezeReuse(unittest.TestCase):
         self._quiet_reuse(cc, path2, {"v": [1.5]})
         with self.assertRaises(FileExistsError):
             cc.write_new_json(path2, {"v": [1.6]})
+
+    def test_concurrent_create_exactly_one_winner(self):
+        # 负荷线复审 P2#B 同款:两条线的 create 都走 O_EXCL,并发同路径恰好一个成功,
+        # 且第一份(胜出者)评分不被替换——exists()->open(w) 在这个窗口里会双双过检。
+        import threading
+
+        for module, tag in ((ac, "anom"), (cc, "churn")):
+            path = self.out / f"race_{tag}.json"
+            barrier = threading.Barrier(2)
+            outcomes = {}
+
+            def worker(name: str):
+                barrier.wait()
+                try:
+                    module.write_new_json(path, {"model": name})
+                    outcomes[name] = "ok"
+                except FileExistsError:
+                    outcomes[name] = "exists"
+
+            threads = [threading.Thread(target=worker, args=(n,)) for n in ("w1", "w2")]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(sorted(outcomes.values()), ["exists", "ok"], tag)
+            winner = next(n for n, r in outcomes.items() if r == "ok")
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["model"], winner, tag)
 
 
 @unittest.skipUnless(HAS_DEPS, "pandas not installed")
