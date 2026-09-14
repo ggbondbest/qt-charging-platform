@@ -1,0 +1,117 @@
+{
+  "reportVersion": "hdfs-sample-validation-1.0.0",
+  "verifiedOn": "2026-09-14",
+  "status": "VERIFIED_HDFS",
+  "scope": "Real HDFS storage and Spark processing validation for the 7-day sample batch",
+  "execution": {
+    "executionCommit": "d8b5fa2",
+    "documentationBaseCommit": "10da4cc",
+    "repositoryBranchAtExecution": "develop",
+    "workingDirectory": "/mnt/hgfs/qt-charging-platform",
+    "operator": "bit@master"
+  },
+  "runtime": {
+    "python": "3.11.15",
+    "java": "OpenJDK 17.0.20",
+    "spark": "3.5.6",
+    "sparkMaster": "local[2]",
+    "hadoopDaemonVersion": "3.2.1",
+    "hadoopClientVersionObservedBySpark": "3.3.4",
+    "nameNode": "hdfs://master:9000",
+    "filesystemClass": "org.apache.hadoop.hdfs.DistributedFileSystem"
+  },
+  "dataset": {
+    "datasetId": "charging_sample_7d_v2",
+    "schemaVersion": "1.1.0",
+    "source": "SIMULATED",
+    "sourceManifestSha256": "fac612b1fca3289d7bae176ceb009dfac1e037176c1e42635fef7d96be8adf29",
+    "rawUri": "hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2",
+    "processedUri": "hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01",
+    "analysisUri": "hdfs://master:9000/user/bit/charging_phase2/analysis/charging_sample_7d_v2_20260914_01",
+    "exportUri": "hdfs://master:9000/user/bit/charging_phase2/export/charging_sample_7d_v2_20260914_01"
+  },
+  "pipeline": {
+    "pipelineRunId": "spark-180984bd76a04537887a5b488dac5a9d",
+    "command": "python -m data_analysis.spark_jobs.pipeline --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2 --output hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01 --master local[2] --shuffle-partitions 8 --driver-memory 2g",
+    "processedSuccessMarker": true,
+    "processedRunningMarker": false,
+    "inputTables": 23,
+    "cleanSessionRows": 4619,
+    "rejectedSessionRows": 86,
+    "rejectionReasons": {
+      "MISSING_SESSION_ID": 22,
+      "UNKNOWN_STATION_ID": 22,
+      "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 25,
+      "DUPLICATE_SESSION_ID": 17
+    },
+    "normalizedEnumRows": 21,
+    "stationHourlyRows": 4200,
+    "stationDailyRows": 175,
+    "rawFileChecksumsVerified": true,
+    "manifestRowCountsVerified": true,
+    "referenceAggregatesUsedAsInput": false
+  },
+  "acceptanceAnalysis": {
+    "command": "python -m data_analysis.spark_jobs.acceptance_analysis --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01 --output hdfs://master:9000/user/bit/charging_phase2/analysis/charging_sample_7d_v2_20260914_01 --master local[2] --shuffle-partitions 8 --driver-memory 2g",
+    "successMarker": true,
+    "semanticDimensions": 11,
+    "comparisons": 3,
+    "resultTables": 15
+  },
+  "export": {
+    "command": "python -m data_analysis.spark_jobs.export --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01 --output hdfs://master:9000/user/bit/charging_phase2/export/charging_sample_7d_v2_20260914_01 --master local[2] --shuffle-partitions 8",
+    "successMarker": true,
+    "publishedBatchId": "analytics-44c4805d2bdd469b8ecde07bd15c7e26",
+    "tableRows": {
+      "cities": 5,
+      "station_snapshot": 25,
+      "station_hourly_metrics": 4200,
+      "station_metrics_daily": 175,
+      "city_daily": 35,
+      "user_activity_daily": 3554,
+      "station_cohorts_daily": 169,
+      "station_service_daily": 175,
+      "ml_features_hourly": 3625,
+      "ml_targets_hourly": 3625
+    }
+  },
+  "hdfsVerification": {
+    "command": "python -m data_analysis.scripts.verify_hdfs --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01 --export hdfs://master:9000/user/bit/charging_phase2/export/charging_sample_7d_v2_20260914_01 --report data_analysis/outputs/hdfs_sample_7d_20260914_01_verification.json --master local[2]",
+    "status": "VERIFIED_HDFS",
+    "rawFileHashesVerified": true,
+    "processedParquetRows": 4200,
+    "exportVerified": true,
+    "storage": {
+      "raw": {"fileCount": 52, "directoryCount": 29, "contentBytes": 2400192},
+      "processed": {"fileCount": 71, "directoryCount": 32, "contentBytes": 2832768},
+      "export": {"fileCount": 44, "directoryCount": 23, "contentBytes": 1368572}
+    }
+  },
+  "referenceReconciliation": {
+    "command": "python -m data_analysis.spark_jobs.verify_aggregates --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_sample_7d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_sample_7d_v2_20260914_01 --report data_analysis/outputs/hdfs_sample_7d_20260914_01_reference_verification --master local[2]",
+    "status": "PASSED",
+    "verification": "all primary keys and all summary fields compared",
+    "referenceUsedOnlyForPostComputationVerification": true,
+    "stationHourly": {
+      "rows": 4200,
+      "keyColumns": ["station_id", "recorded_at"],
+      "differentRowsPerField": 0,
+      "floatingTolerance": 1e-9
+    },
+    "stationDaily": {
+      "rows": 175,
+      "keyColumns": ["station_id", "business_date"],
+      "differentRowsPerField": 0,
+      "floatingTolerance": 0
+    }
+  },
+  "evidence": {
+    "terminalEvidence": "Recorded during the 2026-09-14 master-session execution",
+    "localHdfsVerificationReport": "data_analysis/outputs/hdfs_sample_7d_20260914_01_verification.json",
+    "localReferenceReportDirectory": "data_analysis/outputs/hdfs_sample_7d_20260914_01_reference_verification"
+  },
+  "nextMilestone": {
+    "datasetId": "charging_full_180d_v2",
+    "work": "Run the same real-HDFS pipeline, acceptance analysis, export, HDFS verification and reference reconciliation with a new run identifier and 4g driver memory."
+  }
+}
