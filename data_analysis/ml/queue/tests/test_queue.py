@@ -25,6 +25,7 @@ HAVE_ARTIFACTS = all(path.exists() for path in ARTIFACTS)
 try:
     import sklearn  # noqa: F401
     HAVE_SKLEARN = True
+    from data_analysis.ml.queue import rolling  # rolling 依赖 sklearn，缺环境时整类跳过
 except ImportError:  # pragma: no cover
     HAVE_SKLEARN = False
 
@@ -281,6 +282,89 @@ class PublishedArtifacts(unittest.TestCase):
         for source in (self.summary, self.train, self.report):
             self.assertEqual(source["disclaimer"], note)
         with open(common.TEST_REPORT_MD, encoding="utf-8") as handle:
+            self.assertIn("模拟数据", handle.read())
+
+
+@unittest.skipUnless(HAVE_SKLEARN, "环境缺 scikit-learn，滚动研究相关用例整体跳过")
+class RollingStudy(unittest.TestCase):
+    """十轮滚动重训的折设计与阈值规则：纯逻辑，不需要产物，CI 可跑。"""
+
+    def test_folds_tile_the_window_with_no_overlap_or_leak(self) -> None:
+        bounds = common.split_boundaries(common.read_manifest())
+        folds = rolling.fold_plan(bounds, 10)
+        self.assertEqual(len(folds), 10)
+        # 每轮的验证段必须落在窗口内，且拟合截止严格晚于验证段起点
+        self.assertGreaterEqual(folds[0]["valStart"], bounds["startInclusive"])
+        for fold in folds:
+            self.assertEqual(fold["evalEnd"] - fold["fitEnd"], pd.Timedelta(days=rolling.HORIZON_DAYS))
+            self.assertEqual(fold["fitEnd"] - fold["valStart"], pd.Timedelta(days=rolling.VALIDATION_DAYS))
+        # 评测窗互不重叠、逐轮首尾相接，最后一轮正好压在 TEST 末端
+        for previous, current in zip(folds, folds[1:]):
+            self.assertEqual(previous["evalEnd"], current["fitEnd"])
+            self.assertLess(previous["evalEnd"], current["evalEnd"])
+        self.assertEqual(folds[-1]["evalEnd"], bounds["testEndExclusive"])
+
+    def test_requesting_more_rounds_than_the_window_holds_is_refused(self) -> None:
+        bounds = common.split_boundaries(common.read_manifest())
+        with self.assertRaises(ValueError) as caught:
+            rolling.fold_plan(bounds, 40)
+        self.assertIn("最多支持", str(caught.exception))
+        with self.assertRaises(ValueError):
+            rolling.fold_plan(bounds, 0)
+
+    def test_threshold_rule_reports_honestly_when_precision_floor_misses(self) -> None:
+        rng = np.random.default_rng(0)
+        y = rng.binomial(1, 0.9, 400)                    # 90% 正例：任何告警档精确率都≈0.9
+        prob = y * 0.6 + rng.uniform(0, 0.4, 400)        # 单调可分，取高档仍能≥0.50
+        point = rolling.pick_threshold(prob, y)
+        self.assertGreaterEqual(point["precision"], 0.50)
+        self.assertIn("精确率≥0.50", point["rule"])
+        # 反例：标签全 0 时任何档位精确率都是 0，规则必须自曝而不假装达标
+        low = rolling.pick_threshold(prob, np.zeros(400, dtype=int))
+        self.assertLess(low["precision"], 0.50)
+        self.assertIn("不假装达标", low["rule"])
+
+    def test_candidate_sets_cover_full_and_dynamics_only(self) -> None:
+        numeric = ["arrivals_60m", "open_now", "waste_rate_prior", "position_at_join",
+                   "rated_power_kw", "hour_local"]
+        categorical = ["weather"]
+        sets = rolling.candidate_sets(numeric, categorical)
+        self.assertEqual(sets["full"], (numeric, categorical))
+        dynamic, cat = sets["dynamicsPlusPosition"]
+        self.assertEqual(dynamic, ["arrivals_60m", "open_now", "waste_rate_prior", "position_at_join"])
+        self.assertEqual(cat, [], "动态集不放类别列：消融里它就是纯数值那一套")
+
+
+@unittest.skipUnless(HAVE_SKLEARN and common.ROLLING_SUMMARY_PATH.exists(),
+                     "未跑过 rolling（或缺 sklearn），跳过产物核对")
+class RollingArtifacts(unittest.TestCase):
+    def setUp(self) -> None:
+        with open(common.ROLLING_SUMMARY_PATH, encoding="utf-8") as handle:
+            self.summary = json.load(handle)
+
+    def test_ten_rounds_are_reported_and_aggregates_match_the_rounds(self) -> None:
+        rounds = self.summary["roundsDetail"]
+        self.assertEqual(len(rounds), self.summary["rounds"])
+        self.assertEqual([row["round"] for row in rounds], list(range(len(rounds))))
+        for name, block in self.summary["metrics"].items():
+            values = np.array([row[name] for row in rounds], dtype=float)
+            self.assertAlmostEqual(float(values.mean()), block["mean"], places=4,
+                                   msg=f"{name} 的均值与逐轮明细对不上")
+            self.assertAlmostEqual(float(values.min()), block["min"], places=4, msg=name)
+            self.assertAlmostEqual(float(values.max()), block["max"], places=4, msg=name)
+
+    def test_every_fold_scores_only_on_data_strictly_after_its_fit_cutoff(self) -> None:
+        for row in self.summary["roundsDetail"]:
+            self.assertLess(pd.Timestamp(row["fitEnd"]), pd.Timestamp(row["evalEnd"]))
+            self.assertGreater(row["evalRows"], rolling.MIN_EVAL_ROWS)
+            self.assertGreaterEqual(row["evalPositives"], rolling.MIN_EVAL_POSITIVES)
+            self.assertIn(row["chosenSet"], ("full", "dynamicsPlusPosition"))
+            self.assertEqual(row["simulatedNote"], common.simulated_note())
+
+    def test_summary_states_the_blind_test_caveat(self) -> None:
+        self.assertIn("盲测", self.summary["caveat"])
+        self.assertEqual(self.summary["disclaimer"], common.simulated_note())
+        with open(common.ROLLING_SUMMARY_MD, encoding="utf-8") as handle:
             self.assertIn("模拟数据", handle.read())
 
 

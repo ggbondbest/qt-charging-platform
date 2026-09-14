@@ -43,6 +43,12 @@ TRAIN_METRICS_PATH = OUT_DIR / "train_metrics.json"
 TEST_REPORT_PATH = OUT_DIR / "evaluation_report.json"
 TEST_REPORT_MD = OUT_DIR / "evaluation_report.md"
 
+#: 十轮滚动重训研究单独一个输出目录（与盲测目录互不覆盖；轮次文件支持断点续跑）。
+ROLLING_DIR = DATA_ANALYSIS_ROOT / "outputs" / "ml_queue_rolling"
+ROLLING_ROUNDS_DIR = ROLLING_DIR / "rounds"
+ROLLING_SUMMARY_PATH = ROLLING_DIR / "rolling_summary.json"
+ROLLING_SUMMARY_MD = ROLLING_DIR / "rolling_summary.md"
+
 #: 业务时区：数据按 UTC 存储，mlSplits 的日期是北京时间日历日（见 split_boundaries 的换算）。
 BUSINESS_OFFSET_HOURS = 8
 
