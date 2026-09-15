@@ -161,9 +161,9 @@ def _train_horizon(frame, horizon: int, directory: Path, *, seed: int, coverage:
         y_train = data.loc[train_rows, label].astype(int)
         model.fit_step(step, x_train, y_train, seed=seed, rounds_multiplier=rounds_multiplier)
         validation_labels[step] = data.loc[validation_rows, label].to_numpy(dtype=float)
-        x_test = data.loc[scored_rows, columns]
-        y_test = data.loc[scored_rows, label].to_numpy(dtype=float)
-        per_step[step] = score_step(model, step, x_test, y_test, data.loc[scored_rows])
+        # Freeze all fitting and VALIDATION calibration before reading TEST outcomes.
+        # The former pre-calibration score was discarded and needlessly evaluated TEST twice.
+        per_step[step] = {}
         # What early stopping actually spent, so "train longer" is answerable from the artefact
         # instead of from the budget the command asked for.
         per_step[step]["boostingRounds"] = int(model.steps[step].n_iter_)

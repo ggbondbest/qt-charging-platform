@@ -4,7 +4,7 @@
         --run-dir data_analysis/outputs/ml_avail_run6 \
         --output  data_analysis/outputs/ml_avail_eval_run6_v1
 
-The training run records the headline TEST numbers it needed while choosing hyper-parameters.  This
+The training run records headline TEST numbers only after VALIDATION parameter selection. This
 script answers the questions a reviewer asks instead:
 
 * **Is it better than a trivial rule?** Four baselines are fitted on TRAIN rows only - repeat the
@@ -213,6 +213,7 @@ def _group_errors(scored: pd.DataFrame, absolute: np.ndarray, column: str) -> di
 
 def _score_bundle(directory: Path, frame, sample_rows: int, seed: int) -> dict:
     predictor = AvailabilityForecaster.load(directory)
+    forecaster.validate_bundle_frame(predictor.bundle, predictor.metadata, frame)
     bundle, model = predictor.bundle, predictor.model
     horizon = predictor.horizon_hours
     holdout = bundle["excludeCity"]

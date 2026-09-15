@@ -32,7 +32,7 @@ def envelope(request, data=None, code="OK", message="成功"):
     return dict(code=code, message=message, data=data, meta=meta)
 
 
-def create_app(database_path=None, *, mysql_settings=None):
+def create_app(database_path=None, *, mysql_settings=None, prediction_provider=None):
     if database_path is not None and mysql_settings is not None:
         raise ValueError("Choose an explicit offline snapshot or MySQL settings")
     application = FastAPI(title="Charging Analytics API", version=SCHEMA_VERSION,
@@ -139,20 +139,29 @@ def create_app(database_path=None, *, mysql_settings=None):
     @application.get("/api/v1/models", response_model=Envelope[ModelCapabilities], responses=errors, operation_id="modelCapabilities")
     def models(request: Request, query: Annotated[BatchQuery, Query()], snapshot=Depends(database)):
         service.check_batch(snapshot, query)
+        if prediction_provider is not None:
+            return envelope(request, prediction_provider.capabilities(snapshot.metadata))
         return envelope(request, ModelCapabilities().model_dump())
 
     prediction_errors = errors.copy()
     prediction_errors[200] = {"model": Envelope[PredictionResult],
         "description": "Future model-adapter success format. Not implemented: current valid requests only return 503 MODEL_NOT_READY."}
     prediction_errors[503] = {"model": Envelope[ModelCapabilities], "description": "MODEL_NOT_READY: no trained model published"}
+    if prediction_provider is not None:
+        prediction_errors[200]["description"] = "Validated prediction from the registered model for the exact published batch."
 
-    @application.post("/api/v1/predict/load", status_code=503, response_model=Envelope[ModelCapabilities], responses=prediction_errors, operation_id="predictLoadNotReady")
+    prediction_status = 200 if prediction_provider is not None else 503
+    prediction_model = Envelope[PredictionResult] if prediction_provider is not None else Envelope[ModelCapabilities]
+
+    @application.post("/api/v1/predict/load", status_code=prediction_status, response_model=prediction_model, responses=prediction_errors, operation_id="predictLoadNotReady" if prediction_provider is None else "predictLoad")
     def predict_load(request: Request, body: PredictionRequest, snapshot=Depends(database)):
-        service.validate_prediction(snapshot, body)
+        service.validate_prediction(snapshot, body, require_unavailable=prediction_provider is None)
+        return envelope(request, prediction_provider.predict("load", body, snapshot.metadata, detailed=False))
 
-    @application.post("/api/v1/predict/availability", status_code=503, response_model=Envelope[ModelCapabilities], responses=prediction_errors, operation_id="predictAvailabilityNotReady")
+    @application.post("/api/v1/predict/availability", status_code=prediction_status, response_model=prediction_model, responses=prediction_errors, operation_id="predictAvailabilityNotReady" if prediction_provider is None else "predictAvailability")
     def predict_availability(request: Request, body: PredictionRequest, snapshot=Depends(database)):
-        service.validate_prediction(snapshot, body)
+        service.validate_prediction(snapshot, body, require_unavailable=prediction_provider is None)
+        return envelope(request, prediction_provider.predict("availability", body, snapshot.metadata, detailed=False))
 
     return application
 

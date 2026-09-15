@@ -1,49 +1,27 @@
-# 机器学习与深度学习：后续任务契约
+# 已整合的 CPU 机器学习模块
 
-数据、历史特征、独立标签和预测公共契约已准备完成；未训练模型、未提供预测准确率。后续 Python 模型使用清洗完成批次，
-不需要 GPU 或八卡集群即可完成第一版随机森林、小型 LSTM。
+统一安装/训练：`python -m pip install -r data_analysis/requirements-delivery.txt`、`python -m data_analysis.delivery.cli train`。
+完整服务使用 [delivery](../delivery/README.md)，不在 HTTP 请求中训练模型。
 
-| 优先级 | 任务 | 标签与可用数据 | 基线/评价 |
-| --- | --- | --- | --- |
-| P1 | 站点未来 1/6/24 小时负荷 | station_hourly.mean_power_kw；站点类型、过去负荷、日历 | 同时刻上周值 → 随机森林 → 小型 LSTM；MAE/RMSE |
-| P1 | 未来 1/6/24 小时最后采样时刻（hh:55）空闲桩数 | label_available_count_h01..h24，0–capacity | 历史同小时中位数 → 树模型；MAE、范围合法率 |
-| P2 | 充电曲线异常筛查 | battery_samples + telemetry；异常标签仅在评估时关联 | Isolation Forest；按会话输出precision/recall/F1 |
+| 能力 | 实现 | 在网页/推荐中的用途 |
+| --- | --- | --- |
+| 小时平均负荷 | [load](load/EVALUATION.md)，PR66，过去24完整小时→未来1/6/24小时kW | 智能分析曲线；找桩内部辅助5%的均衡项 |
+| 小时末空闲桩 | [availability](availability/DELIVERY.md)，PR70，容量分布、校准区间 | 运营规划；目标为hh:55采样，不替代分钟到站预测 |
+| 分钟到站/等待 | [ChargePilot ML](../chargepilot/ml/README.md)，5分钟状态分布、条件等待、服务成功率 | 起点→ETA→模型→排序→预约/排队/充电 |
+| 用户流失风险 | [churn](churn/README.md)，截止时刻聚合、用户留出 | 历史观察日14天未回访风险；分数不是校准概率 |
+| 会话异常筛查 | [anomaly](anomaly/README.md)，固定训练参照、完成会话推理 | TEST会话辅助复核；主要识别热异常，召回有限 |
+| 历史站点偏好 | [recommend](recommend/README.md) | 离线研究；不将体验账户冒充已有历史用户 |
 
-前两项复用同一份小时特征，约 25 × 180 × 24 行；不以五分钟明细数量冒充独立训练样本数。
-LSTM 是与随机森林比较的扩展，若实测不如基线也如实展示，不修改测试集追分。
+数据来自项目 `analytics_full_180d_v1` CLEAN，**全部为模拟数据，不是ACN实测**。预测与统计必须使用同一datasetId、publishedBatchId、来源哈希。
+工件只接受自己本地训练的可信文件；先验证来源、版本与哈希再反序列化。`outputs/` 不提交 Git。
 
-正式导出已固定：排除首尾业务日后前 118 天训练、接下来 30 天验证、最后 30 天测试。
-严格使用 serving_manifest.mlSplits 和标签表 split_1h/6h/24h，不再各自选择切分日期。
-先按预测起点划分，再剔除标签跨过边界的样本；每站前期滚动窗口不足的样本单独处理。
-同一会话的电池窗口不能拆到训练集与测试集两边。缩放、插补、阈值只在训练集拟合。
+## 评估与使用边界
 
-允许：过去滞后量、截至预测时刻的滚动量、已知星期/小时、城市/站点类型。当前已导出 24 个小时滞后，168 小时基线需从小时表另建过去窗口。
-此外，负荷/行为建模先排除批次首尾业务日：首日从空系统启动，末日关闭到访并截短停留，不能把这种模拟边界当作正常规律。全量财务和数据完整性对账仍保留这些天，不改动 raw。再在内部日期上按时间切分，清理跨训练/验证/测试边界的目标窗口与滞后窗口。
+- 小时模型服从manifest时间切分及跨度purge；到站模型使用5分钟完整历史。不将未来标签、未来天气或结束金额当作当时已知特征。
+- 流失聚合截至观察时刻、排除窗口后注册用户，收入只取已完成会话。用户切分互斥，但不是跨新月份部署验证。
+- 异常阈值及语境参照只在TRAIN/VALIDATION确定；异常标签只用于评价，不参与无监督特征。移除v2/v3/v4并列运行入口，Git保留历史。
+- 网页从当前训练工件读取指标；旧PR报告是历史研究记录，不是当前部署模型的结果。模型不存在或校验失败明确NOT_READY。
+- 不以深度网络数量代替验证，不宣传模拟集结果已达到现实运营或安全诊断能力。
 
-禁止：目标小时真实电量/空闲数、未来实际天气、未来维修恢复时刻、未来会话结束金额、anomaly_labels/corruption_log。
-没有独立天气预报表时，不把未来真实 weather_hourly 当成上线时已知预报。
-预测起点必须说明小时区间已结束，不能在 hh:00 使用该小时 hh:55 的观察值。
-
-每个模型保存 dataset_id、清洗批次、特征列表、切分边界、随机种子、评价和版本；模型产物放忽略的 outputs/。
-该数据是合成场景，成绩只能描述“模拟数据测试结果”，不能宣称已验证真实运营效果或电池安全能力。
-
-## 直接开始训练
-
-读取 `datasets/analytics_full_180d_v1/csv/ml_features_hourly` 的所有分片；按 `station_id + reference_time`
-关联 `ml_targets_hourly`，选择对应跨度 split 的 TRAIN / VALIDATION / TEST，排除 EXCLUDED。
-两张表都携带 feature_version；来源与批次从同一目录 serving_manifest 读取，不允许跨批拼接。
-目标有 24 列未来功率与 24 列未来空闲桩数；标签独立存放且不会进入 API 数据库。
-
-模型类、输入/输出、单位、版本、模型元数据和时间边界的最终要求见 [公共契约第 5–6 节](../contracts/README.md)。
-HTTP 成功结构已定义，实际推理仍待接入；不在数据层填充假预测值。
-
-## 已交付模型登记
-
-| 线 | 目录 | 模型 | 状态 |
-| --- | --- | --- | --- |
-| 站点负荷预测 | [load/](load/) | hgb-q50-history24-v1 v0.4（24 步长分模型 + 分位数区间工件） | 已推送待合入；评测见 [load/EVALUATION.md](load/EVALUATION.md) |
-| 选址个性化推荐 | [recommend/](recommend/) | gbdt-rank-incity-v1 v0.1（同城 5 站 pointwise 排序） | TEST 首盲已冻结：hit@1 0.593 / MRR 0.756 / NDCG@5 0.818，全面胜过人气、评分、忠诚度、用户历史次数基线；协议与限制见 [recommend/README.md](recommend/README.md) |
-| 充电过程异常筛查 | [anomaly/](anomaly/) | context-baseline-rankfuse-v4 v0.4（语境基线信号 rank 融合；前史 v1 会话均值→v2 点级→v3 融合） | TEST 首盲（v4 独立）：**F1 0.3095 / precision 0.479，THERMAL_STRESS 召回 100%**，为 v1（0.147）的 2.1 倍、随机参照 6.1 倍；v2/v3 负结果如实归档，EARLY_STOP/DERATING 检出留 v5；成绩口径为**每批固定 ~2% 告警预算的离线批筛**（transductive 秩融合，非在线固定阈值，见 README 勘误）；见 [anomaly/README.md](anomaly/README.md) |
-| 用户流失预测 | [churn/](churn/) | gbdt-churn-user-v2 v0.2（14 天窗口二分类） | v2 TEST 首盲已冻结：**AUC 0.7366 / PR-AUC 0.326 / 十分位 lift 2.32**，胜 recency 基线（0.613）；v1 经自查评审实锤两处窗口越界（排队特征泄入标签窗、标签窗超尾误标 106 人），已隔离作废、留档审计；见 [churn/README.md](churn/README.md) |
-
-推荐线只用"截至事件时刻已发生"的站点统计做特征，不做空闲/可用性预测，与空闲桩任务无重叠。
+管理分析适配器：`InsightsService.status/report/list_churn/predict_user/list_anomalies/inspect_session`。
+小时模型注册入口：`/api/v1/intelligence/models`；选择注册modelId再调用`/api/v1/intelligence/forecast`。

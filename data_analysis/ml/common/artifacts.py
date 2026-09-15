@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,6 +103,8 @@ def build_metadata(
 
 
 def validate_metadata(metadata: dict) -> None:
+    if not isinstance(metadata, dict):
+        raise MetadataError("model metadata must be an object")
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     allowed = set(schema["properties"])
     required = set(schema["required"])
@@ -111,6 +114,29 @@ def validate_metadata(metadata: dict) -> None:
     unknown = sorted(set(metadata) - allowed)
     if unknown:
         raise MetadataError(f"model metadata carries unknown keys {unknown}")
+    # These safety checks are mandatory even in the lightweight environment without jsonschema.
+    for key in ("artifactSha256", "sourceManifestSha256"):
+        if not isinstance(metadata[key], str) or not re.fullmatch(r"[0-9a-f]{64}", metadata[key]):
+            raise MetadataError(f"invalid {key}")
+    if not isinstance(metadata["artifactFile"], str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*", metadata["artifactFile"]):
+        raise MetadataError("artifactFile must be a local basename")
+    if metadata["schemaVersion"] != CONTRACT_VERSION or metadata["featureVersion"] != "history24-v1":
+        raise MetadataError("model schema/feature version mismatch")
+    if metadata["historyHours"] != 24 or metadata["target"] not in ("availability", "load"):
+        raise MetadataError("model target/history contract mismatch")
+    horizons = metadata["supportedHorizons"]
+    if (not isinstance(horizons, list) or not horizons or
+            any(type(value) is not int or value not in (1, 6, 24) for value in horizons) or
+            len(set(horizons)) != len(horizons)):
+        raise MetadataError("invalid supportedHorizons")
+    columns = metadata["featureColumns"]
+    if (not isinstance(columns, list) or not columns or
+            any(not isinstance(value, str) or not re.fullmatch(r"(?!label_|split_)[a-z][a-z0-9_]*", value)
+                for value in columns) or len(set(columns)) != len(columns)):
+        raise MetadataError("invalid model feature columns")
+    if not isinstance(metadata["dependencies"], dict):
+        raise MetadataError("model dependencies must be recorded")
     try:
         import jsonschema
     except ImportError:
@@ -130,7 +156,7 @@ def save_bundle(directory: Path, bundle: dict, metadata: dict, report: dict) -> 
     metadata["artifactSha256"] = sha256_file(artifact)
     validate_metadata(metadata)
     _write_json(directory / METADATA_NAME, metadata)
-    _write_json(directory / REPORT_NAME, report)
+    _write_json(directory / REPORT_NAME, {**report, "artifactSha256": metadata["artifactSha256"]})
     return artifact
 
 
@@ -151,12 +177,33 @@ def bundle_directories(run_dir: Path) -> list[Path]:
 
 
 def load_bundle(directory: Path) -> tuple[dict, dict]:
-    directory = Path(directory)
-    bundle = joblib.load(directory / ARTIFACT_NAME)
+    """Load only a trusted local artifact, after checking its sidecar and exact bytes.
+
+    A SHA256 is an integrity check, not a signature: never accept uploaded pickle files.
+    """
+    directory = Path(directory).resolve()
     metadata = json.loads((directory / METADATA_NAME).read_text(encoding="utf-8"))
-    artifact = directory / metadata.get("artifactFile", ARTIFACT_NAME)
+    validate_metadata(metadata)
+    artifact = (directory / metadata["artifactFile"]).resolve()
+    if artifact.parent != directory:
+        raise MetadataError("artifact escapes its bundle directory")
     if sha256_file(artifact) != metadata.get("artifactSha256"):
         raise MetadataError(f"{artifact} does not match the hash recorded in {METADATA_NAME}")
+    import sklearn
+    dependencies = metadata["dependencies"]
+    if dependencies.get("scikit-learn") != sklearn.__version__:
+        raise MetadataError("scikit-learn version mismatch; retrain with the installed version")
+    if dependencies.get("python", "").split(".")[:2] != [str(sys.version_info.major), str(sys.version_info.minor)]:
+        raise MetadataError("Python major/minor version mismatch; retrain locally")
+    # Deserialise the same verified file handle, not another filename from the directory.
+    with artifact.open("rb") as handle:
+        content = handle.read()
+        if hashlib.sha256(content).hexdigest() != metadata["artifactSha256"]:
+            raise MetadataError("artifact changed while opening it")
+        from io import BytesIO
+        bundle = joblib.load(BytesIO(content))
+    if not isinstance(bundle, dict):
+        raise MetadataError("model bundle must be an object")
     return bundle, metadata
 
 
