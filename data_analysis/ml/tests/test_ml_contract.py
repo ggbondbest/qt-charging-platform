@@ -948,7 +948,10 @@ class HierarchicalResumeTest(unittest.TestCase):
             dataset_id=override.get("datasetId", metadata["datasetId"]),
             published_batch_id=override.get("trainingPublishedBatchId", metadata["trainingPublishedBatchId"]),
             source_manifest_sha256=override.get("sourceManifestSha256", metadata["sourceManifestSha256"]))
-        return types.SimpleNamespace(export=export)
+        # The real Frame carries feature_columns at top level (forecaster.Frame); the resume guard
+        # reads it to reject a base wrapped on another feature set, so the stub must mirror it.
+        return types.SimpleNamespace(export=export,
+                                     feature_columns=override.get("featureColumns", metadata["featureColumns"]))
 
     def _reuse(self, target: Path, frame=None, *, seed=20260913):
         return build_hierarchical._reuse(target, base_bundle=self.BASE / "h01", source=self.BASE,

@@ -153,7 +153,14 @@ def _reuse(target: Path, *, base_bundle: Path, source: Path, frame, seed: int) -
         raise SystemExit(f"[resume] {target} cannot be reused: {artifact.name} does not match the hash "
                          f"recorded in {artifacts.METADATA_NAME}")
     base, base_metadata = artifacts.load_bundle(base_bundle)
-    forecaster.validate_bundle_frame(base, base_metadata, frame)
+    # The base estimator's feature set must be the one this export publishes - nothing downstream
+    # compares featureColumns.  The other provenance fields (dataset/batch/manifest/version) are
+    # checked against the saved report just below, so a mismatch there is reported as a resume
+    # refusal naming the offending field; a full validate_bundle_frame here would raise a bare
+    # ValueError for those same fields first and mask that message.
+    if base_metadata.get("featureColumns") != frame.feature_columns:
+        raise SystemExit(f"[resume] {base_bundle} was wrapped on a different feature set "
+                         f"(featureColumns differ from this export); --resume will not reuse it")
     relative = base_bundle.relative_to(source).as_posix()
     _, version, rounds = _naming(base)
     expected = {

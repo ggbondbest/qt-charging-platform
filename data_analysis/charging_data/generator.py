@@ -655,7 +655,8 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    config = json.loads(args.config.read_text(encoding="utf-8"))
+    # utf-8-sig: tolerate a BOM from Windows editors; plain UTF-8 configs read unchanged.
+    config = json.loads(args.config.read_text(encoding="utf-8-sig"))
     destination = args.output or Path(__file__).resolve().parents[1]/"datasets"/config["dataset_id"]
     generate_dataset(config, destination)
 
