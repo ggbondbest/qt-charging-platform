@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ApiError, request } from "./api";
 import { submitAndReveal } from "./sectionNavigation";
 import {
-  finished,
   localTime,
   number,
   percent,
   probability,
   pretty,
-  statusLabels,
 } from "./display";
 import type {
   Bootstrap,
@@ -19,12 +17,8 @@ import type {
   Envelope,
   JsonObject,
   Location,
-  Me,
   Recommendation,
   Station,
-  Trip,
-  TripStatus,
-  User,
 } from "./types";
 import Icon from "./components/Icon.vue";
 import StationMap from "./components/StationMap.vue";
@@ -34,20 +28,16 @@ import ForecastPanel from "./components/ForecastPanel.vue";
 import ManagementInsights from "./components/ManagementInsights.vue";
 import WorkspaceTabs from "./components/WorkspaceTabs.vue";
 import AutoHideHeader from "./components/AutoHideHeader.vue";
+import OriginPicker from "./components/OriginPicker.vue";
+import RecommendationRoute from "./components/RecommendationRoute.vue";
+import { createRoutePreview } from "./routePreview";
 
-type Tab = "dashboard" | "explore" | "trip" | "lab" | "admin";
+type Tab = "dashboard" | "explore" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: "dashboard", label: "运营总览", icon: "chart" },
   { id: "explore", label: "智能找站", icon: "compass" },
-  { id: "trip", label: "我的行程", icon: "trip" },
   { id: "lab", label: "智能分析", icon: "lab" },
   { id: "admin", label: "模拟控制台", icon: "sliders" },
-];
-const tripSteps: { label: string; statuses: TripStatus[] }[] = [
-  { label: "前往电站", statuses: ["EN_ROUTE"] },
-  { label: "到站 / 排队", statuses: ["QUEUED", "CALLED", "RESERVED"] },
-  { label: "充电中", statuses: ["CHARGING"] },
-  { label: "支付完成", statuses: ["PENDING_PAYMENT", "COMPLETED"] },
 ];
 const tab = ref<Tab>("dashboard");
 const dashboardPresentation = ref(false);
@@ -58,27 +48,18 @@ const labSections = [
   { id: 'arrival', label: '到站模型', description: '可用性与等待预测依据' },
   { id: 'experiments', label: '策略对比', description: '最近站 vs. 智能推荐' },
 ];
-const adminSection = ref('scenario');
-const adminSections = [
-  { id: 'scenario', label: '场景控制', description: '时钟与电站资源' },
-  { id: 'strategy', label: '推荐策略', description: '权重、积分与预约规则' },
-  { id: 'experiments', label: '配对实验', description: '运行并比较两种策略' },
-];
 const boot = ref<Bootstrap>();
 const stations = ref<Station[]>([]);
 const cityId = ref("");
 const origin = ref<Location>();
 const picking = ref(false);
 const highlighted = ref("");
+const routePanel = ref<HTMLElement>();
 const energyKwh = ref(20);
 const maxEtaMinutes = ref(60);
 const recommendation = ref<Recommendation>();
-const me = ref<Me>();
-const sessionName = ref("体验用户");
 const token = ref("");
-const sessionLoading = ref(false);
 const initialLoading = ref(true);
-const refreshLoading = ref(false);
 const busyAction = ref("");
 const errorMessage = ref("");
 const toast = ref("");
@@ -95,35 +76,33 @@ const adminError = ref("");
 const adminLoading = ref(false);
 const adminSpeed = ref(60);
 const advanceSeconds = ref(300);
-const adminStationId = ref("");
-const busyCount = ref(3);
-const releaseAfterSeconds = ref(600);
-const configForm = ref<JsonObject>({
-  weights: {
-    availability: 0.3,
-    wait: 0.2,
-    travel: 0.2,
-    price: 0.1,
-    power: 0.1,
-    balance: 0.1,
-  },
-  rewards: { first: 100, second: 50 },
-  minimumEnergyKwh: 5,
-  minimumChargingSeconds: 300,
-  dailyRewardBudget: 10000,
-  callTimeoutSeconds: 60,
-  reservationTimeoutSeconds: 900,
-});
 const experimentUsers = ref(1000);
 const experimentSeed = ref(42);
-const tripRoute = ref<JsonObject>();
-const routeLoading = ref(false);
-const routeError = ref("");
+const routePreview = createRoutePreview(async (input, signal) => {
+  try {
+    const session = await auth();
+    return receive(await request<JsonObject>("/route", {
+      method: "POST", token: session, body: input, signal,
+    }));
+  } catch (error) {
+    if (!signal.aborted && error instanceof ApiError && error.status === 401) {
+      forgetSession();
+      errorMessage.value = "演示访问已过期，请重新推荐。";
+    }
+    throw error;
+  }
+});
+const {
+  candidate: routeCandidate, origin: routeOrigin, route: routeData,
+  loading: routeLoading, error: routeError,
+} = routePreview;
+const routeCity = computed(() =>
+  boot.value?.cities.find((city) => city.cityId === routeCandidate.value?.cityId),
+);
 let pollTimer: number | undefined;
 let toastTimer: number | undefined;
 let polling = false;
 let mounted = true;
-let meSequence = 0;
 let stationSequence = 0;
 let lastAutoRecAttempt = 0;
 try {
@@ -138,23 +117,6 @@ const cityStations = computed(() =>
   stations.value.filter((s) => s.cityId === cityId.value),
 );
 const candidates = computed(() => recommendation.value?.candidates || []);
-const focusedCandidate = computed(
-  () =>
-    candidates.value.find((c) => c.stationId === highlighted.value) ||
-    candidates.value[0],
-);
-const activeTrip = computed(() =>
-  me.value?.trips.find((t) => !finished(t.status)),
-);
-const activeTripStage = computed(() =>
-  tripSteps.findIndex(
-    (step) =>
-      activeTrip.value && step.statuses.includes(activeTrip.value.status),
-  ),
-);
-const previousTrips = computed(
-  () => me.value?.trips.filter((t) => finished(t.status)) || [],
-);
 const freeCount = computed(() =>
   cityStations.value.reduce((sum, s) => sum + (s.currentFree || 0), 0),
 );
@@ -167,7 +129,6 @@ const modelReady = computed(
     models.value?.arrival?.status === "READY" ||
     !!models.value?.arrival?.metadata,
 );
-const points = computed(() => me.value?.user.points ?? 0);
 const scoreNames: Record<string, string> = {
   availability: "到站可用",
   wait: "等待时间",
@@ -175,31 +136,6 @@ const scoreNames: Record<string, string> = {
   price: "充电价格",
   power: "充电功率",
   balance: "负荷均衡",
-};
-const eventNames: Record<string, string> = {
-  SELECTED: "已选择推荐电站",
-  EN_ROUTE: "行程已创建",
-  ARRIVED: "已抵达电站",
-  QUEUED: "已加入队列",
-  CALLED: "电桩已为你预留",
-  CONFIRMED: "叫号确认成功",
-  RESERVED: "电桩预约成功",
-  STARTED: "开始充电",
-  CHARGING: "开始充电",
-  STOPPED: "充电结束",
-  PENDING_PAYMENT: "充电结束，等待支付",
-  PAID: "支付完成",
-  COMPLETED: "订单完成",
-  REWARD: "推荐积分到账",
-  REWARD_GRANTED: "推荐积分到账",
-  CANCELLED: "行程已取消",
-  EXPIRED: "行程已过期",
-  ARRIVE: "已抵达电站",
-  CONFIRM: "已确认叫号",
-  START: "开始充电",
-  STOP: "充电结束",
-  PAY: "支付完成",
-  CANCEL: "行程已取消",
 };
 const policyRows = computed<JsonObject[]>(() =>
   Array.isArray(experiments.value?.policies) ? experiments.value!.policies : [],
@@ -238,18 +174,6 @@ const recommendationExpired = computed(
     !!clockTime.value &&
     Date.parse(clockTime.value) >= Date.parse(recommendation.value.expiresAt),
 );
-const tripStation = computed(() =>
-  stations.value.find((s) => s.stationId === activeTrip.value?.stationId),
-);
-const tripCity = computed(() =>
-  boot.value?.cities.find((c) => c.cityId === tripStation.value?.cityId),
-);
-const weightSum = computed(() =>
-  Object.values(configForm.value.weights || {}).reduce<number>(
-    (sum, value) => sum + Number(value || 0),
-    0,
-  ),
-);
 const clockLabel = computed(() =>
   localTime(clockTime.value || clock.value?.time, true),
 );
@@ -275,7 +199,6 @@ function errorText(error: unknown) {
 }
 function forgetSession() {
   token.value = "";
-  me.value = undefined;
   recommendation.value = undefined;
   try {
     localStorage.removeItem("chargepilot-demo-session");
@@ -283,34 +206,12 @@ function forgetSession() {
 }
 async function auth(): Promise<string> {
   if (token.value) return token.value;
-  sessionLoading.value = true;
-  try {
-    const result = receive(
-      await request<{ token: string; user: User }>("/sessions", {
-        method: "POST",
-        body: { name: sessionName.value.trim() || "体验用户" },
-      }),
-    );
-    token.value = result.token;
-    me.value = { user: result.user, trips: [], ledger: [] };
-    try {
-      localStorage.setItem("chargepilot-demo-session", result.token);
-    } catch {}
-    return result.token;
-  } finally {
-    sessionLoading.value = false;
-  }
-}
-async function refreshMe() {
-  if (!token.value) return;
-  const seq = ++meSequence;
-  try {
-    const result = await request<Me>("/me", { token: token.value });
-    if (mounted && seq === meSequence) me.value = receive(result);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) forgetSession();
-    throw error;
-  }
+  const result = receive(await request<{ token: string }>("/sessions", {
+    method: "POST", body: { name: "找站体验用户" },
+  }));
+  token.value = result.token;
+  try { localStorage.setItem("chargepilot-demo-session", result.token); } catch {}
+  return result.token;
 }
 async function refreshStations() {
   const seq = ++stationSequence;
@@ -326,7 +227,6 @@ async function refreshVisible() {
   polling = true;
   const results = await Promise.allSettled([
     refreshStations(),
-    ...(token.value ? [refreshMe()] : []),
     ...(experiments.value?.status === "RUNNING" ? [refreshExperiments()] : []),
   ]);
   if (mounted) {
@@ -339,7 +239,6 @@ async function refreshVisible() {
     mounted &&
     tab.value === "explore" &&
     token.value &&
-    !activeTrip.value &&
     recommendationExpired.value &&
     Date.now() - lastAutoRecAttempt > 10000
   ) {
@@ -367,13 +266,11 @@ async function initialize() {
           longitude: selectedCity.value.longitude,
         }
       : undefined;
-    adminStationId.value ||= data.stations[0]?.stationId || "";
     latestRefresh.value = clockTime.value;
     const results = await Promise.allSettled([
       refreshModels(),
       refreshExperiments(),
-      ...(token.value ? [refreshMe()] : []),
-    ]);
+      ]);
     for (const result of results)
       if (result.status === "rejected")
         errorMessage.value = errorText(result.reason);
@@ -411,23 +308,6 @@ function setOrigin(location: Location) {
   recommendation.value = undefined;
   notify("出发点已更新，重新推荐即可比较附近电站。");
 }
-function locate() {
-  if (!navigator.geolocation) {
-    errorMessage.value = "当前浏览器不支持定位，请点击地图选择出发点。";
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    (position) =>
-      setOrigin({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      }),
-    () => {
-      errorMessage.value = "未获得当前位置，请点击地图设置出发点。";
-    },
-    { timeout: 8000, maximumAge: 60000 },
-  );
-}
 function recommendationInput() {
   return {
     cityId: cityId.value,
@@ -440,6 +320,7 @@ async function recommend() {
   await run("recommend", async () => {
     if (!origin.value || !cityId.value)
       throw new Error("请先选择城市和出发点。");
+    routePreview.close();
     const input = recommendationInput();
     const fingerprint = JSON.stringify(input);
     const stillCurrent = () =>
@@ -465,54 +346,20 @@ async function recommend() {
       notify("当前条件下没有候选电站，请调整可接受的行驶时间。");
   });
 }
-async function selectStation(candidate: Candidate) {
-  await run(`select-${candidate.stationId}`, async () => {
-    if (!recommendation.value) return;
-    await request<Trip>(
-      `/recommendations/${encodeURIComponent(recommendation.value.recommendationId)}/select`,
-      {
-        method: "POST",
-        token: await auth(),
-        body: { stationId: candidate.stationId },
-      },
-    );
-    await refreshMe();
-    await refreshStations();
-    tab.value = "trip";
-    notify("行程已创建。到达预计时刻后可确认抵达。");
-  });
+async function openRoute(candidate: Candidate) {
+  if (!origin.value || !recommendation.value || recommendationExpired.value) return;
+  const pending = routePreview.open(candidate, origin.value);
+  highlighted.value = candidate.stationId;
+  await nextTick();
+  if (mounted && tab.value === "explore" && routeCandidate.value?.stationId === candidate.stationId) {
+    routePanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    routePanel.value?.focus({ preventScroll: true });
+  }
+  await pending;
 }
-async function tripAction(trip: Trip, action: string) {
-  await run(`trip-${action}`, async () => {
-    receive(
-      await request<Trip>(
-        `/trips/${encodeURIComponent(trip.tripId)}/${action}`,
-        {
-          method: "POST",
-          token: token.value,
-          body: action === "stop" ? { reason: "MANUAL" } : {},
-        },
-      ),
-    );
-    await refreshMe();
-    await refreshStations();
-    notify(
-      action === "pay"
-        ? "模拟支付已完成，实际奖励以到账积分为准。"
-        : "行程状态已更新。",
-    );
-  });
-}
-function remainingUntil(value?: string) {
-  if (!value || !clockTime.value) return 0;
-  return Math.max(
-    0,
-    Math.ceil((Date.parse(value) - Date.parse(clockTime.value)) / 1000),
-  );
-}
-function duration(seconds: number) {
-  const value = Math.max(0, Math.floor(seconds || 0));
-  return `${Math.floor(value / 60)} 分 ${String(value % 60).padStart(2, "0")} 秒`;
+function highlightStation(stationId: string) {
+  highlighted.value = stationId;
+  if (routeCandidate.value && routeCandidate.value.stationId !== stationId) routePreview.close();
 }
 async function refreshModels() {
   try {
@@ -529,27 +376,6 @@ async function refreshExperiments() {
       notify("配对实验已完成，可在智能分析的「最近站 vs. 智能推荐」查看结果。");
   } catch (error) {
     experiments.value = { status: "NOT_RUN", message: errorText(error) };
-  }
-}
-async function showRoute() {
-  if (!activeTrip.value?.origin || routeLoading.value) return;
-  routeLoading.value = true;
-  routeError.value = "";
-  try {
-    tripRoute.value = receive(
-      await request<JsonObject>("/route", {
-        method: "POST",
-        token: token.value,
-        body: {
-          origin: activeTrip.value.origin,
-          stationId: activeTrip.value.stationId,
-        },
-      }),
-    );
-  } catch (error) {
-    routeError.value = errorText(error);
-  } finally {
-    routeLoading.value = false;
   }
 }
 const experimentOption = computed(() => ({
@@ -634,8 +460,6 @@ async function getAdmin() {
       clock.value = admin.value.clock;
       adminSpeed.value = admin.value.clock.speed;
     }
-    if (admin.value.config)
-      configForm.value = JSON.parse(JSON.stringify(admin.value.config));
   } catch (error) {
     adminError.value = errorText(error);
     admin.value = undefined;
@@ -648,7 +472,6 @@ async function changeAdmin(path: string, body: unknown, method = "POST") {
     await adminRequest(path, method, body);
     await getAdmin();
     await refreshStations();
-    if (token.value) await refreshMe();
     notify("模拟设置已更新。");
   });
 }
@@ -674,35 +497,13 @@ async function runExperiment() {
     );
   });
 }
-async function exportFeedback() {
-  await run("feedback", async () => {
-    const report = await adminRequest("/admin/feedback");
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(report, null, 2)], {
-        type: "application/json;charset=utf-8",
-      }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "chargepilot-feedback.json";
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify("反馈数据已导出，用于后续离线分析。");
-  });
-}
-function saveConfig() {
-  if (Math.abs(weightSum.value - 1) > 0.00001) {
-    adminError.value = "六项排序权重之和必须为 1。";
-    return;
-  }
-  changeAdmin("/admin/config", configForm.value, "PATCH");
-}
 watch([energyKwh, maxEtaMinutes], () => {
   recommendation.value = undefined;
 });
 watch(tab, (value) => {
   errorMessage.value = "";
   if (value !== 'dashboard') dashboardPresentation.value = false;
+  if (value !== 'explore') routePreview.close();
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (value === "lab") {
     refreshModels();
@@ -710,11 +511,9 @@ watch(tab, (value) => {
   }
 });
 watch(
-  () => activeTrip.value?.tripId,
-  () => {
-    tripRoute.value = undefined;
-    routeError.value = "";
-  },
+  [origin, cityId, energyKwh, maxEtaMinutes, recommendation],
+  () => routePreview.close(),
+  { flush: "sync" },
 );
 onMounted(() => {
   initialize();
@@ -723,6 +522,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   mounted = false;
+  routePreview.close();
   window.clearInterval(pollTimer);
   window.clearTimeout(toastTimer);
   document.removeEventListener("visibilitychange", refreshVisible);
@@ -752,14 +552,11 @@ onBeforeUnmount(() => {
           @click="tab = item.id"
         >
           <Icon :name="item.icon" :size="17" /><span>{{ item.label }}</span
-          ><i v-if="item.id === 'trip' && activeTrip" class="nav-dot"></i>
+          >
         </button>
       </nav>
       <div class="topbar-right">
         <span class="replay-label"><span class="live-dot"></span>模拟回放</span>
-        <div class="user-avatar" :title="me?.user.name || '演示会话'">
-          <Icon name="user" :size="18" />
-        </div>
       </div>
     </AutoHideHeader>
 
@@ -844,36 +641,14 @@ onBeforeUnmount(() => {
                 :highlighted="highlighted"
                 :picking="picking"
                 @origin="setOrigin"
-                @station="highlighted = $event"
+                @station="highlightStation"
               />
               <div v-if="initialLoading && !boot" class="map-loading">
                 <span class="spinner"></span>正在连接模拟场景…
               </div>
             </div>
             <div class="journey-form card">
-              <div class="origin-field">
-                <span class="input-icon"
-                  ><Icon name="location" :size="20"
-                /></span>
-                <div>
-                  <label>我的出发点</label
-                  ><button class="origin-value" @click="picking = !picking">
-                    {{
-                      origin
-                        ? `${number(origin.latitude, 4)}° N，${number(origin.longitude, 4)}° E`
-                        : "请先选择城市"
-                    }}<Icon name="down" :size="13" />
-                  </button>
-                </div>
-                <button
-                  class="icon-button"
-                  title="使用设备定位"
-                  aria-label="使用设备定位"
-                  @click="locate"
-                >
-                  <Icon name="location" :size="17" />
-                </button>
-              </div>
+              <OriginPicker :origin="origin" :picking="picking" :disabled="!selectedCity" @toggle="picking = !picking" />
               <div class="form-divider"></div>
               <div class="energy-field">
                 <label for="energy">计划补电</label
@@ -919,7 +694,7 @@ onBeforeUnmount(() => {
                 ><Icon
                   name="info"
                   :size="14"
-                />先点出发点坐标，再点地图修改位置；点电站可高亮位置。</span
+                />红色标记是出发点；点击电站可高亮位置。</span
               ><span>数据截至 {{ localTime(latestRefresh) }}</span>
             </div>
             <div class="trust-strip">
@@ -942,7 +717,7 @@ onBeforeUnmount(() => {
                   ><Icon name="gift" :size="19"
                 /></span>
                 <p>
-                  <b>充电完成，再领积分</b><span>服务端确认有效订单后发放</span>
+                  <b>少绕路，更从容</b><span>查看推荐电站的路线与预计用时</span>
                 </p>
               </div>
             </div>
@@ -974,13 +749,7 @@ onBeforeUnmount(() => {
                 ><span><Icon name="bolt" :size="15" />充电功率</span
                 ><span><Icon name="gift" :size="15" />推荐积分</span>
               </div>
-              <button
-                class="button secondary"
-                :disabled="!!busyAction || initialLoading || !origin"
-                @click="recommend"
-              >
-                开始智能推荐<Icon name="arrow" :size="17" />
-              </button>
+              <p class="recommendation-guide"><Icon name="info" :size="15" />在地图下方设置需求，点击“为我推荐”；结果会显示在这里。</p>
             </div>
             <div v-else-if="!candidates.length" class="empty-state compact">
               <Icon name="pin" :size="34" />
@@ -1084,18 +853,16 @@ onBeforeUnmount(() => {
                     class="button small"
                     :class="candidate.rank === 1 ? 'primary' : 'secondary'"
                     :disabled="
-                      !!busyAction || !!activeTrip || recommendationExpired
+                      !!busyAction || recommendationExpired
                     "
-                    @click="selectStation(candidate)"
+                    @click="openRoute(candidate)"
                   >
                     {{
-                      busyAction === `select-${candidate.stationId}`
-                        ? "正在创建…"
-                        : activeTrip
-                          ? "已有进行中行程"
-                          : recommendationExpired
-                            ? "请刷新推荐"
-                            : "选择并出发"
+                      recommendationExpired
+                        ? "请刷新推荐"
+                        : routeLoading && routeCandidate?.stationId === candidate.stationId
+                          ? "路线加载中…"
+                          : "查看路线"
                     }}<Icon name="arrow" :size="15" />
                   </button>
                 </div>
@@ -1168,9 +935,6 @@ onBeforeUnmount(() => {
                         : "按距离与速度估算行驶时间，非实时道路导航"
                     }}
                   </p>
-                  <p class="subtle">
-                    积分为预估承诺，完成符合资格的充电并支付后结算。
-                  </p>
                 </div>
               </article>
             </div>
@@ -1210,404 +974,13 @@ onBeforeUnmount(() => {
             </div>
           </aside>
         </section>
-      </template>
-
-      <template v-if="tab === 'trip'">
-        <section class="page-heading">
-          <div>
-            <div class="eyebrow">EVERY STEP, CONNECTED</div>
-            <h1>我的充电行程</h1>
-            <p>从选站到积分到账，每一步都在这里。</p>
-          </div>
-          <span class="time-chip"
-            ><Icon name="clock" :size="16" />模拟时刻 {{ clockLabel }}</span
-          >
-        </section>
-        <div class="trip-layout">
-          <div class="trip-main">
-            <section v-if="activeTrip" class="card active-trip">
-              <div class="section-top">
-                <div>
-                  <span
-                    class="status-tag"
-                    :class="activeTrip.status.toLowerCase()"
-                    ><span class="live-dot"></span
-                    >{{ statusLabels[activeTrip.status] }}</span
-                  >
-                  <h2>{{ activeTrip.stationName }}</h2>
-                  <p class="subtle mono">{{ activeTrip.tripId }}</p>
-                </div>
-                <div class="trip-station-symbol">
-                  <Icon
-                    :name="activeTrip.status === 'CHARGING' ? 'bolt' : 'pin'"
-                    :size="31"
-                  />
-                </div>
-              </div>
-              <div class="trip-stepper">
-                <div
-                  v-for="(step, index) in tripSteps"
-                  :key="step.label"
-                  :class="{
-                    current: step.statuses.includes(activeTrip.status),
-                    done: index < activeTripStage,
-                  }"
-                >
-                  <span>{{ index + 1 }}</span>
-                  <p>{{ step.label }}</p>
-                </div>
-              </div>
-              <div
-                class="trip-state-panel"
-                :class="activeTrip.status.toLowerCase()"
-              >
-                <template v-if="activeTrip.status === 'EN_ROUTE'"
-                  ><Icon name="road" :size="36" />
-                  <div>
-                    <h3>路上不着急，电站已选好</h3>
-                    <p v-if="activeTrip.arrivalEligibleAt">
-                      预计 {{ localTime(activeTrip.arrivalEligibleAt) }} 抵达 ·
-                      {{
-                        remainingUntil(activeTrip.arrivalEligibleAt) > 0
-                          ? `模拟时间还需 ${duration(remainingUntil(activeTrip.arrivalEligibleAt))}`
-                          : "已到达预计抵达时刻，可以确认到站。"
-                      }}
-                    </p>
-                    <p v-else>抵达后确认到站，系统将分配空闲电桩或加入队列。</p>
-                  </div></template
-                >
-                <template v-else-if="activeTrip.status === 'QUEUED'"
-                  ><strong class="queue-number">{{
-                    number(activeTrip.queuePosition)
-                  }}</strong>
-                  <div>
-                    <h3>你已在队列中</h3>
-                    <p>
-                      前面还有
-                      {{ number(activeTrip.peopleAhead) }}
-                      人，叫号后请及时确认。页面会自动刷新。
-                    </p>
-                  </div></template
-                >
-                <template v-else-if="activeTrip.status === 'CALLED'"
-                  ><Icon name="bolt" :size="36" />
-                  <div>
-                    <h3>轮到你了，请确认叫号</h3>
-                    <p>
-                      剩余
-                      {{ duration(remainingUntil(activeTrip.callExpiresAt)) }} ·
-                      超时将释放名额。
-                    </p>
-                  </div></template
-                >
-                <template v-else-if="activeTrip.status === 'RESERVED'"
-                  ><Icon name="check" :size="36" />
-                  <div>
-                    <h3>电桩已为你预留</h3>
-                    <p>
-                      请在
-                      {{ localTime(activeTrip.reservationExpiresAt) }}
-                      前开始充电，剩余
-                      {{
-                        duration(
-                          remainingUntil(activeTrip.reservationExpiresAt),
-                        )
-                      }}。
-                    </p>
-                  </div></template
-                >
-                <template v-else-if="activeTrip.status === 'CHARGING'"
-                  ><div class="charging-symbol">
-                    <Icon name="bolt" :size="38" />
-                  </div>
-                  <div>
-                    <h3>正在补充下一程的能量</h3>
-                    <p>
-                      已充电 {{ duration(activeTrip.chargingSeconds) }} ·
-                      用量与费用由服务端计量。
-                    </p>
-                  </div></template
-                >
-                <template v-else-if="activeTrip.status === 'PENDING_PAYMENT'"
-                  ><Icon name="card" :size="36" />
-                  <div>
-                    <h3>充电结束，等待模拟结算</h3>
-                    <p>
-                      电桩已释放。此为模拟支付，不产生真实扣款；完成后核验并发放推荐积分。
-                    </p>
-                  </div></template
-                >
-              </div>
-              <div class="trip-values">
-                <div>
-                  <label>已充电量</label
-                  ><strong
-                    >{{ number(activeTrip.energyKwh, 2)
-                    }}<small> kWh</small></strong
-                  >
-                </div>
-                <div>
-                  <label>{{
-                    activeTrip.status === "CHARGING" ? "当前费用" : "订单金额"
-                  }}</label
-                  ><strong
-                    ><small>¥ </small>{{ number(activeTrip.amount, 2) }}</strong
-                  >
-                </div>
-                <div>
-                  <label>推荐承诺积分</label
-                  ><strong class="orange"
-                    >{{ number(activeTrip.rewardPoints)
-                    }}<small> 分</small></strong
-                  >
-                </div>
-              </div>
-              <div class="trip-actions">
-                <button
-                  v-if="activeTrip.status === 'EN_ROUTE'"
-                  class="button primary"
-                  :disabled="
-                    !!busyAction ||
-                    remainingUntil(activeTrip.arrivalEligibleAt) > 0
-                  "
-                  @click="tripAction(activeTrip, 'arrive')"
-                >
-                  <Icon name="pin" :size="17" />确认已到站</button
-                ><button
-                  v-if="activeTrip.status === 'CALLED'"
-                  class="button primary"
-                  :disabled="!!busyAction"
-                  @click="tripAction(activeTrip, 'confirm')"
-                >
-                  确认叫号<Icon name="arrow" :size="17" /></button
-                ><button
-                  v-if="activeTrip.status === 'RESERVED'"
-                  class="button primary"
-                  :disabled="!!busyAction"
-                  @click="tripAction(activeTrip, 'start')"
-                >
-                  <Icon name="bolt" :size="18" />开始充电</button
-                ><button
-                  v-if="activeTrip.status === 'CHARGING'"
-                  class="button primary"
-                  :disabled="!!busyAction"
-                  @click="tripAction(activeTrip, 'stop')"
-                >
-                  结束充电并结算<Icon name="arrow" :size="17" /></button
-                ><button
-                  v-if="activeTrip.status === 'PENDING_PAYMENT'"
-                  class="button primary"
-                  :disabled="!!busyAction"
-                  @click="tripAction(activeTrip, 'pay')"
-                >
-                  模拟支付 ¥{{ number(activeTrip.amount, 2)
-                  }}<Icon name="arrow" :size="17" /></button
-                ><button
-                  v-if="
-                    ['EN_ROUTE', 'QUEUED', 'CALLED', 'RESERVED'].includes(
-                      activeTrip.status,
-                    )
-                  "
-                  class="button ghost"
-                  :disabled="!!busyAction"
-                  @click="tripAction(activeTrip, 'cancel')"
-                >
-                  取消行程</button
-                ><span
-                  v-if="busyAction.startsWith('trip-')"
-                  class="action-feedback"
-                  ><span class="spinner dark"></span>正在处理…</span
-                >
-              </div>
-              <div
-                v-if="activeTrip.origin && activeTrip.status === 'EN_ROUTE'"
-                class="trip-route-section"
-              >
-                <button
-                  class="button secondary"
-                  :disabled="routeLoading"
-                  @click="showRoute"
-                >
-                  <Icon name="map" :size="17" />{{
-                    routeLoading
-                      ? "正在请求路线…"
-                      : tripRoute
-                        ? "刷新行程路线"
-                        : "查看行程路线"
-                  }}
-                </button>
-                <p v-if="routeError" class="route-notice">{{ routeError }}</p>
-                <template v-if="tripRoute"
-                  ><p class="route-notice">
-                    {{
-                      tripRoute.notice ||
-                      (/tencent/i.test(tripRoute.routeSource)
-                        ? "腾讯路线规划结果"
-                        : "直线位置示意，不是道路导航")
-                    }}
-                  </p>
-                  <div class="trip-route-map">
-                    <StationMap
-                      :city="tripCity"
-                      :stations="tripStation ? [tripStation] : []"
-                      :candidates="[]"
-                      :origin="activeTrip.origin"
-                      :highlighted="activeTrip.stationId"
-                      :picking="false"
-                      :route-coordinates="tripRoute.coordinates"
-                    /></div
-                ></template>
-              </div>
-              <div class="timeline-section">
-                <h3>行程动态</h3>
-                <ol class="timeline">
-                  <li
-                    v-for="(event, index) in activeTrip.events"
-                    :key="event.eventId || index"
-                  >
-                    <span class="timeline-dot"></span>
-                    <div>
-                      <b>{{
-                        eventNames[event.type] ||
-                        statusLabels[
-                          event.status as keyof typeof statusLabels
-                        ] ||
-                        event.type
-                      }}</b>
-                      <p v-if="event.details?.message">
-                        {{ event.details.message }}
-                      </p>
-                    </div>
-                    <time>{{ localTime(event.createdAt, true) }}</time>
-                  </li>
-                </ol>
-              </div>
-            </section>
-            <section v-else class="card empty-trip">
-              <div class="empty-orbit"><Icon name="trip" :size="43" /></div>
-              <h2>下一次充电，从好选择开始</h2>
-              <p>
-                你目前没有进行中的行程。选一座合适的电站，<br />到站、排队、充电和结算将自动串联。
-              </p>
-              <button class="button primary" @click="tab = 'explore'">
-                去智能找站<Icon name="arrow" :size="18" />
-              </button>
-            </section>
-            <section v-if="previousTrips.length" class="card history-card">
-              <div class="section-top">
-                <h2>最近的行程</h2>
-                <span class="subtle">{{ previousTrips.length }} 笔</span>
-              </div>
-              <article
-                v-for="trip in previousTrips"
-                :key="trip.tripId"
-                class="history-row"
-              >
-                <span class="history-icon"
-                  ><Icon
-                    :name="trip.status === 'COMPLETED' ? 'check' : 'trip'"
-                    :size="20"
-                /></span>
-                <div>
-                  <h3>{{ trip.stationName }}</h3>
-                  <p>
-                    {{ statusLabels[trip.status] }} ·
-                    {{ number(trip.energyKwh, 2) }} kWh ·
-                    {{ number(trip.chargingSeconds / 60, 1) }} 分钟
-                  </p>
-                </div>
-                <div class="history-value">
-                  <b>¥{{ number(trip.amount, 2) }}</b
-                  ><span :class="{ orange: trip.awardedPoints > 0 }">{{
-                    trip.awardedPoints > 0
-                      ? `+${number(trip.awardedPoints)} 积分已到账`
-                      : "未发放推荐积分"
-                  }}</span>
-                </div>
-              </article>
-            </section>
-          </div>
-          <aside class="trip-aside">
-            <section class="wallet-card">
-              <div class="wallet-top">
-                <span class="wallet-icon"><Icon name="gift" :size="23" /></span
-                ><span>我的推荐积分</span><Icon name="star" :size="18" />
-              </div>
-              <strong>{{ number(points) }}<small>分</small></strong>
-              <p>每一次更好的选择，<br />都有机会带来一点回馈。</p>
-              <div class="wallet-rule">
-                <Icon
-                  name="shield"
-                  :size="16"
-                />完成有效充电并支付后发放，实际到账以服务端结算为准。
-              </div>
-            </section>
-            <section class="card session-card">
-              <div class="section-top">
-                <h3>演示身份</h3>
-                <span class="tiny-tag">DEMO</span>
-              </div>
-              <template v-if="me"
-                ><div class="session-person">
-                  <span class="user-avatar"
-                    ><Icon name="user" :size="22"
-                  /></span>
-                  <div>
-                    <b>{{ me.user.name }}</b
-                    ><span>独立会话 · 自动保存</span>
-                  </div>
-                </div>
-                <button
-                  class="text-button"
-                  @click="
-                    forgetSession();
-                    notify('已退出本地演示会话。');
-                  "
-                >
-                  退出当前会话<Icon name="exit" :size="14" /></button></template
-              ><template v-else
-                ><label for="session-name">你的演示昵称</label
-                ><input
-                  id="session-name"
-                  v-model="sessionName"
-                  maxlength="40"
-                  placeholder="输入昵称"
-                /><button
-                  class="button secondary full"
-                  :disabled="sessionLoading || !!busyAction"
-                  @click="
-                    run('login', async () => {
-                      await auth();
-                      notify('演示会话已创建。');
-                    })
-                  "
-                >
-                  {{ sessionLoading ? "正在创建…" : "创建演示会话" }}
-                </button></template
-              >
-              <p class="tiny-note">仅用于此模拟场景，不代表真实充电账户。</p>
-            </section>
-            <section class="card ledger-card">
-              <h3>积分动态</h3>
-              <div v-if="!me?.ledger?.length" class="ledger-empty">
-                <Icon name="gift" :size="23" />
-                <p>还没有积分入账记录</p>
-              </div>
-              <div
-                v-for="(entry, index) in me?.ledger || []"
-                :key="entry.tripId || index"
-                class="ledger-row"
-              >
-                <div>
-                  <b>完成推荐充电</b
-                  ><span>{{ localTime(entry.createdAt, true) }}</span>
-                </div>
-                <strong>+{{ number(entry.points) }}</strong>
-              </div>
-            </section>
-          </aside>
+        <div v-if="routeCandidate" ref="routePanel" class="recommendation-route-panel" tabindex="-1" aria-label="推荐电站路线">
+          <RecommendationRoute :candidate="routeCandidate" :city="routeCity" :origin="routeOrigin"
+            :route="routeData" :loading="routeLoading" :error="routeError"
+            @close="routePreview.close()" @retry="routeCandidate && openRoute(routeCandidate)" />
         </div>
       </template>
+
 
       <template v-if="tab === 'lab'">
         <section class="page-heading">
@@ -1799,7 +1172,6 @@ onBeforeUnmount(() => {
                     <th>平均等待</th>
                     <th>总用时</th>
                     <th>资源占用率标准差</th>
-                    <th>推荐积分</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1816,7 +1188,6 @@ onBeforeUnmount(() => {
                     <td>{{ number(row.meanWaitMinutes, 1) }} 分钟</td>
                     <td>{{ number(row.meanTotalMinutes, 1) }} 分钟</td>
                     <td>{{ number(row.utilizationStd, 3) }}</td>
-                    <td>{{ number(row.rewardPoints) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1851,7 +1222,7 @@ onBeforeUnmount(() => {
                     "管理员可在运营控制台运行配对实验，完成后这里会显示实际对比。"
               }}
             </p>
-            <button class="button secondary" @click="adminSection = 'experiments'; tab = 'admin'">
+            <button class="button secondary" @click="tab = 'admin'">
               前往运营控制台<Icon name="arrow" :size="16" />
             </button>
           </div>
@@ -1925,7 +1296,7 @@ onBeforeUnmount(() => {
           <div>
             <div class="eyebrow">REPLAY CONTROL ROOM</div>
             <h1>模拟控制台</h1>
-            <p>调节模拟时钟、资源占用和推荐激励，仅作用于演示业务库。</p>
+            <p>调整历史回放时刻，运行最近站与智能推荐的对比实验。</p>
           </div>
           <span class="simulation-chip"
             ><Icon name="sliders" :size="16" />运营实验台</span
@@ -1957,9 +1328,8 @@ onBeforeUnmount(() => {
         <div v-if="adminError" class="error-banner" role="alert">
           <Icon name="info" :size="18" />{{ adminError }}
         </div>
-        <WorkspaceTabs v-if="admin" v-model="adminSection" :items="adminSections" label="控制台分区" />
-        <div v-if="admin" class="admin-grid workspace-content" :class="`admin-grid--${adminSection}`">
-          <section v-show="adminSection === 'scenario'" class="card admin-clock-card">
+        <div v-if="admin" class="admin-grid workspace-content">
+          <section class="card admin-clock-card">
             <div class="section-top">
               <div>
                 <div class="eyebrow">SIMULATION CLOCK</div>
@@ -1970,7 +1340,7 @@ onBeforeUnmount(() => {
               }}</span>
             </div>
             <div class="big-clock">
-              {{ localTime(admin.clock?.time, true) }}
+              {{ clockLabel }}
             </div>
             <p class="subtle">北京时间 · 单向前进，无法回拨</p>
             <div class="admin-clock-controls">
@@ -2036,139 +1406,9 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <p class="tiny-note">
-              时钟推进将触发到站期限、叫号超时与充电计量。
+              推进会改变找站预测的参考时刻；运营总览仍显示已发布的历史统计批次。
             </p>
           </section>
-          <section v-show="adminSection === 'scenario'" class="card busy-card">
-            <div class="section-top">
-              <div>
-                <div class="eyebrow">RESOURCE SCENARIO</div>
-                <h2>构建一个排队场景</h2>
-              </div>
-              <Icon name="users" :size="24" />
-            </div>
-            <label for="busy-station">选择电站</label
-            ><select id="busy-station" v-model="adminStationId">
-              <option
-                v-for="station in stations"
-                :key="station.stationId"
-                :value="station.stationId"
-              >
-                {{ station.stationName }}
-              </option>
-            </select>
-            <div class="two-fields">
-              <label
-                >背景占用桩数<input
-                  v-model.number="busyCount"
-                  type="number"
-                  min="0"
-                  :max="
-                    stations.find((s) => s.stationId === adminStationId)
-                      ?.capacity || 3
-                  " /></label
-              ><label
-                >多少秒后释放<input
-                  v-model.number="releaseAfterSeconds"
-                  type="number"
-                  min="1"
-                  step="60"
-              /></label>
-            </div>
-            <button
-              class="button secondary full"
-              :disabled="!!busyAction"
-              @click="
-                changeAdmin(
-                  `/admin/stations/${encodeURIComponent(adminStationId)}/background`,
-                  { busyCount, releaseAfterSeconds },
-                )
-              "
-            >
-              应用背景占用<Icon name="arrow" :size="17" />
-            </button>
-            <p class="tiny-note">
-              只控制模拟背景占用，不覆盖用户预约和充电分配。
-            </p>
-          </section>
-          <section v-show="adminSection === 'strategy'" class="card weights-card">
-            <div class="section-top">
-              <div>
-                <div class="eyebrow">RANKING & INCENTIVES</div>
-                <h2>推荐策略与奖励</h2>
-              </div>
-              <span
-                class="tiny-tag"
-                :class="{ invalid: Math.abs(weightSum - 1) > 0.00001 }"
-                >权重总和 {{ number(weightSum, 2) }}</span
-              >
-            </div>
-            <div class="weights-grid">
-              <label v-for="(label, key) in scoreNames" :key="key"
-                ><span>{{ label }}</span
-                ><input
-                  v-model.number="configForm.weights[key]"
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.05"
-              /></label>
-            </div>
-            <div class="two-fields">
-              <label
-                >首选奖励积分<input
-                  v-model.number="configForm.rewards.first"
-                  type="number"
-                  min="0"
-                  step="10" /></label
-              ><label
-                >次选奖励积分<input
-                  v-model.number="configForm.rewards.second"
-                  type="number"
-                  min="0"
-                  step="10" /></label
-              ><label
-                >最低补电量 / kWh<input
-                  v-model.number="configForm.minimumEnergyKwh"
-                  type="number"
-                  min="0"
-                  step="1" /></label
-              ><label
-                >最低充电时长 / 秒<input
-                  v-model.number="configForm.minimumChargingSeconds"
-                  type="number"
-                  min="0"
-                  step="60" /></label
-              ><label
-                >每日积分预算<input
-                  v-model.number="configForm.dailyRewardBudget"
-                  type="number"
-                  min="0"
-                  step="100" /></label
-              ><label
-                >叫号确认期限 / 秒<input
-                  v-model.number="configForm.callTimeoutSeconds"
-                  type="number"
-                  min="1" /></label
-              ><label
-                >预约有效期 / 秒<input
-                  v-model.number="configForm.reservationTimeoutSeconds"
-                  type="number"
-                  min="1"
-              /></label>
-            </div>
-            <button
-              class="button primary"
-              :disabled="!!busyAction || Math.abs(weightSum - 1) > 0.00001"
-              @click="saveConfig"
-            >
-              保存策略配置<Icon name="check" :size="17" />
-            </button>
-            <p class="tiny-note">
-              六项权重之和须为 1。奖励仅按服务端保存的推荐资格结算。
-            </p>
-          </section>
-          <div v-show="adminSection === 'experiments'" class="admin-side-stack">
             <section class="card experiment-run-card">
               <span class="model-icon peach"
                 ><Icon name="lab" :size="25"
@@ -2203,71 +1443,15 @@ onBeforeUnmount(() => {
                 }}
               </button>
             </section>
-            <section class="card admin-counts">
-              <h3>业务场景概况</h3>
-              <div v-for="(value, key) in admin.counts || {}" :key="key">
-                <span>{{ key }}</span
-                ><b>{{ value }}</b>
-              </div>
-              <p class="tiny-note">
-                当前模拟业务库统计，与只读分析批次相互独立。
-              </p>
-            </section>
-          </div>
-          <section v-show="adminSection === 'scenario'" class="card admin-stations">
-            <div class="section-top">
-              <h2>电站资源状态</h2>
-              <button
-                class="button secondary small"
-                :disabled="!!busyAction"
-                @click="exportFeedback"
-              >
-                <Icon name="chart" :size="15" />{{
-                  busyAction === "feedback" ? "正在导出…" : "导出行程反馈"
-                }}
-              </button>
-            </div>
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>电站</th>
-                    <th>总桩数</th>
-                    <th>空闲</th>
-                    <th>排队</th>
-                    <th>已承诺</th>
-                    <th>充电中</th>
-                    <th>背景占用</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="station in admin.stations || stations"
-                    :key="station.stationId"
-                  >
-                    <td>{{ station.stationName }}</td>
-                    <td>{{ station.capacity }}</td>
-                    <td class="teal">{{ station.currentFree }}</td>
-                    <td>{{ station.queued }}</td>
-                    <td>{{ station.committed }}</td>
-                    <td>{{ station.charging }}</td>
-                    <td>{{ station.backgroundBusy }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
         <section v-else class="admin-locked">
           <Icon name="shield" :size="43" />
           <h2>先连接，再调整场景</h2>
           <p>
-            控制台需要独立的管理员令牌。<br />无需令牌也可使用智能推荐和个人充电行程。
+            控制台需要独立的管理员令牌。<br />无需管理员令牌也可使用运营总览、智能找站与模型分析。
           </p>
           <div>
             <span><Icon name="clock" :size="18" />模拟时钟</span
-            ><span><Icon name="users" :size="18" />排队场景</span
-            ><span><Icon name="gift" :size="18" />激励策略</span
             ><span><Icon name="chart" :size="18" />配对实验</span>
           </div>
         </section>

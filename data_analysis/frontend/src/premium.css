@@ -53,6 +53,7 @@ main { max-width:1728px; padding:0 40px 64px; min-height:calc(100vh - 158px); }
 .workspace-content { animation:content-enter .25s ease-out; }
 @keyframes content-enter { from { opacity:.65; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
 .explore-hero { display:flex; justify-content:space-between; align-items:center; min-height:0; height:auto; border-radius:0; background:#fff; padding:44px 0 30px; margin:0; overflow:visible; gap:36px; color:#171a20; }
+.explore-hero::before,.explore-hero::after { display:none; }
 .hero-copy h1 { color:#171a20; font-size:46px; line-height:1.2; letter-spacing:-1.8px; margin:8px 0 14px; }
 .hero-copy>p { font-size:14px; color:#6b7280; }
 .hero-proof { font-size:11px; color:#6b7280; margin-top:16px; }
@@ -83,6 +84,10 @@ main { max-width:1728px; padding:0 40px 64px; min-height:calc(100vh - 158px); }
 .trust-strip b { color:#171a20; font-size:12px; }
 .trust-strip span,.trust-strip p>span { color:#6b7280; font-size:11px; }
 .recommendations-panel { min-width:0; }
+.recommendation-route-panel { margin-top:24px; scroll-margin-top:96px; border-radius:14px; }
+.recommendation-route-panel:focus-visible { outline:2px solid #2563eb; outline-offset:4px; }
+.recommendation-empty .recommendation-guide { display:flex; align-items:flex-start; gap:8px; margin:26px 0 0; padding-top:20px; border-top:1px solid #e5e7eb; text-align:left; font-size:12px; line-height:1.8; }
+.recommendation-guide>svg { flex-shrink:0; margin-top:3px; }
 .recommendations-panel h2 { color:#171a20; font-size:24px; }
 .recommendation-empty { background:#f5f5f7; border:0; border-radius:18px; padding:45px 24px; margin-top:20px; }
 .recommendation-empty h3 { color:#171a20; font-size:21px; }
@@ -150,7 +155,6 @@ main { max-width:1728px; padding:0 40px 64px; min-height:calc(100vh - 158px); }
 .admin-auth h3 { color:#171a20; font-size:15px; }
 .admin-auth p { color:#6b7280; font-size:12px; }
 .admin-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
-.admin-grid .admin-stations { grid-column:1/-1; }
 .admin-grid h2 { color:#171a20; font-size:24px; }
 .admin-grid .eyebrow { font-size:10px; color:#6b7280; }
 .admin-grid label,.busy-card>label,.two-fields label,.weights-grid label { font-size:12px; color:#6b7280; }
@@ -158,13 +162,7 @@ main { max-width:1728px; padding:0 40px 64px; min-height:calc(100vh - 158px); }
 .admin-grid .tiny-note,.admin-clock-card>.subtle,.experiment-run-card .subtle { color:#6b7280; font-size:12px; }
 .big-clock { color:#171a20; font-size:48px; letter-spacing:-1.5px; margin:30px 0 8px; }
 .admin-clock-controls { margin-top:26px; gap:12px; }
-.admin-grid--strategy,.admin-grid--experiments { grid-template-columns:minmax(0,1fr); }
-.weights-card { max-width:1000px; width:100%; margin:0 auto; }
-.admin-side-stack { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); align-items:start; }
 .experiment-run-card h2 { margin-top:16px; }
-.admin-counts>h3,.admin-counts>div b { color:#171a20; }
-.admin-counts>div { color:#6b7280; font-size:12px; gap:16px; }
-.admin-counts>div b { overflow-wrap:anywhere; }
 .admin-locked { min-height:280px; background:#fff; border:1px solid #e5e7eb; color:#6b7280; border-radius:18px; }
 .admin-locked h2 { color:#171a20; }
 .admin-locked p { color:#6b7280; font-size:13px; }

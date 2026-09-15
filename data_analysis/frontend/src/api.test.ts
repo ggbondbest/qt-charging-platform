@@ -66,15 +66,15 @@ describe("API boundary", () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            error: { code: "ARRIVAL_TOO_EARLY", message: "too early" },
+            error: { code: "EXPERIMENT_RUNNING", message: "already running" },
           }),
           { status: 409 },
         ),
       ),
     );
     await expect(
-      request("/trips/example/arrive", { method: "POST" }),
-    ).rejects.toThrow("模拟时钟尚未到达预计抵达时刻");
+      request("/admin/experiments", { method: "POST" }),
+    ).rejects.toThrow("已有实验正在计算");
   });
   it("rejects HTML/proxy responses safely", async () => {
     vi.stubGlobal("window", globalThis);
