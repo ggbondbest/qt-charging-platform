@@ -48,12 +48,12 @@ def load_matrix() -> tuple[pd.DataFrame, dict]:
     if summary.get("featuresSha256") != common.sha256_file(common.TICK_FEATURES_PATH):
         raise common.BatchMismatch("tick 帧哈希与 features_summary 不一致，表被改过，请重跑 features")
     assert not frame.duplicated(subset=["station_id", "tick_ts"]).any(), "站·tick 出现重复行"
-    assert set(frame.loc[~frame["dropped_last"], "split"]) >= {"TRAIN", "VALIDATION", "TEST"}
+    assert set(frame.loc[~frame["dropped"], "split"]) >= {"TRAIN", "VALIDATION", "TEST"}
     return frame, summary
 
 
 def usable(frame: pd.DataFrame, split: str) -> pd.DataFrame:
-    return frame[(frame["split"] == split) & ~frame["dropped_last"]].reset_index(drop=True)
+    return frame[(frame["split"] == split) & ~frame["dropped"]].reset_index(drop=True)
 
 
 def design(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -74,7 +74,7 @@ def new_regressor(hyper: dict | None) -> HistGradientBoostingRegressor:
         n_iter_no_change=30, random_state=common.SEED)
 
 
-def _climatology(train: pd.DataFrame) -> pd.DataFrame:
+def _climatology(train: pd.DataFrame) -> dict:
     """站×小时（北京 hod）的下一 tick 平均负荷；缺失逐级回落（站×hod → 站 → 全局）。"""
     work = train.copy()
     beijing = work["tick_ts"] + pd.Timedelta(hours=common.BUSINESS_OFFSET_HOURS)

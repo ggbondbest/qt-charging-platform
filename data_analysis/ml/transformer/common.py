@@ -5,9 +5,10 @@
 * **预测腿**——下一 tick 的站级总充电负荷（kW）回归。真实连续标签（遥测实测功率之和），
   可盲测（TEST 段一次不碰）。回答运维那句"这个站负荷会冲到多高、离 360kW 变压器还剩多少余量"。
 * **分配腿**——站内容量约束下的功率分配策略（`allocate.py`，纯函数）在**真实需求流**上的
-  反事实回放：当前额定 360kW 下容量从不 binding（0/705,924 个站·tick 越限，实测峰值 150.9kW，
-  这是诚实的负事实），故真正的工程量在**收紧容量的压力测试**（stress-cap 网格 100/125/150kW）
-  上比较策略——同样的需求流喂给不同策略，交付公平性差多少。
+  反事实回放：当前额定 360kW 下容量从不 binding（稠密 1,296,000 个站·tick 与其中 705,924 个
+  "有桩在充"的站·tick 上，越限数都是 0，实测峰值 150.9kW——这是诚实的负事实），故真正的工程量
+  在**收紧容量的压力测试**（stress-cap 网格 100/125/150kW）上比较策略——同样的需求流喂给不同
+  策略，交付公平性差多少。
 
 与已有各线的硬切割：`ml/load/`（成员 A）与 `ml/availability/` 都是**站×小时**粒度、目标是
 可用桩数/小时负荷；本线是**站×5 分钟**粒度的总充电需求 + 站内多桩分配，是变压器的物理口径，
@@ -17,7 +18,7 @@
 零新增数据（写进每个产物）：样本、标签、特征、分配需求全是对发布批次 clean 表
 （`charger_telemetry` / `stations`）的只读确定性聚合，不落新目录、不改原始数据。
 
-用法：本文件不直接跑，由 features / forecast / evaluate / stress 引用。
+用法：本文件不直接跑，由 features / train / evaluate / stress 引用。
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ DATA_ANALYSIS_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DATASET_DIR = DATA_ANALYSIS_ROOT / "datasets" / "analytics_full_180d_v1"
 CLEAN_DIR = SOURCE_DATASET_DIR / "clean"
 
-#: 预测腿的输出目录（features→forecast→evaluate 逐级续跑）；分配腿（stress 回放）独立一目录。
+#: 预测腿的输出目录（features→train→evaluate 逐级续跑）；分配腿（stress 回放）独立一目录。
 OUT_DIR = DATA_ANALYSIS_ROOT / "outputs" / "ml_transformer"
 STRESS_DIR = DATA_ANALYSIS_ROOT / "outputs" / "ml_transformer_stress"
 DATASET_ID = "analytics_full_180d_v1"
@@ -230,8 +231,8 @@ def data_note() -> str:
 
 #: 留表做分组/溯源/评价、绝不进特征的列。total_kw_next 是预测目标；tick 与 split 只做时序与落段。
 NON_FEATURE_COLUMNS = frozenset({
-    "station_id", "city_id", "tick_ts", "tick_index", "business_date", "split", "dropped_last",
-    "total_kw", "total_kw_next", "transformer_kw",
+    "station_id", "city_id", "tick_ts", "tick_index", "split", "dropped", "n_active",
+    "total_kw", "total_kw_next", "transformer_kw", "site_type",
 })
 
 CATEGORICAL_FEATURES: list[str] = []   # 站×tick 负荷全数值（站型/城市留作分组键，不进模型）

@@ -20,7 +20,8 @@ from __future__ import annotations
 import numpy as np
 
 
-def _clip(demands: np.ndarray, cap: float, alloc: np.ndarray) -> np.ndarray:
+def _clip(demands: np.ndarray, alloc: np.ndarray) -> np.ndarray:
+    """把分配夹回 ``[0, demand]``。``sum(alloc) <= cap`` 由各策略的构造保证（测试逐策略钉死）。"""
     alloc = np.clip(np.asarray(alloc, dtype=float), 0.0, None)
     return np.minimum(alloc, demands)
 
@@ -36,7 +37,7 @@ def allocate_greedy(demands: np.ndarray, cap: float, order: np.ndarray | None = 
         remaining -= give
         if remaining <= 0:
             break
-    return _clip(demands, cap, alloc)
+    return _clip(demands, alloc)
 
 
 def allocate_proportional(demands: np.ndarray, cap: float) -> np.ndarray:
@@ -45,7 +46,7 @@ def allocate_proportional(demands: np.ndarray, cap: float) -> np.ndarray:
     total = demands.sum()
     if total <= 0:
         return np.zeros(len(demands))
-    return _clip(demands, cap, demands * min(1.0, float(cap) / total))
+    return _clip(demands, demands * min(1.0, float(cap) / total))
 
 
 def allocate_maxmin(demands: np.ndarray, cap: float) -> np.ndarray:
@@ -66,14 +67,22 @@ def allocate_maxmin(demands: np.ndarray, cap: float) -> np.ndarray:
         else:                               # 无人饱和：均分后收尾
             alloc[active] += level
             remaining = 0.0
-    return _clip(demands, cap, alloc)
+    return _clip(demands, alloc)
+
+
+def priority_order(priority) -> np.ndarray:
+    """优先级降序的索引排列（并列按索引序，稳定）。
+
+    单独成函数是为了让"优先级序是否就等于行序"这种实测能复用**同一把**尺子，而不是在别处再抄一遍
+    lexsort（抄一遍就有朝一日会与策略本体不一致）。
+    """
+    priority = np.asarray(priority, dtype=float)
+    return np.lexsort((np.arange(len(priority)), -priority))
 
 
 def allocate_priority(demands: np.ndarray, cap: float, priority: np.ndarray) -> np.ndarray:
     """优先级贪心：priority 大者先给满。并列按索引序（稳定）。"""
-    priority = np.asarray(priority, dtype=float)
-    order = np.lexsort((np.arange(len(demands)), -priority))
-    return allocate_greedy(demands, cap, order=order)
+    return allocate_greedy(demands, cap, order=priority_order(priority))
 
 
 POLICIES = ("greedy_fcfs", "proportional", "maxmin", "priority_wait")
@@ -102,10 +111,12 @@ def policy_metrics(demands: np.ndarray, alloc: np.ndarray, wait_min: np.ndarray 
     total_demand = demands.sum()
     served = np.divide(alloc.sum(), total_demand) if total_demand > 0 else 1.0
     share = np.divide(shortfall, demands, out=np.zeros_like(demands), where=demands > 0)
-    nonzero = share[share > 0]
+    # Gini 必须在**全部参与者**（有需求的桩，含被喂满的那些，share=0）上算：只挑欠供>0 的子集会把
+    # "赢家通吃"（一桩给满、其余全饿）误报成完全公平——子集里幸存者份额相等，Gini 恰好归零。
+    participants = share[demands > 0]
     gini = 0.0
-    if len(nonzero) > 1:
-        s = np.sort(nonzero)
+    if len(participants) > 1 and participants.sum() > 0:
+        s = np.sort(participants)
         n = len(s)
         gini = float((2.0 * np.arange(1, n + 1) - n - 1).dot(s) / (n * s.sum()))
     metrics = {"servedFraction": round(float(served), 6),
@@ -114,4 +125,16 @@ def policy_metrics(demands: np.ndarray, alloc: np.ndarray, wait_min: np.ndarray 
     if wait_min is not None:
         w = np.clip(np.asarray(wait_min, dtype=float), 0.0, None)
         metrics["waitWeightedShortfall"] = round(float((shortfall * w).sum()), 3)
+        # 配对敏感的判据：等待最久的那个参与者,是否比等待最短的那个被欠得更多。
+        # 这是"谁在挨饿"的直接读数——``waitWeightedShortfall`` 只是它的加权和，两策略镜像互换时
+        # 加权和可以巧合相等（本批就是），而这一列不会。
+        participants = np.flatnonzero(demands > 0)
+        if len(participants) >= 2:
+            pw, ps = w[participants], share[participants]
+            hi = np.flatnonzero(pw == pw.max())
+            lo = np.flatnonzero(pw == pw.min())
+            metrics["longestWaitStarved"] = float(
+                ps[hi].mean() > ps[lo].mean() + 1e-12)
+        else:
+            metrics["longestWaitStarved"] = 0.0
     return metrics

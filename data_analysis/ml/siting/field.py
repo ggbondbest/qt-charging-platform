@@ -3,8 +3,8 @@
 模型假设（写进产物、不是数据事实）：
 * 一次会话的"出发地"未知（只有被服务点=站点），故用**被服务需求点 + 距离衰减**近似需求场：
   站 s 的需求 d_s 视为集中在其坐标，贡献到候选点 x 为 d_s · decay(dist(s,x))；
-* 衰减核 decay(d) = 1/(1+ (d/r)^2)，r=CAPTURE_KM 为可配置吸引半径（默认 3km，站内近邻
-  p50≈4.1km，取半格量级）；
+* 衰减核 decay(d) = 1/(1+ (d/r)^2)，r=CAPTURE_KM 为可配置吸引半径（默认 3km；本批站最近邻均值
+  ≈4.2km、城内站距 p50≈6.6km，取半格量级）；
 * 候选点打分 absorb = Σ 需求贡献；空白度 opportunity = absorb × (1 - 现有覆盖折扣)，
   现有覆盖折扣 = 距候选点 r 内已有站的累计服务占比（离得近=已被满足）。
 
@@ -18,12 +18,18 @@ import numpy as np
 EARTH_R_KM = 6371.0
 
 
+def _clamped_h(h) -> np.ndarray:
+    """asin 参数钳回 [0,1]。浮点上 ``sin²+cos·cos·sin²`` 可以算出 1+1e-16，
+    不钳会得到 NaN（对踵/同点这类边界一旦命中，整行打分无声变 NaN）。"""
+    return np.clip(np.asarray(h, dtype=float), 0.0, 1.0)
+
+
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
     """两点大圆距离（km）。标量版，向量化由 distance_matrix 承担。"""
     p1, p2 = np.radians(lat1), np.radians(lat2)
     dphi, dlmb = np.radians(lat2 - lat1), np.radians(lon2 - lon1)
     h = np.sin(dphi / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dlmb / 2) ** 2
-    return float(2 * EARTH_R_KM * np.arcsin(np.sqrt(h)))
+    return float(2 * EARTH_R_KM * np.arcsin(np.sqrt(_clamped_h(h))))
 
 
 def distance_matrix(coords_a, coords_b) -> np.ndarray:
@@ -34,7 +40,7 @@ def distance_matrix(coords_a, coords_b) -> np.ndarray:
     dlat = np.radians(b[:, 0])[None, :] - lat
     dlon = np.radians(b[:, 1])[None, :] - np.radians(a[:, 1])[:, None]
     h = np.sin(dlat / 2) ** 2 + np.cos(lat) * np.cos(np.radians(b[:, 0])[None, :]) * np.sin(dlon / 2) ** 2
-    return 2 * EARTH_R_KM * np.arcsin(np.sqrt(h))
+    return 2 * EARTH_R_KM * np.arcsin(np.sqrt(_clamped_h(h)))
 
 
 def decay(dist_km: np.ndarray, radius_km: float) -> np.ndarray:
@@ -75,7 +81,7 @@ def score_candidates(candidate_coords, source_coords, source_demand, *,
 
 
 def grid_candidates(min_lat, max_lat, min_lon, max_lon, step_deg: float) -> np.ndarray:
-    """经纬度网格候选点（(N,2) 数组）。step_deg=0.05 ≈ 5.5km，站点近邻 4.1km 同量级。"""
+    """经纬度网格候选点（(N,2) 数组）。score.py 用 step_deg=0.02 ≈ 2.2km，与站最近邻 4.2km 同量级。"""
     lats = np.arange(min_lat, max_lat + 1e-9, step_deg)
     lons = np.arange(min_lon, max_lon + 1e-9, step_deg)
     LON, LAT = np.meshgrid(lons, lats)

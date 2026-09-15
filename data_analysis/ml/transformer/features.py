@@ -6,8 +6,9 @@
   目标 ``total_kw_next`` = 下一 tick 站级总充电功率；特征只用**当 tick 及更早**的量
   （``load_lag1`` 是当 tick 实测、``load_lag2..12`` 是更早、``load_mean_1h``/``load_max_1h``
   是含当 tick 的回溯 12-tick 窗口），日历量（tod/dow 正余弦）按定义无泄漏。
-  滞后不全的前 ``LAG_TAIL`` 个 tick、目标越界的每站最后一 tick、以及目标会跨到下一段的
-  边界 tick（1-tick purge）一律 ``dropped_last=True`` 标记后不进样本。
+  不可进样本的行统一标在 ``dropped``（三类，逐类计数冻进 summary 的 ``droppedRows``）：
+  **head** 滞后窗口不全（前 ``LAG_TAIL-1`` 个 tick）、**tail** 目标越出栅格右端、
+  **cross** 目标落到别的段或段外（1-tick purge）。
 * ``tick_demands.parquet``——分配腿的逐桩需求长表：每个 (站, tick, 充电中桩) 一行，
   ``demand_kw`` 取该桩实测充电功率、``wait_min`` 取该会话到当 tick 的已充电时长
   （priority_wait 的等待代理）。压力回放按站×tick 聚成需求向量。
@@ -56,18 +57,28 @@ def _wide(values: pd.DataFrame, value: str, aggfunc, tick_axis: pd.DatetimeIndex
 
 
 def _shift_right(matrix: np.ndarray, k: int) -> np.ndarray:
-    """列方向右移 k（t 处取 t-k，头部补 NaN）。k=0 原样。"""
-    if k == 0:
-        return matrix
+    """列方向右移 k（t 处取 t-k，头部补 NaN）。k=0 也**必须返回副本**：返回入参本身会让
+    ``load`` 与 ``load_lag1..3`` 是同一块 buffer，``np.save`` 对 views 去重后 tick 帧只剩 1/4 大小
+    （真实数值仍对，但"每站×每 tick 稠密"的帧被压缩成看不见的共享列，下游改一列会串改四列）。
+
+    ``k >= 列数`` 时整列都是 NaN——不加这个守卫，``matrix[:, :ncol-k]`` 会变成负切片，
+    numpy 直接抛 broadcast 错（真实栅格 51,840 列永远碰不到，短栅格的合成用例必然撞到）。
+    """
     out = np.full_like(matrix, np.nan)
-    out[:, k:] = matrix[:, :-k]
+    ncol = matrix.shape[1]
+    if k >= ncol:
+        return out
+    out[:, k:] = matrix[:, :ncol - k]
     return out
 
 
 def _shift_left(matrix: np.ndarray, k: int) -> np.ndarray:
-    """列方向左移 k（t 处取 t+k，尾部补 NaN）——下一 tick 目标。"""
+    """列方向左移 k（t 处取 t+k，尾部补 NaN）——下一 tick 目标。同 ``_shift_right`` 的越界守卫。"""
     out = np.full_like(matrix, np.nan)
-    out[:, :-k] = matrix[:, k:]
+    ncol = matrix.shape[1]
+    if k >= ncol:
+        return out
+    out[:, :ncol - k] = matrix[:, k:]
     return out
 
 
@@ -108,11 +119,21 @@ def build_tick_frame(tel: pd.DataFrame) -> pd.DataFrame:
     long["tick_index"] = np.tile(np.arange(ncol), nrow).astype("int32")
     long["split"] = common.assign_split(long["tick_ts"]).to_numpy()
 
-    # 1-tick purge + 右端删失：目标 tick 越栅格或落到别的段/段外 → 不进样本。
+    # 不可进样本的三类行，合成一列 ``dropped``（旧名 dropped_last 只覆盖了后两类，且文档声称覆盖
+    # 前一类而代码没做——栅格起点若贴住 split 起点，带 NaN 滞后的头部行就会静默进 TRAIN）：
+    #   head  滞后窗口不全（lag12 / 1h 回溯需要前面 LAG_TAIL-1 个 tick）
+    #   tail  目标越出栅格右端
+    #   cross 目标落到别的段或段外（1-tick purge）
+    head_incomplete = (long["tick_index"] < LAG_TAIL - 1).to_numpy()
     next_index = long["tick_index"] + 1
     next_ts = tick_axis.to_numpy()[np.clip(next_index, 0, ncol - 1)]
     next_split = common.assign_split(pd.Series(next_ts, dtype="datetime64[ns]")).to_numpy()
-    long["dropped_last"] = (next_index >= ncol).to_numpy() | (next_split != long["split"].to_numpy())
+    tail_out = (next_index >= ncol).to_numpy()
+    cross_split = next_split != long["split"].to_numpy()
+    long["dropped"] = head_incomplete | tail_out | cross_split
+    drop_reasons = {"headIncompleteLag": int(head_incomplete.sum()),
+                    "tailOutOfGrid": int(tail_out.sum()),
+                    "crossSplitPurged": int(cross_split.sum())}
 
     stations_meta = common.load_clean_table(
         "stations", ["station_id", "city_id", "site_type", "transformer_kw"]).set_index("station_id")
@@ -120,7 +141,8 @@ def build_tick_frame(tel: pd.DataFrame) -> pd.DataFrame:
         long[column] = long["station_id"].map(stations_meta[column])
     long["transformer_kw"] = long["station_id"].map(stations_meta["transformer_kw"]).astype("float64")
     assert long["transformer_kw"].notna().all(), "站缺 transformer_kw，容量口径不成立"
-    return long.reset_index(drop=True)
+    frame = long.reset_index(drop=True)
+    return frame, drop_reasons
 
 
 def build_demand_long(tel: pd.DataFrame) -> pd.DataFrame:
@@ -145,7 +167,7 @@ def main() -> dict:
     common.require_empty_run_dir(common.OUT_DIR)
     common.verify_batch()
     tel = load_telemetry()
-    frame = build_tick_frame(tel)
+    frame, drop_reasons = build_tick_frame(tel)
     demands = build_demand_long(tel)
 
     peak = float(frame["total_kw"].max())
@@ -153,8 +175,11 @@ def main() -> dict:
     quant = frame["total_kw"].quantile([0.5, 0.99, 1.0]).to_dict()
 
     feature_cols = numeric_feature_columns()
-    usable = frame[~frame["dropped_last"] & frame["split"].isin(["TRAIN", "VALIDATION", "TEST"])]
+    usable = frame[~frame["dropped"] & frame["split"].isin(["TRAIN", "VALIDATION", "TEST"])]
     split_counts = usable["split"].value_counts().to_dict()
+    # 假不变式的正面守卫：进了样本的行，一个 NaN 特征都不许有（历史上靠"栅格头部恰好落 EXCLUDED"
+    # 侥幸成立，现在由 dropped 的 head 分支保证，并在此处钉死）。
+    assert usable[feature_cols].notna().all().all(), "usable 样本里仍有 NaN 特征，滞后头部护栏失效"
 
     common.write_new_pickle(common.TICK_FEATURES_PATH, frame)
     common.write_new_parquet(common.DEMAND_LONG_PATH, demands)
@@ -174,16 +199,22 @@ def main() -> dict:
         "usableBySplit": {k: int(v) for k, v in split_counts.items()},
         "loadCapCheck": {
             "transformerKw": common.TRANSFORMER_KW,
+            "gridTicks": int(len(frame)),
+            "chargingTicks": int((frame["n_active"] > 0).sum()),
             "maxStationTickKw": round(peak, 3),
             "medianKw": round(float(quant[0.5]), 3),
             "p99Kw": round(float(quant[0.99]), 3),
             "ticksOverCap": over_ticks,
+            "note": ("口径分两把：gridTicks 是稠密站×tick 全格（空闲格计 0kW），chargingTicks 是"
+                     "至少一桩在充的格。medianKw 是稠密口径（含空闲），峰值/越限判定两口径同为 0。"),
             "headline": ("当前 360kW 额定下站×tick 总负荷从不越限（过载是负事实）；"
                          "分配策略的区分度只在收紧容量的压力测试里" if over_ticks == 0 else
                          "存在越限 tick，需真实限流"),
         },
+        "droppedRows": drop_reasons,
         "demandLongRows": int(len(demands)),
         "featuresSha256": common.sha256_file(common.TICK_FEATURES_PATH),
+        "demandLongSha256": common.sha256_file(common.DEMAND_LONG_PATH),
         "boundaries": {k: v.isoformat() for k, v in
                        common.split_boundaries(manifest).items()},
         "command": common.invocation("data_analysis.ml.transformer.features"),
