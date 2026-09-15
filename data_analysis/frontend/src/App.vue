@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ApiError, request } from "./api";
+import { submitAndReveal } from "./sectionNavigation";
 import {
   finished,
   localTime,
@@ -31,6 +32,8 @@ import Chart from "./components/Chart.vue";
 import AnalyticsDashboard from "./components/AnalyticsDashboard.vue";
 import ForecastPanel from "./components/ForecastPanel.vue";
 import ManagementInsights from "./components/ManagementInsights.vue";
+import WorkspaceTabs from "./components/WorkspaceTabs.vue";
+import AutoHideHeader from "./components/AutoHideHeader.vue";
 
 type Tab = "dashboard" | "explore" | "trip" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -47,6 +50,20 @@ const tripSteps: { label: string; statuses: TripStatus[] }[] = [
   { label: "支付完成", statuses: ["PENDING_PAYMENT", "COMPLETED"] },
 ];
 const tab = ref<Tab>("dashboard");
+const dashboardPresentation = ref(false);
+const labSection = ref('forecast');
+const labSections = [
+  { id: 'forecast', label: '负荷与空闲预测', description: '未来 1 / 6 / 24 小时' },
+  { id: 'insights', label: '用户与异常', description: '回访风险 · 充电复核' },
+  { id: 'arrival', label: '到站模型', description: '可用性与等待预测依据' },
+  { id: 'experiments', label: '策略对比', description: '最近站 vs. 智能推荐' },
+];
+const adminSection = ref('scenario');
+const adminSections = [
+  { id: 'scenario', label: '场景控制', description: '时钟与电站资源' },
+  { id: 'strategy', label: '推荐策略', description: '权重、积分与预约规则' },
+  { id: 'experiments', label: '配对实验', description: '运行并比较两种策略' },
+];
 const boot = ref<Bootstrap>();
 const stations = ref<Station[]>([]);
 const cityId = ref("");
@@ -67,6 +84,7 @@ const errorMessage = ref("");
 const toast = ref("");
 const models = ref<JsonObject>();
 const experiments = ref<JsonObject>();
+const experimentCard = ref<HTMLElement | null>(null);
 const clockTime = ref("");
 const clock = ref<Clock>();
 const latestRefresh = ref("");
@@ -508,7 +526,7 @@ async function refreshExperiments() {
     const wasRunning = experiments.value?.status === "RUNNING";
     experiments.value = receive(await request<JsonObject>("/experiments"));
     if (wasRunning && experiments.value?.status === "READY")
-      notify("配对实验已完成，可在模型实验室查看实际结果。");
+      notify("配对实验已完成，可在智能分析的「最近站 vs. 智能推荐」查看结果。");
   } catch (error) {
     experiments.value = { status: "NOT_RUN", message: errorText(error) };
   }
@@ -535,27 +553,27 @@ async function showRoute() {
   }
 }
 const experimentOption = computed(() => ({
-  color: ["#ccd6cd", "#21745f"],
+  color: ["#9aa5b5", "#2563eb"],
   legend: {
     bottom: 0,
     itemWidth: 12,
     itemHeight: 12,
-    textStyle: { color: "#69796e" },
+    textStyle: { color: "#4b5563" },
   },
   tooltip: { trigger: "axis" },
   grid: { left: 48, right: 20, top: 30, bottom: 70 },
   xAxis: {
     type: "category",
     data: ["等待时间", "行驶时间", "总用时"],
-    axisLine: { lineStyle: { color: "#dce4de" } },
+    axisLine: { lineStyle: { color: "#e5e7eb" } },
     axisTick: { show: false },
-    axisLabel: { color: "#718176" },
+    axisLabel: { color: "#4b5563" },
   },
   yAxis: {
     type: "value",
     name: "分钟",
-    splitLine: { lineStyle: { color: "#edf1eb" } },
-    axisLabel: { color: "#7e8b82" },
+    splitLine: { lineStyle: { color: "#f5f5f7" } },
+    axisLabel: { color: "#6b7280" },
   },
   series: policyRows.value.map((row) => ({
     type: "bar",
@@ -566,22 +584,22 @@ const experimentOption = computed(() => ({
   })),
 }));
 const horizonOption = computed(() => ({
-  color: ["#608c45"],
+  color: ["#4b5563"],
   grid: { left: 45, right: 23, top: 30, bottom: 36 },
   tooltip: { trigger: "axis" },
   xAxis: {
     type: "category",
     name: "分钟",
     data: horizonMetrics.value.map(([key]) => key),
-    axisLine: { lineStyle: { color: "#dce4de" } },
+    axisLine: { lineStyle: { color: "#e5e7eb" } },
     axisTick: { show: false },
-    axisLabel: { color: "#8d9b7f" },
+    axisLabel: { color: "#6b7280" },
   },
   yAxis: {
     type: "value",
     name: "Brier ↓",
-    splitLine: { lineStyle: { color: "#edf1e6" } },
-    axisLabel: { color: "#8d9b7f" },
+    splitLine: { lineStyle: { color: "#f5f5f7" } },
+    axisLabel: { color: "#6b7280" },
   },
   series: [
     {
@@ -592,7 +610,7 @@ const horizonOption = computed(() => ({
       ),
       symbolSize: 6,
       lineStyle: { width: 2 },
-      areaStyle: { color: "#608c4510" },
+      areaStyle: { color: "#4b556310" },
     },
   ],
 }));
@@ -636,15 +654,23 @@ async function changeAdmin(path: string, body: unknown, method = "POST") {
 }
 async function runExperiment() {
   await run("experiment", async () => {
-    experiments.value = await adminRequest("/admin/experiments", "POST", {
-      users: experimentUsers.value,
-      seed: experimentSeed.value,
-    });
-    tab.value = "lab";
-    notify(
-      experiments.value?.status === "READY"
-        ? "配对模拟实验已完成。"
-        : "实验已提交，完成后会自动更新实际结果。",
+    await submitAndReveal(
+      () => adminRequest("/admin/experiments", "POST", {
+        users: experimentUsers.value,
+        seed: experimentSeed.value,
+      }),
+      (result) => {
+        experiments.value = result;
+        labSection.value = 'experiments';
+        tab.value = "lab";
+        notify(
+          result.status === "READY"
+            ? "配对模拟实验已完成。"
+            : "实验已提交，完成后会自动更新实际结果。",
+        );
+      },
+      () => experimentCard.value,
+      () => mounted && tab.value === "lab" && labSection.value === 'experiments',
     );
   });
 }
@@ -676,6 +702,8 @@ watch([energyKwh, maxEtaMinutes], () => {
 });
 watch(tab, (value) => {
   errorMessage.value = "";
+  if (value !== 'dashboard') dashboardPresentation.value = false;
+  window.scrollTo({ top: 0, behavior: 'instant' });
   if (value === "lab") {
     refreshModels();
     refreshExperiments();
@@ -702,8 +730,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <header class="topbar">
+  <div class="app-shell" :class="`workspace-${tab}`">
+    <AutoHideHeader :auto-hide="tab === 'dashboard' && dashboardPresentation">
       <button
         class="brand"
         @click="tab = 'dashboard'"
@@ -720,6 +748,7 @@ onBeforeUnmount(() => {
           v-for="item in tabs"
           :key="item.id"
           :class="{ active: tab === item.id }"
+          :aria-current="tab === item.id ? 'page' : undefined"
           @click="tab = item.id"
         >
           <Icon :name="item.icon" :size="17" /><span>{{ item.label }}</span
@@ -732,7 +761,7 @@ onBeforeUnmount(() => {
           <Icon name="user" :size="18" />
         </div>
       </div>
-    </header>
+    </AutoHideHeader>
 
     <main>
       <div v-if="errorMessage && tab !== 'dashboard'" class="error-banner" role="alert">
@@ -744,33 +773,19 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <AnalyticsDashboard v-if="tab === 'dashboard'" />
+      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">
             <div class="eyebrow light">
-              <span></span>SMARTER CHARGING, BETTER JOURNEYS
+              CHARGING NETWORK
             </div>
-            <h1>好位置，<span>少等待。</span></h1>
+            <h1>智能找站</h1>
             <p>
-              把到站可用性、行驶时间与充电负荷一起考虑，<br
-                class="desktop-break"
-              />找到这一次更适合你的充电站。
+              选择出发点，比较到站空闲、等待与价格。
             </p>
             <div class="hero-proof">
-              <Icon name="shield" :size="15" />模型预测有依据 · 推荐理由看得见
-            </div>
-          </div>
-          <div class="hero-orbit" aria-hidden="true">
-            <div class="orbit-ring ring-one"></div>
-            <div class="orbit-ring ring-two"></div>
-            <div class="orbit-ring ring-three"></div>
-            <span class="orbit-node node-one"></span
-            ><span class="orbit-node node-two"></span>
-            <div class="orbit-bolt"><Icon name="bolt" :size="58" /></div>
-            <div class="orbit-label label-one"><span></span>到站可用性</div>
-            <div class="orbit-label label-two">
-              <Icon name="clock" :size="14" />更从容地抵达
+              <Icon name="shield" :size="15" />模拟场景 · 预测不等于资源预约
             </div>
           </div>
           <div class="hero-clock">
@@ -938,18 +953,18 @@ onBeforeUnmount(() => {
               <div>
                 <div class="eyebrow">YOUR NEXT CHARGE</div>
                 <h2>
-                  {{ recommendation ? "为你选出的好去处" : "下一站，交给我们" }}
+                  {{ recommendation ? "推荐电站" : "选择充电站" }}
                 </h2>
               </div>
               <span class="count-pill">{{
-                recommendation ? `${candidates.length} 个推荐` : "AI 决策"
+                recommendation ? `${candidates.length} 个推荐` : "到站预测"
               }}</span>
             </div>
             <div v-if="!recommendation" class="recommendation-empty">
               <div class="empty-orbit">
                 <Icon name="compass" :size="44" /><i></i>
               </div>
-              <h3>更近，也要更合适。</h3>
+              <h3>从出发点开始</h3>
               <p>
                 选好出发点和补电量，<br />比较到站空闲概率、等待时间和充电价格。
               </p>
@@ -1598,17 +1613,17 @@ onBeforeUnmount(() => {
         <section class="page-heading">
           <div>
             <div class="eyebrow">PREDICTIONS WITH EVIDENCE</div>
-            <h1>从看见趋势，到做出判断</h1>
-            <p>负荷与空闲预测、服务风险筛查、到站决策，在同一个入口使用。</p>
+            <h1>智能分析</h1>
+            <p>预测供需，识别风险，验证每一次推荐。</p>
           </div>
           <span class="simulation-chip"
             ><Icon name="lab" :size="16" />模拟数据实验</span
           >
         </section>
-        <ForecastPanel />
-        <ManagementInsights />
-        <details class="model-evidence" open><summary><h2>智能找站 · 模型依据与策略验证</h2><span class="tiny-tag">展开 / 收起</span></summary>
-        <div class="lab-grid single-evidence">
+        <WorkspaceTabs v-model="labSection" :items="labSections" label="智能分析分区" />
+        <KeepAlive><ForecastPanel v-if="labSection === 'forecast'" /></KeepAlive>
+        <KeepAlive><ManagementInsights v-if="labSection === 'insights'" /></KeepAlive>
+        <div v-if="labSection === 'arrival'" class="lab-grid single-evidence workspace-content">
           <section class="card model-card">
             <div class="section-top">
               <span class="model-icon"><Icon name="compass" :size="25" /></span
@@ -1699,11 +1714,18 @@ onBeforeUnmount(() => {
             </details>
           </section>
         </div>
-        <section class="card experiment-card">
+        <section
+          v-if="labSection === 'experiments'"
+          id="paired-experiment-results"
+          ref="experimentCard"
+          class="card experiment-card"
+          tabindex="-1"
+          aria-labelledby="paired-experiment-title"
+        >
           <div class="section-top">
             <div>
               <div class="eyebrow">SAME JOURNEYS. DIFFERENT DECISIONS.</div>
-              <h2>最近站 vs. 智能推荐</h2>
+              <h2 id="paired-experiment-title">最近站 vs. 智能推荐</h2>
               <p class="subtle">
                 相同请求、相同随机种子，比较推荐策略的实际模拟结果。
               </p>
@@ -1713,7 +1735,9 @@ onBeforeUnmount(() => {
                 ? `${number(experiments.users)} 个模拟用户`
                 : experiments?.status === "RUNNING"
                   ? "实验进行中"
-                  : "尚未运行"
+                  : experiments?.status === "FAILED"
+                    ? "实验失败"
+                    : "尚未运行"
             }}</span>
           </div>
           <template v-if="experiments?.status === 'READY' && policyRows.length"
@@ -1797,7 +1821,7 @@ onBeforeUnmount(() => {
                 </tbody>
               </table>
             </div>
-            <div class="experiment-notes">
+            <details class="experiment-notes"><summary>实验口径与适用边界<Icon name="down" :size="16" /></summary>
               <p v-for="note in experiments.notes || []" :key="note">
                 <Icon name="info" :size="14" />{{ note }}
               </p>
@@ -1806,7 +1830,7 @@ onBeforeUnmount(() => {
                 {{ localTime(experiments.generatedAt, true) }} ·
                 仅用于模拟场景对比，不代表真实运营效果。
               </p>
-            </div></template
+            </details></template
           >
           <div v-else class="empty-state">
             <Icon name="lab" :size="37" />
@@ -1814,7 +1838,9 @@ onBeforeUnmount(() => {
               {{
                 experiments?.status === "RUNNING"
                   ? "配对实验正在计算"
-                  : "还没有实验结果"
+                  : experiments?.status === "FAILED"
+                    ? "配对实验计算失败"
+                    : "还没有实验结果"
               }}
             </h3>
             <p>
@@ -1825,18 +1851,18 @@ onBeforeUnmount(() => {
                     "管理员可在运营控制台运行配对实验，完成后这里会显示实际对比。"
               }}
             </p>
-            <button class="button secondary" @click="tab = 'admin'">
+            <button class="button secondary" @click="adminSection = 'experiments'; tab = 'admin'">
               前往运营控制台<Icon name="arrow" :size="16" />
             </button>
           </div>
         </section>
         <section
-          v-if="experiments?.status === 'READY' && policyRows.length"
+          v-if="labSection === 'experiments' && experiments?.status === 'READY' && policyRows.length"
           class="card resource-comparison"
         >
           <div class="section-top">
             <div>
-              <h2>收益与代价，都算在内</h2>
+              <h2>服务与资源对比</h2>
               <p class="subtle">
                 推荐可能增加行驶时间或局部拥挤；以下保留完整对照。
               </p>
@@ -1875,7 +1901,7 @@ onBeforeUnmount(() => {
             分钟等待；这里的完成行程用时只统计成功服务请求。
           </p>
         </section>
-        <details class="card provenance-card">
+        <details v-if="labSection === 'arrival' || labSection === 'experiments'" class="card provenance-card">
           <summary>
             <span><Icon name="shield" :size="18" />数据来源与回放边界</span
             ><Icon name="down" :size="16" />
@@ -1893,13 +1919,12 @@ onBeforeUnmount(() => {
             )
           }}</pre>
         </details>
-        </details>
       </template>
       <template v-if="tab === 'admin'">
         <section class="page-heading">
           <div>
             <div class="eyebrow">REPLAY CONTROL ROOM</div>
-            <h1>让场景可控，让结果可复现</h1>
+            <h1>模拟控制台</h1>
             <p>调节模拟时钟、资源占用和推荐激励，仅作用于演示业务库。</p>
           </div>
           <span class="simulation-chip"
@@ -1932,8 +1957,9 @@ onBeforeUnmount(() => {
         <div v-if="adminError" class="error-banner" role="alert">
           <Icon name="info" :size="18" />{{ adminError }}
         </div>
-        <div v-if="admin" class="admin-grid">
-          <section class="card admin-clock-card">
+        <WorkspaceTabs v-if="admin" v-model="adminSection" :items="adminSections" label="控制台分区" />
+        <div v-if="admin" class="admin-grid workspace-content" :class="`admin-grid--${adminSection}`">
+          <section v-show="adminSection === 'scenario'" class="card admin-clock-card">
             <div class="section-top">
               <div>
                 <div class="eyebrow">SIMULATION CLOCK</div>
@@ -2013,7 +2039,7 @@ onBeforeUnmount(() => {
               时钟推进将触发到站期限、叫号超时与充电计量。
             </p>
           </section>
-          <section class="card busy-card">
+          <section v-show="adminSection === 'scenario'" class="card busy-card">
             <div class="section-top">
               <div>
                 <div class="eyebrow">RESOURCE SCENARIO</div>
@@ -2065,7 +2091,7 @@ onBeforeUnmount(() => {
               只控制模拟背景占用，不覆盖用户预约和充电分配。
             </p>
           </section>
-          <section class="card weights-card">
+          <section v-show="adminSection === 'strategy'" class="card weights-card">
             <div class="section-top">
               <div>
                 <div class="eyebrow">RANKING & INCENTIVES</div>
@@ -2142,7 +2168,7 @@ onBeforeUnmount(() => {
               六项权重之和须为 1。奖励仅按服务端保存的推荐资格结算。
             </p>
           </section>
-          <div class="admin-side-stack">
+          <div v-show="adminSection === 'experiments'" class="admin-side-stack">
             <section class="card experiment-run-card">
               <span class="model-icon peach"
                 ><Icon name="lab" :size="25"
@@ -2188,7 +2214,7 @@ onBeforeUnmount(() => {
               </p>
             </section>
           </div>
-          <section class="card admin-stations">
+          <section v-show="adminSection === 'scenario'" class="card admin-stations">
             <div class="section-top">
               <h2>电站资源状态</h2>
               <button
@@ -2265,3 +2291,13 @@ onBeforeUnmount(() => {
     >
   </div>
 </template>
+
+<style scoped>
+.experiment-card {
+  scroll-margin-top: 24px;
+}
+.experiment-card:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+}
+</style>

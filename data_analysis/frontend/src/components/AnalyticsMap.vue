@@ -15,11 +15,11 @@ function update() {
   for (const station of props.stations) {
     if (!Number.isFinite(station.latitude) || !Number.isFinite(station.longitude)) continue;
     const point: L.LatLngTuple = [station.latitude, station.longitude]; points.push(point);
-    const content = document.createElement('div');
+    const content = document.createElement('div'); content.className = 'analytics-map-popup';
     const title = document.createElement('strong'); title.textContent = station.stationName;
     const detail = document.createElement('p'); detail.textContent = `${station.cityName} · ${station.capacity} 桩 · 期间 ${formatValue(converted(station.periodMetrics?.energyWh, 1000), 1)} kWh`;
     content.append(title, detail);
-    L.circleMarker(point, { radius: 7, color: '#fff', weight: 2, fillColor: '#176b58', fillOpacity: .9 }).bindPopup(content).addTo(markers);
+    L.circleMarker(point, { radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: .95 }).bindPopup(content).addTo(markers);
   }
   if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 12, animate: false });
 }

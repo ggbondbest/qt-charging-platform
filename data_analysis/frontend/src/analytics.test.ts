@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { aggregateCities, AnalyticsError, converted, fraction, publishedRequest, shiftDate, sumSnapshot } from './analytics';
+import { aggregateCities, AnalyticsError, converted, energyContribution, fraction, publishedRequest, shiftDate, sumSnapshot } from './analytics';
 import { forecastDisplayTimestamp, modelForHorizon, shanghaiInputToUtc, utcToShanghaiInput } from './forecast';
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('published analytics semantics', () => {
@@ -15,6 +15,33 @@ describe('published analytics semantics', () => {
   it('does not merge occupied or unknown devices with available devices', () => {
     const states = sumSnapshot([{ availableCount: 2, chargingCount: 1, occupiedCount: 3, unknownCount: 4 }]);
     expect(states.find(item => item.name === '空闲')?.value).toBe(2); expect(states.find(item => item.name === '未知')?.value).toBe(4);
+  });
+  it('compares all five stations instead of one city total in a single-city scope', () => {
+    const stations = [1, 2, 3, 4, 5].map(index => ({ stationId: `BJ-${index}`, stationName: `北京电站${index}`,
+      cityId: 'BJ', cityName: '北京市', periodMetrics: { energyWh: index * 1000 } }));
+    const chart = energyContribution(stations);
+    expect(chart.title).toBe('电站电量贡献'); expect(chart.unit).toBe('电站');
+    expect(chart.rows).toHaveLength(5);
+    expect(chart.rows.map(row => row.energyKwh)).toEqual([5, 4, 3, 2, 1]);
+    expect(chart.rows[0]).toMatchObject({ id: 'BJ-5', name: '北京电站5' });
+    expect(stations[0].stationId).toBe('BJ-1');
+  });
+  it('keeps a multi-city comparison aggregated by city', () => {
+    const chart = energyContribution([
+      { cityId: 'BJ', cityName: '北京市', periodMetrics: { energyWh: 1000 } },
+      { cityId: 'BJ', cityName: '北京市', periodMetrics: { energyWh: 2000 } },
+      { cityId: 'DL', cityName: '大连市', periodMetrics: { energyWh: 4000 } },
+    ]);
+    expect(chart.title).toBe('城市电量贡献'); expect(chart.stationLevel).toBe(false);
+    expect(chart.rows.map(row => row.energyKwh)).toEqual([4, 3]);
+  });
+  it('keeps zero and missing station energy distinct, including empty scopes', () => {
+    const chart = energyContribution([
+      { cityId: 'BJ', stationId: 'missing', periodMetrics: {} },
+      { cityId: 'BJ', stationId: 'zero', periodMetrics: { energyWh: 0 } },
+    ]);
+    expect(chart.rows.map(row => row.energyKwh)).toEqual([0, null]);
+    expect(energyContribution([]).rows).toEqual([]);
   });
   it('date arithmetic is UTC-calendar stable and Shanghai input converts explicitly', () => {
     expect(shiftDate('2026-03-01', -1)).toBe('2026-02-28');

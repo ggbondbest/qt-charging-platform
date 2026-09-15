@@ -5,6 +5,7 @@ import Icon from './Icon.vue';
 import { AnalyticsError, formatValue as n, fraction, publishedRequest, shiftDate } from '../analytics';
 import type { Dataset, RecordData } from '../analytics';
 import { forecastDisplayTimestamp, modelForHorizon, shanghaiInputToUtc, utcToShanghaiInput } from '../forecast';
+import '../intelligence-layout.css';
 const registry = ref<RecordData>(); const dataset = ref<Dataset>(); const stations = ref<RecordData[]>([]);
 const target = ref('load'); const stationId = ref(''); const horizon = ref(6); const reference = ref('');
 const loading = ref(false); const preparing = ref(false); const error = ref(''); const result = ref<RecordData>();
@@ -22,11 +23,11 @@ const metricRows = computed(() => {
     : [{ key: 'TEST 点预测 MAE / 桩', value: source.mae }, { key: '持久性基线 MAE / 桩', value: source.baselinePersistenceMae }, { key: '期望值 RMSE / 桩', value: source.rmse }, { key: '80% 区间实际覆盖率', value: source.coverage == null ? undefined : source.coverage * 100 }];
   return values.filter(row => typeof row.value === 'number');
 });
-const chartOption = computed(() => ({ color: ['#176b58', '#be7847', '#91aca0'], tooltip: { trigger: 'axis', confine: true }, legend: { bottom: 0, textStyle: { color: '#748178', fontSize: 11 } },
+const chartOption = computed(() => ({ color: ['#2563eb', '#94a3b8', '#64748b'], tooltip: { trigger: 'axis', confine: true }, legend: { bottom: 0, textStyle: { color: '#6b7280', fontSize: 11 } },
   grid: { left: 50, right: 22, top: 36, bottom: 62, containLabel: true },
-  xAxis: { type: 'category', data: (result.value?.points || []).map((point: RecordData) => new Date(forecastDisplayTimestamp(point, result.value!.target || target.value)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })), axisLine: { lineStyle: { color: '#dce4de' } }, axisTick: { show: false }, axisLabel: { color: '#748178', fontSize: 10 } },
-  yAxis: { type: 'value', name: result.value?.unit === 'kW' ? 'kW' : '桩', min: 0, splitLine: { lineStyle: { color: '#edf1eb' } }, axisLabel: { color: '#748178' } },
-  series: [ { name: '模型预测', type: 'line', data: (result.value?.points || []).map((point: RecordData) => point.value), symbolSize: 7, connectNulls: false, lineStyle: { width: 3 }, areaStyle: { color: '#176b5810' } },
+  xAxis: { type: 'category', data: (result.value?.points || []).map((point: RecordData) => new Date(forecastDisplayTimestamp(point, result.value!.target || target.value)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })), axisLine: { lineStyle: { color: '#e5e7eb' } }, axisTick: { show: false }, axisLabel: { color: '#6b7280', fontSize: 10 } },
+  yAxis: { type: 'value', name: result.value?.unit === 'kW' ? 'kW' : '桩', min: 0, splitLine: { lineStyle: { color: '#edf0f5' } }, axisLabel: { color: '#6b7280' } },
+  series: [ { name: '模型预测', type: 'line', data: (result.value?.points || []).map((point: RecordData) => point.value), symbolSize: 7, connectNulls: false, lineStyle: { width: 3 }, areaStyle: { color: '#2563eb0c' } },
     ...(['lower', 'upper'] as const).filter(key => result.value?.points?.some((point: RecordData) => typeof point[key] === 'number')).map(key => ({ name: key === 'lower' ? '模型下界' : '模型上界', type: 'line', data: result.value!.points.map((point: RecordData) => point[key] ?? null), symbol: 'none', lineStyle: { width: 1.5, type: 'dashed' }, connectNulls: false })) ] }));
 function clearResult() { sequence++; controller?.abort(); result.value = undefined; error.value = ''; loading.value = false; }
 watch([target, stationId, horizon, reference], clearResult);
@@ -63,13 +64,39 @@ async function predict() {
 }
 onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence++; controller?.abort(); });
 </script>
-<template><section class="card intelligence-section"><div class="intelligence-header"><div><div class="eyebrow">ONE FORECAST WORKSPACE</div><h2>站点预测工作台</h2><p>同一入口查询负荷与空闲桩；模型缺失时明确提示，不用静态曲线替代。</p></div><span class="status-tag" :class="{ ready: capability?.status === 'READY' }">{{ preparing ? '检查模型…' : capability?.status === 'READY' ? '模型已就绪' : '等待模型产物' }}</span></div>
-  <div class="intelligence-form"><label>预测目标<select v-model="target" aria-label="预测目标"><option value="load">负荷功率</option><option value="availability">空闲电桩</option></select></label><label class="wide">电站<select v-model="stationId" aria-label="预测电站"><option v-for="station in stations" :key="station.stationId" :value="station.stationId">{{ station.stationName }}</option></select></label><label>预测跨度<select v-model="horizon" aria-label="预测跨度"><option :value="1">未来 1 小时</option><option :value="6">未来 6 小时</option><option :value="24">未来 24 小时</option></select></label><label>预测起点（北京时间）<input v-model="reference" type="datetime-local" step="3600" aria-label="预测起点"/></label><button class="button primary" :disabled="loading || preparing || !selectedModel || !stationId" @click="predict"><Icon name="play" :size="15"/>{{ loading ? '模型推理中…' : '运行预测' }}</button></div>
-  <p class="tiny-note">{{ target === 'load' ? '负荷目标为未来小时区间内平均功率（kW）；不等于同小时用电量。' : '空闲桩目标为各目标小时最后采样时刻 hh:55 的空闲数；不等同于行程 ETA 到站概率。' }} 起点与历史窗口须在已发布数据范围内。</p>
-  <div v-if="error" role="alert" class="intelligence-inline-error">{{ error }} <button class="text-button" @click="initialize">重新检查模型</button></div>
-  <div v-if="result" class="intelligence-output"><Chart :option="chartOption" :label="`${target === 'load' ? '负荷功率' : '空闲电桩'}模型预测曲线`"/><aside class="intelligence-summary"><small>首个预测点</small><strong>{{ n(first?.value, 2) }} <small>{{ result.unit === 'kW' ? 'kW' : '桩' }}</small></strong><span v-if="first?.probabilityNoFree != null">无空闲概率 {{ fraction(first.probabilityNoFree) }}</span><dl><dt>站点 / 模型</dt><dd>{{ stations.find(item => item.stationId === result!.stationId)?.stationName || result.stationId }}<br/>{{ result.modelId }}</dd><dt>目标含义</dt><dd>{{ target === 'load' ? '未来小时区间平均功率' : '目标小时末 hh:55 空闲桩数' }}</dd><dt>预测起点</dt><dd>{{ reference.replace('T', ' ') }} · 北京时间</dd></dl></aside></div>
-  <div v-else class="intelligence-empty"><Icon name="chart" :size="28"/>{{ loading ? '正在使用实际模型计算预测…' : '选择电站、目标和时间，查看模型输出。' }}<p v-if="!selectedModel && !preparing">{{ capability?.message || capability?.reason || '当前跨度没有已发布的可用模型。' }}</p></div>
-  <div v-if="metricRows.length" class="intelligence-metrics"><span v-for="metric in metricRows" :key="metric.key">{{ metric.key }} <b>{{ n(metric.value, 3) }}{{ metric.key.includes('覆盖率') ? '%' : '' }}</b></span></div>
-  <p v-if="metricRows.length" class="tiny-note">{{ target === 'load' ? `负荷评价针对第 ${horizon} 小时目标；单位 kW。` : `空闲评价汇总未来 ${horizon} 小时各点；MAE 评价离散点预测，RMSE 评价分布期望，二者不可混读。` }}</p>
-  <details v-if="capability" class="forecast-evidence"><summary class="text-button">查看实际模型信息与评价记录</summary><pre>{{ JSON.stringify(capability, null, 2) }}</pre></details>
-</section></template>
+<template>
+  <section class="card intelligence-section intelligence-workspace forecast-workspace">
+    <div class="intelligence-header">
+      <div><h2>站点预测</h2><p>了解未来的用电负荷与电桩供给。</p></div>
+      <span class="model-readiness" :class="{ ready: capability?.status === 'READY' }"><i aria-hidden="true"/>{{ preparing ? '检查模型…' : capability?.status === 'READY' ? '模型已就绪' : '等待模型产物' }}</span>
+    </div>
+    <form class="intelligence-form forecast-controls" @submit.prevent="predict">
+      <label>预测目标<select v-model="target" aria-label="预测目标"><option value="load">负荷功率</option><option value="availability">空闲电桩</option></select></label>
+      <label class="station-field">电站<select v-model="stationId" aria-label="预测电站"><option v-for="station in stations" :key="station.stationId" :value="station.stationId">{{ station.stationName }}</option></select></label>
+      <label>预测跨度<select v-model="horizon" aria-label="预测跨度"><option :value="1">未来 1 小时</option><option :value="6">未来 6 小时</option><option :value="24">未来 24 小时</option></select></label>
+      <label class="reference-field">起点 · 北京时间<input v-model="reference" type="datetime-local" step="3600" aria-label="预测起点"/></label>
+      <button class="button primary" :disabled="loading || preparing || !selectedModel || !stationId"><Icon name="play" :size="15"/>{{ loading ? '模型推理中…' : '运行预测' }}</button>
+    </form>
+    <p class="forecast-context">{{ target === 'load' ? '预测未来小时平均功率（kW），不是用电量。' : '预测目标小时末 hh:55 的空闲桩数，不是 ETA 到站可用概率。' }} 请使用数据集历史范围内的起点。</p>
+    <div v-if="error" role="alert" class="intelligence-inline-error">{{ error }} <button class="text-button" @click="initialize">重新检查模型</button></div>
+    <div v-if="result" class="intelligence-output" aria-live="polite">
+      <div class="forecast-chart"><div class="forecast-result-heading"><h3>{{ target === 'load' ? '负荷功率趋势' : '空闲电桩趋势' }}</h3><span>未来 {{ horizon }} 小时</span></div><Chart :option="chartOption" :label="`${target === 'load' ? '负荷功率' : '空闲电桩'}模型预测曲线`"/></div>
+      <aside class="intelligence-summary">
+        <small>首个预测点</small><strong>{{ n(first?.value, 2) }} <small>{{ result.unit === 'kW' ? 'kW' : '桩' }}</small></strong>
+        <span v-if="first?.probabilityNoFree != null" class="forecast-probability">无空闲概率 {{ fraction(first.probabilityNoFree) }}</span>
+        <dl><dt>电站</dt><dd>{{ stations.find(item => item.stationId === result!.stationId)?.stationName || result.stationId }}</dd><dt>预测起点 · 北京时间</dt><dd>{{ reference.replace('T', ' ') }}</dd><dt>目标含义</dt><dd>{{ target === 'load' ? '未来小时区间平均功率' : '目标小时末 hh:55 空闲桩数' }}</dd></dl>
+      </aside>
+    </div>
+    <div v-else class="intelligence-empty forecast-placeholder" role="status"><span class="intelligence-placeholder-icon"><Icon name="chart" :size="28"/></span><h3>{{ loading ? '正在生成预测' : '下一步，运行一次预测' }}</h3><p>{{ loading ? '模型正在计算所选电站的未来趋势…' : '选择电站和预测时间，结果将展示在这里。' }}</p><p v-if="!selectedModel && !preparing">{{ capability?.message || capability?.reason || '当前跨度没有已发布的可用模型。' }}</p></div>
+    <details v-if="capability" class="intelligence-evidence">
+      <summary>模型评价与使用范围<span>查看指标与记录</span></summary>
+      <div class="intelligence-evidence-body">
+        <p>{{ target === 'load' ? `负荷评价针对第 ${horizon} 小时目标；单位 kW。` : `空闲评价汇总未来 ${horizon} 小时各点；MAE 评价离散点预测，RMSE 评价分布期望，二者不可混读。` }}</p>
+        <div v-if="metricRows.length" class="intelligence-metrics"><span v-for="metric in metricRows" :key="metric.key"><small>{{ metric.key }}</small><b>{{ n(metric.value, 3) }}{{ metric.key.includes('覆盖率') ? '%' : '' }}</b></span></div>
+        <p>预测起点及所需历史窗口均须位于已发布数据范围内。模型缺失时无法预测，不使用静态曲线替代。</p>
+        <p v-if="result">本次使用模型：{{ result.modelId }}</p>
+        <details class="intelligence-raw-record"><summary>模型原始记录</summary><pre>{{ JSON.stringify(capability, null, 2) }}</pre></details>
+      </div>
+    </details>
+  </section>
+</template>

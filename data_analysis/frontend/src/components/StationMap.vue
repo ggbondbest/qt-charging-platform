@@ -70,7 +70,7 @@ function drawMarkers() {
   if (props.routeCoordinates?.length)
     markers.addLayer(
       L.polyline(props.routeCoordinates, {
-        color: "#267659",
+        color: "#2463eb",
         weight: 4,
         opacity: 0.8,
       }),
@@ -79,6 +79,7 @@ function drawMarkers() {
     const r = rank(s.stationId);
     const active = s.stationId === props.highlighted;
     const marker = L.marker([s.latitude, s.longitude], {
+      title: s.stationName,
       icon: L.divIcon({
         className: "station-leaflet-icon",
         html: `<span class="leaflet-station ${r === 1 ? "best" : ""} ${active ? "selected" : ""}"><b>${r || "ϟ"}</b></span>`,
@@ -101,7 +102,12 @@ function drawMarkers() {
           iconSize: [24, 24],
           iconAnchor: [12, 12],
         }),
-      }).bindTooltip("我的出发点"),
+      }).bindTooltip("我的出发点", {
+        permanent: true,
+        direction: "bottom",
+        offset: [0, 10],
+        className: "map-origin-tooltip",
+      }),
     );
 }
 function fit() {
@@ -221,25 +227,25 @@ onBeforeUnmount(() => {
           height="40"
           patternUnits="userSpaceOnUse"
         >
-          <path d="M40 0H0V40" fill="none" stroke="#d5dfd5" stroke-width=".7" />
+          <path d="M40 0H0V40" fill="none" stroke="#dce3ed" stroke-width=".7" />
         </pattern>
         <radialGradient id="map-halo">
-          <stop offset="0" stop-color="#c9dec8" stop-opacity=".65" />
-          <stop offset="1" stop-color="#e9eee5" stop-opacity="0" />
+          <stop offset="0" stop-color="#dce8fa" stop-opacity=".6" />
+          <stop offset="1" stop-color="#f3f5f8" stop-opacity="0" />
         </radialGradient>
         <filter id="pin-shadow">
           <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity=".14" />
         </filter>
       </defs>
-      <rect width="800" height="620" fill="#eaf0e6" />
+      <rect width="800" height="620" fill="#f3f5f8" />
       <rect width="800" height="620" fill="url(#minor-grid)" />
       <ellipse cx="400" cy="320" rx="360" ry="280" fill="url(#map-halo)" />
-      <g fill="none" stroke="#c7d6c7">
+      <g fill="none" stroke="#cdd8e6">
         <circle cx="400" cy="320" r="125" />
         <circle cx="400" cy="320" r="240" stroke-dasharray="4 6" />
         <path d="M0 320h800M400 0v620" stroke-dasharray="5 7" />
       </g>
-      <text x="45" y="565" font-size="11" fill="#82968a" letter-spacing="3">
+      <text x="45" y="565" font-size="11" fill="#7b889b" letter-spacing="3">
         {{ city?.cityName || "CHARGEPILOT" }} · GEOGRAPHIC OVERVIEW
       </text>
       <g v-if="origin && !routeCoordinates?.length">
@@ -250,7 +256,7 @@ onBeforeUnmount(() => {
           :y1="xy(origin).y"
           :x2="xy(s).x"
           :y2="xy(s).y"
-          :stroke="s.stationId === highlighted ? '#db965b' : '#acbdb0'"
+          :stroke="s.stationId === highlighted ? '#2463eb' : '#a9b8cc'"
           :stroke-width="s.stationId === highlighted ? 2 : 1"
           stroke-dasharray="5 7"
         />
@@ -266,7 +272,7 @@ onBeforeUnmount(() => {
             .join(' ')
         "
         fill="none"
-        stroke="#267659"
+        stroke="#2463eb"
         stroke-width="4"
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -282,24 +288,25 @@ onBeforeUnmount(() => {
         :aria-label="s.stationName"
         @click.stop="emit('station', s.stationId)"
         @keydown.enter="emit('station', s.stationId)"
+        @keydown.space.prevent="emit('station', s.stationId)"
       >
         <circle
           v-if="s.stationId === highlighted"
           r="36"
-          fill="#166b58"
+          fill="#2463eb"
           opacity=".12"
         />
         <path
           d="M0 7C-20-8-23-16-23-24a23 23 0 1 1 46 0C23-16 20-8 0 7Z"
           :fill="
             rank(s.stationId) === 1 || s.stationId === highlighted
-              ? '#17685c'
+              ? '#2463eb'
               : '#fff'
           "
           :stroke="
             rank(s.stationId) === 1 || s.stationId === highlighted
-              ? '#17685c'
-              : '#cad5ca'
+              ? '#2463eb'
+              : '#bac7da'
           "
           filter="url(#pin-shadow)"
         />
@@ -308,8 +315,8 @@ onBeforeUnmount(() => {
           y="-16"
           :fill="
             rank(s.stationId) === 1 || s.stationId === highlighted
-              ? '#e2f5c4'
-              : '#17685c'
+              ? '#ffffff'
+              : '#243751'
           "
           font-size="21"
           font-weight="700"
@@ -325,7 +332,7 @@ onBeforeUnmount(() => {
           fill="white"
           fill-opacity=".93"
         />
-        <text text-anchor="middle" y="30" fill="#34483f" font-size="11">
+        <text text-anchor="middle" y="30" fill="#344054" font-size="11">
           {{ s.stationName.replace(/模拟充电站|示范充电站|市/g, "").slice(-8) }}
         </text>
       </g>
@@ -333,10 +340,10 @@ onBeforeUnmount(() => {
         v-if="origin"
         :transform="`translate(${xy(origin).x},${xy(origin).y})`"
       >
-        <circle r="23" fill="#538ce8" opacity=".15" />
-        <circle r="10" fill="#4985d6" stroke="white" stroke-width="4" />
+        <circle r="23" fill="#df3945" opacity=".15" />
+        <circle r="10" fill="#df3945" stroke="white" stroke-width="4" />
         <rect x="-37" y="18" width="74" height="24" rx="7" fill="white" />
-        <text y="34" text-anchor="middle" fill="#426181" font-size="11">
+        <text y="34" text-anchor="middle" fill="#a12330" font-size="11">
           我的出发点
         </text>
       </g>
@@ -351,6 +358,11 @@ onBeforeUnmount(() => {
     </div>
     <div class="map-compass">
       <span>N</span><Icon name="compass" :size="27" />
+    </div>
+    <div class="station-map-legend" aria-label="地图标记说明">
+      <span><i class="legend-origin"></i>出发点</span>
+      <span><i class="legend-station"></i>电站</span>
+      <span><i class="legend-recommended"></i>推荐 / 已选</span>
     </div>
     <div class="map-bottom">
       <div class="map-source">
@@ -368,3 +380,146 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.station-map {
+  background: #f3f5f8;
+}
+.map-badge {
+  color: #42536b;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid rgb(222 229 239 / 85%);
+  box-shadow: 0 4px 18px rgb(16 24 40 / 5%);
+  font-size: 11px;
+  border-radius: 8px;
+}
+.map-badge .live-dot {
+  background: #2463eb;
+  box-shadow: 0 0 0 3px rgb(36 99 235 / 10%);
+}
+.map-badge.picking-badge {
+  background: #2463eb;
+  border-color: #2463eb;
+  color: white;
+}
+.map-compass {
+  color: #53657e;
+}
+.station-map-legend {
+  position: absolute;
+  z-index: 500;
+  left: 18px;
+  bottom: 62px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 11px;
+  max-width: calc(100% - 36px);
+  border: 1px solid rgb(222 229 239 / 85%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 94%);
+  color: #53657e;
+  font-size: 10px;
+  pointer-events: none;
+}
+.station-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.station-map-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.legend-origin {
+  background: #df3945;
+}
+.legend-station {
+  border: 1px solid #53657e;
+  background: white;
+}
+.legend-recommended {
+  background: #2463eb;
+}
+.map-source {
+  color: #53657e;
+  font-size: 10px;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid rgb(222 229 239 / 85%);
+  border-radius: 7px;
+}
+.map-source > button {
+  color: #2463eb;
+  font-size: inherit;
+}
+.map-zoom {
+  border-color: #dfe5ee;
+  border-radius: 9px;
+  box-shadow: 0 4px 14px rgb(16 24 40 / 6%);
+}
+.map-zoom > button {
+  color: #243751;
+  width: 33px;
+  height: 33px;
+}
+.map-zoom > button + button {
+  border-color: #e7ebf1;
+}
+.map-zoom > button:hover {
+  background: #f0f4fa;
+}
+.svg-station:focus path,
+.svg-station:hover path {
+  stroke: #2463eb;
+}
+.station-map :deep(.leaflet-station) {
+  background: white;
+  border-color: #bac7da;
+  color: #243751;
+  box-shadow: 0 5px 16px rgb(16 24 40 / 16%);
+}
+.station-map :deep(.leaflet-station.best),
+.station-map :deep(.leaflet-station.selected) {
+  background: #2463eb;
+  color: white;
+  border-color: #2463eb;
+  box-shadow: 0 0 0 5px rgb(36 99 235 / 12%), 0 5px 16px rgb(36 99 235 / 20%);
+}
+.station-map :deep(.leaflet-origin) {
+  background: #df3945;
+  box-shadow: 0 0 0 8px rgb(223 57 69 / 15%);
+}
+.station-map :deep(.leaflet-tooltip) {
+  border: 1px solid #e0e6ef;
+  border-radius: 7px;
+  color: #344054;
+  padding: 7px 10px;
+  background: white;
+  box-shadow: 0 5px 18px rgb(16 24 40 / 9%);
+  font-family: inherit;
+}
+.station-map :deep(.map-origin-tooltip) {
+  color: #a12330;
+  font-weight: 600;
+}
+.station-map :deep(.leaflet-control-attribution) {
+  background: rgb(255 255 255 / 95%);
+  color: #53657e;
+}
+.station-map :deep(.leaflet-control-attribution a) {
+  color: #2463eb;
+}
+@media (max-width: 480px) {
+  .map-badge {
+    font-size: 10px;
+  }
+  .station-map-legend {
+    bottom: 80px;
+    gap: 10px;
+  }
+  .map-source {
+    font-size: 9px;
+  }
+}
+</style>

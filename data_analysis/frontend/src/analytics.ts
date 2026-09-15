@@ -67,6 +67,18 @@ export function aggregateCities(stations: RecordData[]) {
   }
   return [...groups.values()].sort((a, b) => (b.energyKwh ?? -1) - (a.energyKwh ?? -1));
 }
+/** A single-city scope compares its stations, using the same period as the KPIs. */
+export function energyContribution(stations: RecordData[]) {
+  const cities = aggregateCities(stations);
+  const stationLevel = cities.length === 1;
+  const rows = stationLevel
+    ? stations.map(station => ({ id: station.stationId, name: station.stationName,
+        energyKwh: converted(station.periodMetrics?.energyWh, 1000) }))
+      .sort((a, b) => (b.energyKwh ?? -1) - (a.energyKwh ?? -1))
+    : cities.map(city => ({ id: city.cityId, name: city.name, energyKwh: city.energyKwh }));
+  return { stationLevel, title: stationLevel ? '电站电量贡献' : '城市电量贡献',
+    unit: stationLevel ? '电站' : '城市', rows };
+}
 export function sumSnapshot(stations: RecordData[]) {
   return [ ['空闲', 'availableCount'], ['充电', 'chargingCount'], ['预约', 'reservedCount'], ['占位', 'occupiedCount'], ['维护', 'maintenanceCount'], ['离线', 'offlineCount'], ['未知', 'unknownCount'] ].map(([name, key]) => ({ name, value: stations.reduce((sum, station) => sum + (converted(station[key]) ?? 0), 0) }));
 }
