@@ -6,7 +6,7 @@
 
 本次已完成数据层：数据生成、独立脏数据注入、关联校验、真实 Spark 清洗、经营统计、
 历史特征/未来标签、数据包发布、只读 HTTP 查询 API 及公共接口契约。**还没有实现完整网页或训练模型**。
-HDFS 接入代码支持实际路径参数。`charging_sample_7d_v2` 已于老师 Linux/Hadoop 环境完成真实 HDFS pipeline、分析、export、HDFS 文件校验和独立统计对账；完整证据见 [7 天 HDFS 验证记录](docs/hdfs_sample_7d_validation.json)。180 天完整批次的真实 HDFS 验证仍按同一流程执行。
+HDFS 接入代码支持实际路径参数。`charging_sample_7d_v2` 和 `charging_full_180d_v2` 均已于老师 Linux/Hadoop 环境完成真实 HDFS pipeline、分析、export、HDFS 文件校验和独立统计对账；完整证据分别见 [7 天 HDFS 验证记录](docs/hdfs_sample_7d_validation.json) 与 [180 天 HDFS 验证记录](docs/hdfs_full_180d_validation.json)。
 
 网页/模型组请先看 [数据层交付指南](DATA_LAYER.md) 和 [公共契约](contracts/README.md)。
 第二阶段正式查询库使用 **MySQL 8.4**，安装、账号、发布与启动步骤见 [MySQL 接入说明](docs/mysql_setup.md)；FastAPI 公共契约不变，第一阶段 Qt 的 SQLite 不改。

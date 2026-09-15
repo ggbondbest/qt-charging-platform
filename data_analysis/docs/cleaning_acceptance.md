@@ -12,7 +12,7 @@
 | Spark 清洗和分析 | `spark_jobs/pipeline.py` 执行清洗；`acceptance_analysis.py` 计算维度和对比；不是把生成器参考结果改名当 Spark 输出 |
 | 分析维度不少于 8 个 | 提供 11 个真实分组维度，见下表；不把电量、订单数、金额三个指标算成三个维度 |
 | 至少两个维度对比 | 提供三组双维分析；统计口径、日期基准、分母和字段单位随产物保存 |
-| Hadoop 3.x 存储 | 支持 HDFS 输入输出，提供真实 HDFS 验证脚本；须在老师环境实跑后才能标记通过 |
+| Hadoop 3.x 存储 | 支持 HDFS 输入输出并提供真实 HDFS 验证脚本；`charging_full_180d_v2` 已在老师 Linux/Hadoop 环境完成 HDFS pipeline、analysis、export 和独立统计对账，见 [180 天 HDFS 验证记录](hdfs_full_180d_validation.json) |
 | Web 请求与响应 | 保留 FastAPI；使用只读账号读取已完整发布的 MySQL 批次，不在每次网页请求时重跑 Spark |
 | Node.js 23 及以上、Vue 3 | 网页组的开发与验收要求，本次不宣称网页已经实现 |
 | DataV 和丰富图表 | 网页组可用 DataV 做大屏布局，配合 ECharts；现有接口及本次 CSV/清单提供真实计算数据，不硬编码截图数字 |
@@ -49,7 +49,7 @@ python -m data_analysis.scripts.run_acceptance --input data_analysis/datasets/ch
   _SUCCESS                        所有本地步骤完成后才生成
 ```
 
-未完成的目录保留 `_RUNNING` 和失败信息，不应作为成功结果展示。重试须用新目录，不手工补 `_SUCCESS`。运行报告明确区分本地成功、HDFS 尚未验证、网页尚未验收和模型尚未训练。
+未完成的目录保留 `_RUNNING` 和失败信息，不应作为成功结果展示。重试须用新目录，不手工补 `_SUCCESS`。运行报告明确区分本地成功、HDFS 验证状态、网页验收和模型训练状态。
 
 数据准备成功后，换为同一数据库的只读查询账号，还可实际核对 FastAPI 返回与 MySQL 汇总是否一致，保存独立报告：
 
@@ -135,6 +135,10 @@ python -m data_analysis.scripts.verify_hdfs --input hdfs://namenode:9000/chargin
 验收保存：HDFS 路径及文件列表、Spark 执行日志、清洗报告、分析 CSV、HDFS 验证 JSON。Spark 使用 `local[2]` 同时读写 HDFS 是真实的 HDFS 存储加单机 Spark 计算，不是多节点计算集群。
 
 把完成的 export 下载到新的本地目录，再发布到 MySQL 新库并启动 FastAPI；浏览器通过 API 查询，不直接访问 MySQL 或 HDFS。
+
+### 2026-09-14 真实 HDFS 记录
+
+老师 Linux/Hadoop 环境已完成 `charging_full_180d_v2` 的 HDFS 全流程：完整 raw 批次上传、Spark pipeline、11 个语义维度/3 组对比/15 项分析、CSV.gz 与 Parquet export、`verify_hdfs` 以及独立参考聚合的逐键逐字段对账。最终使用 `hdfs://master:9000` 和 `local[2]`，真实存储和读写均为 HDFS；`local[2]` 表示单机 Spark 计算，不表示多节点 Spark 集群。完整命令、运行时版本、路径、批次、数量、校验和与本地下载交接位置见 [180 天 HDFS 验证记录](hdfs_full_180d_validation.json)。
 
 HDFS 命令及 URI 规则依据 [Apache Hadoop FileSystem Shell](https://hadoop.apache.org/docs/r3.4.2/hadoop-project-dist/hadoop-common/FileSystemShell.html)；固定的 Spark/Python/Java 兼容说明见 [PySpark 3.5.6 安装文档](https://spark.apache.org/docs/3.5.6/api/python/getting_started/install.html)。
 
