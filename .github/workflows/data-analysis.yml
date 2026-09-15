@@ -135,3 +135,77 @@ jobs:
           RUN_SPARK_TESTS: '1'
           SPARK_LOCAL_IP: '127.0.0.1'
         run: python -m unittest ${{ matrix.module }} -v
+
+  chargepilot:
+    name: Integrated delivery / ML and MySQL
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-only-password --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            data_analysis/requirements-api.txt
+            data_analysis/requirements-chargepilot.txt
+            data_analysis/requirements-delivery.txt
+      - run: python -m pip install -r data_analysis/requirements-delivery.txt
+      - name: Train all real CPU models from committed CLEAN data, not optional skipped model tests
+        run: python -m data_analysis.delivery.cli train
+      - name: Integrated analytics, forecast, insights, real HTTP and concurrent MySQL state machine
+        env:
+          RUN_MYSQL_TESTS: '1'
+          MYSQL_TEST_HOST: '127.0.0.1'
+          MYSQL_TEST_PORT: ${{ job.services.mysql.ports['3306'] }}
+          MYSQL_TEST_USER: root
+          MYSQL_TEST_PASSWORD: ci-only-password
+        run: >-
+          python -m unittest
+          data_analysis.tests.test_chargepilot_ml
+          data_analysis.tests.test_chargepilot_store
+          data_analysis.tests.test_chargepilot_integration
+          data_analysis.tests.test_chargepilot_experiment
+          data_analysis.tests.test_ml_load_review_fixes
+          data_analysis.tests.test_availability_adapter
+          data_analysis.tests.test_ml_anomaly_churn
+          data_analysis.tests.test_ml_insights_delivery
+          data_analysis.tests.test_delivery_forecasts
+          data_analysis.tests.test_delivery_integration
+          data_analysis.ml.tests.test_delivery_safety -v
+      - name: Calculate bounded paired simulation (no hard-coded improvement)
+        run: python -m data_analysis.chargepilot.cli experiment --users 100 --seed 42
+
+  chargepilot-web:
+    name: Integrated delivery / Vue
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: data_analysis/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: data_analysis/frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

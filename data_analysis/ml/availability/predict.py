@@ -48,6 +48,27 @@ class AvailabilityForecaster:
         self.bundle = bundle
         self.metadata = metadata
         self.model = bundle["model"]
+        fields = {"modelId": "modelId", "modelVersion": "modelVersion", "target": "target",
+                  "featureVersion": "featureVersion", "featureColumns": "featureColumns",
+                  "datasetId": "datasetId", "publishedBatchId": "trainingPublishedBatchId"}
+        if any(bundle.get(key) != metadata.get(value) for key, value in fields.items()):
+            raise PredictionError("MODEL_INCOMPATIBLE", "bundle identity differs from metadata")
+        horizon = bundle.get("horizonHours")
+        if (type(horizon) is not int or horizon not in (1, 6, 24) or
+                metadata.get("supportedHorizons") != [horizon] or
+                set(self.model.steps) != set(range(1, horizon + 1))):
+            raise PredictionError("MODEL_INCOMPATIBLE", "bundle must contain every requested hour, no partial debug models")
+        if set(self.model.interval_levels) != set(range(1, horizon + 1)):
+            raise PredictionError("MODEL_INCOMPATIBLE", "bundle has not calibrated every prediction hour")
+        levels = list(self.model.interval_levels.values())
+        if (not np.isfinite(levels).all() or any(not 0 < value <= 1 for value in levels) or
+                not 0 < self.model.nominal_coverage < 1):
+            raise PredictionError("MODEL_INCOMPATIBLE", "invalid calibrated interval levels")
+        classes = np.asarray(self.model.classes)
+        if (classes.ndim != 1 or not len(classes) or not np.isfinite(classes).all() or
+                np.any(classes < 0) or np.any(classes % 1 != 0) or classes[0] != 0 or
+                np.any(np.diff(classes) <= 0)):
+            raise PredictionError("MODEL_INCOMPATIBLE", "charger classes must be unique sorted nonnegative integers")
 
     @classmethod
     def load(cls, directory) -> "AvailabilityForecaster":
@@ -70,6 +91,10 @@ class AvailabilityForecaster:
         )
 
     def _features(self, history: list[dict], context: PredictionContext) -> pd.DataFrame:
+        if context.horizon_hours != self.horizon_hours:
+            raise PredictionError("UNSUPPORTED_HORIZON", "request horizon differs from this model")
+        if context.model_id != self.metadata["modelId"]:
+            raise PredictionError("MODEL_INCOMPATIBLE", "request model identity mismatch")
         station = self.bundle["stations"].get(context.station_id)
         if station is None:
             raise PredictionError("STATION_NOT_FOUND", f"station {context.station_id} is not in this batch")
@@ -82,6 +107,19 @@ class AvailabilityForecaster:
             history,
         )
         return pd.DataFrame([row], columns=self.bundle["featureColumns"])
+
+    def _distribution(self, x, step: int, keys, capacity: int) -> np.ndarray:
+        probability = np.array(self.model.distribution_for(x, step, keys), dtype=float, copy=True)
+        classes = np.asarray(self.model.classes)
+        if (probability.shape != (1, len(classes)) or not np.isfinite(probability).all() or
+                np.any(probability < 0) or np.any(classes < 0) or np.any(classes % 1 != 0)):
+            raise PredictionError("MODEL_INCOMPATIBLE", "invalid charger probability distribution")
+        # Different station capacities must constrain the risk channel as well as the point value.
+        probability[:, classes > capacity] = 0
+        total = probability.sum(axis=1, keepdims=True)
+        if np.any(total <= 0):
+            raise PredictionError("MODEL_INCOMPATIBLE", "model has no probability on legal charger counts")
+        return probability / total
 
     def _keys(self, x: pd.DataFrame, context: PredictionContext) -> "pd.DataFrame | None":
         """Lookup keys for the hierarchical prior: the prior is keyed on the *reference* hour and
@@ -112,7 +150,8 @@ class AvailabilityForecaster:
         for step in range(1, self.horizon_hours + 1):
             # Free chargers are whole units: serve the distribution's point value as an int, clamped
             # into the contracted range rather than trusting the model to stay inside 0..capacity.
-            value = int(self.model.median(x, step, keys)[0])
+            probability = self._distribution(x, step, keys, capacity)
+            value = int(point_value(self.model.classes, probability, getattr(self.model, "point_rule", "mode"))[0])
             points.append({"timestamp": (start + timedelta(hours=step - 1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                            "value": max(0, min(capacity, value))})
         result = {
@@ -132,11 +171,12 @@ class AvailabilityForecaster:
         rule = getattr(self.model, "point_rule", "mode")
         zero = int(np.where(self.model.classes == 0)[0][0])
         start = pd.Timestamp(context.reference_time)
+        capacity = int(self.bundle["stations"][context.station_id]["capacity"])
         rows = []
         for step in range(1, self.horizon_hours + 1):
             # One pmf per hour, everything else derived from it, so the displayed median, interval
             # and distribution can never disagree with each other.
-            probability = self.model.distribution_for(x, step, keys)
+            probability = self._distribution(x, step, keys, capacity)
             low, high = self.model.interval_for(probability, self.model.interval_levels[step])
             rows.append({
                 "timestamp": (start + timedelta(hours=step - 1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -154,6 +194,7 @@ class AvailabilityForecaster:
             "stationId": context.station_id,
             "referenceTime": context.reference_time,
             "unit": "chargers",
+            "pointRule": rule,
             "definition": "空闲桩数为整数；expectedChargers 是分布期望，页面必须标注为预计值，medianChargers 才是可展示的整数桩数",
             "hours": rows,
         }

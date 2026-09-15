@@ -1,6 +1,6 @@
 # 第二阶段 CI 在检查什么
 
-CI 是提交代码后由 GitHub 自动运行的验收，不是项目运行时的服务。目前有 9 个检查任务；检查名称保持不变，基础与 API 任务分别覆盖 Linux/Python 3.11 和 Windows/Python 3.12。MySQL 8.4 集成纳入 Ubuntu 的 API 任务；清洗审计与多维分析纳入已有 Spark 任务，不增加必需检查名称：
+CI 是提交代码后由 GitHub 自动运行的验收，不是项目运行时的服务。原9项检查和保护名称保持不变，统一交付另增2项ML/MySQL和Vue检查。基础与API覆盖Linux/Python3.11及Windows/Python3.12，完整模型链在Linux/Python3.12实际训练与测试。
 
 | GitHub 检查名称 | 检查内容 |
 | --- | --- |
@@ -13,6 +13,8 @@ CI 是提交代码后由 GitHub 自动运行的验收，不是项目运行时的
 | `Spark / dashboard` | 经营统计口径：加权利用率、缺失采样、跨站用户去重、排队/维修的分组日期和分母 |
 | `Spark / ml-features` | 历史窗口连续、不得混入未来数据、24 小时标签、训练/验证/测试时间边界 |
 | `Spark / data-export` | 小规模模拟数据实际跑生成到清洗、导出、便携包及 SQLite 离线兼容链路；验证错批、坏哈希、未完成批次和覆盖保护；另验证 11 维分析、3 组双维对比和空分母。正式 MySQL 导入单独在 API 任务检查 |
+| `Integrated delivery / ML and MySQL` | 从完整CLEAN实际训练到站、负荷、空闲桩、流失/异常模型；验证无未来泄漏、批次/工件校验、真实MySQL统一HTTP、行程状态机及并发；再运行有界配对仿真 |
+| `Integrated delivery / Vue` | Node24安装锁文件、运行前端回归、TypeScript检查、生产构建；覆盖筛选/错批/过期响应与预测字段边界 |
 
 基础任务不安装 API、JSON Schema 或 Spark 依赖，也不启动 MySQL，对应测试会明确跳过；专门的 API 和 Spark 任务负责真正运行它们。真实 MySQL 测试由 `RUN_MYSQL_TESTS=1` 启用，使用一次性测试服务和独立测试库，不连接项目正式数据库。
 检查任务不是 9 个应用，也不是每次提交都重复运行 9 遍 180 天全量。自动测试主要使用小规模、确定性数据；全量数据验证另有批次记录。

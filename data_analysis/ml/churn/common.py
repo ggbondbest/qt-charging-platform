@@ -21,10 +21,12 @@ OUT_DIR = DATA_ANALYSIS_ROOT / "outputs" / "ml_churn"
 DATASET_ID = "analytics_full_180d_v1"
 # v2:自查评审实锤 v1 两处窗口越界(queues_90 无上界泄进特征;标签窗无上界误标 106 人),
 # v1 冻结件按纪律不追改、标记隔离;v2 修口径后走独立 TEST 首盲。
-MODEL_ID = "gbdt-churn-user-v2"
-MODEL_VERSION = "0.2.0"
+MODEL_ID = "gbdt-churn-user-v3"
+MODEL_VERSION = "0.3.0"
 
-OBSERVE_END = pd.Timestamp("2026-05-15")
+# Clean Parquet timestamps are UTC instants (Spark session.timeZone=UTC).
+# Business midnight 05-15 is 05-14 16:00 UTC, not 05-15 00:00 UTC.
+OBSERVE_END = pd.Timestamp("2026-05-15", tz="Asia/Shanghai").tz_convert("UTC").tz_localize(None)
 LABEL_HORIZON_DAYS = 14
 SEED = 42
 
@@ -66,43 +68,56 @@ def user_split(user_ids: pd.Series) -> pd.Series:
                      index=user_ids.index)
 
 
-def build_user_table() -> pd.DataFrame:
+def build_user_table(*, tables: dict | None = None, observe_end=None) -> pd.DataFrame:
     """全部特征只用 attempted_at/started_at < OBSERVE_END 的行;标签只看之后有没有再来。"""
-    att = load_table("charging_attempts")
-    sess = load_table("charging_sessions")
-    users = load_table("users")
-    vehicles = load_table("vehicles")
-    queue = load_table("queue_entries")
+    read = (lambda name: tables[name].copy()) if tables is not None else load_table
+    cutoff = pd.Timestamp(OBSERVE_END if observe_end is None else observe_end)
+    if cutoff.tzinfo is not None:
+        cutoff = cutoff.tz_convert("UTC").tz_localize(None)
+    att = read("charging_attempts")
+    sess = read("charging_sessions")
+    users = read("users")
+    vehicles = read("vehicles")
+    queue = read("queue_entries")
     att["attempted_at"] = pd.to_datetime(att["attempted_at"])
     sess["started_at"] = pd.to_datetime(sess["started_at"])
+    sess["ended_at"] = pd.to_datetime(sess["ended_at"])
     queue["joined_at"] = pd.to_datetime(queue["joined_at"])
+    queue["resolved_at"] = pd.to_datetime(queue["resolved_at"])
     sess["day"] = sess["started_at"].dt.normalize()
 
-    a = att[att.attempted_at < OBSERVE_END].copy()
-    a["is_start"] = (a.outcome == "STARTED").astype(float)
+    a = att[att.attempted_at < cutoff].copy()
+    # An attempt may join a queue before the cutoff but only start afterwards.
+    # Its final STARTED status is not yet known at the observation instant.
+    known_starts = sess[sess.started_at < cutoff]
+    a["is_start"] = a.attempt_id.isin(known_starts.attempt_id).astype(float)
     # 标签窗 = [OBSERVE_END, OBSERVE_END + 14 天),必须有上界:否则数据尾超出 14 天的
     # 用户(实测 106 人)在超窗期才回来、却被判"未流失",等于把标签泄漏进来。
-    label_end = OBSERVE_END + pd.Timedelta(days=LABEL_HORIZON_DAYS)
-    past = att[(att.attempted_at >= OBSERVE_END) & (att.attempted_at < label_end)]
+    label_end = cutoff + pd.Timedelta(days=LABEL_HORIZON_DAYS)
+    past = att[(att.attempted_at >= cutoff) & (att.attempted_at < label_end)]
 
     def wc(mask: pd.Series) -> pd.Series:
         return a[mask].groupby("user_id").size()
 
-    t_end = a.attempted_at.max()
+    t_end = cutoff
     feats = pd.DataFrame({"attempts_90": wc(a.attempted_at >= t_end - pd.Timedelta(days=90)),
                           "attempts_60": wc(a.attempted_at >= t_end - pd.Timedelta(days=60)),
                           "attempts_30": wc(a.attempted_at >= t_end - pd.Timedelta(days=30)),
                           "attempts_14": wc(a.attempted_at >= t_end - pd.Timedelta(days=14)),
-                          "started_90": a[a.is_start == 1].groupby("user_id").size()})
+                          "started_90": a[(a.is_start == 1) &
+                                          (a.attempted_at >= cutoff - pd.Timedelta(days=90))]
+                                          .groupby("user_id").size()})
     g = a.groupby("user_id")
-    feats["days_since_last"] = (OBSERVE_END - g.attempted_at.max()).dt.total_seconds() / 86400.0
+    feats["days_since_last"] = (cutoff - g.attempted_at.max()).dt.total_seconds() / 86400.0
     last_start = a[a.is_start == 1].groupby("user_id").attempted_at.max()
-    feats["days_since_last_start"] = (OBSERVE_END - last_start).dt.total_seconds() / 86400.0
+    feats["days_since_last_start"] = (cutoff - last_start).dt.total_seconds() / 86400.0
     feats["distinct_stations"] = g.station_id.nunique()
-    s = sess[sess.started_at < OBSERVE_END]
+    # Final energy/fee are only available after charging has ended. Never use
+    # an in-progress session's eventual totals, even if it started yesterday.
+    s = sess[(sess.started_at < cutoff) & (sess.ended_at < cutoff)]
     s90 = s[s.started_at >= t_end - pd.Timedelta(days=90)]
     feats["energy_kwh_90"] = s90.groupby("user_id").energy_wh.sum() / 1000.0
-    feats["spend_yuan_90"] = s90.groupby("user_id").total_fee_cents.sum() / 100000.0
+    feats["spend_yuan_90"] = s90.groupby("user_id").total_fee_cents.sum() / 100.0
     feats["fee_per_kwh_90"] = (feats.spend_yuan_90 / feats.energy_kwh_90.replace(0, np.nan))
     feats["avg_session_kwh"] = s.groupby("user_id").energy_wh.mean() / 1000.0
     feats["campaign_share"] = (s.assign(hit=s.campaign_id.notna())
@@ -116,24 +131,29 @@ def build_user_table() -> pd.DataFrame:
     feats["gap_max"] = gaps.groupby(ss.user_id).max()
     feats["gap_mean_last5"] = tail5.groupby(ss.loc[tail5.index, "user_id"]).mean()
     feats["gap_recent_vs_overall"] = feats.gap_mean_last5 / feats.gap_mean.replace(0, np.nan)
-    feats["sessions_per_week"] = s90.groupby("user_id").size() / 13.0  # 90d≈13周
+    feats["sessions_per_week"] = s90.groupby("user_id").size() / (90.0 / 7.0)
     # 上界必须加:排队记录会延伸进标签窗(实测 2,576 条、2,005 用户),漏了就等于把未来行为喂进特征
-    q90 = queue[(queue.joined_at >= t_end - pd.Timedelta(days=90)) & (queue.joined_at < OBSERVE_END)]
+    q90 = queue[(queue.joined_at >= t_end - pd.Timedelta(days=90)) & (queue.joined_at < cutoff)]
     feats["queues_90"] = q90.groupby("user_id").size()
-    qall = queue[queue.joined_at < OBSERVE_END]
+    qall = queue[(queue.joined_at < cutoff) & (queue.resolved_at < cutoff)]
     feats["queue_abandon_share"] = (qall.assign(ab=qall.status.eq("ABANDONED"))
                                     .groupby("user_id").ab.mean())
 
+    users = users[pd.to_datetime(users.registered_at) < cutoff]
     out = users[["user_id", "home_city_id", "registered_at", "segment",
                  "acquisition_channel", "membership"]].set_index("user_id")
     out = out.join(feats, how="left")
-    v = vehicles.set_index("vehicle_id")
     one_per_user = vehicles.drop_duplicates("user_id").set_index("user_id")
     out["battery_kwh"] = one_per_user.battery_capacity_kwh
     out["max_charge_kw"] = one_per_user.max_charge_kw
     out["vehicle_class"] = one_per_user.vehicle_class
-    out["account_age_days"] = (OBSERVE_END - pd.to_datetime(out.registered_at)).dt.total_seconds() / 86400.0
+    out["account_age_days"] = (cutoff - pd.to_datetime(out.registered_at)).dt.total_seconds() / 86400.0
     out = out.drop(columns=["registered_at"])
+    # Missing counts mean no events; undefined ratios/recency stay missing and
+    # are handled by the model. Do not invent zero-day recency for a cold user.
+    counts = ["attempts_90", "attempts_60", "attempts_30", "attempts_14", "started_90",
+              "distinct_stations", "energy_kwh_90", "spend_yuan_90", "queues_90", "sessions_per_week"]
+    out[counts] = out[counts].fillna(0.0)
 
     churned = set(past.user_id.unique())
     out["churned_14d"] = (~out.index.isin(churned)).astype(int)

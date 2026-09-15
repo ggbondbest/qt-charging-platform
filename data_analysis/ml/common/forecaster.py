@@ -60,8 +60,10 @@ def build_frame(export_dir=DEFAULT_EXPORT, *, use_cache: bool = True) -> Frame:
             f"features ({len(features)}) and targets ({len(targets)}) do not join one-to-one "
             f"on {JOIN_KEYS}; got {len(merged)} rows"
         )
-    if merged["feature_version_x"].nunique() != 1 or merged["feature_version_x"].iloc[0] != export.feature_version:
-        raise ValueError("feature table and targets table disagree on feature_version")
+    for column in ("feature_version_x", "feature_version_y"):
+        if (merged[column].isna().any() or merged[column].nunique() != 1 or
+                merged[column].iloc[0] != export.feature_version):
+            raise ValueError("feature table and targets table disagree on feature_version")
     merged = merged.drop(columns=["feature_version_x", "feature_version_y"])
 
     merged = feat.add_window_features(merged, hourly)
@@ -170,6 +172,10 @@ def online_feature_row(profile_like, reference_time, station_id: str, history: l
     consumes, so a loaded model bundle can be used directly instead of a full training frame.
     """
     station = profile_like.stations[station_id]
+    if any(row.get("station_id") != station_id for row in history):
+        raise feat.HistoryError("history belongs to a different station")
+    if any(row.get("capacity") != station["capacity"] for row in history):
+        raise feat.HistoryError("history capacity differs from the station profile")
     derived = feat.derive_features(
         history,
         station=station,
@@ -194,3 +200,18 @@ def online_feature_row(profile_like, reference_time, station_id: str, history: l
         value = derived[column]
         row[column] = None if value is None else value
     return row
+
+
+def validate_bundle_frame(bundle: dict, metadata: dict, frame: Frame) -> None:
+    """Never relabel a model trained on another export as belonging to this batch."""
+    expected = {"datasetId": frame.export.dataset_id,
+                "trainingPublishedBatchId": frame.export.published_batch_id,
+                "sourceManifestSha256": frame.export.source_manifest_sha256,
+                "featureVersion": frame.export.feature_version,
+                "featureColumns": frame.feature_columns}
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        raise ValueError("model metadata differs from the verified export batch/features")
+    fields = {"datasetId": "datasetId", "publishedBatchId": "trainingPublishedBatchId",
+              "featureVersion": "featureVersion", "featureColumns": "featureColumns"}
+    if any(bundle.get(key) != metadata.get(value) for key, value in fields.items()):
+        raise ValueError("model bundle differs from its metadata batch/features")

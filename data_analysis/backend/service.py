@@ -253,7 +253,7 @@ def charts(snapshot, filters, query):
         items=items, limit=query.limit, truncated=truncated)
 
 
-def validate_prediction(snapshot, body):
+def validate_prediction(snapshot, body, *, require_unavailable=True):
     check_batch(snapshot, body)
     station = snapshot.one("SELECT city_id FROM station_snapshot WHERE station_id = ?", (body.stationId,))
     if station is None:
@@ -268,8 +268,9 @@ def validate_prediction(snapshot, body):
         raise ApiError(422, "INVALID_ARGUMENT", "referenceTime 必须是以 Z 结尾的 UTC 整点，modelId 不可为空白") from exc
     # Do not enforce history-only bounds on a forecasting instant. Capability
     # remains explicit until a trained, versioned model adapter is integrated.
-    raise ApiError(503, "MODEL_NOT_READY", "模型尚未训练或发布，当前不提供预测结果",
-                   {"implementedPrediction": False, "models": [], "supportedTargets": ["load", "availability"], "status": "MODEL_NOT_READY"})
+    if require_unavailable:
+        raise ApiError(503, "MODEL_NOT_READY", "模型尚未训练或发布，当前不提供预测结果",
+                       {"implementedPrediction": False, "models": [], "supportedTargets": ["load", "availability"], "status": "MODEL_NOT_READY"})
 
 
 def quality_summary(source):
