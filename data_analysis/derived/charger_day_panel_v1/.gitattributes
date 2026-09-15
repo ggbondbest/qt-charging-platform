@@ -1,0 +1,7 @@
+# 本目录的 CSV 是**入仓数据**，且 `derivation_manifest.json` 按逐文件 sha256 校验磁盘字节。
+# 仓库根 `.gitattributes`（归负责人）只有 `* text=auto`，没有 `*.csv` 规则：在
+# `core.autocrlf=true` 的 Windows 机器上，一次全新 clone 就会把这里两个 CSV 落成 CRLF，
+# sha256 随即不匹配，`verify_derived` 会（正确地）拒跑整条线。
+# 目录级属性只影响本目录、优先级高于根规则——所以修在我自己的数据目录里，不动共享文件。
+*.csv text eol=lf
+*.json text eol=lf

@@ -1,0 +1,128 @@
+{
+  "derivedDatasetId": "charger_day_panel_v1",
+  "kind": "derived（对发布批次真实记录的确定性聚合，非新增事件、非编造标签）",
+  "sourceBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "sourcePipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "sourceDatasetId": "analytics_full_180d_v1",
+  "generator": {
+    "module": "data_analysis.ml.reliability.build_panel",
+    "sha256": "9cc001eb1f527242f91a114c8aa9b38035643183d4b3fd53a3a8646a932f37e3"
+  },
+  "sourceTables": {
+    "charging_attempts": 169154,
+    "chargers": 75,
+    "stations": 25,
+    "calendar": 900,
+    "weather_hourly": 21600,
+    "tariffs": 120
+  },
+  "labelDefinition": "tech_fails_on_day = failure_reason ∈ CONNECTOR_HANDSHAKE/APP_TIMEOUT/AUTH_FAILED 的当日次数；口径与第六线一致",
+  "attemptScope": {
+    "totalAttempts": 169154,
+    "inScopeRows": 102801,
+    "techFailures": 3676,
+    "businessDateRange": [
+      "2025-12-01",
+      "2026-05-29"
+    ],
+    "scopeRule": "非排队关联 ∧ charger_id 非空 ∧ outcome ∈ {STARTED, FAILED}（与第六线逐字相同）"
+  },
+  "panel": {
+    "rows": 13500,
+    "chargers": 75,
+    "days": 180,
+    "zeroAttemptDays": 56,
+    "attemptsTotal": 102801,
+    "techFailsTotal": 3676,
+    "reconcilesWithLine6": true,
+    "sampleRowsWithAttempt": 13444,
+    "failDayRateAmongUsed": 0.21727,
+    "failDayRateAmongZero": 0.0,
+    "exposureGradient": {
+      "(0, 2]": 0.01865,
+      "(2, 5]": 0.06983,
+      "(5, 10]": 0.2908,
+      "(10, 20]": 0.41061,
+      "(20, 1000000000]": 0.52863
+    }
+  },
+  "dayContext": {
+    "rows": 900,
+    "cities": 5,
+    "days": 180,
+    "weatherHoursPerCityDay": {
+      "p50": 24.0,
+      "min": 24,
+      "max": 24
+    },
+    "temperatureRangeC": [
+      -24.2,
+      35.1
+    ],
+    "rainDaysShare": 0.3122,
+    "scenarioEvents": {
+      "NONE": 725,
+      "LOCAL_EXPO": 55,
+      "PUBLIC_HOLIDAY_SPRING_FESTIVAL": 45,
+      "PUBLIC_HOLIDAY_LABOUR_DAY": 25,
+      "ADJUSTED_WORKDAY": 20,
+      "PUBLIC_HOLIDAY_NEW_YEAR": 15,
+      "PUBLIC_HOLIDAY_QINGMING": 15
+    },
+    "weatherStates": {
+      "CLEAR": 518,
+      "CLOUD": 311,
+      "RAIN": 64,
+      "SNOW": 7
+    }
+  },
+  "notRead": {
+    "anomaly_labels": "第四线的事后人工标签，对'明天会不会启动失败'是答案侧信息，本线整表不读",
+    "maintenance_tickets.status": "全表终态，'现在已解决'不等于'当时已解决'；工单只用 reported_at/restored_at",
+    "maintenance_tickets.accepted_at/work_started_at": "调度侧时间戳，真实系统里夜间可否读到未定，保守不用",
+    "maintenance_tickets.labor_cost_cents/parts_cost_cents": "钱是修完才知道的量，对次日风险无前置信息",
+    "tariffs": "电价在 (城, 小时) 上是常数，日级聚合后成为**城市级常量**——等价于把 ban 掉的 city_id 换个马甲带进特征（第六线同样以'纯身份列'禁掉 city_id），本线不读",
+    "charging_sessions": "会话级电量/时长是'这趟充得怎么样'（第一/四线），本线的暴露度已由 attempts_on_day 表达，且会话表里没有次日可得的前置信息",
+    "payments/reviews/operating_costs/corruption_log/battery_samples/vehicle_energy_intervals/queue_entries/reservations/campaigns": "与'次日这台桩会不会启动失败'无因果关系，或需事后才可得"
+  },
+  "causalityNote": "本文件只做聚合，不做因果判断：天气/遥测的'哪天能读到'在 features.py 里统一按'严格早于当日起点'处理，day_context 存的是当天事实",
+  "files": [
+    {
+      "name": "panel_charger_day.csv",
+      "rows": 13500,
+      "columns": [
+        "charger_id",
+        "station_id",
+        "city_id",
+        "business_date",
+        "attempts_on_day",
+        "started_on_day",
+        "tech_fails_on_day",
+        "fail_flag",
+        "users_on_day"
+      ],
+      "sha256": "6521aba654881d7528d15e8c7e1a34063444daf5a73e2c7843474176c785238d"
+    },
+    {
+      "name": "day_context.csv",
+      "rows": 900,
+      "columns": [
+        "city_id",
+        "business_date",
+        "is_weekend",
+        "scenario_event",
+        "demand_multiplier",
+        "temp_c_mean",
+        "temp_c_min",
+        "temp_c_max",
+        "humidity_mean",
+        "rainfall_mm_sum",
+        "rain_hours",
+        "weather_hours",
+        "weather"
+      ],
+      "sha256": "c1c641ba68548141284b80ece115fb6f08c2d7c351778d48d33a849de274e705"
+    }
+  ],
+  "disclaimer": "全部指标为模拟数据测试结果（第二阶段发布批次 analytics-298aa3ee1401461fb06ea2bb96930dcf），不代表真实运营数据表现。本线特征来自新增派生数据集 charger_day_panel_v1（data_analysis/derived/charger_day_panel_v1/）：对发布批次真实记录的确定性聚合（按桩×北京日历日、城市×日历日 groupby），无编造标签、无新增事件。"
+}
