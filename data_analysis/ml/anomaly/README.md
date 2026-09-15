@@ -45,7 +45,7 @@ EARLY_STOP 0、POWER_DERATING 1.3%。随机参照同告警预算 F1≈0.05,即 *
 
 ## 协议(全链共用)
 
-- 时间三段与负荷/推荐线同边界:05-01 / 05-15 / 05-30;会话按 started_at 整段落侧,
+- 时间三段与负荷线同边界:05-01 / 05-15 / 05-30;会话按 started_at 整段落侧,
   满足"同一会话不拆两边"。
 - 插补中位数、StandardScaler、IsolationForest(300 树,seed 42)、阈值分位:只在 TRAIN 拟合;
   候选/子集/阈值只在 VALIDATION 按 F1 选(PERCENTILE 网格 × topk × 特征集 × 融合子集)。
