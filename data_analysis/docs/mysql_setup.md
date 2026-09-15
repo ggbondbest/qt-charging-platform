@@ -144,4 +144,8 @@ CI 保留原有九个检查名称。Ubuntu 的 API 检查启动真实 MySQL 8.4�
 
 2026-09-13 的清洗/全量核对记录仍有效描述对应 Spark 与 SQLite 批次，但不是这次 MySQL 的实测证明。2026-09-14 已完成真实 MySQL 8.4.11 验证：[本轮验证摘要](mysql_migration_validation.json)。180 天统计包的 9 张查询表共导入 349,056 行，59 次 API 核对通过；另已从 7 天原始样本重新执行 Spark 清洗、统计、MySQL 发布与查询核对。本轮使用样本已有脏记录，未额外执行新一轮脏数据注入。
 
-38 项 MySQL 相关测试全部通过，其中 22 项连接真实数据库；默认测试发现 264 项，执行通过 201 项，跳过 63 项需要单独启用的 Spark/MySQL 测试。远程结果以相应 PR 的 CI 为准；学校 Linux MySQL、HDFS、大屏和训练后模型分别验收。
+38 项 MySQL 相关测试全部通过，其中 22 项连接真实数据库；默认测试发现 264 项，执行通过 201 项，跳过 63 项需要单独启用的 Spark/MySQL 测试。远程结果以相应 PR 的 CI 为准。
+
+2026-09-15 已在老师 Linux `master` 的 MySQL 8.4.11 上，将下载的 180 天 HDFS export 发布为新库 `charging20260915hdfsfull1`，再用只读账号完成 59 次 SQL/API 核对，并以 loopback HTTP 实测 `/docs`、health 与运营概览。完整批次、监听范围、导入行数和限制见 [HDFS 全量 MySQL 验证记录](mysql_hdfs_full_180d_validation.json)。该记录不把 Vue 页面、训练后模型或对外网络部署说成已验收。
+
+同日，组长整合后的统一交付已在老师 Linux `master` 完成四类模型训练、独立统计/业务 MySQL、Vue 构建、统一服务和两种网页预测的 loopback 验收。它使用仓库正式交付批次 `analytics-298aa3ee1401461fb06ea2bb96930dcf`，与上段 HDFS export 的 `analytics-57a...` 是不同的发布批次，不能混为同一批验收；完整记录见 [Linux 统一交付验证记录](linux_integrated_delivery_validation_20260915.json)。
