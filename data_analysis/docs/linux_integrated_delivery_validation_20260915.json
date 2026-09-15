@@ -1,0 +1,110 @@
+{
+  "reportVersion": "linux-integrated-delivery-validation-1.0.0",
+  "verifiedOn": "2026-09-15",
+  "status": "VERIFIED_INTEGRATED_DELIVERY",
+  "scope": "Teacher Linux master loopback verification of the integrated Vue, FastAPI, MySQL and CPU-model delivery. This record is separate from the real-HDFS validation record and does not claim external-network deployment.",
+  "execution": {
+    "codeCommit": "5253c6a",
+    "repositoryBranch": "feature/data-hdfs-mysql-serving-validation",
+    "workingDirectory": "/mnt/hgfs/qt-charging-platform",
+    "host": "master"
+  },
+  "runtime": {
+    "python": "3.11.15",
+    "node": "24.21.0",
+    "npm": "11.19.0",
+    "mysqlServer": "8.4.11",
+    "deploymentVirtualEnvironment": "/home/bit/venvs/charging-delivery",
+    "mysqlListener": "127.0.0.1:3306"
+  },
+  "models": {
+    "trainingCommand": "python -m data_analysis.delivery.cli train",
+    "status": "ALL_FOUR_READY",
+    "trainingSeconds": 35.45,
+    "artifactDirectories": [
+      "data_analysis/outputs/chargepilot",
+      "data_analysis/outputs/ml_load",
+      "data_analysis/outputs/ml_availability_delivery_base",
+      "data_analysis/outputs/ml_availability_delivery",
+      "data_analysis/outputs/ml_insights_delivery"
+    ],
+    "artifactDirectoriesAreGitIgnored": true
+  },
+  "analyticsPublication": {
+    "input": "data_analysis/datasets/analytics_full_180d_v1",
+    "databaseSchema": "charginganalyticsdelivery1",
+    "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+    "datasetId": "charging_full_180d_v2",
+    "servingManifestSha256": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+    "status": "PUBLISHED",
+    "importedTables": {
+      "cities": 5,
+      "city_daily": 900,
+      "ml_features_hourly": 107425,
+      "station_cohorts_daily": 4401,
+      "station_hourly_metrics": 108000,
+      "station_metrics_daily": 4500,
+      "station_service_daily": 4429,
+      "station_snapshot": 25,
+      "user_activity_daily": 119371
+    },
+    "validatedTargetRows": 107425,
+    "targetLabelsImported": false,
+    "fileChecksumsVerified": true,
+    "rowCountsVerified": true,
+    "foreignKeysAndCityTotalsVerified": true,
+    "singleTransactionCommitted": true
+  },
+  "operationalDatabase": {
+    "databaseSchema": "chargepilotdelivery1",
+    "separateFromAnalytics": true,
+    "status": "INITIALIZED_AND_CHECKED"
+  },
+  "frontend": {
+    "source": "data_analysis/frontend",
+    "buildWorkaround": "npm symbolic links are unsupported in the VMware shared mount, so a Git-archived source copy was installed, tested and built on the Linux local filesystem; only its static dist output was copied back to the ignored frontend/dist path.",
+    "npmCi": "PASSED",
+    "npmTest": "PASSED",
+    "npmBuild": "PASSED"
+  },
+  "unifiedCheck": {
+    "command": "python -m data_analysis.delivery.cli check",
+    "status": "READY",
+    "missingModels": [],
+    "analytics": "MySQL",
+    "operations": "isolated MySQL",
+    "modelPublishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf"
+  },
+  "httpAndUiAcceptance": {
+    "server": "python -m data_analysis.delivery.cli serve",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "http200": ["/", "/docs", "/api/v1/health", "/api/v1/chargepilot/docs"],
+    "health": {"status": "ready", "dataReady": true, "source": "SIMULATED"},
+    "modelStatuses": ["READY", "READY", "READY", "READY"],
+    "overviewPublishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+    "overviewCompletedSessions": 121539,
+    "manualBrowserAcceptance": {
+      "wholeSiteDisplayed": true,
+      "loadForecastDisplayed": true,
+      "availabilityForecastDisplayed": true
+    }
+  },
+  "security": {
+    "analyticsUsesReadOnlyAccount": true,
+    "operationalDatabaseUsesSeparateAccount": true,
+    "credentialsOrAdminTokenRecorded": false,
+    "mysqlAndServiceAreLoopbackOnly": true
+  },
+  "relatedButSeparateHdfsEvidence": {
+    "record": "data_analysis/docs/hdfs_full_180d_validation.json",
+    "hdfsPublishedBatchId": "analytics-57a8358bed184068b7cd61e98caa70db",
+    "status": "VERIFIED_HDFS",
+    "note": "The integrated model is contract-bound to the repository delivery batch analytics-298aa3ee1401461fb06ea2bb96930dcf. Do not describe this record as a second HDFS publication or conflate the two published batch identifiers."
+  },
+  "limitations": [
+    "All data and operational actions are simulated teaching-demo data; no real charging, payment or public deployment is claimed.",
+    "This is a single-master loopback deployment. Spark local[2] against HDFS is separately evidenced and is not a multi-node Spark-compute claim.",
+    "Model performance and stated limitations are reported by the trained artifacts; a successful deployment does not establish real-world prediction accuracy."
+  ]
+}

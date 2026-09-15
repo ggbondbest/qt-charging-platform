@@ -1,0 +1,90 @@
+{
+  "reportVersion": "mysql-hdfs-full-validation-1.0.0",
+  "verifiedOn": "2026-09-15",
+  "status": "VERIFIED_MYSQL_API",
+  "scope": "Local MySQL 8.4 publication and FastAPI verification on the teacher Linux master host, using the downloaded completed 180-day HDFS export. This is a loopback-only service validation; it is not a Vue, trained-model, public-network, or multi-node Spark claim.",
+  "execution": {
+    "codeCommit": "dada6cfdb11b58d34384a5593953e216f0347bd3",
+    "repositoryBranch": "feature/data-hdfs-mysql-serving-validation",
+    "workingDirectory": "/mnt/hgfs/qt-charging-platform",
+    "host": "master"
+  },
+  "runtime": {
+    "python": "3.11.15",
+    "mysqlServer": "8.4.11",
+    "pymysql": "1.2.0",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.52.4"
+  },
+  "database": {
+    "schema": "charging20260915hdfsfull1",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "bindAddress": "127.0.0.1",
+    "mysqlxBindAddress": "127.0.0.1",
+    "importAccount": "charging_import@127.0.0.1",
+    "apiReadAccount": "charging_read@127.0.0.1",
+    "credentialsRecorded": false
+  },
+  "bundle": {
+    "input": "data_analysis/outputs/hdfs_full_180d_20260914_02_export",
+    "datasetId": "charging_full_180d_v2",
+    "pipelineRunId": "spark-a9939dc1085e433a83bfc49219a61b13",
+    "publishedBatchId": "analytics-57a8358bed184068b7cd61e98caa70db",
+    "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+    "servingManifestSha256": "8f7871b0aa0ac4061d3d711f493d9314cdb6959c2439a469691af1169241cd6d",
+    "fileChecksumsVerified": true,
+    "importedTables": {
+      "cities": 5,
+      "city_daily": 900,
+      "ml_features_hourly": 107425,
+      "station_cohorts_daily": 4401,
+      "station_hourly_metrics": 108000,
+      "station_metrics_daily": 4500,
+      "station_service_daily": 4429,
+      "station_snapshot": 25,
+      "user_activity_daily": 119371
+    },
+    "validatedTargetRows": 107425,
+    "targetLabelsImported": false,
+    "rowCountsVerified": true,
+    "foreignKeysAndCityTotalsVerified": true,
+    "singleTransactionCommitted": true
+  },
+  "verification": {
+    "command": "python -m data_analysis.scripts.verify_serving --database-backend mysql --bundle data_analysis/outputs/hdfs_full_180d_20260914_02_export --output data_analysis/outputs/mysql_hdfs_full_20260915_api_verification.json",
+    "logicalContentSha256": "a0e4bdbad183a2090d55c0fb3d749e40a63aeca0a75579dd31365e4fa2cde87e",
+    "readonlyAccountVerified": true,
+    "checkedApiRequests": 59,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "realPredictionsImplemented": false
+  },
+  "httpAcceptance": {
+    "server": "python -m uvicorn data_analysis.backend.app:app --host 127.0.0.1 --port 8000",
+    "docsStatus": 200,
+    "healthStatus": "ready",
+    "healthPublishedBatchId": "analytics-57a8358bed184068b7cd61e98caa70db",
+    "overviewPublishedBatchId": "analytics-57a8358bed184068b7cd61e98caa70db",
+    "overviewCompletedSessions": 121539,
+    "overviewEnergyWh": 2932585304,
+    "overviewNetPaidCents": 343419626
+  },
+  "evidence": {
+    "publicationReport": "data_analysis/outputs/mysql_hdfs_full_20260915_publish.json",
+    "apiVerificationReport": "data_analysis/outputs/mysql_hdfs_full_20260915_api_verification.json",
+    "hdfsSourceValidation": {
+      "pullRequest": 71,
+      "branch": "feature/data-hdfs-full-validation",
+      "commit": "0a42be83f34d2e095526f12c00ed8cee4a7698b7",
+      "recordPathAfterMerge": "data_analysis/docs/hdfs_full_180d_validation.json",
+      "status": "VERIFIED_HDFS"
+    },
+    "temporaryCredentialsOrDatabasesCommitted": false
+  },
+  "limitations": [
+    "The service binds only to the Linux master loopback interface and is not a group-network deployment.",
+    "The HDFS/Spark result is separately recorded as single-machine Spark local[2] processing against real HDFS.",
+    "Vue page integration and trained-model prediction remain separate acceptance work."
+  ]
+}
