@@ -21,7 +21,8 @@ MANIFEST_PATH = Path(__file__).with_name("ai_actions.json")
 NAVIGATE_ALIASES = {
     "运营总览": "overview", "总览": "overview", "概览": "overview", "仪表盘": "overview",
     "智能找站": "explore", "找站": "explore",
-    "我的行程": "trip", "行程": "trip",
+    # #76 起行程页已从 App.vue 移除,"我的行程/行程"别名同步删除——
+    # 留着只会让用户得到"未知页面"错,不如话术自然落到检索分支
     "智能分析": "lab", "分析": "lab",
     "负荷与空闲预测": "lab-forecast", "负荷预测": "lab-forecast", "空闲预测": "lab-forecast",
     "用户与异常": "lab-insights", "异常筛查": "lab-insights", "回访风险": "lab-insights",
@@ -36,7 +37,6 @@ FILL_ALIASES = {
     "结束日期": "dash-end", "统计结束日期": "dash-end",
     "预测目标": "forecast-target", "跨度": "forecast-horizon", "预测跨度": "forecast-horizon",
     "起点": "forecast-reference", "预测起点": "forecast-reference",
-    "昵称": "session-name", "演示昵称": "session-name",
     "补电量": "energy-kwh", "计划补电": "energy-kwh",
     "最远行驶": "max-eta", "行驶时间": "max-eta",
 }

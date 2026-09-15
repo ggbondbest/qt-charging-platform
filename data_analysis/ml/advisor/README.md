@@ -41,8 +41,8 @@ python -m data_analysis.ml.advisor.serve     # 127.0.0.1:8765,ML_ADVISOR_PORT �
   `page_action` 工具,桌宠执行白名单动作——navigate 在回答打字机结束后自动跳转,
   fill 出确认芯片、点了才填,**只写值+发 input/change,永不代发 Enter/永不点提交
   按钮**(提交永远留给用户亲手点,执行回显带"未提交"提醒)。安全架构:
-  清单只有一份 `ai_actions.json`(navigate 8 页 / fill 9 框,admin 控制台与危险
-  按钮刻意排除);模型只产意图,route/selector/label 执行参数永远从双端本地注册表
+  清单只有一份 `ai_actions.json`(navigate 7 页 / fill 8 框,随队友 #76 精简后的
+  真实 DOM 收敛;admin 控制台与危险按钮刻意排除);模型只产意图,route/selector/label 执行参数永远从双端本地注册表
   resolve(后端 `actions.normalize` 校验 + 前端 `advisorActions.ts` 二滤 + 出境前
   `friendly._narrow_action` 终检,三道闸都不信模型措辞);新提问或关面板即作废未确认
   的填入。执行器 fail-closed:跳转断言 `.app-shell.workspace-*`、分区断言

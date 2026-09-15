@@ -44,9 +44,11 @@ const health = ref<Health | null>(null);
 const backendChoice = ref("auto");
 const messages = ref<Msg[]>([]);
 const petState = ref<PetState>("idle");
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const winW = ref(window.innerWidth);
-const winH = ref(window.innerHeight);
+// 队友的组件测试用最小 window stub 挂载整个 App——matchMedia 可能不存在,缺省按"不减弱动画"处理
+const reduceMotion = typeof window.matchMedia === "function"
+  && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const winW = ref(window.innerWidth || 1280); // stub 环境没有 innerWidth,兜个常用值防 NaN 传播
+const winH = ref(window.innerHeight || 800);
 const flipped = ref(false); // 吸附到左边缘时立绘镜像(鲸鱼娘朝向随位置变)
 
 const chips = [
@@ -408,7 +410,11 @@ function jumpToBottom() {
   if (panelEl.value) panelEl.value.scrollTop = panelEl.value.scrollHeight;
 }
 function scrollPanel() {
-  requestAnimationFrame(() => {
+  // node 测试环境(队友 stub)没有 RAF;降级到宏任务,行为等价
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (f: () => void) => setTimeout(f, 16);
+  schedule(() => {
     const el = panelEl.value;
     if (!el) return;
     if (nearBottom.value) el.scrollTop = el.scrollHeight;
@@ -422,14 +428,16 @@ function onEnter(e: KeyboardEvent) {
 }
 
 let probe: number | undefined;
+// 队友组件测试的 window stub 只给计时器 API:事件绑定/解绑要有,没有就跳过(桌宠不响应尺寸即可)
+const hasWinEvents = () => typeof window.addEventListener === "function";
 onMounted(() => {
   checkHealth();
   probe = window.setInterval(checkHealth, 30000);
-  window.addEventListener("resize", onResize);
+  if (hasWinEvents()) window.addEventListener("resize", onResize);
 });
 onBeforeUnmount(() => {
   if (probe !== undefined) window.clearInterval(probe);
-  window.removeEventListener("resize", onResize);
+  if (hasWinEvents()) window.removeEventListener("resize", onResize);
 });
 
 const statusText = computed(() => {

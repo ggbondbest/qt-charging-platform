@@ -311,12 +311,12 @@ class PageActions(unittest.TestCase):
         self.assertIn("未提交", r["answer"])
 
     def test_humanize_narrows_and_drops_tampered(self):
-        good = {"kind": "navigate", "target": "trip", "route": "trip",
-                "section": None, "label": "我的行程"}
+        good = {"kind": "navigate", "target": "lab", "route": "lab",
+                "section": None, "label": "智能分析"}
         tampered_route = dict(good, route="admin")
-        fake_label = {"kind": "fill", "target": "session-name", "route": "trip",
-                      "section": None, "value": "张三", "label": "恶意注入"}
-        bad_value = {"kind": "fill", "target": "energy-kwh", "route": "trip",
+        fake_label = {"kind": "fill", "target": "insights-query", "route": "lab",
+                      "section": "insights", "value": "张三", "label": "恶意注入"}
+        bad_value = {"kind": "fill", "target": "energy-kwh", "route": "explore",
                      "section": None, "value": "999", "label": "计划补电(kWh)"}
         ghost = {"kind": "navigate", "target": "admin", "route": "admin", "label": "控制台"}
         h = friendly.humanize({"answer": "好", "citations": [], "actions":
@@ -324,8 +324,8 @@ class PageActions(unittest.TestCase):
                                "rounds": 1, "backend": "mock", "trace": []})
         # 串 route 丢、值域外丢、未知 target 丢;label 不许信模型措辞,由注册表覆盖
         self.assertEqual(h["actions"],
-                         [good, {"kind": "fill", "target": "session-name", "route": "trip",
-                                 "section": None, "value": "张三", "label": "演示昵称"}])
+                         [good, {"kind": "fill", "target": "insights-query", "route": "lab",
+                                 "section": "insights", "value": "张三", "label": "分析编号查询框"}])
         self.assertEqual(friendly.humanize({"answer": "x", "actions": None,
                                             "citations": [], "rounds": 1,
                                             "backend": "mock", "trace": []})["actions"], [])
@@ -366,13 +366,27 @@ class PageActions(unittest.TestCase):
         from pathlib import Path
         app = (Path(actions.__file__).parent.parent.parent / "frontend" / "src" / "App.vue"
                ).read_text(encoding="utf-8")
-        tabs = set(_re.findall(r'id:\s*"([\w-]+)"', app.split("const tabs")[1].split("];")[0]))
+        tabs_list = _re.findall(r'id:\s*"([\w-]+)"', app.split("const tabs")[1].split("];")[0])
         labs = set(_re.findall(r"id:\s*'([\w-]+)'", app.split("const labSections")[1].split("];")[0]))
         m = actions.manifest()
-        self.assertEqual(tabs - {"admin"}, {t["route"] for t in m["_nav"].values()})
+        self.assertEqual(set(tabs_list) - {"admin"}, {t["route"] for t in m["_nav"].values()})
         self.assertEqual(labs, {t["section"] for t in m["_nav"].values() if t.get("section")})
         self.assertNotIn("admin", json.dumps(m["_nav"], ensure_ascii=False)
                          + json.dumps(m["_fill"], ensure_ascii=False))
+        # 顶层页签 nth-child 必须对上 App.vue tabs 的**实际顺序**(不是集合)——
+        # #76 删 trip 页签时 lab 从第 4 位移到第 3 位,只有顺序断言抓得住
+        for t in m["_nav"].values():
+            if "main-nav" in t["selector"]:
+                n = int(_re.search(r"nth-child\((\d+)\)", t["selector"]).group(1))
+                self.assertEqual(tabs_list[n - 1], t["route"],
+                                 f"页签顺序漂移:{t['id']} 指第 {n} 位,{tabs_list}")
+        # 分区按钮序号对 App.vue labSections 顺序
+        labs_list = _re.findall(r"id:\s*'([\w-]+)'", app.split("const labSections")[1].split("];")[0])
+        for t in m["_nav"].values():
+            if "workspace-tabs" in t["selector"]:
+                n = int(_re.search(r"nth-child\((\d+)\)", t["selector"]).group(1))
+                self.assertEqual(labs_list[n - 1], t["section"],
+                                 f"分区顺序漂移:{t['id']} 指第 {n} 位,{labs_list}")
 
 
 @unittest.skipUnless(NEED_ARTIFACTS and os.environ.get("ML_ADVISOR_LIVE") == "1",

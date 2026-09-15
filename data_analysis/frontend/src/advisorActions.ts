@@ -17,7 +17,7 @@ export interface PetAction {
 interface NavSpec { route: string; section?: string; label: string; scrollAfter?: string; }
 interface FillSpec { route: string; section?: string; selector: string; event: "input" | "change"; label: string; maxLen: number; pattern?: RegExp; enums?: readonly string[]; }
 
-const TAB_ORDER = ["dashboard", "explore", "trip", "lab"]; // admin 刻意排除:需令牌且多为写操作入口
+const TAB_ORDER = ["dashboard", "explore", "lab"]; // #76 起行程页已删;admin 刻意排除:需令牌且多为写操作入口
 const SEC_ORDER = ["forecast", "insights", "arrival", "experiments"];
 const navBtn = (n: number) => `#primary-header nav.main-nav > button:nth-child(${n})`;
 const secBtn = (n: number) => `nav.workspace-tabs[aria-label="智能分析分区"] > button:nth-child(${n})`;
@@ -27,7 +27,6 @@ const secBtn = (n: number) => `nav.workspace-tabs[aria-label="智能分析分区
 export const NAV_REGISTRY: Record<string, NavSpec> = {
   overview: { route: "dashboard", label: "运营总览" },
   explore: { route: "explore", label: "智能找站" },
-  trip: { route: "trip", label: "我的行程" },
   lab: { route: "lab", label: "智能分析" },
   "lab-forecast": { route: "lab", section: "forecast", label: "智能分析·负荷与空闲预测" },
   "lab-insights": { route: "lab", section: "insights", label: "智能分析·用户与异常" },
@@ -41,9 +40,8 @@ export const FILL_REGISTRY: Record<string, FillSpec> = {
   "forecast-target": { route: "lab", section: "forecast", selector: 'form.forecast-controls select[aria-label="预测目标"]', event: "change", label: "预测目标", maxLen: 12, enums: ["load", "availability"] },
   "forecast-horizon": { route: "lab", section: "forecast", selector: 'form.forecast-controls select[aria-label="预测跨度"]', event: "change", label: "预测跨度(小时)", maxLen: 2, enums: ["1", "6", "24"] },
   "forecast-reference": { route: "lab", section: "forecast", selector: 'form.forecast-controls input[aria-label="预测起点"]', event: "input", label: "预测起点", maxLen: 19, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/ },
-  "session-name": { route: "trip", selector: "#session-name", event: "input", label: "演示昵称", maxLen: 40, pattern: /^[^\n\r]{1,40}$/ },
-  "energy-kwh": { route: "trip", selector: "#energy", event: "change", label: "计划补电(kWh)", maxLen: 2, enums: ["5", "10", "20", "30", "40", "60"] },
-  "max-eta": { route: "trip", selector: "#max-eta", event: "change", label: "最远行驶(分钟)", maxLen: 2, enums: ["15", "30", "60"] },
+  "energy-kwh": { route: "explore", selector: "#energy", event: "change", label: "计划补电(kWh)", maxLen: 2, enums: ["5", "10", "20", "30", "40", "60"] },
+  "max-eta": { route: "explore", selector: "#max-eta", event: "change", label: "最远行驶(分钟)", maxLen: 2, enums: ["15", "30", "60"] },
 };
 
 export function navSelector(target: string): { nav: string; section?: string } | null {

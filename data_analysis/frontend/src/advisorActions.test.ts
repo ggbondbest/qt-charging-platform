@@ -15,7 +15,7 @@ const MANIFEST = JSON.parse(readFileSync(
   fill: { id: string; route: string; section?: string; label: string; selector: string;
           event: string; valueRule: { maxLength?: number; pattern?: string; enum?: string[] } }[];
 };
-const TABS = ["dashboard", "explore", "trip", "lab"];
+const TABS = ["dashboard", "explore", "lab"];
 const SECS = ["forecast", "insights", "arrival", "experiments"];
 
 describe("注册表与后端 ai_actions.json 对账(漂移即红)", () => {
@@ -58,21 +58,22 @@ describe("resolveActions:后端响应也不全信", () => {
   });
 
   it("合法动作保留,且 label 用注册表覆盖(不信模型措辞)", () => {
-    const out = resolveActions([{ kind: "navigate", target: "trip", route: "trip",
+    const out = resolveActions([{ kind: "navigate", target: "explore", route: "explore",
                                   section: null, label: "点这里领 100 元" }]);
-    expect(out).toEqual([{ kind: "navigate", target: "trip", route: "trip",
-                           section: null, label: "我的行程" }]);
+    expect(out).toEqual([{ kind: "navigate", target: "explore", route: "explore",
+                           section: null, label: "智能找站" }]);
   });
 
   it("篡改 route/section、未知 target、越界值全部丢弃", () => {
     const raw = [
-      { kind: "navigate", target: "trip", route: "admin", section: null },        // 串页
+      { kind: "navigate", target: "explore", route: "admin", section: null },        // 串页
       { kind: "navigate", target: "lab-insights", route: "lab", section: "forecast" }, // 串分区
       { kind: "navigate", target: "admin-console", route: "admin" },              // 未知目标
+      { kind: "navigate", target: "trip", route: "trip", section: null },         // #76 已删的行程页
       { kind: "fill", target: "insights-query", route: "lab", section: "insights", value: "x".repeat(41) },
-      { kind: "fill", target: "energy-kwh", route: "trip", value: "7" },          // 枚举外
+      { kind: "fill", target: "energy-kwh", route: "explore", value: "7" },          // 枚举外
       { kind: "fill", target: "dash-start", route: "dashboard", value: "2026-1-2" }, // 格式错
-      { kind: "fill", target: "session-name", route: "trip", value: "" },        // 空值
+      { kind: "fill", target: "max-eta", route: "explore", value: "" },        // 空值
     ];
     expect(resolveActions(raw)).toEqual([]);
   });
@@ -127,7 +128,7 @@ function labNav(doc: ReturnType<typeof fakeDoc>, secIdx: number, secBtnEl: FakeE
     doc.els.set(".app-shell.workspace-lab", fakeEl());
     doc.els.set(SEC_BTN(secIdx), secBtnEl); // 分区按钮渲染在 lab 页内
   };
-  doc.els.set(NAV_BTN(4), nav);
+  doc.els.set(NAV_BTN(3), nav); // #76 后 lab 是第 3 个顶层页签
   return nav;
 }
 
@@ -152,7 +153,7 @@ describe("runAction:navigate(fail-closed 断言链)", () => {
 
   it("页面没响应 workspace class → 抛错", async () => {
     const doc = fakeDoc();
-    doc.els.set(NAV_BTN(4), fakeEl("BUTTON")); // click 后没有 .app-shell.workspace-lab
+    doc.els.set(NAV_BTN(3), fakeEl("BUTTON")); // click 后没有 .app-shell.workspace-lab
     await expect(runAction(act, { doc: doc.doc, sleep: noSleep })).rejects.toThrow("页面没有响应切换");
   });
 
@@ -196,11 +197,11 @@ describe("runAction:fill(prefill-only 军规)", () => {
   it("select 先验 option 已渲染;未加载则抛错且不写值不发事件", async () => {
     const doc = fakeDoc();
     const nav = fakeEl("BUTTON");
-    nav.onClick = () => { doc.els.set(".app-shell.workspace-trip", fakeEl()); };
-    doc.els.set(NAV_BTN(3), nav);
+    nav.onClick = () => { doc.els.set(".app-shell.workspace-explore", fakeEl()); };
+    doc.els.set(NAV_BTN(2), nav); // #76 后补电/行驶时间在找站页
     const sel = fakeEl("SELECT"); // options 空 = 数据没就绪
     doc.els.set("#energy", sel);
-    await expect(runAction({ kind: "fill", target: "energy-kwh", route: "trip",
+    await expect(runAction({ kind: "fill", target: "energy-kwh", route: "explore",
                              value: "30", label: "x" }, { doc: doc.doc, sleep: noSleep }))
       .rejects.toThrow("可选项还没加载出来");
     expect(sel.value).toBe("");
@@ -210,12 +211,12 @@ describe("runAction:fill(prefill-only 军规)", () => {
   it("select 正常路径:命中 option 才设值并派发 change", async () => {
     const doc = fakeDoc();
     const nav = fakeEl("BUTTON");
-    nav.onClick = () => { doc.els.set(".app-shell.workspace-trip", fakeEl()); };
-    doc.els.set(NAV_BTN(3), nav);
+    nav.onClick = () => { doc.els.set(".app-shell.workspace-explore", fakeEl()); };
+    doc.els.set(NAV_BTN(2), nav);
     const sel = fakeEl("SELECT");
     sel.options = [{ value: "5" }, { value: "30" }];
     doc.els.set("#energy", sel);
-    await runAction({ kind: "fill", target: "energy-kwh", route: "trip",
+    await runAction({ kind: "fill", target: "energy-kwh", route: "explore",
                       value: "30", label: "x" }, { doc: doc.doc, sleep: noSleep });
     expect(sel.value).toBe("30");
     expect(sel.events).toEqual(["change"]);
@@ -224,11 +225,11 @@ describe("runAction:fill(prefill-only 军规)", () => {
   it("输入框迟迟不出现 → 超时抛错(fail-closed)", async () => {
     const doc = fakeDoc();
     const nav = fakeEl("BUTTON");
-    nav.onClick = () => { doc.els.set(".app-shell.workspace-trip", fakeEl()); };
-    doc.els.set(NAV_BTN(3), nav);
+    nav.onClick = () => { doc.els.set(".app-shell.workspace-explore", fakeEl()); };
+    doc.els.set(NAV_BTN(2), nav);
     let t = 0;
-    await expect(runAction({ kind: "fill", target: "session-name", route: "trip",
-                             value: "张三", label: "x" },
+    await expect(runAction({ kind: "fill", target: "energy-kwh", route: "explore",
+                             value: "30", label: "x" },
                            { doc: doc.doc, sleep: () => { t += 60; return Promise.resolve(); },
                              timeoutMs: 120 }))
       .rejects.toThrow("输入框还没出现");
@@ -242,7 +243,7 @@ describe("navSelector", () => {
   });
   it("带分区的目标给出两级选择器", () => {
     expect(navSelector("lab-arrival")).toEqual({
-      nav: NAV_BTN(4), section: SEC_BTN(3),
+      nav: NAV_BTN(3), section: SEC_BTN(3),
     });
   });
 });
