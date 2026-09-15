@@ -148,10 +148,53 @@ n = 1,875 桩·日（25 天 × 75 台），正类 361，TEST 基础率 **0.19253
 一句话：**盲测那次"跑赢全部基线"，在 10 个时间窗里只是"大多数窗赢桩先验、赢查表赢不稳"**
 ——本线信号的真实强度就是"薄"，报告与滚动互相印证，不各说各话。
 
+## 跨批次泛化探针（`batchprobe.py`·DEV PROBE，非发布）
+
+滚动研究暴露的问题——"赢的是特征结构还是这一批随机实现（seed luck）"——唯一不靠嘴的回答，
+是拿一个本线**从未训练过**的新批次原样重跑全链。为此生成一个全新种子批次
+（`charging_probe_180d_v3exp`，seed 20260921、`dirty_rate=0.0` 不造假脏数据、复用发布批次同样的
+180 天 × 几何），把第九线 features→train→evaluate 整条链在它上面重跑。**这一节的数字全部是探针
+批次（DEV PROBE）的结果，不是仓库发布、不对外引用**；它不改动上面任何发布结论，只回答一句
+"换一批还灵不灵"。
+
+结论：**不灵**。同一套流水线、同一份 41 特征定义，在一个它从没见过的批次上，模型 TEST AUC
+从 0.6219 **塌到 0.4366**（低于 0.5 基准，等于反向），九个打分无一例外全线掉分：
+
+| 打分 | 发布批 TEST AUC | 探针批 TEST AUC | Δ |
+| --- | --- | --- | --- |
+| GBT 分类模型 | 0.6219 | **0.4366** | −0.1853 |
+| 张数回归排序 | 0.6323 | 0.4449 | −0.1874 |
+| 纯 as-of 桩级先验 | 0.6032 | 0.4587 | −0.1445 |
+| 三级平滑查表 | 0.5789 | 0.4267 | −0.1522 |
+| 只用负荷 | 0.5765 | 0.5072 | −0.0693 |
+| 纯 as-of 站级先验 | 0.5563 | 0.4414 | −0.1149 |
+| 朴素"最近来修" | 0.5394 | 0.5026 | −0.0368 |
+| oracle（不可部署上界） | 0.6869 | 0.574 | −0.1129 |
+
+**择组本身也变了**：发布链 VAL 选 staticOnly/stump3，探针链 VAL 选 opsOnly/mid15——两组都"赢"
+了各自批次、却在对方批次上双双不及格。这就是 seed luck 的实锤：**任何一次单批次盲测的排序
+优势，都可能只是那 418 张（探针批 448 张）工单恰好摊在哪几台桩上的抽样噪声**。
+
+机制证据（为什么"按构造就没有可学的信号"）：`charging_data/generator.py` 的 `Sim.maintenance()`
+是一句 `if self.rng.random() >= .00019: return`——**工单到达是每个 tick × 每桩独立的伯努利抽签，
+不读桩龄、功率、遥测、天气、也不读该桩历史上有没有来过单**。所以"未来 7 天来不来修"对特征
+而言是纯噪声，任何模型都无信号可学，换 seed 自然换一批"运气中奖"的桩。桩级工单散布的二项
+噪声检验印证了这点：观察 sd ÷ iid 二项 sd，发布批 **1.329**、探针批 **1.031**——都贴近 1（纯
+抽签），发布批那 1.33 只是单次实现的抽样涨落，不是稳定的先天差异。探针批连 oracle 都只有
+0.574（发布 0.687），进一步说明"上帝视角"能榨出的那点频率，也是每批各榨各的。
+
+**这条负结论给上面整个 README 定性**：第九线的真实交付物是那套基础设施——稠密面板、双轴
+（`reported_at`/`restored_at`）as-of 引擎、purge/删失口径、250×20 双路径泄漏审计（探针批
+`maxAbsDiff` 仍 ≤1.6e−10，逐位复现发布批）、诚实记分牌；**不是** 0.6219 这个数字。0.6219 应被
+读作"该批仿真里恰好测到的、大概率不可复现的抽样峰值"。要拿到真信号，得等真实批次里工单由
+**状态驱动**（桩真的会因老化/负载而更易坏）——探针还顺手证明了这前提在仿真世界里不成立。
+
 ## 已知不足（如实呈报）
 
 - **TEST 比 VAL 好**（0.6219 vs 0.6097）是本次抽样的运气，不是趋势——滚动轮间 σ 就摆在那儿；
-  第 8 节数字一律以"区间"心态读。
+  第 8 节数字一律以"区间"心态读。**这一句已被上面的跨批次探针从"怀疑"升级为"证实"**：换一个新
+  seed 批次重跑，模型 AUC 塌到 0.4366（低于基准），择组也从 staticOnly 翻到 opsOnly——单批次
+  0.6219 就是抽样峰值，不是可复现的泛化性能。
 - **站级/组内小样本切片不单独下结论**：station 25 桶每桶 n=75、AUC 0.29–0.99 之间乱跳，
   是抽样噪声主导，报告里保留原始值但不引用任何单站做卖点；"没修过（无记录）"桶 n=1 直接不报 AUC。
 - **遥测零功率列是模拟数据的先天负结果**（恒 0），真实批次里这两列可能复活成最强健康特征
@@ -183,7 +226,10 @@ python -m data_analysis.ml.health.predict --self-check                    # 三�
 python -m data_analysis.ml.health.predict --charger-id CH-BJ-01-1 --date 2026-05-10   # 单桩查询（0.3434，不进窗口）
 python -m data_analysis.ml.health.predict --schedule-day 2026-05-10       # 当日维护排程短名单（预算 19 台）
 python -m data_analysis.ml.health.predict --dump-test-table               # TEST 全表分数落 CSV（含真标签，离线核对用）
-python -m pytest data_analysis/ml/health/tests -q   # 59 项（缺产物/缺报告时自动 skip）
+# 跨批次探针（DEV PROBE·非发布，见上节）：先生成新 seed 零脏批次，再一键重跑全链
+python -m data_analysis.charging_data.generator --config <probe_config.json> --output data_analysis/outputs/probe_batches/<id>
+python -m data_analysis.ml.health.batchprobe --probe-root data_analysis/outputs/probe_batches/<id>   # 落 outputs/ml_health_probe/ + probe_summary.md
+python -m pytest data_analysis/ml/health/tests -q   # 67 项（含 batchprobe 纯函数 8 项；缺产物/缺报告时相关项自动 skip）
 ```
 
 产物：`outputs/ml_health/`：`health_features.pkl`（sha256 `8fee978aa0d26909…`）、

@@ -84,9 +84,18 @@ def self_check(frame: pd.DataFrame, bundle: dict) -> dict:
                                        float(np.nanmax(prior["asOfChargerPriorOnly"])))}
 
 
+def parse_day(raw: str, flag: str) -> pd.Timestamp:
+    """日期参数统一入口：坏日期干净报错，不把 pandas traceback 甩给运维。"""
+    try:
+        return pd.Timestamp(raw)
+    except ValueError:
+        raise SystemExit(f"{flag} 需要北京日历日 YYYY-MM-DD，{raw!r} 解析不了") from None
+
+
 def query_charger(frame: pd.DataFrame, bundle: dict, charger_id: str, date: str) -> None:
+    day = parse_day(date, "--date")
     panel = frame[(frame["charger_id"] == charger_id)
-                  & (frame["business_date"] == pd.Timestamp(date))]
+                  & (frame["business_date"] == day)]
     if panel.empty:
         valid = frame.loc[frame["charger_id"] == charger_id, "business_date"]
         span = (f"该桩可打分日历 {valid.min().date()}..{valid.max().date()}" if len(valid)
@@ -101,16 +110,18 @@ def query_charger(frame: pd.DataFrame, bundle: dict, charger_id: str, date: str)
           f"P(未来7天来修)={prob[0]:.4f}  预计工单张数={tickets[0]:.2f}  "
           f"{'建议进维护窗口' if prob[0] >= threshold else '不进维护窗口'}"
           f"（冻结阈值 {threshold:.4f}）")
+    t90 = "未起算" if pd.isna(row["tickets_90d"]) else f"{row['tickets_90d']:.0f} 张"
+    gap = "∞" if pd.isna(row["days_since_last_report"]) else f"{row['days_since_last_report']:.1f} 天"
     print(f"[predict] 上下文：站 {row['station_id']}（{row['site_type']}）  "
-          f"近90天来单 {row['tickets_90d'] if pd.notna(row['tickets_90d']) else '未起算'} 张  "
+          f"近90天来单 {t90}  "
           f"桩级shrunk率 {row['charger_ticket_rate_shrunk']:.4f}  "
-          f"距上次报修 {row['days_since_last_report'] if pd.notna(row['days_since_last_report']) else '∞'} 天")
+          f"距上次报修 {gap}")
     print(f"[predict] 行状态：{label_state}")
     print("[predict] " + common.data_note())
 
 
 def schedule_day(frame: pd.DataFrame, bundle: dict, date: str) -> None:
-    day = frame[frame["business_date"] == pd.Timestamp(date)]
+    day = frame[frame["business_date"] == parse_day(date, "--schedule-day")]
     if day.empty:
         span = (frame["business_date"].min().date(), frame["business_date"].max().date())
         raise SystemExit(f"{date} 不在可打分日历 {span[0]}..{span[1]} 内")

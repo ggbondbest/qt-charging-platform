@@ -781,6 +781,10 @@ def test_serving_paths(artifacts):
     assert all(v is True for k, v in checks.items() if isinstance(v, bool))
     with pytest.raises(SystemExit, match="查无此桩"):
         predict.main(["--charger-id", "NOT_A_CHARGER", "--date", "2026-05-10"])
+    with pytest.raises(SystemExit, match="解析不了"):            # 坏日期要干净报错，不许 traceback
+        predict.main(["--charger-id", "CH-BJ-01-1", "--date", "2026-02-30"])
+    with pytest.raises(SystemExit, match="解析不了"):
+        predict.main(["--schedule-day", "2026-13-01"])
     with pytest.raises(SystemExit, match="不在可打分日历"):
         predict.main(["--schedule-day", "2099-01-01"])
     test_day = str(pd.Timestamp(frame.loc[frame["split"] == "TEST", "business_date"]
