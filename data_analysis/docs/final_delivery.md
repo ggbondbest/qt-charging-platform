@@ -13,10 +13,11 @@
 | 清洗挑战 | 独立 `datasets/cleaning_challenge_v1`；20 类质量问题经正式清洗器处理后的修复/隔离证据 |
 | 已有机器学习 | 智能分析中的负荷/空闲桩预测、用户流失风险、结束会话异常复核；报告来自当前已验证工件 |
 | 智能找站 | 起点、目标电量、到站/等待模型、推荐理由与路线预览；后端保留原业务兼容能力 |
-| AI参谋 | 全站右下角人物小助手，点击展开侧边对话；`POST /api/v1/intelligence/advisor` 默认解释本地实际聚合与模型报告 |
+| AI参谋 | 全站人物聊天；`POST /api/v1/intelligence/advisor` 在线检索当前聚合、模型报告和项目知识后生成带引用回答，保留本地统计问答 |
 | 模拟控制台 | 回放时钟与配对实验；独立业务库，不改统计批次 |
 
 AI参谋不另起服务、不新增模型训练、不替代原有图表或预测页。离线模式没有模型供应商调用，也不需要Key。
+网页在有效在线配置存在时默认在线，未配置时默认本地统计问答；在线每次提问仍须明确同意外发。
 原始业务数据是模拟的；“实际聚合/实际模型报告”是指由这些文件计算得到的证据，不是预填问答或现场运营实测。
 
 以下两项不纳入本次交付，研究分支保留：
@@ -86,15 +87,31 @@ python -m data_analysis.delivery.cli serve
 
 点击右下角的鲸鱼娘人物展开对话，在「范围与设置」中选择城市和日期，在当前发布批次上提出运营或模型问题；与总览对照时使用相同筛选范围。
 人物形象沿用 PR #79 的 `whale-girl.png`，保留原 MIT 署名。点击人物、收起按钮或按 Esc 可收起；
-切换页面和收起面板保留页内已完成问答，刷新页面清除。关闭时停止接收未完成答复，并撤销本次在线授权。
-响应应给出证据、来源和适用限制；缺少模型或聚合证据时明确说明，不能回填示例指标或编造原因。
+切换页面和收起面板保留页内最近10组已完成问答，刷新页面清除。在线仅带同批次、同范围最近三组历史，
+最多6条，每条800字符、合计4000字符；历史用于理解追问，不能改变统计范围或当作事实来源。
+关闭时停止接收未完成答复，并撤销本次在线授权。聊天区及展开的设置在面板内滚动，输入区固定在底部。
+数据或口径解释应给出证据/知识引用、来源和适用限制；缺少模型或聚合证据时明确说明。
+在线问候由模型生成，返回 `status=chat`，不添加统计核验标记或虚构证据。
 切换筛选后再问，确认返回范围与新筛选一致。选择页面提供的下钻操作，应回到现有分析或模型内容。
 
-在线是可选功能，由后端的专属 `ML_ADVISOR_*` 设置启用，并要求用户明确同意该次外部调用。
-配置、请求协议和失败处理以 [AI参谋说明](../ml/advisor/README.md) 为准；默认验收不配置任何外部Key。
-在线请求只发送固定问题意图、白名单聚合指标的数值/单位及固定提示，**不发送原始问题、自由备注、用户/会话明细**。
-外部模型仅选择一个值得优先复核的指标，文字和数字仍由程序依据本地证据生成，不增加新的模型结论。
-Key仅留在服务端，不读取其他工具的凭据，不进入前端、仓库或回答来源。
+首次在线配置：将 `data_analysis/ml/advisor/.env.example` 复制为同目录 `.env.local`，填入自己的
+`ML_ADVISOR_API_KEY`，保留原数据库配置并重启 `python -m data_analysis.delivery.cli serve`。
+模板已预设 `https://aiping.cn/api/v1`、`DeepSeek-V4.1-Flash`、启用值 `1` 和供应商名称AIPing。
+后端自动读取这个专用文件，也可用进程变量 `ML_ADVISOR_ENV_FILE` 指定路径。进程中的同名变量优先，
+包括 `ML_ADVISOR_ONLINE_ENABLED=0` 覆盖文件里的 `1`。已有文件直接编辑，避免覆盖原Key。
+GET接口的 `onlineAvailable:true` 只表示配置格式有效，不能证明Key、模型权限、额度和供应商网络已验证。
+本次自动化检查不使用真实AIPing Key，不代表实际供应商调用已成功；接好自己的Key后须在页面另验。
+
+在线模式先由模型从运营概况、瓶颈、站点、补能行为、模型说明五个受控主题中选择最多三个，
+再读取至多36项发布聚合和本地中文BM25检索的最多4段项目知识，最后由模型生成正文与引用。
+正常回答通常需要两次模型调用，非流式整条返回；总预算60秒，单次最多45秒且受剩余预算限制，没有自动重试。
+引用必须属于本次检索结果，分析答复必须引用聚合证据；知识解释可以只引用项目口径。
+这些检查不保证完全消除幻觉，模型文字、数字解读与建议仍须结合来源复核，不能扩大为真实经营或安全结论。
+
+每次在线提问须同意外发本次问题、有限历史、页面范围说明、聚合与检索知识。
+在线不检索或发送原始业务行、用户/会话明细及完整工件；识别出的敏感编号、凭据和本地路径会被拦截或移除。
+不要在问题中填写个人信息或凭据。Key只留在后端认证，不读取其他工具的凭据，不进入前端或模型上下文。
+收起或停止接收不能撤销已经发往供应商的调用。配置、请求契约和失败处理以 [AI参谋说明](../ml/advisor/README.md) 为准。
 
 ## 四分钟验收路线
 
@@ -105,13 +122,15 @@ Key仅留在服务端，不读取其他工具的凭据，不进入前端、仓�
 | 0:00–0:35 | 展示批次及模拟数据说明，打开清洗挑战报告 | 20类问题、真实修复/隔离、行数守恒和费用偏差；不把挑战比例当作全量污染率 |
 | 0:35–1:35 | 总览选择 `2026-05-23 ≤ 日期 < 2026-05-30`；切城市/站型，点击服务成功率格子 | 热力图、原因分布、等待/占位/配置随筛选变化；展示样本数、不同分母和缺失值 |
 | 1:35–2:20 | 智能分析选历史整点，展示负荷或空闲桩预测，再打开异常复核 | 模型ID、当前TEST/基线、kW与桩数单位，以及风险和召回限制；不使用今天日期伪造历史预测 |
-| 2:20–3:20 | AI参谋默认离线提出当前范围的运营问题，再询问模型适用限制 | 回答有本地证据和来源、范围一致；无需外部Key；不能将有限证据扩大为故障诊断 |
+| 2:20–3:20 | AI参谋选择本地统计问答，提出当前范围的运营问题，再询问模型适用限制 | 无Key基础路线；回答有本地证据、范围一致，不能将有限证据扩大为故障诊断；在线RAG另行验收 |
 | 3:20–4:00 | 智能找站设置起点与目标电量，查看推荐和路线 | ETA/等待/推荐理由来自现有流程；路线不可用时有明确说明，不冒充实时库存 |
 
 清洗挑战证据位于 `datasets/cleaning_challenge_v1/report.json`，多维聚合来源位于
 `datasets/advanced_analytics_v2/advanced_manifest.json`。详细分析例子见
 [本批可复现案例](advanced_analytics.md#7-本轮可直接演示的案例)，页面不能写死该示例数字。
 真实腾讯路线和可选在线参谋均不属于无Key基础验收的前置条件。
+在线RAG另验“你好”、当前范围运营问题、口径解释及同范围追问，核对模型答复和聚合/知识引用。
+同时检查未勾选同意时不能发送、切换范围不引用旧统计、错误配置能明确报错；为模型等待留出额外时间。
 
 ## 验证与CI覆盖
 
@@ -124,7 +143,7 @@ Key仅留在服务端，不读取其他工具的凭据，不进入前端、仓�
 | API and contracts / Linux、Windows | 统计API、高级分析API、发布完整性、JSON Schema、OpenAPI/TypeScript契约漂移；Linux另跑真实MySQL发布/API/校验 |
 | Spark / cleaning、dirty-parser、dashboard、ml-features、data-export | Java17与真实PySpark；清洗挑战在dirty-parser，高级分析在data-export；均设置`RUN_SPARK_TESTS=1` |
 | Integrated delivery / ML and MySQL | 先实际训练全部既有CPU模型，再跑模型、小时预测、流失/异常、统一HTTP和并发MySQL业务集成；最后计算100用户配对仿真 |
-| Advisor专门测试步骤 | 在完整交付依赖和本地工件下运行`test_ml_advisor`、`test_delivery_advisor`；核对本地证据和同源HTTP；在线协议用注入的测试传输，不使用真实Key |
+| Advisor RAG retrieval, generation boundary and same-origin HTTP | 在完整交付依赖下运行`test_ml_advisor`、`test_advisor_rag`、`test_delivery_advisor`；核对检索、引用、生成边界和同源HTTP；在线协议用注入的测试传输，不使用真实Key |
 | Integrated delivery / Vue | `npm ci`、Vitest、`vue-tsc`和Vite构建；高级分析筛选/格子联动、参谋操作/导航回归由`npm test`自动发现 |
 
 基础环境的测试发现允许缺少可选运行时的用例跳过；不能将它当作ML、Spark或MySQL的完整测试成绩。
@@ -135,7 +154,7 @@ Key仅留在服务端，不读取其他工具的凭据，不进入前端、仓�
 
 ```bash
 python -m unittest data_analysis.tests.test_advanced_bundle data_analysis.tests.test_advanced_api data_analysis.tests.test_cleaning_challenge -v
-python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_delivery_advisor -v
+python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
 python -m data_analysis.contracts.delivery_schema --check
 ```
 

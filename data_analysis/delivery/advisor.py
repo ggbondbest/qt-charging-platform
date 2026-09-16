@@ -21,6 +21,23 @@ from data_analysis.ml.advisor import config, service
 PATH = "/api/v1/intelligence/advisor"
 
 
+class HistoryMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=800)
+
+    @field_validator("content")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Must not be blank")
+        try:
+            value.encode("utf8")
+        except UnicodeError:
+            raise ValueError("Invalid Unicode") from None
+        return value.strip()
+
+
 class AdvisorRequest(FilterQuery):
     model_config = ConfigDict(extra="forbid", strict=True)
     datasetId: str = Field(min_length=1, max_length=128)
@@ -28,12 +45,24 @@ class AdvisorRequest(FilterQuery):
     question: str = Field(min_length=1, max_length=300)
     mode: Literal["offline", "online"] = "offline"
     consent: bool = False
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=6)
+
+    @field_validator("history")
+    @classmethod
+    def bounded_history(cls, value):
+        if sum(len(item.content) for item in value) > 4000:
+            raise ValueError("History exceeds 4000 characters")
+        return value
 
     @field_validator("question", "datasetId", "publishedBatchId")
     @classmethod
     def not_blank(cls, value):
         if not value.strip():
             raise ValueError("Must not be blank")
+        try:
+            value.encode("utf8")
+        except UnicodeError:
+            raise ValueError("Invalid Unicode") from None
         return value.strip()
 
 
@@ -66,8 +95,15 @@ class Suggestion(BaseModel):
     label: str
 
 
+class KnowledgeExcerpt(BaseModel):
+    id: str
+    title: str
+    text: str
+    source: str
+
+
 class AdvisorAnswer(BaseModel):
-    status: Literal["answered", "unsupported", "no_evidence"]
+    status: Literal["answered", "unsupported", "no_evidence", "chat"]
     mode: Literal["offline", "online"]
     intent: str
     answer: str
@@ -75,6 +111,8 @@ class AdvisorAnswer(BaseModel):
     evidence: list[Evidence]
     limitations: list[str]
     suggestions: list[Suggestion]
+    citations: list[str] = Field(default_factory=list)
+    knowledge: list[KnowledgeExcerpt] = Field(default_factory=list)
 
 
 class SampleQuestion(BaseModel):
@@ -84,7 +122,7 @@ class SampleQuestion(BaseModel):
 
 
 class AdvisorConfig(BaseModel):
-    defaultMode: Literal["offline"]
+    defaultMode: Literal["offline", "online"]
     onlineAvailable: bool
     onlineProvider: str | None
     maxQuestionLength: int
@@ -98,7 +136,7 @@ class AdvisorRunner:
     A worker owns and closes its own DB snapshot, so timeout/disconnect cannot
     close a connection underneath a running query. No unbounded executor queue.
     """
-    def __init__(self, workers=2, timeout=15.0):
+    def __init__(self, workers=2, timeout=60.0):
         self.timeout = timeout
         self.slots = threading.BoundedSemaphore(workers)
         self.pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="advisor")
@@ -139,7 +177,7 @@ def register(application, provider):
     @application.get(PATH, response_model=Envelope[AdvisorConfig], operation_id="advisorConfig")
     def advisor_config(request: Request):
         settings = config.online_settings()
-        return envelope(request, dict(defaultMode="offline", onlineAvailable=settings is not None,
+        return envelope(request, dict(defaultMode="online" if settings else "offline", onlineAvailable=settings is not None,
             onlineProvider=settings.provider if settings else None, maxQuestionLength=300,
             disclosure=service.DISCLOSURE, supportedQuestions=service.QUESTIONS))
 
@@ -157,7 +195,7 @@ def register(application, provider):
             raise ApiError(415, "INVALID_CONTENT_TYPE", "请使用 application/json")
         raw = bytearray()
         async for chunk in request.stream():
-            if len(raw) + len(chunk) > 8192:
+            if len(raw) + len(chunk) > 16384:
                 raise ApiError(413, "REQUEST_TOO_LARGE", "提问内容超过允许大小")
             raw.extend(chunk)
         try:
@@ -170,7 +208,7 @@ def register(application, provider):
         settings = None
         if body.mode == "online":
             if body.consent is not True:
-                raise ApiError(422, "CONSENT_REQUIRED", "在线辅助需为本次聚合指标外发明确勾选同意")
+                raise ApiError(422, "CONSENT_REQUIRED", "在线RAG需为本次问题、最近对话及检索证据外发明确勾选同意")
             settings = config.online_settings()
             if settings is None:
                 raise ApiError(503, "ONLINE_NOT_CONFIGURED", "服务器尚未配置在线模型；离线问答仍可使用")

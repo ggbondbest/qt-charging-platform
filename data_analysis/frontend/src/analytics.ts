@@ -11,14 +11,14 @@ export interface PublishedEnvelope<T> {
 export class AnalyticsError extends Error {
   constructor(public code: string, message: string, public status = 0) { super(message); }
 }
-export async function publishedRequest<T>(path: string, params: RecordData = {}, options: { signal?: AbortSignal; method?: string; body?: unknown } = {}): Promise<PublishedEnvelope<T>> {
+export async function publishedRequest<T>(path: string, params: RecordData = {}, options: { signal?: AbortSignal; method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<PublishedEnvelope<T>> {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null).map(([key, value]) => [key, String(value)]));
   const controller = new AbortController();
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) abort();
   let expired = false;
-  const timer = setTimeout(() => { expired = true; controller.abort(); }, 60000);
+  const timer = setTimeout(() => { expired = true; controller.abort(); }, options.timeoutMs ?? 60000);
   try {
     const response = await fetch(`/api/v1${path}${query.size ? `?${query}` : ''}`, {
       method: options.method || 'GET', signal: controller.signal,

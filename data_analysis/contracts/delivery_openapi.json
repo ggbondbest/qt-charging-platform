@@ -267,6 +267,13 @@
             "title": "Answer",
             "type": "string"
           },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
           "evidence": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -277,6 +284,13 @@
           "intent": {
             "title": "Intent",
             "type": "string"
+          },
+          "knowledge": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeExcerpt"
+            },
+            "title": "Knowledge",
+            "type": "array"
           },
           "limitations": {
             "items": {
@@ -300,7 +314,8 @@
             "enum": [
               "answered",
               "unsupported",
-              "no_evidence"
+              "no_evidence",
+              "chat"
             ],
             "title": "Status",
             "type": "string"
@@ -329,7 +344,10 @@
       "AdvisorConfig": {
         "properties": {
           "defaultMode": {
-            "const": "offline",
+            "enum": [
+              "offline",
+              "online"
+            ],
             "title": "Defaultmode",
             "type": "string"
           },
@@ -2203,6 +2221,34 @@
           "chargingUtilizationRate"
         ],
         "title": "HourlyPoint",
+        "type": "object"
+      },
+      "KnowledgeExcerpt": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "text",
+          "source"
+        ],
+        "title": "KnowledgeExcerpt",
         "type": "object"
       },
       "LoadPoint": {
@@ -6316,6 +6362,33 @@
           "content": {
             "application/json": {
               "schema": {
+                "$defs": {
+                  "HistoryMessage": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "content": {
+                        "maxLength": 800,
+                        "minLength": 1,
+                        "title": "Content",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "user",
+                          "assistant"
+                        ],
+                        "title": "Role",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "role",
+                      "content"
+                    ],
+                    "title": "HistoryMessage",
+                    "type": "object"
+                  }
+                },
                 "additionalProperties": false,
                 "properties": {
                   "cityId": {
@@ -6354,6 +6427,14 @@
                     ],
                     "description": "Asia/Shanghai business date, exclusive",
                     "title": "Enddate"
+                  },
+                  "history": {
+                    "items": {
+                      "$ref": "#/$defs/HistoryMessage"
+                    },
+                    "maxItems": 6,
+                    "title": "History",
+                    "type": "array"
                   },
                   "mode": {
                     "default": "offline",

@@ -5,12 +5,10 @@ copied from bounded public rollups/provider responses, with a reproducible URL.
 """
 import math
 import re
-import time
 from urllib.parse import urlencode
 
 from data_analysis.backend import advanced, service
 from data_analysis.backend.errors import ApiError
-from . import llm
 
 QUESTIONS = [
     {"id": "bottlenecks", "label": "运营瓶颈", "question": "当前范围的充电服务瓶颈是什么？"},
@@ -18,9 +16,10 @@ QUESTIONS = [
     {"id": "behavior", "label": "补能行为", "question": "不同用户类型的补能间隔和单次电量有何差异？"},
     {"id": "models", "label": "模型说明", "question": "目前有哪些模型，它们能说明什么？"},
 ]
-DISCLOSURE = ("离线问答在本服务内计算。在线辅助只发送固定问题意图和白名单聚合指标的数值、单位，"
-              "不发送问题原文、站点名称、用户或会话编号、评论备注及完整工件。"
-              "在线模型仅选择关注项，答案与数字仍由程序按证据生成；每次提问需单独同意。")
+DISCLOSURE = ("离线问答在本服务内计算。在线对话会将本次问题、最近最多6条对话历史、当前页面筛选说明、"
+              "检索到的项目知识片段及有限聚合指标发送给已配置的在线模型，由模型生成回答。"
+              "不会读取或外发用户与会话明细、密钥或完整工件；请勿在问题中填写个人信息或凭据。"
+              "业务数据均为模拟数据；每次在线提问需单独同意。")
 TARGETS = {"overview": "查看运营总览", "advanced": "查看多维分析", "models": "查看模型分析", "anomalies": "查看用户与异常"}
 MIN_COMPARISON_ATTEMPTS = 30
 SITE_LABELS = {"OFFICE": "办公园区", "SHOPPING": "商业中心", "MALL": "商业中心", "RESIDENTIAL": "居民社区",
@@ -158,6 +157,9 @@ def location_matches(snapshot, question, filters, intent):
 
 
 def answer(snapshot, provider, query, *, settings=None, deadline=None, cancelled=None):
+    if settings is not None:
+        from . import rag
+        return rag.answer(snapshot, provider, query, settings=settings, deadline=deadline, cancelled=cancelled)
     filters = service.check_filters(snapshot, query)
     metadata = snapshot.metadata
     if metadata.get("source") != "SIMULATED":
@@ -216,7 +218,7 @@ def answer(snapshot, provider, query, *, settings=None, deadline=None, cancelled
 
     if intent == "overview":
         metrics = service.overview(snapshot, filters)["metrics"]
-        if not metrics.get("observedHours") and not metrics.get("startedSessions"):
+        if not any(metrics.get(key) for key in ("observedHours", "startedSessions", "activeUsers", "paidCents", "refundCents")):
             result["status"] = "no_evidence"
         path = "/api/v1/dashboard/overview"
         for key, label, source, unit, scale in [
@@ -224,10 +226,19 @@ def answer(snapshot, provider, query, *, settings=None, deadline=None, cancelled
             ("utilization", "完整小时充电利用率", "chargingUtilizationRate", "%", 100),
             ("queue_wait", "已解决排队平均等待", "queueMeanWaitSeconds", " 分钟", 1/60),
             ("sessions", "开始充电会话", "startedSessions", " 次", 1),
+            ("net_paid", "按支付发生日统计的净收款", "netPaidCents", " 元", .01),
+            ("paid", "按支付发生日统计的成功收款", "paidCents", " 元", .01),
+            ("refund", "按退款发生日统计的成功退款", "refundCents", " 元", .01),
+            ("active_users", "窗口内去重活跃用户", "activeUsers", " 人", 1),
+            ("observed_hours", "有遥测观测的站点小时", "observedHours", " 站点小时", 1),
+            ("complete_hours", "完整遥测站点小时", "completeHours", " 站点小时", 1),
+            ("station_count", "范围内电站快照数量", "stationCount", " 站", 1),
+            ("charger_count", "范围内充电资源快照数量", "chargerCount", " 个", 1),
         ]:
             value = number(metrics.get(source))
             evidence(key, label, value * scale if value is not None else None, unit, path, "metrics." + source)
         result["limitations"].append("利用率仅使用完整遥测小时；排队等待按解决日期归属，不能解释当前实时队长。")
+        result["limitations"].append("净收款为成功收款减成功退款，不是利润；活跃用户在整个所选窗口去重，不能相加每日人数。站数与充电资源数为范围内静态快照，不按日期累计，也不是实时可用数量。")
         nav("overview")
 
     elif intent in ("bottlenecks", "stations", "behavior"):
@@ -362,16 +373,5 @@ def answer(snapshot, provider, query, *, settings=None, deadline=None, cancelled
     if result["status"] == "no_evidence":
         result["answer"] = "当前范围没有足够的可用记录支持该比较或判断；请调整页面筛选。" + ("模型的固定历史范围不随筛选改变。" if intent == "anomalies" else "")
         return result
-    online_note = ""
-    if query.mode == "online":
-        if (cancelled is not None and cancelled.is_set()) or (deadline is not None and time.monotonic() >= deadline):
-            raise ApiError(504, "ADVISOR_TIMEOUT", "参谋查询超时，请稍后重试")
-        payload = llm.external_payload(intent, ev)
-        focus = llm.choose_focus(settings, payload, timeout=max(.1, deadline - time.monotonic()) if deadline else None)
-        if focus:
-            item = next(row for row in ev if row["id"] == focus)
-            online_note = " 在线辅助建议关注“" + item["label"] + "”，仅影响关注顺序。"
-        else:
-            result["limitations"].append("本次没有可外发的白名单聚合指标，未调用在线模型。")
-    result["answer"] = concise_answer(intent, ev, intro) + online_note
+    result["answer"] = concise_answer(intent, ev, intro)
     return result
