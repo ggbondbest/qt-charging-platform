@@ -1,0 +1,389 @@
+== Physical Plan ==
+AdaptiveSparkPlan (56)
++- InMemoryTableScan (1)
+      +- InMemoryRelation (2)
+            +- AdaptiveSparkPlan (55)
+               +- == Final Plan ==
+                  * HashAggregate (38)
+                  +- ShuffleQueryStage (37), Statistics(sizeInBytes=12.3 MiB, rowCount=9.32E+4)
+                     +- Exchange (36)
+                        +- * HashAggregate (35)
+                           +- * Project (34)
+                              +- * BroadcastHashJoin LeftOuter BuildRight (33)
+                                 :- * Project (23)
+                                 :  +- * BroadcastHashJoin LeftOuter BuildRight (22)
+                                 :     :- * Project (13)
+                                 :     :  +- Window (12)
+                                 :     :     +- * Sort (11)
+                                 :     :        +- AQEShuffleRead (10)
+                                 :     :           +- ShuffleQueryStage (9), Statistics(sizeInBytes=10.2 MiB, rowCount=1.22E+5)
+                                 :     :              +- Exchange (8)
+                                 :     :                 +- TableCacheQueryStage (7), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                 :     :                    +- InMemoryTableScan (3)
+                                 :     :                          +- InMemoryRelation (4)
+                                 :     :                                +- * ColumnarToRow (6)
+                                 :     :                                   +- Scan parquet  (5)
+                                 :     +- BroadcastQueryStage (21), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                 :        +- BroadcastExchange (20)
+                                 :           +- * Filter (19)
+                                 :              +- TableCacheQueryStage (18), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                 :                 +- InMemoryTableScan (14)
+                                 :                       +- InMemoryRelation (15)
+                                 :                             +- * ColumnarToRow (17)
+                                 :                                +- Scan parquet  (16)
+                                 +- BroadcastQueryStage (32), Statistics(sizeInBytes=32.2 MiB, rowCount=6.00E+3)
+                                    +- BroadcastExchange (31)
+                                       +- * Project (30)
+                                          +- * Filter (29)
+                                             +- TableCacheQueryStage (28), Statistics(sizeInBytes=363.4 KiB, rowCount=6.00E+3)
+                                                +- InMemoryTableScan (24)
+                                                      +- InMemoryRelation (25)
+                                                            +- * ColumnarToRow (27)
+                                                               +- Scan parquet  (26)
+               +- == Initial Plan ==
+                  HashAggregate (54)
+                  +- Exchange (53)
+                     +- HashAggregate (52)
+                        +- Project (51)
+                           +- BroadcastHashJoin LeftOuter BuildRight (50)
+                              :- Project (46)
+                              :  +- BroadcastHashJoin LeftOuter BuildRight (45)
+                              :     :- Project (42)
+                              :     :  +- Window (41)
+                              :     :     +- Sort (40)
+                              :     :        +- Exchange (39)
+                              :     :           +- InMemoryTableScan (3)
+                              :     :                 +- InMemoryRelation (4)
+                              :     :                       +- * ColumnarToRow (6)
+                              :     :                          +- Scan parquet  (5)
+                              :     +- BroadcastExchange (44)
+                              :        +- Filter (43)
+                              :           +- InMemoryTableScan (14)
+                              :                 +- InMemoryRelation (15)
+                              :                       +- * ColumnarToRow (17)
+                              :                          +- Scan parquet  (16)
+                              +- BroadcastExchange (49)
+                                 +- Project (48)
+                                    +- Filter (47)
+                                       +- InMemoryTableScan (24)
+                                             +- InMemoryRelation (25)
+                                                   +- * ColumnarToRow (27)
+                                                      +- Scan parquet  (26)
+
+
+(1) InMemoryTableScan
+Output [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L]
+Arguments: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L]
+
+(2) InMemoryRelation
+Arguments: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),AdaptiveSparkPlan isFinalPlan=true
++- == Final Plan ==
+   *(5) HashAggregate(keys=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669], functions=[count(1), sum(energy_wh#1831L), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)], output=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L])
+   +- ShuffleQueryStage 6
+      +- Exchange hashpartitioning(station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, 8), ENSURE_REQUIREMENTS, [plan_id=44309]
+         +- *(4) HashAggregate(keys=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669], functions=[partial_count(1), partial_sum(energy_wh#1831L), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)], output=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L])
+            +- *(4) Project [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, coalesce(user_segment#15577, UNKNOWN) AS user_segment#15732, cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date) AS business_date#15608, CASE WHEN isnull(_previous_start#15495) THEN FIRST_OBSERVED WHEN (_interval#15521L < 86400) THEN LT1D WHEN (_interval#15521L < 259200) THEN 1_TO_3D WHEN (_interval#15521L < 604800) THEN 3_TO_7D WHEN (_interval#15521L < 1209600) THEN 7_TO_14D ELSE GE14D END AS gap_bucket#15638, CASE WHEN (isnull(energy_wh#1831L) OR (energy_wh#1831L < 0)) THEN UNKNOWN WHEN (energy_wh#1831L < 10000) THEN LT10 WHEN (energy_wh#1831L < 20000) THEN 10_TO_20 WHEN (energy_wh#1831L < 40000) THEN 20_TO_40 ELSE GE40 END AS energy_bucket#15669]
+               +- *(4) BroadcastHashJoin [user_id#1824], [user_id#708], LeftOuter, BuildRight, false
+                  :- *(4) Project [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171]
+                  :  +- *(4) BroadcastHashJoin [station_id#1826], [station_id#170], LeftOuter, BuildRight, false
+                  :     :- *(4) Project [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, (cast(started_at#1828 as bigint) - cast(_previous_start#15495 as bigint)) AS _interval#15521L]
+                  :     :  +- Window [lag(started_at#1828, -1, null) windowspecdefinition(user_id#1824, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST, specifiedwindowframe(RowFrame, -1, -1)) AS _previous_start#15495], [user_id#1824], [started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST]
+                  :     :     +- *(3) Sort [user_id#1824 ASC NULLS FIRST, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST], false, 0
+                  :     :        +- AQEShuffleRead coalesced
+                  :     :           +- ShuffleQueryStage 3
+                  :     :              +- Exchange hashpartitioning(user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=44028]
+                  :     :                 +- TableCacheQueryStage 0
+                  :     :                    +- InMemoryTableScan [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+                  :     :                          +- InMemoryRelation [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], StorageLevel(disk, 1 replicas)
+                  :     :                                +- *(1) ColumnarToRow
+                  :     :                                   +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                  :     +- BroadcastQueryStage 4
+                  :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=44125]
+                  :           +- *(1) Filter isnotnull(station_id#170)
+                  :              +- TableCacheQueryStage 1
+                  :                 +- InMemoryTableScan [station_id#170, city_id#171], [isnotnull(station_id#170)]
+                  :                       +- InMemoryRelation [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], StorageLevel(disk, 1 replicas)
+                  :                             +- *(1) ColumnarToRow
+                  :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                  +- BroadcastQueryStage 5
+                     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=44137]
+                        +- *(2) Project [user_id#708, segment#711 AS user_segment#15577]
+                           +- *(2) Filter isnotnull(user_id#708)
+                              +- TableCacheQueryStage 2
+                                 +- InMemoryTableScan [segment#711, user_id#708], [isnotnull(user_id#708)]
+                                       +- InMemoryRelation [user_id#708, home_city_id#709, registered_at#710, segment#711, acquisition_channel#712, membership#713], StorageLevel(disk, 1 replicas)
+                                             +- *(1) ColumnarToRow
+                                                +- FileScan parquet [user_id#708,home_city_id#709,registered_at#710,segment#711,acquisition_channel#712,membership#713] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<user_id:string,home_city_id:string,registered_at:timestamp,segment:string,acquisition_chan...
++- == Initial Plan ==
+   HashAggregate(keys=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669], functions=[count(1), sum(energy_wh#1831L), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)], output=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L])
+   +- Exchange hashpartitioning(station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, 8), ENSURE_REQUIREMENTS, [plan_id=43973]
+      +- HashAggregate(keys=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669], functions=[partial_count(1), partial_sum(energy_wh#1831L), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)], output=[station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L])
+         +- Project [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, coalesce(user_segment#15577, UNKNOWN) AS user_segment#15732, cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date) AS business_date#15608, CASE WHEN isnull(_previous_start#15495) THEN FIRST_OBSERVED WHEN (_interval#15521L < 86400) THEN LT1D WHEN (_interval#15521L < 259200) THEN 1_TO_3D WHEN (_interval#15521L < 604800) THEN 3_TO_7D WHEN (_interval#15521L < 1209600) THEN 7_TO_14D ELSE GE14D END AS gap_bucket#15638, CASE WHEN (isnull(energy_wh#1831L) OR (energy_wh#1831L < 0)) THEN UNKNOWN WHEN (energy_wh#1831L < 10000) THEN LT10 WHEN (energy_wh#1831L < 20000) THEN 10_TO_20 WHEN (energy_wh#1831L < 40000) THEN 20_TO_40 ELSE GE40 END AS energy_bucket#15669]
+            +- BroadcastHashJoin [user_id#1824], [user_id#708], LeftOuter, BuildRight, false
+               :- Project [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171]
+               :  +- BroadcastHashJoin [station_id#1826], [station_id#170], LeftOuter, BuildRight, false
+               :     :- Project [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, (cast(started_at#1828 as bigint) - cast(_previous_start#15495 as bigint)) AS _interval#15521L]
+               :     :  +- Window [lag(started_at#1828, -1, null) windowspecdefinition(user_id#1824, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST, specifiedwindowframe(RowFrame, -1, -1)) AS _previous_start#15495], [user_id#1824], [started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST]
+               :     :     +- Sort [user_id#1824 ASC NULLS FIRST, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST], false, 0
+               :     :        +- Exchange hashpartitioning(user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=43959]
+               :     :           +- InMemoryTableScan [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+               :     :                 +- InMemoryRelation [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], StorageLevel(disk, 1 replicas)
+               :     :                       +- *(1) ColumnarToRow
+               :     :                          +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+               :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=43964]
+               :        +- Filter isnotnull(station_id#170)
+               :           +- InMemoryTableScan [station_id#170, city_id#171], [isnotnull(station_id#170)]
+               :                 +- InMemoryRelation [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], StorageLevel(disk, 1 replicas)
+               :                       +- *(1) ColumnarToRow
+               :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+               +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=43968]
+                  +- Project [user_id#708, segment#711 AS user_segment#15577]
+                     +- Filter isnotnull(user_id#708)
+                        +- InMemoryTableScan [segment#711, user_id#708], [isnotnull(user_id#708)]
+                              +- InMemoryRelation [user_id#708, home_city_id#709, registered_at#710, segment#711, acquisition_channel#712, membership#713], StorageLevel(disk, 1 replicas)
+                                    +- *(1) ColumnarToRow
+                                       +- FileScan parquet [user_id#708,home_city_id#709,registered_at#710,segment#711,acquisition_channel#712,membership#713] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<user_id:string,home_city_id:string,registered_at:timestamp,segment:string,acquisition_chan...
+,None)
+
+(3) InMemoryTableScan
+Output [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+
+(4) InMemoryRelation
+Arguments: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(5) Scan parquet 
+Output [24]: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845]
+Batched: true
+Location: InMemoryFileIndex [file:${CLEAN_ROOT}/clean/charging_sessions]
+ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,charger_id:string,started_at:timestamp,ended_at:timestamp,unplugged_at:timestamp,energy_wh:bigint,grid_energy_wh:bigint,electricity_fee_cents:bigint,service_fee_cents:bigint,parking_fee_cents:bigint,discount_cents:bigint,total_fee_cents:bigint,grid_cost_cents:bigint,status:string,stop_reason:string,start_soc_pct:double,end_soc_pct:double,target_mode:string,target_value:double,campaign_id:string>
+
+(6) ColumnarToRow [codegen id : 1]
+Input [24]: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845]
+
+(7) TableCacheQueryStage
+Output [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: 0
+
+(8) Exchange
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: hashpartitioning(user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=44028]
+
+(9) ShuffleQueryStage
+Output [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: 3
+
+(10) AQEShuffleRead
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: coalesced
+
+(11) Sort [codegen id : 3]
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: [user_id#1824 ASC NULLS FIRST, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST], false, 0
+
+(12) Window
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: [lag(started_at#1828, -1, null) windowspecdefinition(user_id#1824, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST, specifiedwindowframe(RowFrame, -1, -1)) AS _previous_start#15495], [user_id#1824], [started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST]
+
+(13) Project [codegen id : 4]
+Output [6]: [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, (cast(started_at#1828 as bigint) - cast(_previous_start#15495 as bigint)) AS _interval#15521L]
+Input [6]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495]
+
+(14) InMemoryTableScan
+Output [2]: [station_id#170, city_id#171]
+Arguments: [station_id#170, city_id#171], [isnotnull(station_id#170)]
+
+(15) InMemoryRelation
+Arguments: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(16) Scan parquet 
+Output [9]: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L]
+Batched: true
+Location: InMemoryFileIndex [file:${CLEAN_ROOT}/clean/stations]
+ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,longitude:double,opened_at:timestamp,transformer_kw:double,rent_daily_cents:bigint>
+
+(17) ColumnarToRow [codegen id : 1]
+Input [9]: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L]
+
+(18) TableCacheQueryStage
+Output [2]: [station_id#170, city_id#171]
+Arguments: 1
+
+(19) Filter [codegen id : 1]
+Input [2]: [station_id#170, city_id#171]
+Condition : isnotnull(station_id#170)
+
+(20) BroadcastExchange
+Input [2]: [station_id#170, city_id#171]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=44125]
+
+(21) BroadcastQueryStage
+Output [2]: [station_id#170, city_id#171]
+Arguments: 4
+
+(22) BroadcastHashJoin [codegen id : 4]
+Left keys [1]: [station_id#1826]
+Right keys [1]: [station_id#170]
+Join type: LeftOuter
+Join condition: None
+
+(23) Project [codegen id : 4]
+Output [7]: [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171]
+Input [8]: [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, station_id#170, city_id#171]
+
+(24) InMemoryTableScan
+Output [2]: [segment#711, user_id#708]
+Arguments: [segment#711, user_id#708], [isnotnull(user_id#708)]
+
+(25) InMemoryRelation
+Arguments: [user_id#708, home_city_id#709, registered_at#710, segment#711, acquisition_channel#712, membership#713], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [user_id#708,home_city_id#709,registered_at#710,segment#711,acquisition_channel#712,membership#713] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<user_id:string,home_city_id:string,registered_at:timestamp,segment:string,acquisition_chan...
+,None)
+
+(26) Scan parquet 
+Output [6]: [user_id#708, home_city_id#709, registered_at#710, segment#711, acquisition_channel#712, membership#713]
+Batched: true
+Location: InMemoryFileIndex [file:${CLEAN_ROOT}/clean/users]
+ReadSchema: struct<user_id:string,home_city_id:string,registered_at:timestamp,segment:string,acquisition_channel:string,membership:string>
+
+(27) ColumnarToRow [codegen id : 1]
+Input [6]: [user_id#708, home_city_id#709, registered_at#710, segment#711, acquisition_channel#712, membership#713]
+
+(28) TableCacheQueryStage
+Output [2]: [segment#711, user_id#708]
+Arguments: 2
+
+(29) Filter [codegen id : 2]
+Input [2]: [segment#711, user_id#708]
+Condition : isnotnull(user_id#708)
+
+(30) Project [codegen id : 2]
+Output [2]: [user_id#708, segment#711 AS user_segment#15577]
+Input [2]: [segment#711, user_id#708]
+
+(31) BroadcastExchange
+Input [2]: [user_id#708, user_segment#15577]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=44137]
+
+(32) BroadcastQueryStage
+Output [2]: [user_id#708, user_segment#15577]
+Arguments: 5
+
+(33) BroadcastHashJoin [codegen id : 4]
+Left keys [1]: [user_id#1824]
+Right keys [1]: [user_id#708]
+Join type: LeftOuter
+Join condition: None
+
+(34) Project [codegen id : 4]
+Output [9]: [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, coalesce(user_segment#15577, UNKNOWN) AS user_segment#15732, cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date) AS business_date#15608, CASE WHEN isnull(_previous_start#15495) THEN FIRST_OBSERVED WHEN (_interval#15521L < 86400) THEN LT1D WHEN (_interval#15521L < 259200) THEN 1_TO_3D WHEN (_interval#15521L < 604800) THEN 3_TO_7D WHEN (_interval#15521L < 1209600) THEN 7_TO_14D ELSE GE14D END AS gap_bucket#15638, CASE WHEN (isnull(energy_wh#1831L) OR (energy_wh#1831L < 0)) THEN UNKNOWN WHEN (energy_wh#1831L < 10000) THEN LT10 WHEN (energy_wh#1831L < 20000) THEN 10_TO_20 WHEN (energy_wh#1831L < 40000) THEN 20_TO_40 ELSE GE40 END AS energy_bucket#15669]
+Input [9]: [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, user_id#708, user_segment#15577]
+
+(35) HashAggregate [codegen id : 4]
+Input [9]: [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, user_segment#15732, business_date#15608, gap_bucket#15638, energy_bucket#15669]
+Keys [6]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669]
+Functions [5]: [partial_count(1), partial_sum(energy_wh#1831L), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)]
+Aggregate Attributes [5]: [count#61021L, sum#61022L, sum#61023L, sum#61024L, sum#61025L]
+Results [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+
+(36) Exchange
+Input [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+Arguments: hashpartitioning(station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, 8), ENSURE_REQUIREMENTS, [plan_id=44309]
+
+(37) ShuffleQueryStage
+Output [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+Arguments: 6
+
+(38) HashAggregate [codegen id : 5]
+Input [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+Keys [6]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669]
+Functions [5]: [count(1), sum(energy_wh#1831L), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)]
+Aggregate Attributes [5]: [count(1)#15795L, sum(energy_wh#1831L)#15797L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END)#15799L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END)#15801L, sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)#15803L]
+Results [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count(1)#15795L AS session_count#15796L, sum(energy_wh#1831L)#15797L AS energy_wh#15798L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END)#15799L AS interval_seconds_sum#15800L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END)#15801L AS interval_count#15802L, sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)#15803L AS first_observed_count#15804L]
+
+(39) Exchange
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: hashpartitioning(user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=43959]
+
+(40) Sort
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: [user_id#1824 ASC NULLS FIRST, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST], false, 0
+
+(41) Window
+Input [5]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L]
+Arguments: [lag(started_at#1828, -1, null) windowspecdefinition(user_id#1824, started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST, specifiedwindowframe(RowFrame, -1, -1)) AS _previous_start#15495], [user_id#1824], [started_at#1828 ASC NULLS FIRST, session_id#1822 ASC NULLS FIRST]
+
+(42) Project
+Output [6]: [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, (cast(started_at#1828 as bigint) - cast(_previous_start#15495 as bigint)) AS _interval#15521L]
+Input [6]: [session_id#1822, user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495]
+
+(43) Filter
+Input [2]: [station_id#170, city_id#171]
+Condition : isnotnull(station_id#170)
+
+(44) BroadcastExchange
+Input [2]: [station_id#170, city_id#171]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=43964]
+
+(45) BroadcastHashJoin
+Left keys [1]: [station_id#1826]
+Right keys [1]: [station_id#170]
+Join type: LeftOuter
+Join condition: None
+
+(46) Project
+Output [7]: [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171]
+Input [8]: [user_id#1824, station_id#1826, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, station_id#170, city_id#171]
+
+(47) Filter
+Input [2]: [segment#711, user_id#708]
+Condition : isnotnull(user_id#708)
+
+(48) Project
+Output [2]: [user_id#708, segment#711 AS user_segment#15577]
+Input [2]: [segment#711, user_id#708]
+
+(49) BroadcastExchange
+Input [2]: [user_id#708, user_segment#15577]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=43968]
+
+(50) BroadcastHashJoin
+Left keys [1]: [user_id#1824]
+Right keys [1]: [user_id#708]
+Join type: LeftOuter
+Join condition: None
+
+(51) Project
+Output [9]: [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, coalesce(user_segment#15577, UNKNOWN) AS user_segment#15732, cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date) AS business_date#15608, CASE WHEN isnull(_previous_start#15495) THEN FIRST_OBSERVED WHEN (_interval#15521L < 86400) THEN LT1D WHEN (_interval#15521L < 259200) THEN 1_TO_3D WHEN (_interval#15521L < 604800) THEN 3_TO_7D WHEN (_interval#15521L < 1209600) THEN 7_TO_14D ELSE GE14D END AS gap_bucket#15638, CASE WHEN (isnull(energy_wh#1831L) OR (energy_wh#1831L < 0)) THEN UNKNOWN WHEN (energy_wh#1831L < 10000) THEN LT10 WHEN (energy_wh#1831L < 20000) THEN 10_TO_20 WHEN (energy_wh#1831L < 40000) THEN 20_TO_40 ELSE GE40 END AS energy_bucket#15669]
+Input [9]: [station_id#1826, user_id#1824, started_at#1828, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, user_id#708, user_segment#15577]
+
+(52) HashAggregate
+Input [9]: [station_id#1826, energy_wh#1831L, _previous_start#15495, _interval#15521L, city_id#171, user_segment#15732, business_date#15608, gap_bucket#15638, energy_bucket#15669]
+Keys [6]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669]
+Functions [5]: [partial_count(1), partial_sum(energy_wh#1831L), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), partial_sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)]
+Aggregate Attributes [5]: [count#61021L, sum#61022L, sum#61023L, sum#61024L, sum#61025L]
+Results [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+
+(53) Exchange
+Input [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+Arguments: hashpartitioning(station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, 8), ENSURE_REQUIREMENTS, [plan_id=43973]
+
+(54) HashAggregate
+Input [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count#61026L, sum#61027L, sum#61028L, sum#61029L, sum#61030L]
+Keys [6]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669]
+Functions [5]: [count(1), sum(energy_wh#1831L), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END), sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END), sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)]
+Aggregate Attributes [5]: [count(1)#15795L, sum(energy_wh#1831L)#15797L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END)#15799L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END)#15801L, sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)#15803L]
+Results [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, count(1)#15795L AS session_count#15796L, sum(energy_wh#1831L)#15797L AS energy_wh#15798L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN _interval#15521L ELSE 0 END)#15799L AS interval_seconds_sum#15800L, sum(CASE WHEN (isnotnull(_previous_start#15495) AND (_interval#15521L >= 0)) THEN 1 ELSE 0 END)#15801L AS interval_count#15802L, sum(CASE WHEN isnull(_previous_start#15495) THEN 1 ELSE 0 END)#15803L AS first_observed_count#15804L]
+
+(55) AdaptiveSparkPlan
+Output [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L]
+Arguments: isFinalPlan=true
+
+(56) AdaptiveSparkPlan
+Output [11]: [station_id#1826, city_id#171, business_date#15608, user_segment#15732, gap_bucket#15638, energy_bucket#15669, session_count#15796L, energy_wh#15798L, interval_seconds_sum#15800L, interval_count#15802L, first_observed_count#15804L]
+Arguments: isFinalPlan=false
+

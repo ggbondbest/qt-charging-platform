@@ -1,0 +1,1775 @@
+== Physical Plan ==
+AdaptiveSparkPlan (240)
++- InMemoryTableScan (1)
+      +- InMemoryRelation (2)
+            +- AdaptiveSparkPlan (239)
+               +- == Final Plan ==
+                  * Project (160)
+                  +- * BroadcastHashJoin LeftOuter BuildRight (159)
+                     :- ShuffleQueryStage (57), Statistics(sizeInBytes=29.0 KiB, rowCount=464)
+                     :  +- Exchange (56)
+                     :     +- * Generate (55)
+                     :        +- * HashAggregate (54)
+                     :           +- AQEShuffleRead (53)
+                     :              +- ShuffleQueryStage (52), Statistics(sizeInBytes=8.4 KiB, rowCount=154)
+                     :                 +- Exchange (51)
+                     :                    +- * HashAggregate (50)
+                     :                       +- * Filter (49)
+                     :                          +- * HashAggregate (48)
+                     :                             +- AQEShuffleRead (47)
+                     :                                +- ShuffleQueryStage (46), Statistics(sizeInBytes=4.3 MiB, rowCount=6.23E+4)
+                     :                                   +- Exchange (45)
+                     :                                      +- * HashAggregate (44)
+                     :                                         +- Union (43)
+                     :                                            :- * Project (18)
+                     :                                            :  +- * BroadcastHashJoin Inner BuildRight (17)
+                     :                                            :     :- * Filter (8)
+                     :                                            :     :  +- TableCacheQueryStage (7), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                     :                                            :     :     +- InMemoryTableScan (3)
+                     :                                            :     :           +- InMemoryRelation (4)
+                     :                                            :     :                 +- * ColumnarToRow (6)
+                     :                                            :     :                    +- Scan parquet  (5)
+                     :                                            :     +- BroadcastQueryStage (16), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                     :                                            :        +- BroadcastExchange (15)
+                     :                                            :           +- * Filter (14)
+                     :                                            :              +- TableCacheQueryStage (13), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                     :                                            :                 +- InMemoryTableScan (9)
+                     :                                            :                       +- InMemoryRelation (10)
+                     :                                            :                             +- * ColumnarToRow (12)
+                     :                                            :                                +- Scan parquet  (11)
+                     :                                            :- * Project (30)
+                     :                                            :  +- * BroadcastHashJoin Inner BuildRight (29)
+                     :                                            :     :- * Filter (22)
+                     :                                            :     :  +- TableCacheQueryStage (21), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                     :                                            :     :     +- InMemoryTableScan (19)
+                     :                                            :     :           +- InMemoryRelation (20)
+                     :                                            :     :                 +- * ColumnarToRow (6)
+                     :                                            :     :                    +- Scan parquet  (5)
+                     :                                            :     +- BroadcastQueryStage (28), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                     :                                            :        +- BroadcastExchange (27)
+                     :                                            :           +- * Filter (26)
+                     :                                            :              +- TableCacheQueryStage (25), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                     :                                            :                 +- InMemoryTableScan (23)
+                     :                                            :                       +- InMemoryRelation (24)
+                     :                                            :                             +- * ColumnarToRow (12)
+                     :                                            :                                +- Scan parquet  (11)
+                     :                                            +- * Project (42)
+                     :                                               +- * BroadcastHashJoin Inner BuildRight (41)
+                     :                                                  :- * Filter (34)
+                     :                                                  :  +- TableCacheQueryStage (33), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                     :                                                  :     +- InMemoryTableScan (31)
+                     :                                                  :           +- InMemoryRelation (32)
+                     :                                                  :                 +- * ColumnarToRow (6)
+                     :                                                  :                    +- Scan parquet  (5)
+                     :                                                  +- BroadcastQueryStage (40), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                     :                                                     +- BroadcastExchange (39)
+                     :                                                        +- * Filter (38)
+                     :                                                           +- TableCacheQueryStage (37), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                     :                                                              +- InMemoryTableScan (35)
+                     :                                                                    +- InMemoryRelation (36)
+                     :                                                                          +- * ColumnarToRow (12)
+                     :                                                                             +- Scan parquet  (11)
+                     +- BroadcastQueryStage (158), Statistics(sizeInBytes=32.0 MiB, rowCount=464)
+                        +- BroadcastExchange (157)
+                           +- * HashAggregate (156)
+                              +- AQEShuffleRead (155)
+                                 +- ShuffleQueryStage (154), Statistics(sizeInBytes=29.0 KiB, rowCount=464)
+                                    +- Exchange (153)
+                                       +- * HashAggregate (152)
+                                          +- * HashAggregate (151)
+                                             +- * HashAggregate (150)
+                                                +- * Project (149)
+                                                   +- * BroadcastHashJoin Inner BuildRight (148)
+                                                      :- AQEShuffleRead (102)
+                                                      :  +- ShuffleQueryStage (101), Statistics(sizeInBytes=7.6 MiB, rowCount=1.10E+5)
+                                                      :     +- Exchange (100)
+                                                      :        +- * HashAggregate (99)
+                                                      :           +- AQEShuffleRead (98)
+                                                      :              +- ShuffleQueryStage (97), Statistics(sizeInBytes=11.0 MiB, rowCount=1.61E+5)
+                                                      :                 +- Exchange (96)
+                                                      :                    +- * HashAggregate (95)
+                                                      :                       +- Union (94)
+                                                      :                          :- * Project (69)
+                                                      :                          :  +- * BroadcastHashJoin Inner BuildRight (68)
+                                                      :                          :     :- * Filter (61)
+                                                      :                          :     :  +- TableCacheQueryStage (60), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                      :                          :     :     +- InMemoryTableScan (58)
+                                                      :                          :     :           +- InMemoryRelation (59)
+                                                      :                          :     :                 +- * ColumnarToRow (6)
+                                                      :                          :     :                    +- Scan parquet  (5)
+                                                      :                          :     +- BroadcastQueryStage (67), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                      :                          :        +- BroadcastExchange (66)
+                                                      :                          :           +- * Filter (65)
+                                                      :                          :              +- TableCacheQueryStage (64), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                      :                          :                 +- InMemoryTableScan (62)
+                                                      :                          :                       +- InMemoryRelation (63)
+                                                      :                          :                             +- * ColumnarToRow (12)
+                                                      :                          :                                +- Scan parquet  (11)
+                                                      :                          :- * Project (81)
+                                                      :                          :  +- * BroadcastHashJoin Inner BuildRight (80)
+                                                      :                          :     :- * Filter (73)
+                                                      :                          :     :  +- TableCacheQueryStage (72), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                      :                          :     :     +- InMemoryTableScan (70)
+                                                      :                          :     :           +- InMemoryRelation (71)
+                                                      :                          :     :                 +- * ColumnarToRow (6)
+                                                      :                          :     :                    +- Scan parquet  (5)
+                                                      :                          :     +- BroadcastQueryStage (79), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                      :                          :        +- BroadcastExchange (78)
+                                                      :                          :           +- * Filter (77)
+                                                      :                          :              +- TableCacheQueryStage (76), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                      :                          :                 +- InMemoryTableScan (74)
+                                                      :                          :                       +- InMemoryRelation (75)
+                                                      :                          :                             +- * ColumnarToRow (12)
+                                                      :                          :                                +- Scan parquet  (11)
+                                                      :                          +- * Project (93)
+                                                      :                             +- * BroadcastHashJoin Inner BuildRight (92)
+                                                      :                                :- * Filter (85)
+                                                      :                                :  +- TableCacheQueryStage (84), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                      :                                :     +- InMemoryTableScan (82)
+                                                      :                                :           +- InMemoryRelation (83)
+                                                      :                                :                 +- * ColumnarToRow (6)
+                                                      :                                :                    +- Scan parquet  (5)
+                                                      :                                +- BroadcastQueryStage (91), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                      :                                   +- BroadcastExchange (90)
+                                                      :                                      +- * Filter (89)
+                                                      :                                         +- TableCacheQueryStage (88), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                      :                                            +- InMemoryTableScan (86)
+                                                      :                                                  +- InMemoryRelation (87)
+                                                      :                                                        +- * ColumnarToRow (12)
+                                                      :                                                           +- Scan parquet  (11)
+                                                      +- BroadcastQueryStage (147), Statistics(sizeInBytes=34.0 MiB, rowCount=3.50E+4)
+                                                         +- BroadcastExchange (146)
+                                                            +- * Filter (145)
+                                                               +- * HashAggregate (144)
+                                                                  +- AQEShuffleRead (143)
+                                                                     +- ShuffleQueryStage (142), Statistics(sizeInBytes=4.3 MiB, rowCount=6.23E+4)
+                                                                        +- Exchange (141)
+                                                                           +- * HashAggregate (140)
+                                                                              +- Union (139)
+                                                                                 :- * Project (114)
+                                                                                 :  +- * BroadcastHashJoin Inner BuildRight (113)
+                                                                                 :     :- * Filter (106)
+                                                                                 :     :  +- TableCacheQueryStage (105), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                                                 :     :     +- InMemoryTableScan (103)
+                                                                                 :     :           +- InMemoryRelation (104)
+                                                                                 :     :                 +- * ColumnarToRow (6)
+                                                                                 :     :                    +- Scan parquet  (5)
+                                                                                 :     +- BroadcastQueryStage (112), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                                                 :        +- BroadcastExchange (111)
+                                                                                 :           +- * Filter (110)
+                                                                                 :              +- TableCacheQueryStage (109), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                                                 :                 +- InMemoryTableScan (107)
+                                                                                 :                       +- InMemoryRelation (108)
+                                                                                 :                             +- * ColumnarToRow (12)
+                                                                                 :                                +- Scan parquet  (11)
+                                                                                 :- * Project (126)
+                                                                                 :  +- * BroadcastHashJoin Inner BuildRight (125)
+                                                                                 :     :- * Filter (118)
+                                                                                 :     :  +- TableCacheQueryStage (117), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                                                 :     :     +- InMemoryTableScan (115)
+                                                                                 :     :           +- InMemoryRelation (116)
+                                                                                 :     :                 +- * ColumnarToRow (6)
+                                                                                 :     :                    +- Scan parquet  (5)
+                                                                                 :     +- BroadcastQueryStage (124), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                                                 :        +- BroadcastExchange (123)
+                                                                                 :           +- * Filter (122)
+                                                                                 :              +- TableCacheQueryStage (121), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                                                 :                 +- InMemoryTableScan (119)
+                                                                                 :                       +- InMemoryRelation (120)
+                                                                                 :                             +- * ColumnarToRow (12)
+                                                                                 :                                +- Scan parquet  (11)
+                                                                                 +- * Project (138)
+                                                                                    +- * BroadcastHashJoin Inner BuildRight (137)
+                                                                                       :- * Filter (130)
+                                                                                       :  +- TableCacheQueryStage (129), Statistics(sizeInBytes=28.5 MiB, rowCount=1.22E+5)
+                                                                                       :     +- InMemoryTableScan (127)
+                                                                                       :           +- InMemoryRelation (128)
+                                                                                       :                 +- * ColumnarToRow (6)
+                                                                                       :                    +- Scan parquet  (5)
+                                                                                       +- BroadcastQueryStage (136), Statistics(sizeInBytes=32.0 MiB, rowCount=25)
+                                                                                          +- BroadcastExchange (135)
+                                                                                             +- * Filter (134)
+                                                                                                +- TableCacheQueryStage (133), Statistics(sizeInBytes=2.6 KiB, rowCount=25)
+                                                                                                   +- InMemoryTableScan (131)
+                                                                                                         +- InMemoryRelation (132)
+                                                                                                               +- * ColumnarToRow (12)
+                                                                                                                  +- Scan parquet  (11)
+               +- == Initial Plan ==
+                  Project (238)
+                  +- SortMergeJoin LeftOuter (237)
+                     :- Sort (186)
+                     :  +- Exchange (185)
+                     :     +- Generate (184)
+                     :        +- HashAggregate (183)
+                     :           +- Exchange (182)
+                     :              +- HashAggregate (181)
+                     :                 +- Filter (180)
+                     :                    +- HashAggregate (179)
+                     :                       +- Exchange (178)
+                     :                          +- HashAggregate (177)
+                     :                             +- Union (176)
+                     :                                :- Project (165)
+                     :                                :  +- BroadcastHashJoin Inner BuildRight (164)
+                     :                                :     :- Filter (161)
+                     :                                :     :  +- InMemoryTableScan (3)
+                     :                                :     :        +- InMemoryRelation (4)
+                     :                                :     :              +- * ColumnarToRow (6)
+                     :                                :     :                 +- Scan parquet  (5)
+                     :                                :     +- BroadcastExchange (163)
+                     :                                :        +- Filter (162)
+                     :                                :           +- InMemoryTableScan (9)
+                     :                                :                 +- InMemoryRelation (10)
+                     :                                :                       +- * ColumnarToRow (12)
+                     :                                :                          +- Scan parquet  (11)
+                     :                                :- Project (170)
+                     :                                :  +- BroadcastHashJoin Inner BuildRight (169)
+                     :                                :     :- Filter (166)
+                     :                                :     :  +- InMemoryTableScan (19)
+                     :                                :     :        +- InMemoryRelation (20)
+                     :                                :     :              +- * ColumnarToRow (6)
+                     :                                :     :                 +- Scan parquet  (5)
+                     :                                :     +- BroadcastExchange (168)
+                     :                                :        +- Filter (167)
+                     :                                :           +- InMemoryTableScan (23)
+                     :                                :                 +- InMemoryRelation (24)
+                     :                                :                       +- * ColumnarToRow (12)
+                     :                                :                          +- Scan parquet  (11)
+                     :                                +- Project (175)
+                     :                                   +- BroadcastHashJoin Inner BuildRight (174)
+                     :                                      :- Filter (171)
+                     :                                      :  +- InMemoryTableScan (31)
+                     :                                      :        +- InMemoryRelation (32)
+                     :                                      :              +- * ColumnarToRow (6)
+                     :                                      :                 +- Scan parquet  (5)
+                     :                                      +- BroadcastExchange (173)
+                     :                                         +- Filter (172)
+                     :                                            +- InMemoryTableScan (35)
+                     :                                                  +- InMemoryRelation (36)
+                     :                                                        +- * ColumnarToRow (12)
+                     :                                                           +- Scan parquet  (11)
+                     +- Sort (236)
+                        +- HashAggregate (235)
+                           +- Exchange (234)
+                              +- HashAggregate (233)
+                                 +- HashAggregate (232)
+                                    +- HashAggregate (231)
+                                       +- Project (230)
+                                          +- SortMergeJoin Inner (229)
+                                             :- Sort (207)
+                                             :  +- Exchange (206)
+                                             :     +- HashAggregate (205)
+                                             :        +- Exchange (204)
+                                             :           +- HashAggregate (203)
+                                             :              +- Union (202)
+                                             :                 :- Project (191)
+                                             :                 :  +- BroadcastHashJoin Inner BuildRight (190)
+                                             :                 :     :- Filter (187)
+                                             :                 :     :  +- InMemoryTableScan (58)
+                                             :                 :     :        +- InMemoryRelation (59)
+                                             :                 :     :              +- * ColumnarToRow (6)
+                                             :                 :     :                 +- Scan parquet  (5)
+                                             :                 :     +- BroadcastExchange (189)
+                                             :                 :        +- Filter (188)
+                                             :                 :           +- InMemoryTableScan (62)
+                                             :                 :                 +- InMemoryRelation (63)
+                                             :                 :                       +- * ColumnarToRow (12)
+                                             :                 :                          +- Scan parquet  (11)
+                                             :                 :- Project (196)
+                                             :                 :  +- BroadcastHashJoin Inner BuildRight (195)
+                                             :                 :     :- Filter (192)
+                                             :                 :     :  +- InMemoryTableScan (70)
+                                             :                 :     :        +- InMemoryRelation (71)
+                                             :                 :     :              +- * ColumnarToRow (6)
+                                             :                 :     :                 +- Scan parquet  (5)
+                                             :                 :     +- BroadcastExchange (194)
+                                             :                 :        +- Filter (193)
+                                             :                 :           +- InMemoryTableScan (74)
+                                             :                 :                 +- InMemoryRelation (75)
+                                             :                 :                       +- * ColumnarToRow (12)
+                                             :                 :                          +- Scan parquet  (11)
+                                             :                 +- Project (201)
+                                             :                    +- BroadcastHashJoin Inner BuildRight (200)
+                                             :                       :- Filter (197)
+                                             :                       :  +- InMemoryTableScan (82)
+                                             :                       :        +- InMemoryRelation (83)
+                                             :                       :              +- * ColumnarToRow (6)
+                                             :                       :                 +- Scan parquet  (5)
+                                             :                       +- BroadcastExchange (199)
+                                             :                          +- Filter (198)
+                                             :                             +- InMemoryTableScan (86)
+                                             :                                   +- InMemoryRelation (87)
+                                             :                                         +- * ColumnarToRow (12)
+                                             :                                            +- Scan parquet  (11)
+                                             +- Sort (228)
+                                                +- Filter (227)
+                                                   +- HashAggregate (226)
+                                                      +- Exchange (225)
+                                                         +- HashAggregate (224)
+                                                            +- Union (223)
+                                                               :- Project (212)
+                                                               :  +- BroadcastHashJoin Inner BuildRight (211)
+                                                               :     :- Filter (208)
+                                                               :     :  +- InMemoryTableScan (103)
+                                                               :     :        +- InMemoryRelation (104)
+                                                               :     :              +- * ColumnarToRow (6)
+                                                               :     :                 +- Scan parquet  (5)
+                                                               :     +- BroadcastExchange (210)
+                                                               :        +- Filter (209)
+                                                               :           +- InMemoryTableScan (107)
+                                                               :                 +- InMemoryRelation (108)
+                                                               :                       +- * ColumnarToRow (12)
+                                                               :                          +- Scan parquet  (11)
+                                                               :- Project (217)
+                                                               :  +- BroadcastHashJoin Inner BuildRight (216)
+                                                               :     :- Filter (213)
+                                                               :     :  +- InMemoryTableScan (115)
+                                                               :     :        +- InMemoryRelation (116)
+                                                               :     :              +- * ColumnarToRow (6)
+                                                               :     :                 +- Scan parquet  (5)
+                                                               :     +- BroadcastExchange (215)
+                                                               :        +- Filter (214)
+                                                               :           +- InMemoryTableScan (119)
+                                                               :                 +- InMemoryRelation (120)
+                                                               :                       +- * ColumnarToRow (12)
+                                                               :                          +- Scan parquet  (11)
+                                                               +- Project (222)
+                                                                  +- BroadcastHashJoin Inner BuildRight (221)
+                                                                     :- Filter (218)
+                                                                     :  +- InMemoryTableScan (127)
+                                                                     :        +- InMemoryRelation (128)
+                                                                     :              +- * ColumnarToRow (6)
+                                                                     :                 +- Scan parquet  (5)
+                                                                     +- BroadcastExchange (220)
+                                                                        +- Filter (219)
+                                                                           +- InMemoryTableScan (131)
+                                                                                 +- InMemoryRelation (132)
+                                                                                       +- * ColumnarToRow (12)
+                                                                                          +- Scan parquet  (11)
+
+
+(1) InMemoryTableScan
+Output [6]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, n#15482L, cohort_size#15218L]
+Arguments: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, n#15482L, cohort_size#15218L]
+
+(2) InMemoryRelation
+Arguments: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, n#15482L, cohort_size#15218L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),AdaptiveSparkPlan isFinalPlan=true
++- == Final Plan ==
+   *(28) Project [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, coalesce(n#15348L, 0) AS n#15482L, cohort_size#15218L]
+   +- *(28) BroadcastHashJoin [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356], [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], LeftOuter, BuildRight, false
+      :- ShuffleQueryStage 33
+      :  +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, 8), ENSURE_REQUIREMENTS, [plan_id=43502]
+      :     +- *(25) Generate explode(sequence(0, cast(months_between(2026-04-01 00:00:00, cast(cohort_month#15208 as timestamp), true, Some(UTC)) as int), None, Some(UTC))), [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L], false, [month_offset#15356]
+      :        +- *(25) HashAggregate(keys=[scope_type#15099, scope_id#15100, cohort_month#15208], functions=[count(1)], output=[scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L])
+      :           +- AQEShuffleRead coalesced
+      :              +- ShuffleQueryStage 30
+      :                 +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, 8), ENSURE_REQUIREMENTS, [plan_id=43211]
+      :                    +- *(22) HashAggregate(keys=[scope_type#15099, scope_id#15100, cohort_month#15208], functions=[partial_count(1)], output=[scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L])
+      :                       +- *(22) Filter (isnotnull(cohort_month#15208) AND ((cohort_month#15208 >= 2025-12-01) AND (cohort_month#15208 <= 2026-04-01)))
+      :                          +- *(22) HashAggregate(keys=[scope_type#15099, scope_id#15100, user_id#1824], functions=[min(month#15072)], output=[scope_type#15099, scope_id#15100, cohort_month#15208])
+      :                             +- AQEShuffleRead coalesced
+      :                                +- ShuffleQueryStage 27
+      :                                   +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=42688]
+      :                                      +- *(13) HashAggregate(keys=[scope_type#15099, scope_id#15100, user_id#1824], functions=[partial_min(month#15072)], output=[scope_type#15099, scope_id#15100, user_id#1824, min#56788])
+      :                                         +- Union
+      :                                            :- *(10) Project [user_id#1824, trunc(cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15099, ALL AS scope_id#15100]
+      :                                            :  +- *(10) BroadcastHashJoin [station_id#1826], [station_id#170], Inner, BuildRight, false
+      :                                            :     :- *(10) Filter (((isnotnull(started_at#1828) AND (started_at#1828 >= 2025-11-30 16:00:00)) AND (started_at#1828 < 2026-05-29 16:00:00)) AND isnotnull(station_id#1826))
+      :                                            :     :  +- TableCacheQueryStage 0
+      :                                            :     :     +- InMemoryTableScan [user_id#1824, station_id#1826, started_at#1828], [isnotnull(started_at#1828), (started_at#1828 >= 2025-11-30 16:00:00), (started_at#1828 < 2026-05-29 16:00:00), isnotnull(station_id#1826)]
+      :                                            :     :           +- InMemoryRelation [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], StorageLevel(disk, 1 replicas)
+      :                                            :     :                 +- *(1) ColumnarToRow
+      :                                            :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                            :     +- BroadcastQueryStage 18
+      :                                            :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41670]
+      :                                            :           +- *(1) Filter isnotnull(station_id#170)
+      :                                            :              +- TableCacheQueryStage 1
+      :                                            :                 +- InMemoryTableScan [station_id#170], [isnotnull(station_id#170)]
+      :                                            :                       +- InMemoryRelation [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], StorageLevel(disk, 1 replicas)
+      :                                            :                             +- *(1) ColumnarToRow
+      :                                            :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      :                                            :- *(11) Project [user_id#15119, trunc(cast(from_utc_timestamp(started_at#15123, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15142 AS scope_id#15155]
+      :                                            :  +- *(11) BroadcastHashJoin [station_id#15121], [station_id#15141], Inner, BuildRight, false
+      :                                            :     :- *(11) Filter (((isnotnull(started_at#15123) AND (started_at#15123 >= 2025-11-30 16:00:00)) AND (started_at#15123 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15121))
+      :                                            :     :  +- TableCacheQueryStage 2
+      :                                            :     :     +- InMemoryTableScan [user_id#15119, station_id#15121, started_at#15123], [isnotnull(started_at#15123), (started_at#15123 >= 2025-11-30 16:00:00), (started_at#15123 < 2026-05-29 16:00:00), isnotnull(station_id#15121)]
+      :                                            :     :           +- InMemoryRelation [session_id#15117, attempt_id#15118, user_id#15119, vehicle_id#15120, station_id#15121, charger_id#15122, started_at#15123, ended_at#15124, unplugged_at#15125, energy_wh#15126L, grid_energy_wh#15127L, electricity_fee_cents#15128L, service_fee_cents#15129L, parking_fee_cents#15130L, discount_cents#15131L, total_fee_cents#15132L, grid_cost_cents#15133L, status#15134, stop_reason#15135, start_soc_pct#15136, end_soc_pct#15137, target_mode#15138, target_value#15139, campaign_id#15140], StorageLevel(disk, 1 replicas)
+      :                                            :     :                 +- *(1) ColumnarToRow
+      :                                            :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                            :     +- BroadcastQueryStage 19
+      :                                            :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41681]
+      :                                            :           +- *(2) Filter isnotnull(station_id#15141)
+      :                                            :              +- TableCacheQueryStage 3
+      :                                            :                 +- InMemoryTableScan [station_id#15141, city_id#15142], [isnotnull(station_id#15141)]
+      :                                            :                       +- InMemoryRelation [station_id#15141, city_id#15142, station_name#15143, site_type#15144, latitude#15145, longitude#15146, opened_at#15147, transformer_kw#15148, rent_daily_cents#15149L], StorageLevel(disk, 1 replicas)
+      :                                            :                             +- *(1) ColumnarToRow
+      :                                            :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      :                                            +- *(12) Project [user_id#15162, trunc(cast(from_utc_timestamp(started_at#15166, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15164 AS scope_id#15198]
+      :                                               +- *(12) BroadcastHashJoin [station_id#15164], [station_id#15184], Inner, BuildRight, false
+      :                                                  :- *(12) Filter (((isnotnull(started_at#15166) AND (started_at#15166 >= 2025-11-30 16:00:00)) AND (started_at#15166 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15164))
+      :                                                  :  +- TableCacheQueryStage 4
+      :                                                  :     +- InMemoryTableScan [user_id#15162, station_id#15164, started_at#15166], [isnotnull(started_at#15166), (started_at#15166 >= 2025-11-30 16:00:00), (started_at#15166 < 2026-05-29 16:00:00), isnotnull(station_id#15164)]
+      :                                                  :           +- InMemoryRelation [session_id#15160, attempt_id#15161, user_id#15162, vehicle_id#15163, station_id#15164, charger_id#15165, started_at#15166, ended_at#15167, unplugged_at#15168, energy_wh#15169L, grid_energy_wh#15170L, electricity_fee_cents#15171L, service_fee_cents#15172L, parking_fee_cents#15173L, discount_cents#15174L, total_fee_cents#15175L, grid_cost_cents#15176L, status#15177, stop_reason#15178, start_soc_pct#15179, end_soc_pct#15180, target_mode#15181, target_value#15182, campaign_id#15183], StorageLevel(disk, 1 replicas)
+      :                                                  :                 +- *(1) ColumnarToRow
+      :                                                  :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                                  +- BroadcastQueryStage 20
+      :                                                     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41692]
+      :                                                        +- *(3) Filter isnotnull(station_id#15184)
+      :                                                           +- TableCacheQueryStage 5
+      :                                                              +- InMemoryTableScan [station_id#15184], [isnotnull(station_id#15184)]
+      :                                                                    +- InMemoryRelation [station_id#15184, city_id#15185, station_name#15186, site_type#15187, latitude#15188, longitude#15189, opened_at#15190, transformer_kw#15191, rent_daily_cents#15192L], StorageLevel(disk, 1 replicas)
+      :                                                                          +- *(1) ColumnarToRow
+      :                                                                             +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      +- BroadcastQueryStage 35
+         +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false], input[1, string, true], input[2, date, true], input[3, int, true]),false), [plan_id=43730]
+            +- *(27) HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], functions=[count(distinct user_id#15364)], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L])
+               +- AQEShuffleRead coalesced
+                  +- ShuffleQueryStage 34
+                     +- Exchange hashpartitioning(scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, 8), ENSURE_REQUIREMENTS, [plan_id=43687]
+                        +- *(26) HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], functions=[partial_count(distinct user_id#15364)], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L])
+                           +- *(26) HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364], functions=[], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364])
+                              +- *(26) HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364], functions=[], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364])
+                                 +- *(26) Project [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int) AS month_offset#15335]
+                                    +- *(26) BroadcastHashJoin [scope_type#15461, scope_id#15462, user_id#15364], [scope_type#15322, scope_id#15323, user_id#15225], Inner, BuildRight, isnotnull(cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int)), false
+                                       :- AQEShuffleRead coalesced
+                                       :  +- ShuffleQueryStage 31
+                                       :     +- Exchange hashpartitioning(scope_type#15461, scope_id#15462, user_id#15364, 8), ENSURE_REQUIREMENTS, [plan_id=43337]
+                                       :        +- *(23) HashAggregate(keys=[user_id#15364, month#15072, scope_type#15461, scope_id#15462], functions=[], output=[user_id#15364, month#15072, scope_type#15461, scope_id#15462])
+                                       :           +- AQEShuffleRead coalesced
+                                       :              +- ShuffleQueryStage 28
+                                       :                 +- Exchange hashpartitioning(user_id#15364, month#15072, scope_type#15461, scope_id#15462, 8), ENSURE_REQUIREMENTS, [plan_id=43023]
+                                       :                    +- *(17) HashAggregate(keys=[user_id#15364, month#15072, scope_type#15461, scope_id#15462], functions=[], output=[user_id#15364, month#15072, scope_type#15461, scope_id#15462])
+                                       :                       +- Union
+                                       :                          :- *(14) Project [user_id#15364, trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15461, ALL AS scope_id#15462]
+                                       :                          :  +- *(14) BroadcastHashJoin [station_id#15366], [station_id#15386], Inner, BuildRight, false
+                                       :                          :     :- *(14) Filter (((((isnotnull(started_at#15368) AND (started_at#15368 >= 2025-11-30 16:00:00)) AND (started_at#15368 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15366)) AND isnotnull(user_id#15364))
+                                       :                          :     :  +- TableCacheQueryStage 6
+                                       :                          :     :     +- InMemoryTableScan [user_id#15364, station_id#15366, started_at#15368], [isnotnull(started_at#15368), (started_at#15368 >= 2025-11-30 16:00:00), (started_at#15368 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15366), isnotnull(user_id#15364)]
+                                       :                          :     :           +- InMemoryRelation [session_id#15362, attempt_id#15363, user_id#15364, vehicle_id#15365, station_id#15366, charger_id#15367, started_at#15368, ended_at#15369, unplugged_at#15370, energy_wh#15371L, grid_energy_wh#15372L, electricity_fee_cents#15373L, service_fee_cents#15374L, parking_fee_cents#15375L, discount_cents#15376L, total_fee_cents#15377L, grid_cost_cents#15378L, status#15379, stop_reason#15380, start_soc_pct#15381, end_soc_pct#15382, target_mode#15383, target_value#15384, campaign_id#15385], StorageLevel(disk, 1 replicas)
+                                       :                          :     :                 +- *(1) ColumnarToRow
+                                       :                          :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                       :                          :     +- BroadcastQueryStage 21
+                                       :                          :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41802]
+                                       :                          :           +- *(4) Filter isnotnull(station_id#15386)
+                                       :                          :              +- TableCacheQueryStage 7
+                                       :                          :                 +- InMemoryTableScan [station_id#15386], [isnotnull(station_id#15386)]
+                                       :                          :                       +- InMemoryRelation [station_id#15386, city_id#15387, station_name#15388, site_type#15389, latitude#15390, longitude#15391, opened_at#15392, transformer_kw#15393, rent_daily_cents#15394L], StorageLevel(disk, 1 replicas)
+                                       :                          :                             +- *(1) ColumnarToRow
+                                       :                          :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                       :                          :- *(15) Project [user_id#15397, trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15420 AS scope_id#15155]
+                                       :                          :  +- *(15) BroadcastHashJoin [station_id#15399], [station_id#15419], Inner, BuildRight, false
+                                       :                          :     :- *(15) Filter (((((isnotnull(started_at#15401) AND (started_at#15401 >= 2025-11-30 16:00:00)) AND (started_at#15401 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15399)) AND isnotnull(user_id#15397))
+                                       :                          :     :  +- TableCacheQueryStage 8
+                                       :                          :     :     +- InMemoryTableScan [user_id#15397, station_id#15399, started_at#15401], [isnotnull(started_at#15401), (started_at#15401 >= 2025-11-30 16:00:00), (started_at#15401 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15399), isnotnull(user_id#15397)]
+                                       :                          :     :           +- InMemoryRelation [session_id#15395, attempt_id#15396, user_id#15397, vehicle_id#15398, station_id#15399, charger_id#15400, started_at#15401, ended_at#15402, unplugged_at#15403, energy_wh#15404L, grid_energy_wh#15405L, electricity_fee_cents#15406L, service_fee_cents#15407L, parking_fee_cents#15408L, discount_cents#15409L, total_fee_cents#15410L, grid_cost_cents#15411L, status#15412, stop_reason#15413, start_soc_pct#15414, end_soc_pct#15415, target_mode#15416, target_value#15417, campaign_id#15418], StorageLevel(disk, 1 replicas)
+                                       :                          :     :                 +- *(1) ColumnarToRow
+                                       :                          :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                       :                          :     +- BroadcastQueryStage 22
+                                       :                          :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41813]
+                                       :                          :           +- *(5) Filter (isnotnull(station_id#15419) AND isnotnull(city_id#15420))
+                                       :                          :              +- TableCacheQueryStage 9
+                                       :                          :                 +- InMemoryTableScan [station_id#15419, city_id#15420], [isnotnull(station_id#15419), isnotnull(city_id#15420)]
+                                       :                          :                       +- InMemoryRelation [station_id#15419, city_id#15420, station_name#15421, site_type#15422, latitude#15423, longitude#15424, opened_at#15425, transformer_kw#15426, rent_daily_cents#15427L], StorageLevel(disk, 1 replicas)
+                                       :                          :                             +- *(1) ColumnarToRow
+                                       :                          :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                       :                          +- *(16) Project [user_id#15430, trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15432 AS scope_id#15198]
+                                       :                             +- *(16) BroadcastHashJoin [station_id#15432], [station_id#15452], Inner, BuildRight, false
+                                       :                                :- *(16) Filter (((((isnotnull(started_at#15434) AND (started_at#15434 >= 2025-11-30 16:00:00)) AND (started_at#15434 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15432)) AND isnotnull(user_id#15430))
+                                       :                                :  +- TableCacheQueryStage 10
+                                       :                                :     +- InMemoryTableScan [user_id#15430, station_id#15432, started_at#15434], [isnotnull(started_at#15434), (started_at#15434 >= 2025-11-30 16:00:00), (started_at#15434 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15432), isnotnull(user_id#15430)]
+                                       :                                :           +- InMemoryRelation [session_id#15428, attempt_id#15429, user_id#15430, vehicle_id#15431, station_id#15432, charger_id#15433, started_at#15434, ended_at#15435, unplugged_at#15436, energy_wh#15437L, grid_energy_wh#15438L, electricity_fee_cents#15439L, service_fee_cents#15440L, parking_fee_cents#15441L, discount_cents#15442L, total_fee_cents#15443L, grid_cost_cents#15444L, status#15445, stop_reason#15446, start_soc_pct#15447, end_soc_pct#15448, target_mode#15449, target_value#15450, campaign_id#15451], StorageLevel(disk, 1 replicas)
+                                       :                                :                 +- *(1) ColumnarToRow
+                                       :                                :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                       :                                +- BroadcastQueryStage 23
+                                       :                                   +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41824]
+                                       :                                      +- *(6) Filter isnotnull(station_id#15452)
+                                       :                                         +- TableCacheQueryStage 11
+                                       :                                            +- InMemoryTableScan [station_id#15452], [isnotnull(station_id#15452)]
+                                       :                                                  +- InMemoryRelation [station_id#15452, city_id#15453, station_name#15454, site_type#15455, latitude#15456, longitude#15457, opened_at#15458, transformer_kw#15459, rent_daily_cents#15460L], StorageLevel(disk, 1 replicas)
+                                       :                                                        +- *(1) ColumnarToRow
+                                       :                                                           +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                       +- BroadcastQueryStage 32
+                                          +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false], input[1, string, true], input[2, string, true]),false), [plan_id=43432]
+                                             +- *(24) Filter (((cohort_month#15463 >= 2025-12-01) AND (cohort_month#15463 <= 2026-04-01)) AND isnotnull(cohort_month#15463))
+                                                +- *(24) HashAggregate(keys=[scope_type#15322, scope_id#15323, user_id#15225], functions=[min(month#15072)], output=[scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463])
+                                                   +- AQEShuffleRead coalesced
+                                                      +- ShuffleQueryStage 29
+                                                         +- Exchange hashpartitioning(scope_type#15322, scope_id#15323, user_id#15225, 8), ENSURE_REQUIREMENTS, [plan_id=43081]
+                                                            +- *(21) HashAggregate(keys=[scope_type#15322, scope_id#15323, user_id#15225], functions=[partial_min(month#15072)], output=[scope_type#15322, scope_id#15323, user_id#15225, min#56788])
+                                                               +- Union
+                                                                  :- *(18) Project [user_id#15225, trunc(cast(from_utc_timestamp(started_at#15229, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15322, ALL AS scope_id#15323]
+                                                                  :  +- *(18) BroadcastHashJoin [station_id#15227], [station_id#15247], Inner, BuildRight, false
+                                                                  :     :- *(18) Filter ((((isnotnull(started_at#15229) AND (started_at#15229 >= 2025-11-30 16:00:00)) AND (started_at#15229 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15227)) AND isnotnull(user_id#15225))
+                                                                  :     :  +- TableCacheQueryStage 12
+                                                                  :     :     +- InMemoryTableScan [user_id#15225, station_id#15227, started_at#15229], [isnotnull(started_at#15229), (started_at#15229 >= 2025-11-30 16:00:00), (started_at#15229 < 2026-05-29 16:00:00), isnotnull(station_id#15227), isnotnull(user_id#15225)]
+                                                                  :     :           +- InMemoryRelation [session_id#15223, attempt_id#15224, user_id#15225, vehicle_id#15226, station_id#15227, charger_id#15228, started_at#15229, ended_at#15230, unplugged_at#15231, energy_wh#15232L, grid_energy_wh#15233L, electricity_fee_cents#15234L, service_fee_cents#15235L, parking_fee_cents#15236L, discount_cents#15237L, total_fee_cents#15238L, grid_cost_cents#15239L, status#15240, stop_reason#15241, start_soc_pct#15242, end_soc_pct#15243, target_mode#15244, target_value#15245, campaign_id#15246], StorageLevel(disk, 1 replicas)
+                                                                  :     :                 +- *(1) ColumnarToRow
+                                                                  :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                                  :     +- BroadcastQueryStage 24
+                                                                  :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41841]
+                                                                  :           +- *(7) Filter isnotnull(station_id#15247)
+                                                                  :              +- TableCacheQueryStage 13
+                                                                  :                 +- InMemoryTableScan [station_id#15247], [isnotnull(station_id#15247)]
+                                                                  :                       +- InMemoryRelation [station_id#15247, city_id#15248, station_name#15249, site_type#15250, latitude#15251, longitude#15252, opened_at#15253, transformer_kw#15254, rent_daily_cents#15255L], StorageLevel(disk, 1 replicas)
+                                                                  :                             +- *(1) ColumnarToRow
+                                                                  :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                                                  :- *(19) Project [user_id#15258, trunc(cast(from_utc_timestamp(started_at#15262, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15281 AS scope_id#15155]
+                                                                  :  +- *(19) BroadcastHashJoin [station_id#15260], [station_id#15280], Inner, BuildRight, false
+                                                                  :     :- *(19) Filter ((((isnotnull(started_at#15262) AND (started_at#15262 >= 2025-11-30 16:00:00)) AND (started_at#15262 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15260)) AND isnotnull(user_id#15258))
+                                                                  :     :  +- TableCacheQueryStage 14
+                                                                  :     :     +- InMemoryTableScan [user_id#15258, station_id#15260, started_at#15262], [isnotnull(started_at#15262), (started_at#15262 >= 2025-11-30 16:00:00), (started_at#15262 < 2026-05-29 16:00:00), isnotnull(station_id#15260), isnotnull(user_id#15258)]
+                                                                  :     :           +- InMemoryRelation [session_id#15256, attempt_id#15257, user_id#15258, vehicle_id#15259, station_id#15260, charger_id#15261, started_at#15262, ended_at#15263, unplugged_at#15264, energy_wh#15265L, grid_energy_wh#15266L, electricity_fee_cents#15267L, service_fee_cents#15268L, parking_fee_cents#15269L, discount_cents#15270L, total_fee_cents#15271L, grid_cost_cents#15272L, status#15273, stop_reason#15274, start_soc_pct#15275, end_soc_pct#15276, target_mode#15277, target_value#15278, campaign_id#15279], StorageLevel(disk, 1 replicas)
+                                                                  :     :                 +- *(1) ColumnarToRow
+                                                                  :     :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                                  :     +- BroadcastQueryStage 25
+                                                                  :        +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=42149]
+                                                                  :           +- *(8) Filter (isnotnull(station_id#15280) AND isnotnull(city_id#15281))
+                                                                  :              +- TableCacheQueryStage 15
+                                                                  :                 +- InMemoryTableScan [station_id#15280, city_id#15281], [isnotnull(station_id#15280), isnotnull(city_id#15281)]
+                                                                  :                       +- InMemoryRelation [station_id#15280, city_id#15281, station_name#15282, site_type#15283, latitude#15284, longitude#15285, opened_at#15286, transformer_kw#15287, rent_daily_cents#15288L], StorageLevel(disk, 1 replicas)
+                                                                  :                             +- *(1) ColumnarToRow
+                                                                  :                                +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                                                  +- *(20) Project [user_id#15291, trunc(cast(from_utc_timestamp(started_at#15295, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15293 AS scope_id#15198]
+                                                                     +- *(20) BroadcastHashJoin [station_id#15293], [station_id#15313], Inner, BuildRight, false
+                                                                        :- *(20) Filter ((((isnotnull(started_at#15295) AND (started_at#15295 >= 2025-11-30 16:00:00)) AND (started_at#15295 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15293)) AND isnotnull(user_id#15291))
+                                                                        :  +- TableCacheQueryStage 16
+                                                                        :     +- InMemoryTableScan [user_id#15291, station_id#15293, started_at#15295], [isnotnull(started_at#15295), (started_at#15295 >= 2025-11-30 16:00:00), (started_at#15295 < 2026-05-29 16:00:00), isnotnull(station_id#15293), isnotnull(user_id#15291)]
+                                                                        :           +- InMemoryRelation [session_id#15289, attempt_id#15290, user_id#15291, vehicle_id#15292, station_id#15293, charger_id#15294, started_at#15295, ended_at#15296, unplugged_at#15297, energy_wh#15298L, grid_energy_wh#15299L, electricity_fee_cents#15300L, service_fee_cents#15301L, parking_fee_cents#15302L, discount_cents#15303L, total_fee_cents#15304L, grid_cost_cents#15305L, status#15306, stop_reason#15307, start_soc_pct#15308, end_soc_pct#15309, target_mode#15310, target_value#15311, campaign_id#15312], StorageLevel(disk, 1 replicas)
+                                                                        :                 +- *(1) ColumnarToRow
+                                                                        :                    +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                                        +- BroadcastQueryStage 26
+                                                                           +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=42160]
+                                                                              +- *(9) Filter isnotnull(station_id#15313)
+                                                                                 +- TableCacheQueryStage 17
+                                                                                    +- InMemoryTableScan [station_id#15313], [isnotnull(station_id#15313)]
+                                                                                          +- InMemoryRelation [station_id#15313, city_id#15314, station_name#15315, site_type#15316, latitude#15317, longitude#15318, opened_at#15319, transformer_kw#15320, rent_daily_cents#15321L], StorageLevel(disk, 1 replicas)
+                                                                                                +- *(1) ColumnarToRow
+                                                                                                   +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
++- == Initial Plan ==
+   Project [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, coalesce(n#15348L, 0) AS n#15482L, cohort_size#15218L]
+   +- SortMergeJoin [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356], [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], LeftOuter
+      :- Sort [scope_type#15099 ASC NULLS FIRST, scope_id#15100 ASC NULLS FIRST, cohort_month#15208 ASC NULLS FIRST, month_offset#15356 ASC NULLS FIRST], false, 0
+      :  +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, 8), ENSURE_REQUIREMENTS, [plan_id=41130]
+      :     +- Generate explode(sequence(0, cast(months_between(2026-04-01 00:00:00, cast(cohort_month#15208 as timestamp), true, Some(UTC)) as int), None, Some(UTC))), [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L], false, [month_offset#15356]
+      :        +- HashAggregate(keys=[scope_type#15099, scope_id#15100, cohort_month#15208], functions=[count(1)], output=[scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L])
+      :           +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, 8), ENSURE_REQUIREMENTS, [plan_id=41083]
+      :              +- HashAggregate(keys=[scope_type#15099, scope_id#15100, cohort_month#15208], functions=[partial_count(1)], output=[scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L])
+      :                 +- Filter (isnotnull(cohort_month#15208) AND ((cohort_month#15208 >= 2025-12-01) AND (cohort_month#15208 <= 2026-04-01)))
+      :                    +- HashAggregate(keys=[scope_type#15099, scope_id#15100, user_id#1824], functions=[min(month#15072)], output=[scope_type#15099, scope_id#15100, cohort_month#15208])
+      :                       +- Exchange hashpartitioning(scope_type#15099, scope_id#15100, user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=41078]
+      :                          +- HashAggregate(keys=[scope_type#15099, scope_id#15100, user_id#1824], functions=[partial_min(month#15072)], output=[scope_type#15099, scope_id#15100, user_id#1824, min#56788])
+      :                             +- Union
+      :                                :- Project [user_id#1824, trunc(cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15099, ALL AS scope_id#15100]
+      :                                :  +- BroadcastHashJoin [station_id#1826], [station_id#170], Inner, BuildRight, false
+      :                                :     :- Filter (((isnotnull(started_at#1828) AND (started_at#1828 >= 2025-11-30 16:00:00)) AND (started_at#1828 < 2026-05-29 16:00:00)) AND isnotnull(station_id#1826))
+      :                                :     :  +- InMemoryTableScan [user_id#1824, station_id#1826, started_at#1828], [isnotnull(started_at#1828), (started_at#1828 >= 2025-11-30 16:00:00), (started_at#1828 < 2026-05-29 16:00:00), isnotnull(station_id#1826)]
+      :                                :     :        +- InMemoryRelation [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], StorageLevel(disk, 1 replicas)
+      :                                :     :              +- *(1) ColumnarToRow
+      :                                :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41066]
+      :                                :        +- Filter isnotnull(station_id#170)
+      :                                :           +- InMemoryTableScan [station_id#170], [isnotnull(station_id#170)]
+      :                                :                 +- InMemoryRelation [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], StorageLevel(disk, 1 replicas)
+      :                                :                       +- *(1) ColumnarToRow
+      :                                :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      :                                :- Project [user_id#15119, trunc(cast(from_utc_timestamp(started_at#15123, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15142 AS scope_id#15155]
+      :                                :  +- BroadcastHashJoin [station_id#15121], [station_id#15141], Inner, BuildRight, false
+      :                                :     :- Filter (((isnotnull(started_at#15123) AND (started_at#15123 >= 2025-11-30 16:00:00)) AND (started_at#15123 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15121))
+      :                                :     :  +- InMemoryTableScan [user_id#15119, station_id#15121, started_at#15123], [isnotnull(started_at#15123), (started_at#15123 >= 2025-11-30 16:00:00), (started_at#15123 < 2026-05-29 16:00:00), isnotnull(station_id#15121)]
+      :                                :     :        +- InMemoryRelation [session_id#15117, attempt_id#15118, user_id#15119, vehicle_id#15120, station_id#15121, charger_id#15122, started_at#15123, ended_at#15124, unplugged_at#15125, energy_wh#15126L, grid_energy_wh#15127L, electricity_fee_cents#15128L, service_fee_cents#15129L, parking_fee_cents#15130L, discount_cents#15131L, total_fee_cents#15132L, grid_cost_cents#15133L, status#15134, stop_reason#15135, start_soc_pct#15136, end_soc_pct#15137, target_mode#15138, target_value#15139, campaign_id#15140], StorageLevel(disk, 1 replicas)
+      :                                :     :              +- *(1) ColumnarToRow
+      :                                :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41069]
+      :                                :        +- Filter isnotnull(station_id#15141)
+      :                                :           +- InMemoryTableScan [station_id#15141, city_id#15142], [isnotnull(station_id#15141)]
+      :                                :                 +- InMemoryRelation [station_id#15141, city_id#15142, station_name#15143, site_type#15144, latitude#15145, longitude#15146, opened_at#15147, transformer_kw#15148, rent_daily_cents#15149L], StorageLevel(disk, 1 replicas)
+      :                                :                       +- *(1) ColumnarToRow
+      :                                :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      :                                +- Project [user_id#15162, trunc(cast(from_utc_timestamp(started_at#15166, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15164 AS scope_id#15198]
+      :                                   +- BroadcastHashJoin [station_id#15164], [station_id#15184], Inner, BuildRight, false
+      :                                      :- Filter (((isnotnull(started_at#15166) AND (started_at#15166 >= 2025-11-30 16:00:00)) AND (started_at#15166 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15164))
+      :                                      :  +- InMemoryTableScan [user_id#15162, station_id#15164, started_at#15166], [isnotnull(started_at#15166), (started_at#15166 >= 2025-11-30 16:00:00), (started_at#15166 < 2026-05-29 16:00:00), isnotnull(station_id#15164)]
+      :                                      :        +- InMemoryRelation [session_id#15160, attempt_id#15161, user_id#15162, vehicle_id#15163, station_id#15164, charger_id#15165, started_at#15166, ended_at#15167, unplugged_at#15168, energy_wh#15169L, grid_energy_wh#15170L, electricity_fee_cents#15171L, service_fee_cents#15172L, parking_fee_cents#15173L, discount_cents#15174L, total_fee_cents#15175L, grid_cost_cents#15176L, status#15177, stop_reason#15178, start_soc_pct#15179, end_soc_pct#15180, target_mode#15181, target_value#15182, campaign_id#15183], StorageLevel(disk, 1 replicas)
+      :                                      :              +- *(1) ColumnarToRow
+      :                                      :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+      :                                      +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41072]
+      :                                         +- Filter isnotnull(station_id#15184)
+      :                                            +- InMemoryTableScan [station_id#15184], [isnotnull(station_id#15184)]
+      :                                                  +- InMemoryRelation [station_id#15184, city_id#15185, station_name#15186, site_type#15187, latitude#15188, longitude#15189, opened_at#15190, transformer_kw#15191, rent_daily_cents#15192L], StorageLevel(disk, 1 replicas)
+      :                                                        +- *(1) ColumnarToRow
+      :                                                           +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+      +- Sort [scope_type#15461 ASC NULLS FIRST, scope_id#15462 ASC NULLS FIRST, cohort_month#15463 ASC NULLS FIRST, month_offset#15335 ASC NULLS FIRST], false, 0
+         +- HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], functions=[count(distinct user_id#15364)], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L])
+            +- Exchange hashpartitioning(scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, 8), ENSURE_REQUIREMENTS, [plan_id=41126]
+               +- HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335], functions=[partial_count(distinct user_id#15364)], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L])
+                  +- HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364], functions=[], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364])
+                     +- HashAggregate(keys=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364], functions=[], output=[scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364])
+                        +- Project [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int) AS month_offset#15335]
+                           +- SortMergeJoin [scope_type#15461, scope_id#15462, user_id#15364], [scope_type#15322, scope_id#15323, user_id#15225], Inner, isnotnull(cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int))
+                              :- Sort [scope_type#15461 ASC NULLS FIRST, scope_id#15462 ASC NULLS FIRST, user_id#15364 ASC NULLS FIRST], false, 0
+                              :  +- Exchange hashpartitioning(scope_type#15461, scope_id#15462, user_id#15364, 8), ENSURE_REQUIREMENTS, [plan_id=41117]
+                              :     +- HashAggregate(keys=[user_id#15364, month#15072, scope_type#15461, scope_id#15462], functions=[], output=[user_id#15364, month#15072, scope_type#15461, scope_id#15462])
+                              :        +- Exchange hashpartitioning(user_id#15364, month#15072, scope_type#15461, scope_id#15462, 8), ENSURE_REQUIREMENTS, [plan_id=41098]
+                              :           +- HashAggregate(keys=[user_id#15364, month#15072, scope_type#15461, scope_id#15462], functions=[], output=[user_id#15364, month#15072, scope_type#15461, scope_id#15462])
+                              :              +- Union
+                              :                 :- Project [user_id#15364, trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15461, ALL AS scope_id#15462]
+                              :                 :  +- BroadcastHashJoin [station_id#15366], [station_id#15386], Inner, BuildRight, false
+                              :                 :     :- Filter (((((isnotnull(started_at#15368) AND (started_at#15368 >= 2025-11-30 16:00:00)) AND (started_at#15368 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15366)) AND isnotnull(user_id#15364))
+                              :                 :     :  +- InMemoryTableScan [user_id#15364, station_id#15366, started_at#15368], [isnotnull(started_at#15368), (started_at#15368 >= 2025-11-30 16:00:00), (started_at#15368 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15366), isnotnull(user_id#15364)]
+                              :                 :     :        +- InMemoryRelation [session_id#15362, attempt_id#15363, user_id#15364, vehicle_id#15365, station_id#15366, charger_id#15367, started_at#15368, ended_at#15369, unplugged_at#15370, energy_wh#15371L, grid_energy_wh#15372L, electricity_fee_cents#15373L, service_fee_cents#15374L, parking_fee_cents#15375L, discount_cents#15376L, total_fee_cents#15377L, grid_cost_cents#15378L, status#15379, stop_reason#15380, start_soc_pct#15381, end_soc_pct#15382, target_mode#15383, target_value#15384, campaign_id#15385], StorageLevel(disk, 1 replicas)
+                              :                 :     :              +- *(1) ColumnarToRow
+                              :                 :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                              :                 :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41086]
+                              :                 :        +- Filter isnotnull(station_id#15386)
+                              :                 :           +- InMemoryTableScan [station_id#15386], [isnotnull(station_id#15386)]
+                              :                 :                 +- InMemoryRelation [station_id#15386, city_id#15387, station_name#15388, site_type#15389, latitude#15390, longitude#15391, opened_at#15392, transformer_kw#15393, rent_daily_cents#15394L], StorageLevel(disk, 1 replicas)
+                              :                 :                       +- *(1) ColumnarToRow
+                              :                 :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                              :                 :- Project [user_id#15397, trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15420 AS scope_id#15155]
+                              :                 :  +- BroadcastHashJoin [station_id#15399], [station_id#15419], Inner, BuildRight, false
+                              :                 :     :- Filter (((((isnotnull(started_at#15401) AND (started_at#15401 >= 2025-11-30 16:00:00)) AND (started_at#15401 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15399)) AND isnotnull(user_id#15397))
+                              :                 :     :  +- InMemoryTableScan [user_id#15397, station_id#15399, started_at#15401], [isnotnull(started_at#15401), (started_at#15401 >= 2025-11-30 16:00:00), (started_at#15401 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15399), isnotnull(user_id#15397)]
+                              :                 :     :        +- InMemoryRelation [session_id#15395, attempt_id#15396, user_id#15397, vehicle_id#15398, station_id#15399, charger_id#15400, started_at#15401, ended_at#15402, unplugged_at#15403, energy_wh#15404L, grid_energy_wh#15405L, electricity_fee_cents#15406L, service_fee_cents#15407L, parking_fee_cents#15408L, discount_cents#15409L, total_fee_cents#15410L, grid_cost_cents#15411L, status#15412, stop_reason#15413, start_soc_pct#15414, end_soc_pct#15415, target_mode#15416, target_value#15417, campaign_id#15418], StorageLevel(disk, 1 replicas)
+                              :                 :     :              +- *(1) ColumnarToRow
+                              :                 :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                              :                 :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41089]
+                              :                 :        +- Filter (isnotnull(station_id#15419) AND isnotnull(city_id#15420))
+                              :                 :           +- InMemoryTableScan [station_id#15419, city_id#15420], [isnotnull(station_id#15419), isnotnull(city_id#15420)]
+                              :                 :                 +- InMemoryRelation [station_id#15419, city_id#15420, station_name#15421, site_type#15422, latitude#15423, longitude#15424, opened_at#15425, transformer_kw#15426, rent_daily_cents#15427L], StorageLevel(disk, 1 replicas)
+                              :                 :                       +- *(1) ColumnarToRow
+                              :                 :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                              :                 +- Project [user_id#15430, trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15432 AS scope_id#15198]
+                              :                    +- BroadcastHashJoin [station_id#15432], [station_id#15452], Inner, BuildRight, false
+                              :                       :- Filter (((((isnotnull(started_at#15434) AND (started_at#15434 >= 2025-11-30 16:00:00)) AND (started_at#15434 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15432)) AND isnotnull(user_id#15430))
+                              :                       :  +- InMemoryTableScan [user_id#15430, station_id#15432, started_at#15434], [isnotnull(started_at#15434), (started_at#15434 >= 2025-11-30 16:00:00), (started_at#15434 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15432), isnotnull(user_id#15430)]
+                              :                       :        +- InMemoryRelation [session_id#15428, attempt_id#15429, user_id#15430, vehicle_id#15431, station_id#15432, charger_id#15433, started_at#15434, ended_at#15435, unplugged_at#15436, energy_wh#15437L, grid_energy_wh#15438L, electricity_fee_cents#15439L, service_fee_cents#15440L, parking_fee_cents#15441L, discount_cents#15442L, total_fee_cents#15443L, grid_cost_cents#15444L, status#15445, stop_reason#15446, start_soc_pct#15447, end_soc_pct#15448, target_mode#15449, target_value#15450, campaign_id#15451], StorageLevel(disk, 1 replicas)
+                              :                       :              +- *(1) ColumnarToRow
+                              :                       :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                              :                       +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41092]
+                              :                          +- Filter isnotnull(station_id#15452)
+                              :                             +- InMemoryTableScan [station_id#15452], [isnotnull(station_id#15452)]
+                              :                                   +- InMemoryRelation [station_id#15452, city_id#15453, station_name#15454, site_type#15455, latitude#15456, longitude#15457, opened_at#15458, transformer_kw#15459, rent_daily_cents#15460L], StorageLevel(disk, 1 replicas)
+                              :                                         +- *(1) ColumnarToRow
+                              :                                            +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                              +- Sort [scope_type#15322 ASC NULLS FIRST, scope_id#15323 ASC NULLS FIRST, user_id#15225 ASC NULLS FIRST], false, 0
+                                 +- Filter (((cohort_month#15463 >= 2025-12-01) AND (cohort_month#15463 <= 2026-04-01)) AND isnotnull(cohort_month#15463))
+                                    +- HashAggregate(keys=[scope_type#15322, scope_id#15323, user_id#15225], functions=[min(month#15072)], output=[scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463])
+                                       +- Exchange hashpartitioning(scope_type#15322, scope_id#15323, user_id#15225, 8), ENSURE_REQUIREMENTS, [plan_id=41112]
+                                          +- HashAggregate(keys=[scope_type#15322, scope_id#15323, user_id#15225], functions=[partial_min(month#15072)], output=[scope_type#15322, scope_id#15323, user_id#15225, min#56788])
+                                             +- Union
+                                                :- Project [user_id#15225, trunc(cast(from_utc_timestamp(started_at#15229, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15322, ALL AS scope_id#15323]
+                                                :  +- BroadcastHashJoin [station_id#15227], [station_id#15247], Inner, BuildRight, false
+                                                :     :- Filter ((((isnotnull(started_at#15229) AND (started_at#15229 >= 2025-11-30 16:00:00)) AND (started_at#15229 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15227)) AND isnotnull(user_id#15225))
+                                                :     :  +- InMemoryTableScan [user_id#15225, station_id#15227, started_at#15229], [isnotnull(started_at#15229), (started_at#15229 >= 2025-11-30 16:00:00), (started_at#15229 < 2026-05-29 16:00:00), isnotnull(station_id#15227), isnotnull(user_id#15225)]
+                                                :     :        +- InMemoryRelation [session_id#15223, attempt_id#15224, user_id#15225, vehicle_id#15226, station_id#15227, charger_id#15228, started_at#15229, ended_at#15230, unplugged_at#15231, energy_wh#15232L, grid_energy_wh#15233L, electricity_fee_cents#15234L, service_fee_cents#15235L, parking_fee_cents#15236L, discount_cents#15237L, total_fee_cents#15238L, grid_cost_cents#15239L, status#15240, stop_reason#15241, start_soc_pct#15242, end_soc_pct#15243, target_mode#15244, target_value#15245, campaign_id#15246], StorageLevel(disk, 1 replicas)
+                                                :     :              +- *(1) ColumnarToRow
+                                                :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41100]
+                                                :        +- Filter isnotnull(station_id#15247)
+                                                :           +- InMemoryTableScan [station_id#15247], [isnotnull(station_id#15247)]
+                                                :                 +- InMemoryRelation [station_id#15247, city_id#15248, station_name#15249, site_type#15250, latitude#15251, longitude#15252, opened_at#15253, transformer_kw#15254, rent_daily_cents#15255L], StorageLevel(disk, 1 replicas)
+                                                :                       +- *(1) ColumnarToRow
+                                                :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                                :- Project [user_id#15258, trunc(cast(from_utc_timestamp(started_at#15262, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15281 AS scope_id#15155]
+                                                :  +- BroadcastHashJoin [station_id#15260], [station_id#15280], Inner, BuildRight, false
+                                                :     :- Filter ((((isnotnull(started_at#15262) AND (started_at#15262 >= 2025-11-30 16:00:00)) AND (started_at#15262 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15260)) AND isnotnull(user_id#15258))
+                                                :     :  +- InMemoryTableScan [user_id#15258, station_id#15260, started_at#15262], [isnotnull(started_at#15262), (started_at#15262 >= 2025-11-30 16:00:00), (started_at#15262 < 2026-05-29 16:00:00), isnotnull(station_id#15260), isnotnull(user_id#15258)]
+                                                :     :        +- InMemoryRelation [session_id#15256, attempt_id#15257, user_id#15258, vehicle_id#15259, station_id#15260, charger_id#15261, started_at#15262, ended_at#15263, unplugged_at#15264, energy_wh#15265L, grid_energy_wh#15266L, electricity_fee_cents#15267L, service_fee_cents#15268L, parking_fee_cents#15269L, discount_cents#15270L, total_fee_cents#15271L, grid_cost_cents#15272L, status#15273, stop_reason#15274, start_soc_pct#15275, end_soc_pct#15276, target_mode#15277, target_value#15278, campaign_id#15279], StorageLevel(disk, 1 replicas)
+                                                :     :              +- *(1) ColumnarToRow
+                                                :     :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                :     +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41103]
+                                                :        +- Filter (isnotnull(station_id#15280) AND isnotnull(city_id#15281))
+                                                :           +- InMemoryTableScan [station_id#15280, city_id#15281], [isnotnull(station_id#15280), isnotnull(city_id#15281)]
+                                                :                 +- InMemoryRelation [station_id#15280, city_id#15281, station_name#15282, site_type#15283, latitude#15284, longitude#15285, opened_at#15286, transformer_kw#15287, rent_daily_cents#15288L], StorageLevel(disk, 1 replicas)
+                                                :                       +- *(1) ColumnarToRow
+                                                :                          +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+                                                +- Project [user_id#15291, trunc(cast(from_utc_timestamp(started_at#15295, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15293 AS scope_id#15198]
+                                                   +- BroadcastHashJoin [station_id#15293], [station_id#15313], Inner, BuildRight, false
+                                                      :- Filter ((((isnotnull(started_at#15295) AND (started_at#15295 >= 2025-11-30 16:00:00)) AND (started_at#15295 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15293)) AND isnotnull(user_id#15291))
+                                                      :  +- InMemoryTableScan [user_id#15291, station_id#15293, started_at#15295], [isnotnull(started_at#15295), (started_at#15295 >= 2025-11-30 16:00:00), (started_at#15295 < 2026-05-29 16:00:00), isnotnull(station_id#15293), isnotnull(user_id#15291)]
+                                                      :        +- InMemoryRelation [session_id#15289, attempt_id#15290, user_id#15291, vehicle_id#15292, station_id#15293, charger_id#15294, started_at#15295, ended_at#15296, unplugged_at#15297, energy_wh#15298L, grid_energy_wh#15299L, electricity_fee_cents#15300L, service_fee_cents#15301L, parking_fee_cents#15302L, discount_cents#15303L, total_fee_cents#15304L, grid_cost_cents#15305L, status#15306, stop_reason#15307, start_soc_pct#15308, end_soc_pct#15309, target_mode#15310, target_value#15311, campaign_id#15312], StorageLevel(disk, 1 replicas)
+                                                      :              +- *(1) ColumnarToRow
+                                                      :                 +- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+                                                      +- BroadcastExchange HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41106]
+                                                         +- Filter isnotnull(station_id#15313)
+                                                            +- InMemoryTableScan [station_id#15313], [isnotnull(station_id#15313)]
+                                                                  +- InMemoryRelation [station_id#15313, city_id#15314, station_name#15315, site_type#15316, latitude#15317, longitude#15318, opened_at#15319, transformer_kw#15320, rent_daily_cents#15321L], StorageLevel(disk, 1 replicas)
+                                                                        +- *(1) ColumnarToRow
+                                                                           +- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(3) InMemoryTableScan
+Output [3]: [user_id#1824, station_id#1826, started_at#1828]
+Arguments: [user_id#1824, station_id#1826, started_at#1828], [isnotnull(started_at#1828), (started_at#1828 >= 2025-11-30 16:00:00), (started_at#1828 < 2026-05-29 16:00:00), isnotnull(station_id#1826)]
+
+(4) InMemoryRelation
+Arguments: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(5) Scan parquet 
+Output [24]: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845]
+Batched: true
+Location: InMemoryFileIndex [file:${CLEAN_ROOT}/clean/charging_sessions]
+ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,charger_id:string,started_at:timestamp,ended_at:timestamp,unplugged_at:timestamp,energy_wh:bigint,grid_energy_wh:bigint,electricity_fee_cents:bigint,service_fee_cents:bigint,parking_fee_cents:bigint,discount_cents:bigint,total_fee_cents:bigint,grid_cost_cents:bigint,status:string,stop_reason:string,start_soc_pct:double,end_soc_pct:double,target_mode:string,target_value:double,campaign_id:string>
+
+(6) ColumnarToRow [codegen id : 1]
+Input [24]: [session_id#1822, attempt_id#1823, user_id#1824, vehicle_id#1825, station_id#1826, charger_id#1827, started_at#1828, ended_at#1829, unplugged_at#1830, energy_wh#1831L, grid_energy_wh#1832L, electricity_fee_cents#1833L, service_fee_cents#1834L, parking_fee_cents#1835L, discount_cents#1836L, total_fee_cents#1837L, grid_cost_cents#1838L, status#1839, stop_reason#1840, start_soc_pct#1841, end_soc_pct#1842, target_mode#1843, target_value#1844, campaign_id#1845]
+
+(7) TableCacheQueryStage
+Output [3]: [user_id#1824, station_id#1826, started_at#1828]
+Arguments: 0
+
+(8) Filter [codegen id : 10]
+Input [3]: [user_id#1824, station_id#1826, started_at#1828]
+Condition : (((isnotnull(started_at#1828) AND (started_at#1828 >= 2025-11-30 16:00:00)) AND (started_at#1828 < 2026-05-29 16:00:00)) AND isnotnull(station_id#1826))
+
+(9) InMemoryTableScan
+Output [1]: [station_id#170]
+Arguments: [station_id#170], [isnotnull(station_id#170)]
+
+(10) InMemoryRelation
+Arguments: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(11) Scan parquet 
+Output [9]: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L]
+Batched: true
+Location: InMemoryFileIndex [file:${CLEAN_ROOT}/clean/stations]
+ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,longitude:double,opened_at:timestamp,transformer_kw:double,rent_daily_cents:bigint>
+
+(12) ColumnarToRow [codegen id : 1]
+Input [9]: [station_id#170, city_id#171, station_name#172, site_type#173, latitude#174, longitude#175, opened_at#176, transformer_kw#177, rent_daily_cents#178L]
+
+(13) TableCacheQueryStage
+Output [1]: [station_id#170]
+Arguments: 1
+
+(14) Filter [codegen id : 1]
+Input [1]: [station_id#170]
+Condition : isnotnull(station_id#170)
+
+(15) BroadcastExchange
+Input [1]: [station_id#170]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41670]
+
+(16) BroadcastQueryStage
+Output [1]: [station_id#170]
+Arguments: 18
+
+(17) BroadcastHashJoin [codegen id : 10]
+Left keys [1]: [station_id#1826]
+Right keys [1]: [station_id#170]
+Join type: Inner
+Join condition: None
+
+(18) Project [codegen id : 10]
+Output [4]: [user_id#1824, trunc(cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15099, ALL AS scope_id#15100]
+Input [4]: [user_id#1824, station_id#1826, started_at#1828, station_id#170]
+
+(19) InMemoryTableScan
+Output [3]: [user_id#15119, station_id#15121, started_at#15123]
+Arguments: [user_id#15119, station_id#15121, started_at#15123], [isnotnull(started_at#15123), (started_at#15123 >= 2025-11-30 16:00:00), (started_at#15123 < 2026-05-29 16:00:00), isnotnull(station_id#15121)]
+
+(20) InMemoryRelation
+Arguments: [session_id#15117, attempt_id#15118, user_id#15119, vehicle_id#15120, station_id#15121, charger_id#15122, started_at#15123, ended_at#15124, unplugged_at#15125, energy_wh#15126L, grid_energy_wh#15127L, electricity_fee_cents#15128L, service_fee_cents#15129L, parking_fee_cents#15130L, discount_cents#15131L, total_fee_cents#15132L, grid_cost_cents#15133L, status#15134, stop_reason#15135, start_soc_pct#15136, end_soc_pct#15137, target_mode#15138, target_value#15139, campaign_id#15140], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(21) TableCacheQueryStage
+Output [3]: [user_id#15119, station_id#15121, started_at#15123]
+Arguments: 2
+
+(22) Filter [codegen id : 11]
+Input [3]: [user_id#15119, station_id#15121, started_at#15123]
+Condition : (((isnotnull(started_at#15123) AND (started_at#15123 >= 2025-11-30 16:00:00)) AND (started_at#15123 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15121))
+
+(23) InMemoryTableScan
+Output [2]: [station_id#15141, city_id#15142]
+Arguments: [station_id#15141, city_id#15142], [isnotnull(station_id#15141)]
+
+(24) InMemoryRelation
+Arguments: [station_id#15141, city_id#15142, station_name#15143, site_type#15144, latitude#15145, longitude#15146, opened_at#15147, transformer_kw#15148, rent_daily_cents#15149L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(25) TableCacheQueryStage
+Output [2]: [station_id#15141, city_id#15142]
+Arguments: 3
+
+(26) Filter [codegen id : 2]
+Input [2]: [station_id#15141, city_id#15142]
+Condition : isnotnull(station_id#15141)
+
+(27) BroadcastExchange
+Input [2]: [station_id#15141, city_id#15142]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41681]
+
+(28) BroadcastQueryStage
+Output [2]: [station_id#15141, city_id#15142]
+Arguments: 19
+
+(29) BroadcastHashJoin [codegen id : 11]
+Left keys [1]: [station_id#15121]
+Right keys [1]: [station_id#15141]
+Join type: Inner
+Join condition: None
+
+(30) Project [codegen id : 11]
+Output [4]: [user_id#15119, trunc(cast(from_utc_timestamp(started_at#15123, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15142 AS scope_id#15155]
+Input [5]: [user_id#15119, station_id#15121, started_at#15123, station_id#15141, city_id#15142]
+
+(31) InMemoryTableScan
+Output [3]: [user_id#15162, station_id#15164, started_at#15166]
+Arguments: [user_id#15162, station_id#15164, started_at#15166], [isnotnull(started_at#15166), (started_at#15166 >= 2025-11-30 16:00:00), (started_at#15166 < 2026-05-29 16:00:00), isnotnull(station_id#15164)]
+
+(32) InMemoryRelation
+Arguments: [session_id#15160, attempt_id#15161, user_id#15162, vehicle_id#15163, station_id#15164, charger_id#15165, started_at#15166, ended_at#15167, unplugged_at#15168, energy_wh#15169L, grid_energy_wh#15170L, electricity_fee_cents#15171L, service_fee_cents#15172L, parking_fee_cents#15173L, discount_cents#15174L, total_fee_cents#15175L, grid_cost_cents#15176L, status#15177, stop_reason#15178, start_soc_pct#15179, end_soc_pct#15180, target_mode#15181, target_value#15182, campaign_id#15183], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(33) TableCacheQueryStage
+Output [3]: [user_id#15162, station_id#15164, started_at#15166]
+Arguments: 4
+
+(34) Filter [codegen id : 12]
+Input [3]: [user_id#15162, station_id#15164, started_at#15166]
+Condition : (((isnotnull(started_at#15166) AND (started_at#15166 >= 2025-11-30 16:00:00)) AND (started_at#15166 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15164))
+
+(35) InMemoryTableScan
+Output [1]: [station_id#15184]
+Arguments: [station_id#15184], [isnotnull(station_id#15184)]
+
+(36) InMemoryRelation
+Arguments: [station_id#15184, city_id#15185, station_name#15186, site_type#15187, latitude#15188, longitude#15189, opened_at#15190, transformer_kw#15191, rent_daily_cents#15192L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(37) TableCacheQueryStage
+Output [1]: [station_id#15184]
+Arguments: 5
+
+(38) Filter [codegen id : 3]
+Input [1]: [station_id#15184]
+Condition : isnotnull(station_id#15184)
+
+(39) BroadcastExchange
+Input [1]: [station_id#15184]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41692]
+
+(40) BroadcastQueryStage
+Output [1]: [station_id#15184]
+Arguments: 20
+
+(41) BroadcastHashJoin [codegen id : 12]
+Left keys [1]: [station_id#15164]
+Right keys [1]: [station_id#15184]
+Join type: Inner
+Join condition: None
+
+(42) Project [codegen id : 12]
+Output [4]: [user_id#15162, trunc(cast(from_utc_timestamp(started_at#15166, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15164 AS scope_id#15198]
+Input [4]: [user_id#15162, station_id#15164, started_at#15166, station_id#15184]
+
+(43) Union
+
+(44) HashAggregate [codegen id : 13]
+Input [4]: [user_id#1824, month#15072, scope_type#15099, scope_id#15100]
+Keys [3]: [scope_type#15099, scope_id#15100, user_id#1824]
+Functions [1]: [partial_min(month#15072)]
+Aggregate Attributes [1]: [min#56787]
+Results [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+
+(45) Exchange
+Input [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=42688]
+
+(46) ShuffleQueryStage
+Output [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Arguments: 27
+
+(47) AQEShuffleRead
+Input [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Arguments: coalesced
+
+(48) HashAggregate [codegen id : 22]
+Input [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Keys [3]: [scope_type#15099, scope_id#15100, user_id#1824]
+Functions [1]: [min(month#15072)]
+Aggregate Attributes [1]: [min(month#15072)#15207]
+Results [3]: [scope_type#15099, scope_id#15100, min(month#15072)#15207 AS cohort_month#15208]
+
+(49) Filter [codegen id : 22]
+Input [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Condition : (isnotnull(cohort_month#15208) AND ((cohort_month#15208 >= 2025-12-01) AND (cohort_month#15208 <= 2026-04-01)))
+
+(50) HashAggregate [codegen id : 22]
+Input [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Keys [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Functions [1]: [partial_count(1)]
+Aggregate Attributes [1]: [count#56785L]
+Results [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+
+(51) Exchange
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, 8), ENSURE_REQUIREMENTS, [plan_id=43211]
+
+(52) ShuffleQueryStage
+Output [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Arguments: 30
+
+(53) AQEShuffleRead
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Arguments: coalesced
+
+(54) HashAggregate [codegen id : 25]
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Keys [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Functions [1]: [count(1)]
+Aggregate Attributes [1]: [count(1)#15217L]
+Results [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count(1)#15217L AS cohort_size#15218L]
+
+(55) Generate [codegen id : 25]
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L]
+Arguments: explode(sequence(0, cast(months_between(2026-04-01 00:00:00, cast(cohort_month#15208 as timestamp), true, Some(UTC)) as int), None, Some(UTC))), [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L], false, [month_offset#15356]
+
+(56) Exchange
+Input [5]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, 8), ENSURE_REQUIREMENTS, [plan_id=43502]
+
+(57) ShuffleQueryStage
+Output [5]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356]
+Arguments: 33
+
+(58) InMemoryTableScan
+Output [3]: [user_id#15364, station_id#15366, started_at#15368]
+Arguments: [user_id#15364, station_id#15366, started_at#15368], [isnotnull(started_at#15368), (started_at#15368 >= 2025-11-30 16:00:00), (started_at#15368 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15366), isnotnull(user_id#15364)]
+
+(59) InMemoryRelation
+Arguments: [session_id#15362, attempt_id#15363, user_id#15364, vehicle_id#15365, station_id#15366, charger_id#15367, started_at#15368, ended_at#15369, unplugged_at#15370, energy_wh#15371L, grid_energy_wh#15372L, electricity_fee_cents#15373L, service_fee_cents#15374L, parking_fee_cents#15375L, discount_cents#15376L, total_fee_cents#15377L, grid_cost_cents#15378L, status#15379, stop_reason#15380, start_soc_pct#15381, end_soc_pct#15382, target_mode#15383, target_value#15384, campaign_id#15385], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(60) TableCacheQueryStage
+Output [3]: [user_id#15364, station_id#15366, started_at#15368]
+Arguments: 6
+
+(61) Filter [codegen id : 14]
+Input [3]: [user_id#15364, station_id#15366, started_at#15368]
+Condition : (((((isnotnull(started_at#15368) AND (started_at#15368 >= 2025-11-30 16:00:00)) AND (started_at#15368 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15366)) AND isnotnull(user_id#15364))
+
+(62) InMemoryTableScan
+Output [1]: [station_id#15386]
+Arguments: [station_id#15386], [isnotnull(station_id#15386)]
+
+(63) InMemoryRelation
+Arguments: [station_id#15386, city_id#15387, station_name#15388, site_type#15389, latitude#15390, longitude#15391, opened_at#15392, transformer_kw#15393, rent_daily_cents#15394L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(64) TableCacheQueryStage
+Output [1]: [station_id#15386]
+Arguments: 7
+
+(65) Filter [codegen id : 4]
+Input [1]: [station_id#15386]
+Condition : isnotnull(station_id#15386)
+
+(66) BroadcastExchange
+Input [1]: [station_id#15386]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41802]
+
+(67) BroadcastQueryStage
+Output [1]: [station_id#15386]
+Arguments: 21
+
+(68) BroadcastHashJoin [codegen id : 14]
+Left keys [1]: [station_id#15366]
+Right keys [1]: [station_id#15386]
+Join type: Inner
+Join condition: None
+
+(69) Project [codegen id : 14]
+Output [4]: [user_id#15364, trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15461, ALL AS scope_id#15462]
+Input [4]: [user_id#15364, station_id#15366, started_at#15368, station_id#15386]
+
+(70) InMemoryTableScan
+Output [3]: [user_id#15397, station_id#15399, started_at#15401]
+Arguments: [user_id#15397, station_id#15399, started_at#15401], [isnotnull(started_at#15401), (started_at#15401 >= 2025-11-30 16:00:00), (started_at#15401 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15399), isnotnull(user_id#15397)]
+
+(71) InMemoryRelation
+Arguments: [session_id#15395, attempt_id#15396, user_id#15397, vehicle_id#15398, station_id#15399, charger_id#15400, started_at#15401, ended_at#15402, unplugged_at#15403, energy_wh#15404L, grid_energy_wh#15405L, electricity_fee_cents#15406L, service_fee_cents#15407L, parking_fee_cents#15408L, discount_cents#15409L, total_fee_cents#15410L, grid_cost_cents#15411L, status#15412, stop_reason#15413, start_soc_pct#15414, end_soc_pct#15415, target_mode#15416, target_value#15417, campaign_id#15418], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(72) TableCacheQueryStage
+Output [3]: [user_id#15397, station_id#15399, started_at#15401]
+Arguments: 8
+
+(73) Filter [codegen id : 15]
+Input [3]: [user_id#15397, station_id#15399, started_at#15401]
+Condition : (((((isnotnull(started_at#15401) AND (started_at#15401 >= 2025-11-30 16:00:00)) AND (started_at#15401 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15399)) AND isnotnull(user_id#15397))
+
+(74) InMemoryTableScan
+Output [2]: [station_id#15419, city_id#15420]
+Arguments: [station_id#15419, city_id#15420], [isnotnull(station_id#15419), isnotnull(city_id#15420)]
+
+(75) InMemoryRelation
+Arguments: [station_id#15419, city_id#15420, station_name#15421, site_type#15422, latitude#15423, longitude#15424, opened_at#15425, transformer_kw#15426, rent_daily_cents#15427L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(76) TableCacheQueryStage
+Output [2]: [station_id#15419, city_id#15420]
+Arguments: 9
+
+(77) Filter [codegen id : 5]
+Input [2]: [station_id#15419, city_id#15420]
+Condition : (isnotnull(station_id#15419) AND isnotnull(city_id#15420))
+
+(78) BroadcastExchange
+Input [2]: [station_id#15419, city_id#15420]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41813]
+
+(79) BroadcastQueryStage
+Output [2]: [station_id#15419, city_id#15420]
+Arguments: 22
+
+(80) BroadcastHashJoin [codegen id : 15]
+Left keys [1]: [station_id#15399]
+Right keys [1]: [station_id#15419]
+Join type: Inner
+Join condition: None
+
+(81) Project [codegen id : 15]
+Output [4]: [user_id#15397, trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15420 AS scope_id#15155]
+Input [5]: [user_id#15397, station_id#15399, started_at#15401, station_id#15419, city_id#15420]
+
+(82) InMemoryTableScan
+Output [3]: [user_id#15430, station_id#15432, started_at#15434]
+Arguments: [user_id#15430, station_id#15432, started_at#15434], [isnotnull(started_at#15434), (started_at#15434 >= 2025-11-30 16:00:00), (started_at#15434 < 2026-05-29 16:00:00), (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01), isnotnull(station_id#15432), isnotnull(user_id#15430)]
+
+(83) InMemoryRelation
+Arguments: [session_id#15428, attempt_id#15429, user_id#15430, vehicle_id#15431, station_id#15432, charger_id#15433, started_at#15434, ended_at#15435, unplugged_at#15436, energy_wh#15437L, grid_energy_wh#15438L, electricity_fee_cents#15439L, service_fee_cents#15440L, parking_fee_cents#15441L, discount_cents#15442L, total_fee_cents#15443L, grid_cost_cents#15444L, status#15445, stop_reason#15446, start_soc_pct#15447, end_soc_pct#15448, target_mode#15449, target_value#15450, campaign_id#15451], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(84) TableCacheQueryStage
+Output [3]: [user_id#15430, station_id#15432, started_at#15434]
+Arguments: 10
+
+(85) Filter [codegen id : 16]
+Input [3]: [user_id#15430, station_id#15432, started_at#15434]
+Condition : (((((isnotnull(started_at#15434) AND (started_at#15434 >= 2025-11-30 16:00:00)) AND (started_at#15434 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15432)) AND isnotnull(user_id#15430))
+
+(86) InMemoryTableScan
+Output [1]: [station_id#15452]
+Arguments: [station_id#15452], [isnotnull(station_id#15452)]
+
+(87) InMemoryRelation
+Arguments: [station_id#15452, city_id#15453, station_name#15454, site_type#15455, latitude#15456, longitude#15457, opened_at#15458, transformer_kw#15459, rent_daily_cents#15460L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(88) TableCacheQueryStage
+Output [1]: [station_id#15452]
+Arguments: 11
+
+(89) Filter [codegen id : 6]
+Input [1]: [station_id#15452]
+Condition : isnotnull(station_id#15452)
+
+(90) BroadcastExchange
+Input [1]: [station_id#15452]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41824]
+
+(91) BroadcastQueryStage
+Output [1]: [station_id#15452]
+Arguments: 23
+
+(92) BroadcastHashJoin [codegen id : 16]
+Left keys [1]: [station_id#15432]
+Right keys [1]: [station_id#15452]
+Join type: Inner
+Join condition: None
+
+(93) Project [codegen id : 16]
+Output [4]: [user_id#15430, trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15432 AS scope_id#15198]
+Input [4]: [user_id#15430, station_id#15432, started_at#15434, station_id#15452]
+
+(94) Union
+
+(95) HashAggregate [codegen id : 17]
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Keys [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Functions: []
+Aggregate Attributes: []
+Results [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+
+(96) Exchange
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: hashpartitioning(user_id#15364, month#15072, scope_type#15461, scope_id#15462, 8), ENSURE_REQUIREMENTS, [plan_id=43023]
+
+(97) ShuffleQueryStage
+Output [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: 28
+
+(98) AQEShuffleRead
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: coalesced
+
+(99) HashAggregate [codegen id : 23]
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Keys [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Functions: []
+Aggregate Attributes: []
+Results [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+
+(100) Exchange
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: hashpartitioning(scope_type#15461, scope_id#15462, user_id#15364, 8), ENSURE_REQUIREMENTS, [plan_id=43337]
+
+(101) ShuffleQueryStage
+Output [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: 31
+
+(102) AQEShuffleRead
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: coalesced
+
+(103) InMemoryTableScan
+Output [3]: [user_id#15225, station_id#15227, started_at#15229]
+Arguments: [user_id#15225, station_id#15227, started_at#15229], [isnotnull(started_at#15229), (started_at#15229 >= 2025-11-30 16:00:00), (started_at#15229 < 2026-05-29 16:00:00), isnotnull(station_id#15227), isnotnull(user_id#15225)]
+
+(104) InMemoryRelation
+Arguments: [session_id#15223, attempt_id#15224, user_id#15225, vehicle_id#15226, station_id#15227, charger_id#15228, started_at#15229, ended_at#15230, unplugged_at#15231, energy_wh#15232L, grid_energy_wh#15233L, electricity_fee_cents#15234L, service_fee_cents#15235L, parking_fee_cents#15236L, discount_cents#15237L, total_fee_cents#15238L, grid_cost_cents#15239L, status#15240, stop_reason#15241, start_soc_pct#15242, end_soc_pct#15243, target_mode#15244, target_value#15245, campaign_id#15246], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(105) TableCacheQueryStage
+Output [3]: [user_id#15225, station_id#15227, started_at#15229]
+Arguments: 12
+
+(106) Filter [codegen id : 18]
+Input [3]: [user_id#15225, station_id#15227, started_at#15229]
+Condition : ((((isnotnull(started_at#15229) AND (started_at#15229 >= 2025-11-30 16:00:00)) AND (started_at#15229 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15227)) AND isnotnull(user_id#15225))
+
+(107) InMemoryTableScan
+Output [1]: [station_id#15247]
+Arguments: [station_id#15247], [isnotnull(station_id#15247)]
+
+(108) InMemoryRelation
+Arguments: [station_id#15247, city_id#15248, station_name#15249, site_type#15250, latitude#15251, longitude#15252, opened_at#15253, transformer_kw#15254, rent_daily_cents#15255L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(109) TableCacheQueryStage
+Output [1]: [station_id#15247]
+Arguments: 13
+
+(110) Filter [codegen id : 7]
+Input [1]: [station_id#15247]
+Condition : isnotnull(station_id#15247)
+
+(111) BroadcastExchange
+Input [1]: [station_id#15247]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41841]
+
+(112) BroadcastQueryStage
+Output [1]: [station_id#15247]
+Arguments: 24
+
+(113) BroadcastHashJoin [codegen id : 18]
+Left keys [1]: [station_id#15227]
+Right keys [1]: [station_id#15247]
+Join type: Inner
+Join condition: None
+
+(114) Project [codegen id : 18]
+Output [4]: [user_id#15225, trunc(cast(from_utc_timestamp(started_at#15229, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15322, ALL AS scope_id#15323]
+Input [4]: [user_id#15225, station_id#15227, started_at#15229, station_id#15247]
+
+(115) InMemoryTableScan
+Output [3]: [user_id#15258, station_id#15260, started_at#15262]
+Arguments: [user_id#15258, station_id#15260, started_at#15262], [isnotnull(started_at#15262), (started_at#15262 >= 2025-11-30 16:00:00), (started_at#15262 < 2026-05-29 16:00:00), isnotnull(station_id#15260), isnotnull(user_id#15258)]
+
+(116) InMemoryRelation
+Arguments: [session_id#15256, attempt_id#15257, user_id#15258, vehicle_id#15259, station_id#15260, charger_id#15261, started_at#15262, ended_at#15263, unplugged_at#15264, energy_wh#15265L, grid_energy_wh#15266L, electricity_fee_cents#15267L, service_fee_cents#15268L, parking_fee_cents#15269L, discount_cents#15270L, total_fee_cents#15271L, grid_cost_cents#15272L, status#15273, stop_reason#15274, start_soc_pct#15275, end_soc_pct#15276, target_mode#15277, target_value#15278, campaign_id#15279], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(117) TableCacheQueryStage
+Output [3]: [user_id#15258, station_id#15260, started_at#15262]
+Arguments: 14
+
+(118) Filter [codegen id : 19]
+Input [3]: [user_id#15258, station_id#15260, started_at#15262]
+Condition : ((((isnotnull(started_at#15262) AND (started_at#15262 >= 2025-11-30 16:00:00)) AND (started_at#15262 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15260)) AND isnotnull(user_id#15258))
+
+(119) InMemoryTableScan
+Output [2]: [station_id#15280, city_id#15281]
+Arguments: [station_id#15280, city_id#15281], [isnotnull(station_id#15280), isnotnull(city_id#15281)]
+
+(120) InMemoryRelation
+Arguments: [station_id#15280, city_id#15281, station_name#15282, site_type#15283, latitude#15284, longitude#15285, opened_at#15286, transformer_kw#15287, rent_daily_cents#15288L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(121) TableCacheQueryStage
+Output [2]: [station_id#15280, city_id#15281]
+Arguments: 15
+
+(122) Filter [codegen id : 8]
+Input [2]: [station_id#15280, city_id#15281]
+Condition : (isnotnull(station_id#15280) AND isnotnull(city_id#15281))
+
+(123) BroadcastExchange
+Input [2]: [station_id#15280, city_id#15281]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=42149]
+
+(124) BroadcastQueryStage
+Output [2]: [station_id#15280, city_id#15281]
+Arguments: 25
+
+(125) BroadcastHashJoin [codegen id : 19]
+Left keys [1]: [station_id#15260]
+Right keys [1]: [station_id#15280]
+Join type: Inner
+Join condition: None
+
+(126) Project [codegen id : 19]
+Output [4]: [user_id#15258, trunc(cast(from_utc_timestamp(started_at#15262, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15281 AS scope_id#15155]
+Input [5]: [user_id#15258, station_id#15260, started_at#15262, station_id#15280, city_id#15281]
+
+(127) InMemoryTableScan
+Output [3]: [user_id#15291, station_id#15293, started_at#15295]
+Arguments: [user_id#15291, station_id#15293, started_at#15295], [isnotnull(started_at#15295), (started_at#15295 >= 2025-11-30 16:00:00), (started_at#15295 < 2026-05-29 16:00:00), isnotnull(station_id#15293), isnotnull(user_id#15291)]
+
+(128) InMemoryRelation
+Arguments: [session_id#15289, attempt_id#15290, user_id#15291, vehicle_id#15292, station_id#15293, charger_id#15294, started_at#15295, ended_at#15296, unplugged_at#15297, energy_wh#15298L, grid_energy_wh#15299L, electricity_fee_cents#15300L, service_fee_cents#15301L, parking_fee_cents#15302L, discount_cents#15303L, total_fee_cents#15304L, grid_cost_cents#15305L, status#15306, stop_reason#15307, start_soc_pct#15308, end_soc_pct#15309, target_mode#15310, target_value#15311, campaign_id#15312], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [session_id#1822,attempt_id#1823,user_id#1824,vehicle_id#1825,station_id#1826,charger_id#1827,started_at#1828,ended_at#1829,unplugged_at#1830,energy_wh#1831L,grid_energy_wh#1832L,electricity_fee_cents#1833L,service_fee_cents#1834L,parking_fee_cents#1835L,discount_cents#1836L,total_fee_cents#1837L,grid_cost_cents#1838L,status#1839,stop_reason#1840,start_soc_pct#1841,end_soc_pct#1842,target_mode#1843,target_value#1844,campaign_id#1845] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<session_id:string,attempt_id:string,user_id:string,vehicle_id:string,station_id:string,cha...
+,None)
+
+(129) TableCacheQueryStage
+Output [3]: [user_id#15291, station_id#15293, started_at#15295]
+Arguments: 16
+
+(130) Filter [codegen id : 20]
+Input [3]: [user_id#15291, station_id#15293, started_at#15295]
+Condition : ((((isnotnull(started_at#15295) AND (started_at#15295 >= 2025-11-30 16:00:00)) AND (started_at#15295 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15293)) AND isnotnull(user_id#15291))
+
+(131) InMemoryTableScan
+Output [1]: [station_id#15313]
+Arguments: [station_id#15313], [isnotnull(station_id#15313)]
+
+(132) InMemoryRelation
+Arguments: [station_id#15313, city_id#15314, station_name#15315, site_type#15316, latitude#15317, longitude#15318, opened_at#15319, transformer_kw#15320, rent_daily_cents#15321L], CachedRDDBuilder(org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer@33615a03,StorageLevel(disk, 1 replicas),*(1) ColumnarToRow
++- FileScan parquet [station_id#170,city_id#171,station_name#172,site_type#173,latitude#174,longitude#175,opened_at#176,transformer_kw#177,rent_daily_cents#178L] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/kevin/Documents/Codex/2026-09-01/xi/work/phase2-integrated..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,city_id:string,station_name:string,site_type:string,latitude:double,long...
+,None)
+
+(133) TableCacheQueryStage
+Output [1]: [station_id#15313]
+Arguments: 17
+
+(134) Filter [codegen id : 9]
+Input [1]: [station_id#15313]
+Condition : isnotnull(station_id#15313)
+
+(135) BroadcastExchange
+Input [1]: [station_id#15313]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=42160]
+
+(136) BroadcastQueryStage
+Output [1]: [station_id#15313]
+Arguments: 26
+
+(137) BroadcastHashJoin [codegen id : 20]
+Left keys [1]: [station_id#15293]
+Right keys [1]: [station_id#15313]
+Join type: Inner
+Join condition: None
+
+(138) Project [codegen id : 20]
+Output [4]: [user_id#15291, trunc(cast(from_utc_timestamp(started_at#15295, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15293 AS scope_id#15198]
+Input [4]: [user_id#15291, station_id#15293, started_at#15295, station_id#15313]
+
+(139) Union
+
+(140) HashAggregate [codegen id : 21]
+Input [4]: [user_id#15225, month#15072, scope_type#15322, scope_id#15323]
+Keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Functions [1]: [partial_min(month#15072)]
+Aggregate Attributes [1]: [min#56787]
+Results [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+
+(141) Exchange
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Arguments: hashpartitioning(scope_type#15322, scope_id#15323, user_id#15225, 8), ENSURE_REQUIREMENTS, [plan_id=43081]
+
+(142) ShuffleQueryStage
+Output [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Arguments: 29
+
+(143) AQEShuffleRead
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Arguments: coalesced
+
+(144) HashAggregate [codegen id : 24]
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Functions [1]: [min(month#15072)]
+Aggregate Attributes [1]: [min(month#15072)#15207]
+Results [4]: [scope_type#15322, scope_id#15323, user_id#15225, min(month#15072)#15207 AS cohort_month#15463]
+
+(145) Filter [codegen id : 24]
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+Condition : (((cohort_month#15463 >= 2025-12-01) AND (cohort_month#15463 <= 2026-04-01)) AND isnotnull(cohort_month#15463))
+
+(146) BroadcastExchange
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false], input[1, string, true], input[2, string, true]),false), [plan_id=43432]
+
+(147) BroadcastQueryStage
+Output [4]: [scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+Arguments: 32
+
+(148) BroadcastHashJoin [codegen id : 26]
+Left keys [3]: [scope_type#15461, scope_id#15462, user_id#15364]
+Right keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Join type: Inner
+Join condition: isnotnull(cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int))
+
+(149) Project [codegen id : 26]
+Output [5]: [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int) AS month_offset#15335]
+Input [8]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462, scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+
+(150) HashAggregate [codegen id : 26]
+Input [5]: [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, month_offset#15335]
+Keys [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Functions: []
+Aggregate Attributes: []
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+
+(151) HashAggregate [codegen id : 26]
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Keys [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Functions: []
+Aggregate Attributes: []
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+
+(152) HashAggregate [codegen id : 26]
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Functions [1]: [partial_count(distinct user_id#15364)]
+Aggregate Attributes [1]: [count(user_id#15364)#15349L]
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+
+(153) Exchange
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Arguments: hashpartitioning(scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, 8), ENSURE_REQUIREMENTS, [plan_id=43687]
+
+(154) ShuffleQueryStage
+Output [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Arguments: 34
+
+(155) AQEShuffleRead
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Arguments: coalesced
+
+(156) HashAggregate [codegen id : 27]
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Functions [1]: [count(distinct user_id#15364)]
+Aggregate Attributes [1]: [count(user_id#15364)#15349L]
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count(user_id#15364)#15349L AS n#15348L]
+
+(157) BroadcastExchange
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false], input[1, string, true], input[2, date, true], input[3, int, true]),false), [plan_id=43730]
+
+(158) BroadcastQueryStage
+Output [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L]
+Arguments: 35
+
+(159) BroadcastHashJoin [codegen id : 28]
+Left keys [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356]
+Right keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Join type: LeftOuter
+Join condition: None
+
+(160) Project [codegen id : 28]
+Output [6]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, coalesce(n#15348L, 0) AS n#15482L, cohort_size#15218L]
+Input [10]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356, scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L]
+
+(161) Filter
+Input [3]: [user_id#1824, station_id#1826, started_at#1828]
+Condition : (((isnotnull(started_at#1828) AND (started_at#1828 >= 2025-11-30 16:00:00)) AND (started_at#1828 < 2026-05-29 16:00:00)) AND isnotnull(station_id#1826))
+
+(162) Filter
+Input [1]: [station_id#170]
+Condition : isnotnull(station_id#170)
+
+(163) BroadcastExchange
+Input [1]: [station_id#170]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41066]
+
+(164) BroadcastHashJoin
+Left keys [1]: [station_id#1826]
+Right keys [1]: [station_id#170]
+Join type: Inner
+Join condition: None
+
+(165) Project
+Output [4]: [user_id#1824, trunc(cast(from_utc_timestamp(started_at#1828, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15099, ALL AS scope_id#15100]
+Input [4]: [user_id#1824, station_id#1826, started_at#1828, station_id#170]
+
+(166) Filter
+Input [3]: [user_id#15119, station_id#15121, started_at#15123]
+Condition : (((isnotnull(started_at#15123) AND (started_at#15123 >= 2025-11-30 16:00:00)) AND (started_at#15123 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15121))
+
+(167) Filter
+Input [2]: [station_id#15141, city_id#15142]
+Condition : isnotnull(station_id#15141)
+
+(168) BroadcastExchange
+Input [2]: [station_id#15141, city_id#15142]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41069]
+
+(169) BroadcastHashJoin
+Left keys [1]: [station_id#15121]
+Right keys [1]: [station_id#15141]
+Join type: Inner
+Join condition: None
+
+(170) Project
+Output [4]: [user_id#15119, trunc(cast(from_utc_timestamp(started_at#15123, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15142 AS scope_id#15155]
+Input [5]: [user_id#15119, station_id#15121, started_at#15123, station_id#15141, city_id#15142]
+
+(171) Filter
+Input [3]: [user_id#15162, station_id#15164, started_at#15166]
+Condition : (((isnotnull(started_at#15166) AND (started_at#15166 >= 2025-11-30 16:00:00)) AND (started_at#15166 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15164))
+
+(172) Filter
+Input [1]: [station_id#15184]
+Condition : isnotnull(station_id#15184)
+
+(173) BroadcastExchange
+Input [1]: [station_id#15184]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41072]
+
+(174) BroadcastHashJoin
+Left keys [1]: [station_id#15164]
+Right keys [1]: [station_id#15184]
+Join type: Inner
+Join condition: None
+
+(175) Project
+Output [4]: [user_id#15162, trunc(cast(from_utc_timestamp(started_at#15166, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15164 AS scope_id#15198]
+Input [4]: [user_id#15162, station_id#15164, started_at#15166, station_id#15184]
+
+(176) Union
+
+(177) HashAggregate
+Input [4]: [user_id#1824, month#15072, scope_type#15099, scope_id#15100]
+Keys [3]: [scope_type#15099, scope_id#15100, user_id#1824]
+Functions [1]: [partial_min(month#15072)]
+Aggregate Attributes [1]: [min#56787]
+Results [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+
+(178) Exchange
+Input [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, user_id#1824, 8), ENSURE_REQUIREMENTS, [plan_id=41078]
+
+(179) HashAggregate
+Input [4]: [scope_type#15099, scope_id#15100, user_id#1824, min#56788]
+Keys [3]: [scope_type#15099, scope_id#15100, user_id#1824]
+Functions [1]: [min(month#15072)]
+Aggregate Attributes [1]: [min(month#15072)#15207]
+Results [3]: [scope_type#15099, scope_id#15100, min(month#15072)#15207 AS cohort_month#15208]
+
+(180) Filter
+Input [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Condition : (isnotnull(cohort_month#15208) AND ((cohort_month#15208 >= 2025-12-01) AND (cohort_month#15208 <= 2026-04-01)))
+
+(181) HashAggregate
+Input [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Keys [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Functions [1]: [partial_count(1)]
+Aggregate Attributes [1]: [count#56785L]
+Results [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+
+(182) Exchange
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, 8), ENSURE_REQUIREMENTS, [plan_id=41083]
+
+(183) HashAggregate
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count#56786L]
+Keys [3]: [scope_type#15099, scope_id#15100, cohort_month#15208]
+Functions [1]: [count(1)]
+Aggregate Attributes [1]: [count(1)#15217L]
+Results [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, count(1)#15217L AS cohort_size#15218L]
+
+(184) Generate
+Input [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L]
+Arguments: explode(sequence(0, cast(months_between(2026-04-01 00:00:00, cast(cohort_month#15208 as timestamp), true, Some(UTC)) as int), None, Some(UTC))), [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L], false, [month_offset#15356]
+
+(185) Exchange
+Input [5]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356]
+Arguments: hashpartitioning(scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, 8), ENSURE_REQUIREMENTS, [plan_id=41130]
+
+(186) Sort
+Input [5]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356]
+Arguments: [scope_type#15099 ASC NULLS FIRST, scope_id#15100 ASC NULLS FIRST, cohort_month#15208 ASC NULLS FIRST, month_offset#15356 ASC NULLS FIRST], false, 0
+
+(187) Filter
+Input [3]: [user_id#15364, station_id#15366, started_at#15368]
+Condition : (((((isnotnull(started_at#15368) AND (started_at#15368 >= 2025-11-30 16:00:00)) AND (started_at#15368 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15366)) AND isnotnull(user_id#15364))
+
+(188) Filter
+Input [1]: [station_id#15386]
+Condition : isnotnull(station_id#15386)
+
+(189) BroadcastExchange
+Input [1]: [station_id#15386]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41086]
+
+(190) BroadcastHashJoin
+Left keys [1]: [station_id#15366]
+Right keys [1]: [station_id#15386]
+Join type: Inner
+Join condition: None
+
+(191) Project
+Output [4]: [user_id#15364, trunc(cast(from_utc_timestamp(started_at#15368, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15461, ALL AS scope_id#15462]
+Input [4]: [user_id#15364, station_id#15366, started_at#15368, station_id#15386]
+
+(192) Filter
+Input [3]: [user_id#15397, station_id#15399, started_at#15401]
+Condition : (((((isnotnull(started_at#15401) AND (started_at#15401 >= 2025-11-30 16:00:00)) AND (started_at#15401 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15399)) AND isnotnull(user_id#15397))
+
+(193) Filter
+Input [2]: [station_id#15419, city_id#15420]
+Condition : (isnotnull(station_id#15419) AND isnotnull(city_id#15420))
+
+(194) BroadcastExchange
+Input [2]: [station_id#15419, city_id#15420]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41089]
+
+(195) BroadcastHashJoin
+Left keys [1]: [station_id#15399]
+Right keys [1]: [station_id#15419]
+Join type: Inner
+Join condition: None
+
+(196) Project
+Output [4]: [user_id#15397, trunc(cast(from_utc_timestamp(started_at#15401, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15420 AS scope_id#15155]
+Input [5]: [user_id#15397, station_id#15399, started_at#15401, station_id#15419, city_id#15420]
+
+(197) Filter
+Input [3]: [user_id#15430, station_id#15432, started_at#15434]
+Condition : (((((isnotnull(started_at#15434) AND (started_at#15434 >= 2025-11-30 16:00:00)) AND (started_at#15434 < 2026-05-29 16:00:00)) AND (trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) <= 2026-04-01)) AND isnotnull(station_id#15432)) AND isnotnull(user_id#15430))
+
+(198) Filter
+Input [1]: [station_id#15452]
+Condition : isnotnull(station_id#15452)
+
+(199) BroadcastExchange
+Input [1]: [station_id#15452]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41092]
+
+(200) BroadcastHashJoin
+Left keys [1]: [station_id#15432]
+Right keys [1]: [station_id#15452]
+Join type: Inner
+Join condition: None
+
+(201) Project
+Output [4]: [user_id#15430, trunc(cast(from_utc_timestamp(started_at#15434, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15432 AS scope_id#15198]
+Input [4]: [user_id#15430, station_id#15432, started_at#15434, station_id#15452]
+
+(202) Union
+
+(203) HashAggregate
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Keys [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Functions: []
+Aggregate Attributes: []
+Results [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+
+(204) Exchange
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: hashpartitioning(user_id#15364, month#15072, scope_type#15461, scope_id#15462, 8), ENSURE_REQUIREMENTS, [plan_id=41098]
+
+(205) HashAggregate
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Keys [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Functions: []
+Aggregate Attributes: []
+Results [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+
+(206) Exchange
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: hashpartitioning(scope_type#15461, scope_id#15462, user_id#15364, 8), ENSURE_REQUIREMENTS, [plan_id=41117]
+
+(207) Sort
+Input [4]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462]
+Arguments: [scope_type#15461 ASC NULLS FIRST, scope_id#15462 ASC NULLS FIRST, user_id#15364 ASC NULLS FIRST], false, 0
+
+(208) Filter
+Input [3]: [user_id#15225, station_id#15227, started_at#15229]
+Condition : ((((isnotnull(started_at#15229) AND (started_at#15229 >= 2025-11-30 16:00:00)) AND (started_at#15229 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15227)) AND isnotnull(user_id#15225))
+
+(209) Filter
+Input [1]: [station_id#15247]
+Condition : isnotnull(station_id#15247)
+
+(210) BroadcastExchange
+Input [1]: [station_id#15247]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41100]
+
+(211) BroadcastHashJoin
+Left keys [1]: [station_id#15227]
+Right keys [1]: [station_id#15247]
+Join type: Inner
+Join condition: None
+
+(212) Project
+Output [4]: [user_id#15225, trunc(cast(from_utc_timestamp(started_at#15229, Asia/Shanghai) as date), month) AS month#15072, ALL AS scope_type#15322, ALL AS scope_id#15323]
+Input [4]: [user_id#15225, station_id#15227, started_at#15229, station_id#15247]
+
+(213) Filter
+Input [3]: [user_id#15258, station_id#15260, started_at#15262]
+Condition : ((((isnotnull(started_at#15262) AND (started_at#15262 >= 2025-11-30 16:00:00)) AND (started_at#15262 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15260)) AND isnotnull(user_id#15258))
+
+(214) Filter
+Input [2]: [station_id#15280, city_id#15281]
+Condition : (isnotnull(station_id#15280) AND isnotnull(city_id#15281))
+
+(215) BroadcastExchange
+Input [2]: [station_id#15280, city_id#15281]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41103]
+
+(216) BroadcastHashJoin
+Left keys [1]: [station_id#15260]
+Right keys [1]: [station_id#15280]
+Join type: Inner
+Join condition: None
+
+(217) Project
+Output [4]: [user_id#15258, trunc(cast(from_utc_timestamp(started_at#15262, Asia/Shanghai) as date), month) AS month#15153, CITY AS scope_type#15154, city_id#15281 AS scope_id#15155]
+Input [5]: [user_id#15258, station_id#15260, started_at#15262, station_id#15280, city_id#15281]
+
+(218) Filter
+Input [3]: [user_id#15291, station_id#15293, started_at#15295]
+Condition : ((((isnotnull(started_at#15295) AND (started_at#15295 >= 2025-11-30 16:00:00)) AND (started_at#15295 < 2026-05-29 16:00:00)) AND isnotnull(station_id#15293)) AND isnotnull(user_id#15291))
+
+(219) Filter
+Input [1]: [station_id#15313]
+Condition : isnotnull(station_id#15313)
+
+(220) BroadcastExchange
+Input [1]: [station_id#15313]
+Arguments: HashedRelationBroadcastMode(List(input[0, string, false]),false), [plan_id=41106]
+
+(221) BroadcastHashJoin
+Left keys [1]: [station_id#15293]
+Right keys [1]: [station_id#15313]
+Join type: Inner
+Join condition: None
+
+(222) Project
+Output [4]: [user_id#15291, trunc(cast(from_utc_timestamp(started_at#15295, Asia/Shanghai) as date), month) AS month#15196, STATION AS scope_type#15197, station_id#15293 AS scope_id#15198]
+Input [4]: [user_id#15291, station_id#15293, started_at#15295, station_id#15313]
+
+(223) Union
+
+(224) HashAggregate
+Input [4]: [user_id#15225, month#15072, scope_type#15322, scope_id#15323]
+Keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Functions [1]: [partial_min(month#15072)]
+Aggregate Attributes [1]: [min#56787]
+Results [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+
+(225) Exchange
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Arguments: hashpartitioning(scope_type#15322, scope_id#15323, user_id#15225, 8), ENSURE_REQUIREMENTS, [plan_id=41112]
+
+(226) HashAggregate
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, min#56788]
+Keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Functions [1]: [min(month#15072)]
+Aggregate Attributes [1]: [min(month#15072)#15207]
+Results [4]: [scope_type#15322, scope_id#15323, user_id#15225, min(month#15072)#15207 AS cohort_month#15463]
+
+(227) Filter
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+Condition : (((cohort_month#15463 >= 2025-12-01) AND (cohort_month#15463 <= 2026-04-01)) AND isnotnull(cohort_month#15463))
+
+(228) Sort
+Input [4]: [scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+Arguments: [scope_type#15322 ASC NULLS FIRST, scope_id#15323 ASC NULLS FIRST, user_id#15225 ASC NULLS FIRST], false, 0
+
+(229) SortMergeJoin
+Left keys [3]: [scope_type#15461, scope_id#15462, user_id#15364]
+Right keys [3]: [scope_type#15322, scope_id#15323, user_id#15225]
+Join type: Inner
+Join condition: isnotnull(cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int))
+
+(230) Project
+Output [5]: [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, cast(months_between(cast(month#15072 as timestamp), cast(cohort_month#15463 as timestamp), true, Some(UTC)) as int) AS month_offset#15335]
+Input [8]: [user_id#15364, month#15072, scope_type#15461, scope_id#15462, scope_type#15322, scope_id#15323, user_id#15225, cohort_month#15463]
+
+(231) HashAggregate
+Input [5]: [scope_type#15461, scope_id#15462, user_id#15364, cohort_month#15463, month_offset#15335]
+Keys [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Functions: []
+Aggregate Attributes: []
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+
+(232) HashAggregate
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Keys [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Functions: []
+Aggregate Attributes: []
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+
+(233) HashAggregate
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, user_id#15364]
+Keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Functions [1]: [partial_count(distinct user_id#15364)]
+Aggregate Attributes [1]: [count(user_id#15364)#15349L]
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+
+(234) Exchange
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Arguments: hashpartitioning(scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, 8), ENSURE_REQUIREMENTS, [plan_id=41126]
+
+(235) HashAggregate
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count#56791L]
+Keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Functions [1]: [count(distinct user_id#15364)]
+Aggregate Attributes [1]: [count(user_id#15364)#15349L]
+Results [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, count(user_id#15364)#15349L AS n#15348L]
+
+(236) Sort
+Input [5]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L]
+Arguments: [scope_type#15461 ASC NULLS FIRST, scope_id#15462 ASC NULLS FIRST, cohort_month#15463 ASC NULLS FIRST, month_offset#15335 ASC NULLS FIRST], false, 0
+
+(237) SortMergeJoin
+Left keys [4]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356]
+Right keys [4]: [scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335]
+Join type: LeftOuter
+Join condition: None
+
+(238) Project
+Output [6]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, coalesce(n#15348L, 0) AS n#15482L, cohort_size#15218L]
+Input [10]: [scope_type#15099, scope_id#15100, cohort_month#15208, cohort_size#15218L, month_offset#15356, scope_type#15461, scope_id#15462, cohort_month#15463, month_offset#15335, n#15348L]
+
+(239) AdaptiveSparkPlan
+Output [6]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, n#15482L, cohort_size#15218L]
+Arguments: isFinalPlan=true
+
+(240) AdaptiveSparkPlan
+Output [6]: [scope_type#15099, scope_id#15100, cohort_month#15208, month_offset#15356, n#15482L, cohort_size#15218L]
+Arguments: isFinalPlan=false
+

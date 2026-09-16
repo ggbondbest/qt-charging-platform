@@ -1,11 +1,23 @@
 // Generated from contracts/openapi.json. Regenerate; do not hand-edit.
 // Amounts use integer CNY cents, energy Wh; date ranges are [startDate,endDate).
 
+export type AccessPathSummary = { "attemptCount": number; "label": string; "path": string; "successRate": (number | null); "successfulAttempts": number };
+export type AdvancedAnalytics = { "behavior": RechargeBehavior; "correlations": Array<CorrelationCell>; "flow": AttemptFlow; "heatmap": Array<DemandCell>; "insights": Array<string>; "provenance": AdvancedProvenance; "retention": RetentionAnalysis; "scope": AdvancedScope; "segments": Array<SessionSegment>; "service": ServiceBottlenecks; "stationTypes": Array<string>; "stations": Array<StationEfficiency>; "summary": AdvancedSummary; "weather": Array<WeatherCell> };
+export type AdvancedProvenance = { "analysisId": string; "completeMonthsThrough": string; "engine": string; "generatedAt": string; "notes": Array<string>; "sourceLabel": string };
+export type AdvancedScope = { "cityId": (string | null); "endDate": string; "siteType": (string | null); "startDate": string; "stationId": (string | null) };
+export type AdvancedSummary = { "attemptCount": number; "completeStationHours": number; "observedStationHours": number; "sessionCount": number; "stationCount": number };
+export type AttemptFlow = { "attemptCount": number; "links": Array<FlowLink>; "nodes": Array<FlowNode> };
+export type BehaviorCell = { "bucket": string; "count": number; "share": (number | null); "userSegment": string };
+export type BehaviorSegment = { "firstObservedCount": number; "intervalCount": number; "meanEnergyKwh": (number | null); "meanIntervalDays": (number | null); "sessionCount": number; "userSegment": string };
 export type Chart = { "chart": string; "endDate": string; "granularity": string; "items": Array<(DailyPoint | HourlyPoint | CohortPoint | ServicePoint | LoadPoint)>; "limit": number; "startDate": string; "truncated": boolean };
 export type City = { "cityId": string; "cityName": string; "latitude": number; "longitude": number; "timezone": string };
 export type CohortPoint = { "queueAbandonedCount": (number | number | null); "queueCallExpiredCount": (number | number | null); "queueOtherStatusCount": (number | number | null); "queueServedCount": (number | number | null); "queueWaitingCount": (number | number | null); "queuesJoinedCount": (number | number | null); "reservationCancelledCount": (number | number | null); "reservationConfirmedCount": (number | number | null); "reservationExpiredCount": (number | number | null); "reservationOtherStatusCount": (number | number | null); "reservationsCreatedCount": (number | number | null); "time": string };
+export type ConnectorInventory = { "chargerCount": number; "connectorType": string; "ratedPowerKw": number };
+export type CorrelationCell = { "n": number; "value": (number | null); "x": string; "y": string };
 export type DailyPoint = { "availableSamples": (number | number | null); "chargingSamples": (number | number | null); "chargingUtilizationRate": (number | number | null); "completeChargingSamples": (number | number | null); "completeHours": (number | number | null); "completeSampleCount": (number | number | null); "completedSessions": (number | number | null); "energyWh": (number | number | null); "expectedSampleCount": (number | number | null); "gridCostCents": (number | number | null); "incompleteHours": (number | number | null); "maintenanceCostCents": (number | number | null); "maintenanceSamples": (number | number | null); "missingSampleCount": (number | number | null); "netPaidCents": (number | number | null); "observedHours": (number | number | null); "occupiedSamples": (number | number | null); "offlineSamples": (number | number | null); "operatingCostCents": (number | number | null); "paidCents": (number | number | null); "refundCents": (number | number | null); "reservedSamples": (number | number | null); "sampleCount": (number | number | null); "startedSessions": (number | number | null); "time": string };
 export type Dataset = { "datasetId": string; "endDate": string; "generatedAt": string; "pipelineRunId": string; "publishedBatchId": string; "schemaVersion": string; "source": "SIMULATED"; "sourceManifestSha256": string; "startDate": string };
+export type DemandCell = { "chargingUtilization": (number | null); "energyKwh": (number | null); "hour": number; "meanPowerKw": (number | null); "sampleHours": number; "weekday": number };
+export type Envelope_AdvancedAnalytics_ = { "code": string; "data": (AdvancedAnalytics | null); "message": string; "meta": Meta };
 export type Envelope_Chart_ = { "code": string; "data": (Chart | null); "message": string; "meta": Meta };
 export type Envelope_Health_ = { "code": string; "data": (Health | null); "message": string; "meta": Meta };
 export type Envelope_ModelCapabilities_ = { "code": string; "data": (ModelCapabilities | null); "message": string; "meta": Meta };
@@ -16,6 +28,9 @@ export type Envelope_Page_PipelineRun__ = { "code": string; "data": (Page_Pipeli
 export type Envelope_Page_Station__ = { "code": string; "data": (Page_Station_ | null); "message": string; "meta": Meta };
 export type Envelope_PredictionResult_ = { "code": string; "data": (PredictionResult | null); "message": string; "meta": Meta };
 export type Envelope_dict_ = { "code": string; "data": (Record<string, unknown> | null); "message": string; "meta": Meta };
+export type FailureReason = { "count": number; "label": string; "reason": string; "shareOfAttempts": (number | null); "shareOfFailures": (number | null) };
+export type FlowLink = { "source": string; "target": string; "value": number };
+export type FlowNode = { "name": string };
 export type Health = { "dataReady": boolean; "source": "SIMULATED"; "status": "ready" };
 export type HourlyPoint = { "availableSamples": (number | number | null); "chargingSamples": (number | number | null); "chargingUtilizationRate": (number | number | null); "completeChargingSamples": (number | number | null); "completeSampleCount": (number | number | null); "energyWh": (number | number | null); "expectedSampleCount": (number | number | null); "maintenanceSamples": (number | number | null); "missingSampleCount": (number | number | null); "occupiedSamples": (number | number | null); "offlineSamples": (number | number | null); "reservedSamples": (number | number | null); "sampleCount": (number | number | null); "time": string };
 export type LoadPoint = { "capacity": number; "completeStationCount": number; "expectedSampleCount": number; "incompleteStationCount": number; "isComplete": boolean; "meanPowerKw": (number | null); "missingSampleCount": number; "observedStationCount": number; "sampleCount": number; "stationCount": number; "time": string };
@@ -34,12 +49,21 @@ export type PredictionRequest = { "cityId"?: (string | null); "datasetId"?: (str
 export type PredictionResult = { "featureVersion": "history24-v1"; "modelId": string; "modelVersion": string; "points": Array<PredictionPoint>; "schemaVersion": "1.0.0"; "unit": "kW" | "chargers" };
 export type PublishedModel = { "modelId": string; "modelVersion": string; "target": "load" | "availability" };
 export type QualitySummary = { "cleanRows": (number | null); "cleanSessionRows": (number | null); "normalizationSemantics": string; "normalizedByTable": Array<TableNormalizationCount>; "normalizedRows": (number | null); "rawRows": (number | null); "rejectedRows": (number | null); "rejectionReasons": Array<RejectionReason>; "rejectionSampleLimit": number; "rejectionSamples": Array<RejectionSample>; "tables": Array<TableRowCount> };
+export type RechargeBehavior = { "definition": string; "energy": Array<BehaviorCell>; "firstObservedCount": number; "intervalCount": number; "intervals": Array<BehaviorCell>; "segments": Array<BehaviorSegment>; "sessionCount": number };
 export type RejectionReason = { "reason": string; "rowCount": number };
 export type RejectionSample = { "rejectionReason": string; "sessionId": string };
+export type RetentionAnalysis = { "cohorts": Array<RetentionCohort>; "definition": string; "observationEnd": string; "scopeLabel": string };
+export type RetentionCell = { "offset": number; "rate": (number | null); "users": (number | null) };
+export type RetentionCohort = { "cells": Array<RetentionCell>; "month": string; "size": number };
+export type ServiceBottlenecks = { "accessPaths": Array<AccessPathSummary>; "attemptCount": number; "cells": Array<ServiceCell>; "definition": string; "failedAttempts": number; "failures": Array<FailureReason>; "successfulAttempts": number };
+export type ServiceCell = { "attemptCount": number; "chargingUtilization": (number | null); "completeStationHours": number; "failures": Array<FailureReason>; "hour": number; "interfaces": Array<ConnectorInventory>; "meanWaitMinutes": (number | null); "overstayShare": (number | null); "queueWaitCount": number; "sessionCount": number; "siteType": string; "stationCount": number; "successRate": (number | null); "successfulAttempts": number };
 export type ServicePoint = { "invalidRatingCount": (number | number | null); "meanRating": (number | number | null); "queueInvalidTimingCount": (number | number | null); "queueMeanWaitSeconds": (number | number | null); "queueSojournSecondsSum": (number | number | null); "queueWaitCount": (number | number | null); "queueWaitSecondsSum": (number | number | null); "queuesResolvedCount": (number | number | null); "ratingCount": (number | number | null); "ratingSum": (number | number | null); "repairInvalidTimingCount": (number | number | null); "repairResolutionCount": (number | number | null); "repairResolutionSecondsSum": (number | number | null); "repairWorkCount": (number | number | null); "repairWorkSecondsSum": (number | number | null); "repairsRestoredCount": (number | number | null); "time": string };
+export type SessionSegment = { "batteryCapacityBand": string; "connectorType": string; "energyKwh": number; "meanChargeMinutes": (number | null); "meanOverstayMinutes": (number | null); "sessionCount": number; "siteType": string; "userSegment": string };
 export type Station = { "availableCount": number; "capacity": number; "chargingCount": number; "cityId": string; "cityLatitude": number; "cityLongitude": number; "cityName": string; "dataAsOf": (string | null); "isComplete": boolean; "isCurrent": boolean; "latitude": number; "longitude": number; "maintenanceCount": number; "observedPileCount": number; "occupiedCount": number; "offlineCount": number; "periodMetrics": PeriodMetrics; "ratedCapacityKw": number; "reservedCount": number; "siteType": string; "snapshotAt": (string | null); "snapshotSemantics": "LATEST_IN_BATCH"; "stationId": string; "stationName": string; "transformerKw": number; "unknownCount": number };
+export type StationEfficiency = { "attemptCount": number; "chargingUtilization": (number | null); "cityId": string; "cityName": string; "energyKwh": (number | null); "meanWaitMinutes": (number | null); "netCashYuan": number; "overstayShare": (number | null); "sessionCount": number; "siteType": string; "stationId": string; "stationName": string; "successRate": (number | null) };
 export type TableNormalizationCount = { "normalizedRows": number; "tableName": string };
 export type TableRowCount = { "rawRows": number; "tableName": string };
+export type WeatherCell = { "chargingUtilization": (number | null); "hour": number; "meanPowerKw": (number | null); "sampleHours": number; "temperatureBin": number };
 
 // GET /api/v1/cities
 export type listCitiesQuery = { "datasetId"?: (string | null); "publishedBatchId"?: (string | null); "cityId"?: (string | null); "stationId"?: (string | null); "startDate"?: (string | null); "endDate"?: (string | null); "page"?: number; "pageSize"?: number; "sortBy"?: string; "sortOrder"?: "asc" | "desc" };
@@ -50,6 +74,16 @@ export type listCitiesResponse409 = Envelope_dict_;
 export type listCitiesResponse422 = Envelope_dict_;
 export type listCitiesResponse500 = Envelope_dict_;
 export type listCitiesResponse503 = Envelope_dict_;
+
+// GET /api/v1/dashboard/advanced
+export type dashboardAdvancedQuery = { "datasetId"?: (string | null); "publishedBatchId"?: (string | null); "cityId"?: (string | null); "stationId"?: (string | null); "startDate"?: (string | null); "endDate"?: (string | null); "siteType"?: (string | null) };
+export type dashboardAdvancedResponse200 = Envelope_AdvancedAnalytics_;
+export type dashboardAdvancedResponse400 = Envelope_dict_;
+export type dashboardAdvancedResponse404 = Envelope_dict_;
+export type dashboardAdvancedResponse409 = Envelope_dict_;
+export type dashboardAdvancedResponse422 = Envelope_dict_;
+export type dashboardAdvancedResponse500 = Envelope_dict_;
+export type dashboardAdvancedResponse503 = Envelope_dict_;
 
 // GET /api/v1/dashboard/charts
 export type dashboardChartsQuery = { "datasetId"?: (string | null); "publishedBatchId"?: (string | null); "cityId"?: (string | null); "stationId"?: (string | null); "startDate"?: (string | null); "endDate"?: (string | null); "chart"?: "energy" | "revenue" | "utilization" | "states" | "service" | "cohorts" | "load"; "granularity"?: "day" | "hour"; "limit"?: number };

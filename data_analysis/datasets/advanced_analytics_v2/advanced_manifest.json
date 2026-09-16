@@ -1,0 +1,1495 @@
+{
+  "schemaVersion": "1.0.0",
+  "analysisVersion": "2.0.0",
+  "analysisId": "advanced-v2-analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "datasetId": "charging_full_180d_v2",
+  "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "generatedAt": "2026-09-16T02:52:24.089076Z",
+  "engine": "PySpark",
+  "sparkVersion": "3.5.6",
+  "source": "SIMULATED",
+  "periodStart": "2025-11-30T16:00:00Z",
+  "periodEnd": "2026-05-29T16:00:00Z",
+  "periodEndExclusive": "2026-05-29T16:00:00Z",
+  "completeMonthsThrough": "2026-04-01",
+  "completeMonthsFrom": "2025-12-01",
+  "stations": [
+    {
+      "station_id": "ST-BJ-01",
+      "city_id": "BJ",
+      "city_name": "北京市",
+      "station_name": "北京市科创园模拟充电站",
+      "site_type": "OFFICE",
+      "latitude": 39.8542,
+      "longitude": 116.3724,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-BJ-02",
+      "city_id": "BJ",
+      "city_name": "北京市",
+      "station_name": "北京市商业中心模拟充电站",
+      "site_type": "SHOPPING",
+      "latitude": 39.8792,
+      "longitude": 116.4074,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-BJ-03",
+      "city_id": "BJ",
+      "city_name": "北京市",
+      "station_name": "北京市社区模拟充电站",
+      "site_type": "RESIDENTIAL",
+      "latitude": 39.9042,
+      "longitude": 116.4424,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 74.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 2,
+          "rated_power_kw": 14.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 1,
+          "rated_power_kw": 60.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-BJ-04",
+      "city_id": "BJ",
+      "city_name": "北京市",
+      "station_name": "北京市交通枢纽模拟充电站",
+      "site_type": "TRANSIT",
+      "latitude": 39.9292,
+      "longitude": 116.3724,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-BJ-05",
+      "city_id": "BJ",
+      "city_name": "北京市",
+      "station_name": "北京市大学城模拟充电站",
+      "site_type": "CAMPUS",
+      "latitude": 39.9542,
+      "longitude": 116.4074,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-DL-01",
+      "city_id": "DL",
+      "city_name": "大连市",
+      "station_name": "大连市科创园模拟充电站",
+      "site_type": "OFFICE",
+      "latitude": 38.864,
+      "longitude": 121.5797,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-DL-02",
+      "city_id": "DL",
+      "city_name": "大连市",
+      "station_name": "大连市商业中心模拟充电站",
+      "site_type": "SHOPPING",
+      "latitude": 38.889,
+      "longitude": 121.6147,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-DL-03",
+      "city_id": "DL",
+      "city_name": "大连市",
+      "station_name": "大连市社区模拟充电站",
+      "site_type": "RESIDENTIAL",
+      "latitude": 38.914,
+      "longitude": 121.6497,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 74.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 2,
+          "rated_power_kw": 14.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 1,
+          "rated_power_kw": 60.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-DL-04",
+      "city_id": "DL",
+      "city_name": "大连市",
+      "station_name": "大连市交通枢纽模拟充电站",
+      "site_type": "TRANSIT",
+      "latitude": 38.939,
+      "longitude": 121.5797,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-DL-05",
+      "city_id": "DL",
+      "city_name": "大连市",
+      "station_name": "大连市大学城模拟充电站",
+      "site_type": "CAMPUS",
+      "latitude": 38.964,
+      "longitude": 121.6147,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SH-01",
+      "city_id": "SH",
+      "city_name": "上海市",
+      "station_name": "上海市科创园模拟充电站",
+      "site_type": "OFFICE",
+      "latitude": 31.1804,
+      "longitude": 121.4387,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SH-02",
+      "city_id": "SH",
+      "city_name": "上海市",
+      "station_name": "上海市商业中心模拟充电站",
+      "site_type": "SHOPPING",
+      "latitude": 31.2054,
+      "longitude": 121.4737,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SH-03",
+      "city_id": "SH",
+      "city_name": "上海市",
+      "station_name": "上海市社区模拟充电站",
+      "site_type": "RESIDENTIAL",
+      "latitude": 31.2304,
+      "longitude": 121.5087,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 74.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 2,
+          "rated_power_kw": 14.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 1,
+          "rated_power_kw": 60.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SH-04",
+      "city_id": "SH",
+      "city_name": "上海市",
+      "station_name": "上海市交通枢纽模拟充电站",
+      "site_type": "TRANSIT",
+      "latitude": 31.2554,
+      "longitude": 121.4387,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SH-05",
+      "city_id": "SH",
+      "city_name": "上海市",
+      "station_name": "上海市大学城模拟充电站",
+      "site_type": "CAMPUS",
+      "latitude": 31.2804,
+      "longitude": 121.4737,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SY-01",
+      "city_id": "SY",
+      "city_name": "沈阳市",
+      "station_name": "沈阳市科创园模拟充电站",
+      "site_type": "OFFICE",
+      "latitude": 41.7557,
+      "longitude": 123.3965,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SY-02",
+      "city_id": "SY",
+      "city_name": "沈阳市",
+      "station_name": "沈阳市商业中心模拟充电站",
+      "site_type": "SHOPPING",
+      "latitude": 41.7807,
+      "longitude": 123.4315,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SY-03",
+      "city_id": "SY",
+      "city_name": "沈阳市",
+      "station_name": "沈阳市社区模拟充电站",
+      "site_type": "RESIDENTIAL",
+      "latitude": 41.8057,
+      "longitude": 123.4665,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 74.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 2,
+          "rated_power_kw": 14.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 1,
+          "rated_power_kw": 60.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SY-04",
+      "city_id": "SY",
+      "city_name": "沈阳市",
+      "station_name": "沈阳市交通枢纽模拟充电站",
+      "site_type": "TRANSIT",
+      "latitude": 41.8307,
+      "longitude": 123.3965,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SY-05",
+      "city_id": "SY",
+      "city_name": "沈阳市",
+      "station_name": "沈阳市大学城模拟充电站",
+      "site_type": "CAMPUS",
+      "latitude": 41.8557,
+      "longitude": 123.4315,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SZ-01",
+      "city_id": "SZ",
+      "city_name": "深圳市",
+      "station_name": "深圳市科创园模拟充电站",
+      "site_type": "OFFICE",
+      "latitude": 22.4931,
+      "longitude": 114.0229,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SZ-02",
+      "city_id": "SZ",
+      "city_name": "深圳市",
+      "station_name": "深圳市商业中心模拟充电站",
+      "site_type": "SHOPPING",
+      "latitude": 22.5181,
+      "longitude": 114.0579,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SZ-03",
+      "city_id": "SZ",
+      "city_name": "深圳市",
+      "station_name": "深圳市社区模拟充电站",
+      "site_type": "RESIDENTIAL",
+      "latitude": 22.5431,
+      "longitude": 114.0929,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 74.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 2,
+          "rated_power_kw": 14.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 1,
+          "rated_power_kw": 60.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SZ-04",
+      "city_id": "SZ",
+      "city_name": "深圳市",
+      "station_name": "深圳市交通枢纽模拟充电站",
+      "site_type": "TRANSIT",
+      "latitude": 22.5681,
+      "longitude": 114.0229,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    },
+    {
+      "station_id": "ST-SZ-05",
+      "city_id": "SZ",
+      "city_name": "深圳市",
+      "station_name": "深圳市大学城模拟充电站",
+      "site_type": "CAMPUS",
+      "latitude": 22.5931,
+      "longitude": 114.0579,
+      "transformer_kw": 360.0,
+      "capacity": 3,
+      "rated_capacity_kw": 187.0,
+      "interfaces": [
+        {
+          "connector_type": "AC",
+          "charger_count": 1,
+          "rated_power_kw": 7.0
+        },
+        {
+          "connector_type": "DC",
+          "charger_count": 2,
+          "rated_power_kw": 180.0
+        }
+      ]
+    }
+  ],
+  "tables": {
+    "station_day": {
+      "file": "station_day.json.gz",
+      "rows": 4500,
+      "bytes": 476712,
+      "sha256": "7368251c81ae459189881969e21a08a52dd2ab4614f10cbd90ebbbc69ce0655b",
+      "schema": [
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "energy_wh",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "grid_cost_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "completed_sessions",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "paid_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "refund_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "operating_cost_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "maintenance_cost_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "net_paid_cents",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "started_sessions",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "available_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "charging_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reserved_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "maintenance_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "offline_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "sample_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "expected_sample_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "missing_sample_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "observed_hours",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "complete_hours",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "incomplete_hours",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "complete_charging_samples",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "complete_sample_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "charging_utilization",
+          "type": "double",
+          "nullable": true
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "site_type",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "scenario_event",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "day_type",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "reservations_created_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reservation_confirmed_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reservation_cancelled_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reservation_expired_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "reservation_other_status_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queues_joined_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_served_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_abandoned_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_call_expired_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_waiting_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_other_status_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queues_resolved_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_wait_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_wait_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_sojourn_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_invalid_timing_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repairs_restored_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repair_resolution_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repair_resolution_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repair_work_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repair_work_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "repair_invalid_timing_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "rating_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "rating_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "invalid_rating_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "attempt_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "successful_attempt_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "session_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "active_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "connected_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "active_duration_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "connected_duration_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_duration_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "weather_temperature_sum",
+          "type": "double",
+          "nullable": true
+        },
+        {
+          "name": "weather_hour_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "rainfall_mm_sum",
+          "type": "double",
+          "nullable": true
+        }
+      ]
+    },
+    "station_hour": {
+      "file": "station_hour.json.gz",
+      "rows": 108000,
+      "bytes": 2305366,
+      "sha256": "c3c0d44d3184ac1a1ece531e48a1888e10089e97a39e96ea13d14181a9c177f0",
+      "schema": [
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "recorded_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "energy_wh",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "mean_power_kw",
+          "type": "double",
+          "nullable": true
+        },
+        {
+          "name": "available_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "charging_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "reserved_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "occupied_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "maintenance_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "offline_samples",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "sample_count",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "capacity",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "end_available_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "has_observation",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "expected_sample_count",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "missing_sample_count",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "site_type",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "scenario_event",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "day_type",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "local_hour",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "temperature_c",
+          "type": "double",
+          "nullable": true
+        },
+        {
+          "name": "rainfall_mm",
+          "type": "double",
+          "nullable": true
+        },
+        {
+          "name": "weather",
+          "type": "string",
+          "nullable": true
+        }
+      ]
+    },
+    "attempt_flow": {
+      "file": "attempt_flow.json.gz",
+      "rows": 118203,
+      "bytes": 485630,
+      "sha256": "6cddeb903de46bf2a1da341ef0d2151c9e5eddaa04c21e94a492c5f22d29b266",
+      "schema": [
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "local_hour",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "access_path",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "session_status",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "failure_reason",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "attempt_count",
+          "type": "bigint",
+          "nullable": false
+        }
+      ]
+    },
+    "session_segments": {
+      "file": "session_segments.json.gz",
+      "rows": 47580,
+      "bytes": 929819,
+      "sha256": "e96e78ba36355214d26d14f528f5eadcfc31df20d67b4a7e59ca5171f3d2c45e",
+      "schema": [
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "site_type",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "user_segment",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "battery_capacity_band",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "connector_type",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "session_count",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "energy_wh",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "billed_cents",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "active_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "active_duration_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "connected_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "connected_duration_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_duration_count",
+          "type": "bigint",
+          "nullable": true
+        }
+      ]
+    },
+    "retention": {
+      "file": "retention.json.gz",
+      "rows": 464,
+      "bytes": 2941,
+      "sha256": "cac2c4b5f2e964a4d562c5adc38f100eaae847094644230865f3c01322038c8f",
+      "schema": [
+        {
+          "name": "scope_type",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "scope_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "cohort_month",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "month_offset",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "n",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "cohort_size",
+          "type": "bigint",
+          "nullable": false
+        }
+      ]
+    },
+    "user_behavior": {
+      "file": "user_behavior.json.gz",
+      "rows": 76989,
+      "bytes": 933913,
+      "sha256": "819a92893e159d1a10e0d39d16ba1b122d3457632e820a56b3c85567ae9475c5",
+      "schema": [
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "user_segment",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "gap_bucket",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "energy_bucket",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "session_count",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "energy_wh",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "interval_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "interval_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "first_observed_count",
+          "type": "bigint",
+          "nullable": true
+        }
+      ]
+    },
+    "service_hour": {
+      "file": "service_hour.json.gz",
+      "rows": 108000,
+      "bytes": 651522,
+      "sha256": "bdbab316204aa1d8a72c8a29becd16db86e480d0f998a533dc3281d09d69527d",
+      "schema": [
+        {
+          "name": "station_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "city_id",
+          "type": "string",
+          "nullable": true
+        },
+        {
+          "name": "business_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "local_hour",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "session_count",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "occupied_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "connected_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_wait_seconds_sum",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "queue_wait_count",
+          "type": "bigint",
+          "nullable": true
+        }
+      ]
+    }
+  },
+  "inputSha256": {
+    "serving_manifest.json": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+    "quality_report.json": "9a9eb6aaed6ef4ede66535eae1415e0651e932728c5dc98f65fa293b3b1586df",
+    "acceptance_manifest.json": "934883f924e2156353133a8964b6102695b70de8573bf3cc38714ce06cd75bb7",
+    "clean/cities/part-00000-e1d0a01d-4989-4506-8f04-18f015ec7b2a-c000.snappy.parquet": "bd8a4e336fc9fe6a6c01593eca3b303f33e0c4046b8c570e88eecdb0b1277fc6",
+    "clean/stations/part-00000-0c0277b4-36aa-485f-899e-4fc24af4b717-c000.snappy.parquet": "cc0cad908a3cd45916e339463711cdd439f7cd9b136feb23ddc7acadf21e6c10",
+    "clean/chargers/part-00000-210e4a98-3f66-4756-88a2-cec4a061476b-c000.snappy.parquet": "7b5d768350f3d4d9f98d85ccbf3e1747a1757e01c42b1857e0e6fc4a93ae4083",
+    "clean/users/part-00000-50ae3c68-07b2-43f7-975c-b30ac724ee34-c000.snappy.parquet": "883f18d3e8e3c46bf6d24c4025eea077afbfc9fc35a6b65cb2bf4fffb24e9110",
+    "clean/vehicles/part-00000-c939350d-02ef-44d5-847f-216e4e2c9acc-c000.snappy.parquet": "cc1821188e9dba29632e96a49e8d59c8f0e08230e87b2058a406c7a4c57f7298",
+    "clean/calendar/part-00000-a14510aa-0bfb-4699-9972-0b7ce144e2da-c000.snappy.parquet": "99210ef038588648d0d2d59ae1be0887775da9db989b469f664f462ff271ea0e",
+    "clean/weather_hourly/part-00000-4dcfe1eb-c10e-41da-afa5-64e14a378855-c000.snappy.parquet": "54e70c3b07cbb53654c923748273abc55dd998f9366c44833cc104de0cc598b1",
+    "clean/weather_hourly/part-00001-4dcfe1eb-c10e-41da-afa5-64e14a378855-c000.snappy.parquet": "170e8a69283825bd6e7b312184115f1a5e34a9a3199cb730133aee1025753da9",
+    "clean/charging_attempts/part-00000-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet": "675b1d67018c65a004423df7f66125397d0673eb2070946cc75592d9224928ed",
+    "clean/charging_attempts/part-00001-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet": "d491c245dd406263aea5e61c5c3bd48f7a1f68f108b2f5871c702a6d4f1ba2a0",
+    "clean/charging_sessions/part-00000-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "386eca2bafae364dd9692702dda2410e8f15509cecfdb309ad138a651d5a547f",
+    "clean/charging_sessions/part-00001-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "ac114fc4e9d4819b54c75c61212219f5757e26355326bc2adf59a8e1bfbccfce",
+    "clean/charging_sessions/part-00002-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "b61b8afb831a18d0c3f4c335de4c7ea58552bfd5c933057bb643f8ec3c4a9528",
+    "clean/charging_sessions/part-00003-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "1e41dbeecc361084877738b3594ad54ffe29b692f3f74b4debc13b395212c009",
+    "clean/charging_sessions/part-00004-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "3300970bcb09f78fdfb0d458d8c63a78c0df91eed1fa733467ff8e4459ddbc70",
+    "clean/charging_sessions/part-00005-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "82e339cc3d33afeaa636ffe52c6ff3b565dd2d6d9a2f7a39833cec376eae4fd6",
+    "clean/charging_sessions/part-00006-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "a5b285a7f0da7718b2227c3c3646a532bc1756d1defa89cfcc31267855949206",
+    "clean/charging_sessions/part-00007-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet": "65106fab0b7ee1d83063129a9c7c1f55547616b07d365949196a220441a2c7b7",
+    "clean/payments/part-00000-2eda6734-61a8-4e9b-9bf1-3b56184c9a66-c000.snappy.parquet": "a67ca2a2cbedc6910b07dab5b187d7d826d295a4ef7774c4817664357c301709",
+    "clean/payments/part-00001-2eda6734-61a8-4e9b-9bf1-3b56184c9a66-c000.snappy.parquet": "8d17cc0871746ffdc37097f6f70f13830345053ada6a43b8616fd283bcb19ed1",
+    "clean/operating_costs/part-00000-4d5f2298-8cf4-4702-b9bb-0282c1081de4-c000.snappy.parquet": "598f6485faf6f49cd3519bfccfd53c3841884de69874c7045ccb9368b689383d",
+    "clean/operating_costs/part-00001-4d5f2298-8cf4-4702-b9bb-0282c1081de4-c000.snappy.parquet": "8b60fbd721555f00720682c911b8a4e89941a58c4e35726004819670605c45d6",
+    "clean/maintenance_tickets/part-00000-66975a96-b3a1-4583-8910-943f3e38975c-c000.snappy.parquet": "ef1e5ae22f3bd9d7637be707de2251106003f952f91cbbaa968ee77e5379ca0a",
+    "clean/maintenance_tickets/part-00001-66975a96-b3a1-4583-8910-943f3e38975c-c000.snappy.parquet": "9da3fde5066dcca616d7d00544d44be134e3d321b10ff7cd95a7679c0587caa4",
+    "clean/queue_entries/part-00000-92968d52-06f2-4115-8082-6a567791610a-c000.snappy.parquet": "46c4263f83ef1a0879402b1b172e33a74b68b907888b7394890c16ad1e46ffca",
+    "clean/queue_entries/part-00001-92968d52-06f2-4115-8082-6a567791610a-c000.snappy.parquet": "5d3ab173d669bd8be8b9b7fc881ea6109381a06c1f3262b235962c7746341657",
+    "clean/reservations/part-00000-f65698fe-189f-4e41-89e8-92daaa169b94-c000.snappy.parquet": "27618aa817f4ea0e64b30698c77470e737d65aeaa4a8452825c9799d353637c1",
+    "clean/reservations/part-00001-f65698fe-189f-4e41-89e8-92daaa169b94-c000.snappy.parquet": "986eff4e2d8e8d6f37b429a54fde9eed9dc0f9ff47fa73b99eadc1405ec49ec1",
+    "clean/reviews/part-00000-96e9d0b3-8242-4262-9120-16146eff88bc-c000.snappy.parquet": "3f618c833c327f341b1ffa580542fd30c019f89f676c78d5e4af3c6487875a71",
+    "clean/reviews/part-00001-96e9d0b3-8242-4262-9120-16146eff88bc-c000.snappy.parquet": "a9a2a3bdd86c9765bb5d13b0dc5cce819ea2915b69a6d575a4875217ee373afb",
+    "clean/charger_telemetry/part-00000-3ead9c1d-7f51-451e-8570-4a51f0f88f97-c000.snappy.parquet": "84d4f329ce0c02793df2ccdf176d26adaff236e91d398a531ddce62c9a50f6ba",
+    "clean/charger_telemetry/part-00001-3ead9c1d-7f51-451e-8570-4a51f0f88f97-c000.snappy.parquet": "4c4eaa604a33053ce6ae5b9dff649dbab9826b21102392cc1f982d90a760a2c1"
+  },
+  "sourceCounts": {
+    "cities": 5,
+    "stations": 25,
+    "chargers": 75,
+    "users": 6000,
+    "vehicles": 6000,
+    "calendar": 900,
+    "weather_hourly": 21600,
+    "charging_attempts": 169154,
+    "charging_sessions": 121539,
+    "payments": 135130,
+    "operating_costs": 4500,
+    "maintenance_tickets": 418,
+    "queue_entries": 36594,
+    "reservations": 18269,
+    "reviews": 26594,
+    "charger_telemetry": 3888000
+  },
+  "invariants": {
+    "stationDayUnique": true,
+    "attemptsConserved": true,
+    "sessionsEnergyBillsConserved": true,
+    "retentionDenominatorsValid": true,
+    "behaviorSessionsEnergyConserved": true,
+    "behaviorIntervalsCensoredCorrectly": true,
+    "serviceHourUnique": true,
+    "serviceSessionsConserved": true,
+    "serviceDurationRatioValid": true
+  },
+  "definitions": {
+    "station_day": "Station/business-day panel. Energy and grid costs use telemetry intervals; receipts/refunds use transaction date; repair costs use restoration date. Net receipts minus listed costs is an operating-contribution proxy, not accounting profit. Means must be recomputed from sums and counts.",
+    "station_hour": "Station/hour panel with Shanghai hour, operational day type, site type and observed weather. Complete-hour utilization denominator includes all piles and maintenance. Missing telemetry is null load, never zero. Weather is observed context, not a causal effect.",
+    "attempt_flow": "One row per disjoint station/Shanghai-day/hour/access-path/outcome/final-session-status/failure-reason group. Each request enters DIRECT, QUEUE or RESERVATION exactly once. Final outcome is observed at batch completion, not historical as-of state or a forecasting feature. Concrete failure reasons must not be collapsed into a generic abandonment label when diagnosing bottlenecks.",
+    "session_segments": "Whole-session energy, bill and durations assigned to Shanghai START date; site type × user segment × battery capacity band × connector type are jointly grouped, not separate marginals. Capacity bands use actual vehicle battery_capacity_kwh: LT50 (<50), 50_TO_69 (50<=kWh<70), GE70 (>=70), UNKNOWN (missing/nonpositive/nonfinite). vehicle_class is deliberately excluded because the source duplicates user segment. Do not compare start-cohort energy with interval-day electricity as if equal.",
+    "retention": "First OBSERVED charging month within the selected ALL/CITY/STATION scope, not true acquisition. A user returns if they charge at least once in the observation month in that same scope. Cohort size is fixed; complete calendar months only. Missing future cells are censored, observed zero-return cells are explicit zero. Site-type filtering does not apply.",
+    "user_behavior": "Session-event frequency distribution, not distinct users: each start is assigned to its station, Shanghai date, user segment, prior-start interval band and delivered-energy band. Prior start is computed over each user's FULL source history across ALL stations BEFORE query filters. FIRST_OBSERVED is left-censored (not zero interval, acquisition, churn or non-return); it does not enter interval means. Interval bands are [0,1), [1,3), [3,7), [7,14), [14,infinity) days; energy bands are [0,10), [10,20), [20,40), [40,infinity) kWh. Same-time starts are ordered by session_id for deterministic zero intervals. Frequent users contribute more session events; no user-level percentile/frequency or retention inference is valid from these counts.",
+    "service_hour": "Station/Shanghai-date/hour resource-context panel. Resolved queue wait ends at first call, or exit if never called, assigned to JOIN hour (not resolution hour); waiting/in-progress or invalid chronology are excluded from the mean. Whole-session post-charge and connected durations are assigned to START hour, not interval-hour occupancy; only jointly valid durations enter the paired ratio. Event aggregates join once to the complete station-hour grid and do not multiply. Correlations with attempt success are descriptive associations, never causal effects.",
+    "weather": "City weather is repeated for each station for matched comparisons. Do not sum rainfall or weather-hour counts across stations and call it city weather; deduplicate city/date or use station-hour matched averages.",
+    "day_type": "HOLIDAY for reference-calendar PUBLIC_HOLIDAY events; WORKDAY for ADJUSTED_WORKDAY; otherwise literal Saturday/Sunday WEEKEND or WORKDAY. LOCAL_EXPO stays an additional scenario_event category.",
+    "causality": "Associations and simulated observed cohorts only: no causal weather, price-elasticity, campaign uplift or real-world performance claim."
+  },
+  "maxExportRows": 250000,
+  "rawFactsCollected": false,
+  "retentionSupportsSiteType": false,
+  "referenceAggregatesUsedAsInput": false,
+  "authenticatedCleanInventoryVerified": true,
+  "sparkPlans": {
+    "station_day": "spark_plans/station_day.txt",
+    "station_hour": "spark_plans/station_hour.txt",
+    "attempt_flow": "spark_plans/attempt_flow.txt",
+    "session_segments": "spark_plans/session_segments.txt",
+    "retention": "spark_plans/retention.txt",
+    "user_behavior": "spark_plans/user_behavior.txt",
+    "service_hour": "spark_plans/service_hour.txt"
+  }
+}

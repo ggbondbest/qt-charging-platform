@@ -81,6 +81,7 @@ jobs:
         run: >-
           python -m unittest
           data_analysis.tests.test_analytics_api
+          data_analysis.tests.test_advanced_api
           data_analysis.tests.test_publishing
           data_analysis.tests.test_bundle
           data_analysis.tests.test_contracts
@@ -109,13 +110,13 @@ jobs:
           - suite: cleaning
             module: data_analysis.tests.test_spark_pipeline data_analysis.tests.test_cleaning_quality
           - suite: dirty-parser
-            module: data_analysis.tests.test_dirty_injection.SparkDirtyParsingTests
+            module: data_analysis.tests.test_dirty_injection.SparkDirtyParsingTests data_analysis.tests.test_cleaning_challenge
           - suite: dashboard
             module: data_analysis.tests.test_dashboard_aggregates
           - suite: ml-features
             module: data_analysis.tests.test_ml_features
           - suite: data-export
-            module: data_analysis.tests.test_data_export data_analysis.tests.test_acceptance_analysis
+            module: data_analysis.tests.test_data_export data_analysis.tests.test_acceptance_analysis data_analysis.tests.test_advanced_analysis
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:

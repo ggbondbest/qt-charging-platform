@@ -1,6 +1,382 @@
 {
   "components": {
     "schemas": {
+      "AccessPathSummary": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "successRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successrate"
+          },
+          "successfulAttempts": {
+            "title": "Successfulattempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "label",
+          "attemptCount",
+          "successfulAttempts",
+          "successRate"
+        ],
+        "title": "AccessPathSummary",
+        "type": "object"
+      },
+      "AdvancedAnalytics": {
+        "properties": {
+          "behavior": {
+            "$ref": "#/components/schemas/RechargeBehavior"
+          },
+          "correlations": {
+            "items": {
+              "$ref": "#/components/schemas/CorrelationCell"
+            },
+            "title": "Correlations",
+            "type": "array"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/AttemptFlow"
+          },
+          "heatmap": {
+            "items": {
+              "$ref": "#/components/schemas/DemandCell"
+            },
+            "title": "Heatmap",
+            "type": "array"
+          },
+          "insights": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Insights",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/AdvancedProvenance"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/RetentionAnalysis"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AdvancedScope"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "service": {
+            "$ref": "#/components/schemas/ServiceBottlenecks"
+          },
+          "stationTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stationtypes",
+            "type": "array"
+          },
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/StationEfficiency"
+            },
+            "title": "Stations",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AdvancedSummary"
+          },
+          "weather": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherCell"
+            },
+            "title": "Weather",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provenance",
+          "scope",
+          "stationTypes",
+          "summary",
+          "heatmap",
+          "stations",
+          "weather",
+          "flow",
+          "behavior",
+          "service",
+          "retention",
+          "segments",
+          "correlations",
+          "insights"
+        ],
+        "title": "AdvancedAnalytics",
+        "type": "object"
+      },
+      "AdvancedProvenance": {
+        "properties": {
+          "analysisId": {
+            "title": "Analysisid",
+            "type": "string"
+          },
+          "completeMonthsThrough": {
+            "title": "Completemonthsthrough",
+            "type": "string"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "generatedAt": {
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "sourceLabel": {
+            "title": "Sourcelabel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceLabel",
+          "analysisId",
+          "engine",
+          "generatedAt",
+          "completeMonthsThrough",
+          "notes"
+        ],
+        "title": "AdvancedProvenance",
+        "type": "object"
+      },
+      "AdvancedScope": {
+        "properties": {
+          "cityId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cityid"
+          },
+          "endDate": {
+            "title": "Enddate",
+            "type": "string"
+          },
+          "siteType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sitetype"
+          },
+          "startDate": {
+            "title": "Startdate",
+            "type": "string"
+          },
+          "stationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stationid"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate",
+          "cityId",
+          "stationId",
+          "siteType"
+        ],
+        "title": "AdvancedScope",
+        "type": "object"
+      },
+      "AdvancedSummary": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "completeStationHours": {
+            "title": "Completestationhours",
+            "type": "integer"
+          },
+          "observedStationHours": {
+            "title": "Observedstationhours",
+            "type": "integer"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          },
+          "stationCount": {
+            "title": "Stationcount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stationCount",
+          "sessionCount",
+          "attemptCount",
+          "observedStationHours",
+          "completeStationHours"
+        ],
+        "title": "AdvancedSummary",
+        "type": "object"
+      },
+      "AttemptFlow": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/FlowLink"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/FlowNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "attemptCount",
+          "nodes",
+          "links"
+        ],
+        "title": "AttemptFlow",
+        "type": "object"
+      },
+      "BehaviorCell": {
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          },
+          "userSegment": {
+            "title": "Usersegment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userSegment",
+          "bucket",
+          "count",
+          "share"
+        ],
+        "title": "BehaviorCell",
+        "type": "object"
+      },
+      "BehaviorSegment": {
+        "properties": {
+          "firstObservedCount": {
+            "title": "Firstobservedcount",
+            "type": "integer"
+          },
+          "intervalCount": {
+            "title": "Intervalcount",
+            "type": "integer"
+          },
+          "meanEnergyKwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanenergykwh"
+          },
+          "meanIntervalDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanintervaldays"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          },
+          "userSegment": {
+            "title": "Usersegment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userSegment",
+          "sessionCount",
+          "intervalCount",
+          "firstObservedCount",
+          "meanIntervalDays",
+          "meanEnergyKwh"
+        ],
+        "title": "BehaviorSegment",
+        "type": "object"
+      },
       "Chart": {
         "properties": {
           "chart": {
@@ -273,6 +649,64 @@
           "queueOtherStatusCount"
         ],
         "title": "CohortPoint",
+        "type": "object"
+      },
+      "ConnectorInventory": {
+        "properties": {
+          "chargerCount": {
+            "title": "Chargercount",
+            "type": "integer"
+          },
+          "connectorType": {
+            "title": "Connectortype",
+            "type": "string"
+          },
+          "ratedPowerKw": {
+            "title": "Ratedpowerkw",
+            "type": "number"
+          }
+        },
+        "required": [
+          "connectorType",
+          "chargerCount",
+          "ratedPowerKw"
+        ],
+        "title": "ConnectorInventory",
+        "type": "object"
+      },
+      "CorrelationCell": {
+        "properties": {
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "x": {
+            "title": "X",
+            "type": "string"
+          },
+          "y": {
+            "title": "Y",
+            "type": "string"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "value",
+          "n"
+        ],
+        "title": "CorrelationCell",
         "type": "object"
       },
       "DailyPoint": {
@@ -703,6 +1137,98 @@
         "title": "Dataset",
         "type": "object"
       },
+      "DemandCell": {
+        "properties": {
+          "chargingUtilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chargingutilization"
+          },
+          "energyKwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energykwh"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "meanPowerKw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanpowerkw"
+          },
+          "sampleHours": {
+            "title": "Samplehours",
+            "type": "integer"
+          },
+          "weekday": {
+            "title": "Weekday",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekday",
+          "hour",
+          "energyKwh",
+          "meanPowerKw",
+          "chargingUtilization",
+          "sampleHours"
+        ],
+        "title": "DemandCell",
+        "type": "object"
+      },
+      "Envelope_AdvancedAnalytics_": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdvancedAnalytics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[AdvancedAnalytics]",
+        "type": "object"
+      },
       "Envelope_Chart_": {
         "properties": {
           "code": {
@@ -1033,6 +1559,89 @@
           "meta"
         ],
         "title": "Envelope[dict]",
+        "type": "object"
+      },
+      "FailureReason": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "shareOfAttempts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shareofattempts"
+          },
+          "shareOfFailures": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shareoffailures"
+          }
+        },
+        "required": [
+          "reason",
+          "label",
+          "count",
+          "shareOfFailures",
+          "shareOfAttempts"
+        ],
+        "title": "FailureReason",
+        "type": "object"
+      },
+      "FlowLink": {
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "value"
+        ],
+        "title": "FlowLink",
+        "type": "object"
+      },
+      "FlowNode": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FlowNode",
         "type": "object"
       },
       "Health": {
@@ -2941,6 +3550,58 @@
         "title": "QualitySummary",
         "type": "object"
       },
+      "RechargeBehavior": {
+        "properties": {
+          "definition": {
+            "title": "Definition",
+            "type": "string"
+          },
+          "energy": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorCell"
+            },
+            "title": "Energy",
+            "type": "array"
+          },
+          "firstObservedCount": {
+            "title": "Firstobservedcount",
+            "type": "integer"
+          },
+          "intervalCount": {
+            "title": "Intervalcount",
+            "type": "integer"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorCell"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "definition",
+          "sessionCount",
+          "intervalCount",
+          "firstObservedCount",
+          "intervals",
+          "energy",
+          "segments"
+        ],
+        "title": "RechargeBehavior",
+        "type": "object"
+      },
       "RejectionReason": {
         "additionalProperties": false,
         "properties": {
@@ -2977,6 +3638,264 @@
           "rejectionReason"
         ],
         "title": "RejectionSample",
+        "type": "object"
+      },
+      "RetentionAnalysis": {
+        "properties": {
+          "cohorts": {
+            "items": {
+              "$ref": "#/components/schemas/RetentionCohort"
+            },
+            "title": "Cohorts",
+            "type": "array"
+          },
+          "definition": {
+            "title": "Definition",
+            "type": "string"
+          },
+          "observationEnd": {
+            "title": "Observationend",
+            "type": "string"
+          },
+          "scopeLabel": {
+            "title": "Scopelabel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scopeLabel",
+          "definition",
+          "observationEnd",
+          "cohorts"
+        ],
+        "title": "RetentionAnalysis",
+        "type": "object"
+      },
+      "RetentionCell": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "users": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Users"
+          }
+        },
+        "required": [
+          "offset",
+          "users",
+          "rate"
+        ],
+        "title": "RetentionCell",
+        "type": "object"
+      },
+      "RetentionCohort": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/RetentionCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "size",
+          "cells"
+        ],
+        "title": "RetentionCohort",
+        "type": "object"
+      },
+      "ServiceBottlenecks": {
+        "properties": {
+          "accessPaths": {
+            "items": {
+              "$ref": "#/components/schemas/AccessPathSummary"
+            },
+            "title": "Accesspaths",
+            "type": "array"
+          },
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "definition": {
+            "title": "Definition",
+            "type": "string"
+          },
+          "failedAttempts": {
+            "title": "Failedattempts",
+            "type": "integer"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/FailureReason"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "successfulAttempts": {
+            "title": "Successfulattempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "definition",
+          "attemptCount",
+          "successfulAttempts",
+          "failedAttempts",
+          "failures",
+          "accessPaths",
+          "cells"
+        ],
+        "title": "ServiceBottlenecks",
+        "type": "object"
+      },
+      "ServiceCell": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "chargingUtilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chargingutilization"
+          },
+          "completeStationHours": {
+            "title": "Completestationhours",
+            "type": "integer"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/FailureReason"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "interfaces": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorInventory"
+            },
+            "title": "Interfaces",
+            "type": "array"
+          },
+          "meanWaitMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanwaitminutes"
+          },
+          "overstayShare": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overstayshare"
+          },
+          "queueWaitCount": {
+            "title": "Queuewaitcount",
+            "type": "integer"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          },
+          "siteType": {
+            "title": "Sitetype",
+            "type": "string"
+          },
+          "stationCount": {
+            "title": "Stationcount",
+            "type": "integer"
+          },
+          "successRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successrate"
+          },
+          "successfulAttempts": {
+            "title": "Successfulattempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "siteType",
+          "hour",
+          "stationCount",
+          "attemptCount",
+          "successfulAttempts",
+          "successRate",
+          "meanWaitMinutes",
+          "queueWaitCount",
+          "overstayShare",
+          "sessionCount",
+          "chargingUtilization",
+          "completeStationHours",
+          "interfaces",
+          "failures"
+        ],
+        "title": "ServiceCell",
         "type": "object"
       },
       "ServicePoint": {
@@ -3233,6 +4152,68 @@
         "title": "ServicePoint",
         "type": "object"
       },
+      "SessionSegment": {
+        "properties": {
+          "batteryCapacityBand": {
+            "title": "Batterycapacityband",
+            "type": "string"
+          },
+          "connectorType": {
+            "title": "Connectortype",
+            "type": "string"
+          },
+          "energyKwh": {
+            "title": "Energykwh",
+            "type": "number"
+          },
+          "meanChargeMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanchargeminutes"
+          },
+          "meanOverstayMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanoverstayminutes"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          },
+          "siteType": {
+            "title": "Sitetype",
+            "type": "string"
+          },
+          "userSegment": {
+            "title": "Usersegment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "siteType",
+          "userSegment",
+          "batteryCapacityBand",
+          "connectorType",
+          "sessionCount",
+          "energyKwh",
+          "meanChargeMinutes",
+          "meanOverstayMinutes"
+        ],
+        "title": "SessionSegment",
+        "type": "object"
+      },
       "Station": {
         "properties": {
           "availableCount": {
@@ -3385,6 +4366,114 @@
         "title": "Station",
         "type": "object"
       },
+      "StationEfficiency": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "chargingUtilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chargingutilization"
+          },
+          "cityId": {
+            "title": "Cityid",
+            "type": "string"
+          },
+          "cityName": {
+            "title": "Cityname",
+            "type": "string"
+          },
+          "energyKwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energykwh"
+          },
+          "meanWaitMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanwaitminutes"
+          },
+          "netCashYuan": {
+            "title": "Netcashyuan",
+            "type": "number"
+          },
+          "overstayShare": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overstayshare"
+          },
+          "sessionCount": {
+            "title": "Sessioncount",
+            "type": "integer"
+          },
+          "siteType": {
+            "title": "Sitetype",
+            "type": "string"
+          },
+          "stationId": {
+            "title": "Stationid",
+            "type": "string"
+          },
+          "stationName": {
+            "title": "Stationname",
+            "type": "string"
+          },
+          "successRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successrate"
+          }
+        },
+        "required": [
+          "stationId",
+          "stationName",
+          "cityId",
+          "cityName",
+          "siteType",
+          "energyKwh",
+          "chargingUtilization",
+          "meanWaitMinutes",
+          "overstayShare",
+          "netCashYuan",
+          "sessionCount",
+          "attemptCount",
+          "successRate"
+        ],
+        "title": "StationEfficiency",
+        "type": "object"
+      },
       "TableNormalizationCount": {
         "additionalProperties": false,
         "properties": {
@@ -3421,6 +4510,53 @@
           "rawRows"
         ],
         "title": "TableRowCount",
+        "type": "object"
+      },
+      "WeatherCell": {
+        "properties": {
+          "chargingUtilization": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chargingutilization"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "integer"
+          },
+          "meanPowerKw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meanpowerkw"
+          },
+          "sampleHours": {
+            "title": "Samplehours",
+            "type": "integer"
+          },
+          "temperatureBin": {
+            "title": "Temperaturebin",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "temperatureBin",
+          "hour",
+          "chargingUtilization",
+          "meanPowerKw",
+          "sampleHours"
+        ],
+        "title": "WeatherCell",
         "type": "object"
       }
     }
@@ -3670,6 +4806,214 @@
           }
         },
         "summary": "Cities"
+      }
+    },
+    "/api/v1/dashboard/advanced": {
+      "get": {
+        "operationId": "dashboardAdvanced",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "datasetId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Datasetid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "publishedBatchId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Publishedbatchid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cityid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stationId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stationid"
+            }
+          },
+          {
+            "description": "Asia/Shanghai business date, inclusive",
+            "in": "query",
+            "name": "startDate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Asia/Shanghai business date, inclusive",
+              "title": "Startdate"
+            }
+          },
+          {
+            "description": "Asia/Shanghai business date, exclusive",
+            "in": "query",
+            "name": "endDate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Asia/Shanghai business date, exclusive",
+              "title": "Enddate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "siteType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sitetype"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdvancedAnalytics_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Inconsistent filters"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Unknown dataset/city/station"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Published batch mismatch"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid query/body"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Unexpected internal error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_"
+                }
+              }
+            },
+            "description": "Published data or model unavailable"
+          }
+        },
+        "summary": "Advanced"
       }
     },
     "/api/v1/dashboard/charts": {

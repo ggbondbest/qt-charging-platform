@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Chart from './Chart.vue';
 import Icon from './Icon.vue';
 import AnalyticsMap from './AnalyticsMap.vue';
+import AdvancedAnalytics from './AdvancedAnalytics.vue';
+import WorkspaceTabs from './WorkspaceTabs.vue';
 import { AnalyticsError, energyContribution, converted, formatValue as n, fraction, publishedRequest, shiftDate, sumSnapshot } from '../analytics';
 import type { Dataset, RecordData } from '../analytics';
 const dataset = ref<Dataset>();
@@ -11,11 +13,18 @@ const city = ref(''); const start = ref(''); const end = ref('');
 const snapshot = ref<RecordData>(); const loading = ref(false); const error = ref('');
 const sequence = ref(0); let controller: AbortController | undefined;
 const refreshing = ref(false);
+const section = ref('overview');
+const sections = [
+  { id: 'overview', label: '运营总览', description: '网络、经营与服务指标' },
+  { id: 'space', label: '时空与效率', description: '需求热力、环境关联、多指标对比' },
+  { id: 'service', label: '用户与服务', description: '补能行为、流失原因、瓶颈定位' },
+];
 withDefaults(defineProps<{ presentation?: boolean }>(), { presentation: false });
 const emit = defineEmits<{ 'update:presentation': [value: boolean] }>();
 let alive = true;
 const metrics = computed(() => snapshot.value?.overview.metrics || {});
 const stations = computed<RecordData[]>(() => snapshot.value?.stations || []);
+const stationChoices = computed(() => stations.value.map(station => ({ stationId: station.stationId as string, stationName: station.stationName as string })));
 const quality = computed(() => snapshot.value?.quality || {});
 const contribution = computed(() => energyContribution(stations.value));
 const stationRank = computed(() => [...stations.value].sort((a, b) => (b.periodMetrics?.chargingUtilizationRate ?? -1) - (a.periodMetrics?.chargingUtilizationRate ?? -1)).slice(0, 5));
@@ -91,7 +100,7 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; 
 <template>
   <div class="analytics-page" :class="{ 'analytics-presentation': presentation }">
     <section class="analytics-heading">
-      <div><div class="eyebrow">NETWORK OVERVIEW</div><h1>运营总览</h1><p>充电网络、经营表现与服务效率。</p></div>
+      <div><div class="eyebrow">NETWORK INTELLIGENCE</div><h1>运营总览</h1><p>从网络全貌，到时空需求、人群结构与服务效率。</p></div>
       <div class="analytics-heading-note"><button class="button secondary" :aria-pressed="presentation" @click="emit('update:presentation', !presentation)"><Icon name="chart" :size="16"/>{{ presentation ? '退出大屏模式' : '大屏模式' }}</button><small>{{ presentation ? '移到顶部显示导航 · 历史模拟数据' : '历史模拟数据 · 已发布批次' }}</small></div>
     </section>
     <section v-show="!presentation" class="analytics-filter" aria-label="统计范围筛选">
@@ -105,7 +114,10 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; 
     <div v-if="error" role="alert" class="analytics-error"><Icon name="info" :size="20"/><div><strong>统计暂不可用</strong><p>{{ error }}</p><small>不会使用静态数值替代真实响应。</small></div><button class="button secondary" @click="initialize">重新载入</button></div>
     <div v-if="loading || (refreshing && !snapshot)" class="analytics-loading"><span class="spinner dark"></span>正在读取同一发布批次的统计结果…</div>
     <template v-if="snapshot">
+      <WorkspaceTabs v-model="section" label="运营分析主题" :items="sections"/>
       <div class="analytics-context"><b>{{ title }} · {{ snapshot.filters.startDate }} — {{ snapshot.filters.endDate }}（右端不含）</b><span>查询于 {{ snapshot.loadedAt }}</span></div>
+      <AdvancedAnalytics v-if="section !== 'overview'" :filters="snapshot.filters" :stations="stationChoices" :topic="section === 'space' ? 'space' : 'service'" :presentation="presentation"/>
+      <template v-else>
       <section class="analytics-kpis" aria-label="核心运营指标">
         <article><span><Icon name="bolt" :size="16"/>充电量 <em>kWh</em></span><strong>{{ n(converted(metrics.energyWh, 1000), 1) }}</strong><small>按遥测积分统计</small></article>
         <article><span><Icon name="card" :size="16"/>净收款 <em>元</em></span><strong>{{ n(converted(metrics.netPaidCents, 100), 2) }}</strong><small>收款减退款，不等于净利润</small></article>
@@ -131,6 +143,7 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; 
         <article class="card analytics-service"><div class="analytics-card-title"><div><h3>服务质量与用户体验</h3><p>排队、充电、维修与评价</p></div></div><dl><div><dt>完成充电会话</dt><dd>{{ n(metrics.completedSessions) }}<small>次</small></dd></div><div><dt>平均排队等待</dt><dd>{{ n(converted(metrics.queueMeanWaitSeconds, 60), 1) }}<small>分钟</small></dd></div><div><dt>平均故障恢复时长</dt><dd>{{ n(converted(metrics.meanRepairResolutionSeconds, 3600), 1) }}<small>小时</small></dd></div><div><dt>用户平均评分</dt><dd>{{ n(metrics.meanRating, 2) }}<small>/ 5</small></dd></div><div><dt>预约创建 / 已取消</dt><dd>{{ n(metrics.reservationsCreatedCount) }} / {{ n(metrics.reservationCancelledCount) }}</dd></div><div><dt>恢复维修单 / 评价数</dt><dd>{{ n(metrics.repairsRestoredCount) }} / {{ n(metrics.ratingCount) }}</dd></div></dl><p class="tiny-note">排队等待按已解决事件统计：加入到首次叫号，未叫号则计算到离队；恢复时长为报障到恢复。</p></article>
       </section>
       <details class="card analytics-quality"><summary><div><h3>数据质量与处理血缘</h3><p>发布批次、清洗统计与来源追溯</p></div><span class="tiny-tag">查看详情 <span aria-hidden="true">＋</span></span></summary><div class="analytics-quality-kpis"><div><small>原始记录</small><strong>{{ n(quality.rawRows) }}</strong></div><div><small>清洗后记录</small><strong>{{ n(quality.cleanRows) }}</strong></div><div><small>隔离记录</small><strong>{{ n(quality.rejectedRows) }}</strong></div><div><small>清洗保留比例</small><strong>{{ fraction(cleanRate, 2) }}</strong></div></div><p class="tiny-note">质量指标是整个发布批次的结果，不随城市或日期筛选变化；保留比例不代表所有业务规则都已验证。</p><div class="analytics-quality-grid"><div><h4>隔离原因</h4><div v-for="reason in quality.rejectionReasons || []" :key="reason.reason" class="analytics-rejection"><span>{{ reason.reason }}</span><b>{{ n(reason.rowCount) }}</b></div><p v-if="!quality.rejectionReasons?.length" class="subtle">本批次未报告隔离原因。</p></div><div><h4>来源与发布</h4><dl class="analytics-provenance"><dt>数据集</dt><dd>{{ dataset?.datasetId }}</dd><dt>发布批次</dt><dd>{{ dataset?.publishedBatchId }}</dd><dt>流水线</dt><dd>{{ dataset?.pipelineRunId }}</dd><dt>规范化记录</dt><dd>{{ n(quality.normalizedRows) }} · {{ quality.normalizationSemantics }}</dd></dl></div></div></details>
+      </template>
     </template>
   </div>
 </template>

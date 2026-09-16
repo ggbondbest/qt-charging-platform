@@ -297,7 +297,8 @@ class AnalyticsApiTests(unittest.TestCase):
     def test_openapi_is_database_free_strict_and_exclusive(self):
         path=self.root/"openapi.json"
         schema=export_openapi(path)
-        self.assertEqual(len(schema["paths"]),10)
+        self.assertEqual(len(schema["paths"]),11)
+        self.assertIn("/api/v1/dashboard/advanced", schema["paths"])
         prediction=schema["components"]["schemas"]["PredictionRequest"]
         self.assertFalse(prediction["additionalProperties"])
         self.assertIn("stationId",prediction["required"])

@@ -1,0 +1,4267 @@
+{
+  "byCaseType": [
+    {
+      "action": "DEDUPLICATE",
+      "cases": 13,
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "passed": 13
+    },
+    {
+      "action": "NORMALIZE",
+      "cases": 13,
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "passed": 13
+    },
+    {
+      "action": "NORMALIZE",
+      "cases": 13,
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "passed": 13
+    },
+    {
+      "action": "NORMALIZE",
+      "cases": 13,
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "passed": 13
+    },
+    {
+      "action": "EQUIVALENT_TIMESTAMP",
+      "cases": 13,
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 13,
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "passed": 13
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 12,
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "passed": 12
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 12,
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "passed": 12
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 12,
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "passed": 12
+    },
+    {
+      "action": "QUARANTINE",
+      "cases": 12,
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "passed": 12
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "case-00001",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1e50bb4144d70a0abeb1b8f84342c861cf4e0215403f9c9d7e4d6eb23d60502a",
+      "sourceSessionSha256": "63c3d2cb0443a4b6f6beb5b03ce2f219c7c4287b053473edfcadc5696bbb662c"
+    },
+    {
+      "caseId": "case-00002",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "33e9f2876343d34ac8af15a05587fca92fbccaa487e669bd81f6703e613cdc28",
+      "sourceSessionSha256": "7de7b0125e487acb2f73aa2d734afa34a15a29cfda6173a4648ffe555853ed63"
+    },
+    {
+      "caseId": "case-00003",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "2d5fd9c3e73bf94999f37c024763f1418996dc0ab09794ada280fb73dac56fe3",
+      "sourceSessionSha256": "aece030aa8b3b49a0d6a9a9497c3adbc3de228e95c5c45729f16e180184e9142"
+    },
+    {
+      "caseId": "case-00004",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "dc73f3f4f2f0a051756aadf7304d6e0c76b40d4645c756140062708b559acb3e",
+      "sourceSessionSha256": "220cd388809151e59768d3312c62106fd55294985f5865c4d8c716c2e218a862"
+    },
+    {
+      "caseId": "case-00005",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "b6f087025ad396d6ded4898891601879dd5f2716f0be3d5128ac889bf4f4bfd5",
+      "sourceSessionSha256": "7363ee5731fb8db70cbe673264a4535f51a09f719d8f13549f452321472d522b"
+    },
+    {
+      "caseId": "case-00006",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "fa99d9d6de58ab8c834cb6a818599cebf86edead0ae6d016cae7e3490b2bd191",
+      "sourceSessionSha256": "392db98494719092bb29435c972c51135c112ea583a90c74179b56342f11271c"
+    },
+    {
+      "caseId": "case-00007",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "64f1c677892a5bde1b5600311e959e073025b23012da05fc87b64181ae760e63",
+      "sourceSessionSha256": "df98310c26b22cb64c5e4c2c964cf26843b5959d63d6e66655a9f91bf2319775"
+    },
+    {
+      "caseId": "case-00008",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7a41022ff3261daaebcbf0801ead5d8e7afe5514b8cd5b16e00d11ea063baee9",
+      "sourceSessionSha256": "ec8ed5083c29768dbc51b9bfa0264805e3e3a36bae6148acb240ed0b3f69df67"
+    },
+    {
+      "caseId": "case-00009",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "e030ab29d21a2b52300911ebdb3ecfeb14abfc250ef16b25e66c62da887a0314",
+      "sourceSessionSha256": "41714345b14dc30c0fc8458060c88727eab3e55b5e4c63710860a03113cb5be3"
+    },
+    {
+      "caseId": "case-00010",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ef5a25b6ecabe8f9bcef4997c9b152159259f4a809ffb147b9f0d07620f49529",
+      "sourceSessionSha256": "b2566718e06b6b6ed7806a7e12d624ccafdafacdd501eeaf80dccb8cf809ac85"
+    },
+    {
+      "caseId": "case-00011",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "04adabdd980d842baaa43bc45472b583c485722d38e3d147ec1ed9081cc56a35",
+      "sourceSessionSha256": "5e4050520d6977497f1351f68120b382baaf0d72b8a6167316bbe0c6b14fdd37"
+    },
+    {
+      "caseId": "case-00012",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3a1e0a428c1113109f48cfcbc340f5db6fe57f58c3f660224c36191ce9b20b66",
+      "sourceSessionSha256": "b38e573c2e0e63daf2b7aff99cdca04391d166e169e411af126a2e36f01cbe13"
+    },
+    {
+      "caseId": "case-00013",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "8f1b0c60b370c08416b2bb08e03016e554bcdcc122e8149896a4d0d94299f78c",
+      "sourceSessionSha256": "ff95f292df3cf85eb1a1506b80256304606a9569e396d205168bac83fb392c80"
+    },
+    {
+      "caseId": "case-00014",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b40d4c85f55f4f31c864cc2714e1bfd61103b55effe469207ec847dd0900f362",
+      "sourceSessionSha256": "545e0367d59ed4e92953eecdb63e1dc66e9196f9926d4fd63b5c40b7440b65a4"
+    },
+    {
+      "caseId": "case-00015",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "02ce6b29463a150f37fcaed779d50f5c871bab81cd5e96277f59f3c3c5068c29",
+      "sourceSessionSha256": "0b37d7ef394eb58e3326085eb07a5db7cf5a82ebcdc5f0ab801b0fb6ce4fd461"
+    },
+    {
+      "caseId": "case-00016",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1a683713ef2d4d8923e8e2013fb420a9b3b75cfa1a2c7a708a446278edf1cab9",
+      "sourceSessionSha256": "5e36567609cbaeccc863de9ba92e174a50a23038d08b2fe846523d01d6e04f1c"
+    },
+    {
+      "caseId": "case-00017",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ce1f5a40553553b4a7e21528c8c6f768061c3dfaaf56a4c82691c8808d67fa8c",
+      "sourceSessionSha256": "6cddebc716cee5a13ad41261d13de6f9cecce473ef096087c756fe0cddbd4d0a"
+    },
+    {
+      "caseId": "case-00018",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a60d49545d8ef3203c3332b534567bdd8790376219641abf3de0abb8bb0bdca7",
+      "sourceSessionSha256": "524a54ca1195ff4d326c95672fccb670c90881ad4ed11a2d5a37dd6b13fe03ff"
+    },
+    {
+      "caseId": "case-00019",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "17cabc70a2378578c582ea6fd87db41f2f6d0715b618edb3d0f2006657e0667e",
+      "sourceSessionSha256": "609fe61c645eb05dfaf133f0d22c0f521ba2f26b28e4c7adcaefff5660a4638e"
+    },
+    {
+      "caseId": "case-00020",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2511343c63eb668c13951f910a1cc1df86570fa8196421ffb98d18a6721fc2d1",
+      "sourceSessionSha256": "ce25dc003596966796d2ed883d4097ead1e49989eb3e69db0cd4152e2db2d5a3"
+    },
+    {
+      "caseId": "case-00021",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "19871484072a73d23ca9f1d2d6e4ac18eaa78993073043b3e35dbe79fbc26915",
+      "sourceSessionSha256": "bb0ad3e3f48130e4668c92188f0093738a71ad0e6453cac075b4dc110c6fcf7a"
+    },
+    {
+      "caseId": "case-00022",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "9c6c0880ed90d9058627387bda7a68eadcce695948395827be72bdc6e2a8083e",
+      "sourceSessionSha256": "d672ce8867f7ade11ebf1f820aa44958ff4e2573c76966cd2a82e195eb73e372"
+    },
+    {
+      "caseId": "case-00023",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "f03475e6ad074c6b2b4157dc4a80013f2dfdb1e64c5c45a9f90d89c72a4322f3",
+      "sourceSessionSha256": "f5db8dd5f48611af0f2f7ceb00082d5c60840daf9d07ea8bc2831c557c88da1d"
+    },
+    {
+      "caseId": "case-00024",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "1d02dd05627cc6aa99f0c9251d334bfc4e5292592b391d7dc714fa958020904a",
+      "sourceSessionSha256": "61651586f043c35dad35bd3dc9acaa598e65c7eddba3b98171995b1b51febd8b"
+    },
+    {
+      "caseId": "case-00025",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "bf4cf3f0fa437de9fa4a3abec00a951015026e14fa1936f595b9070ec84f9316",
+      "sourceSessionSha256": "b36c66fbcf4d57e6cafcc741ef6cae4ae8e18dede8cdfa30d1096f1917d0079d"
+    },
+    {
+      "caseId": "case-00026",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5e04f7f261f734b377b5751c595a7308284940a3624161f1a4d70dcd3d1e2141",
+      "sourceSessionSha256": "cd5306917ffe0e35c47f6ee8e7ec2d0be8c1be83d8a116bbe4d9293625df8420"
+    },
+    {
+      "caseId": "case-00027",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ecf6251aeba87145567f1161072ae16e754086d2244bb198ff76cf91bc09fb3a",
+      "sourceSessionSha256": "65c99f6fff660b762941bcdd4d816f122ad5705abee742e8dfd73e2fb74d6b43"
+    },
+    {
+      "caseId": "case-00028",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "64edf4fb00d4e5ae9e124dcecb069a966fdd594b98b0514e3350aebe3e945dcf",
+      "sourceSessionSha256": "bf15b8ae28e93b8ccc3323b5c8f4b2baf3b94eaf275a07ef764310ad8b933197"
+    },
+    {
+      "caseId": "case-00029",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b8779a0af47c930e3e4e3575185ea69cb474d7644b5cd19b827849c54df3c7c6",
+      "sourceSessionSha256": "60169b42ad7d70a4c55d6187eb786e189d31bd6b8a691c814aaaaaf2b418e7d5"
+    },
+    {
+      "caseId": "case-00030",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "65f5b97d9d983b2cae37122f5529c1cd247f7b6aeb3963ae20002b535045fcb5",
+      "sourceSessionSha256": "68fb542926f6694e8fc79d905f6c9f50c5a31e07cedd370c1c2efd6b8d3f01d9"
+    },
+    {
+      "caseId": "case-00031",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b9e069a93bb24e647b70acd2f5b0fc1319201bb491661e2a7beb3f753b1d60d7",
+      "sourceSessionSha256": "b56ef0db7facb1edd870771b9a96dff6c47b7461d10ed8752be3f5f217766bfc"
+    },
+    {
+      "caseId": "case-00032",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "68542f27e8c845570796a9d88569f347949ed7d41f4a333162c9a7aa4d03a5b1",
+      "sourceSessionSha256": "68b03ecc6038908e5f1fbec43df316167d611cdbc216d02c509b6d29048930f5"
+    },
+    {
+      "caseId": "case-00033",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ce5c677ab9bda34f843ec83c86ba73be0b1289813affa92d52242581e41e6d58",
+      "sourceSessionSha256": "314e3bba980c1f681f8ae11293db01798fa8cd20b5a7591afd82565fe5cb92f2"
+    },
+    {
+      "caseId": "case-00034",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "14096d2560d3906f440fa9451d704eeacb7694adcfad35b530faee42a0faa9ff",
+      "sourceSessionSha256": "dcf37e7a21abb6a3d8288573146857b3b388bc86788f79c3bad5769b9adae969"
+    },
+    {
+      "caseId": "case-00035",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "95e69ede1a9e4cda21ab6bd73e5d8ef3970eb4e226f1c102b1c68c0358b7da7a",
+      "sourceSessionSha256": "02f7f46d73853bb66366f749cabac41558a6bdf05a8f78c3b4bb4c6ade39116b"
+    },
+    {
+      "caseId": "case-00036",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f61aebdf4cd77a88d9040101444f5599180746286ddc7e6e1ecfa5b2134db09b",
+      "sourceSessionSha256": "d568f2d44ecda88383a9f21e4f8aa30eda40d16827cc5a2d39ec751e212b322a"
+    },
+    {
+      "caseId": "case-00037",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5cc7d91c43db391ae26745a16cc5072b323ac54ad7a3e893537bc1417c570d07",
+      "sourceSessionSha256": "257cedbe20ffc4bd99e55d1cb141b5874e126fb6097fde3a8f774f5d862474f9"
+    },
+    {
+      "caseId": "case-00038",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b3d4fc873369616293b22fea5320c2ea804160403d505bc4f4d0c4d53027c7b7",
+      "sourceSessionSha256": "2b2b7d0f3b9e980d947dce276c28a561273ac43e19a060b9a133748ccedbc570"
+    },
+    {
+      "caseId": "case-00039",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "496dc85ad023a36f771f68bc998f217a19c5e129282c2e8d870cd8f8abd92351",
+      "sourceSessionSha256": "e673a87f5bea30cbdd417e96421bd51d2811bcbabf0a9bc4d2d8f7df2a432313"
+    },
+    {
+      "caseId": "case-00040",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "651d30af3933698cb3f2cf18c7c5fda4b1ce6ddd2887cbf8141b6c4889f798cf",
+      "sourceSessionSha256": "bfd63f1a5ce90e7ad626c304a1e21895256660837f98c583b2eb576d8a2d9414"
+    },
+    {
+      "caseId": "case-00041",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "9529a4aee4eee0b81d33efdb8c689b9a87eaa8b6660e92a18e054ba023e615dc",
+      "sourceSessionSha256": "76d8c3a142f25ec0c9b5098ab0cdb7a54094031692053c04d496e6ebb7111eab"
+    },
+    {
+      "caseId": "case-00042",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "238dab4b2ba2592370f59001d93f860eaccd31b966fa66df992228ea61a5e5fd",
+      "sourceSessionSha256": "c4031488c754113b81d91cd63b24ec42a24e99474d3c114287da3ce54cc07026"
+    },
+    {
+      "caseId": "case-00043",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "5d666aeda247e01864a350fceb6977b397fe56144dccbf9006c1ac0f8d007fef",
+      "sourceSessionSha256": "f5388266f18590564ad66c0d28adc952766b05d63be21bc6b8f2911832f2c6fe"
+    },
+    {
+      "caseId": "case-00044",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "385f056ef1098e1bc2c4612c12e7cde38c65d303553e3004980deec86ce60385",
+      "sourceSessionSha256": "e1f9751a600b8924c4bd0ec7645b5a58792e9920f87a6d8882b953d31ecd7beb"
+    },
+    {
+      "caseId": "case-00045",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "aeaffe6c90c925af5c091c85b4954709696614fb291d62d90fc1aaf8b4638542",
+      "sourceSessionSha256": "3030577b06223491c2c695031c7fb0b222062463242902f5614a84730ff61df1"
+    },
+    {
+      "caseId": "case-00046",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "8ec01d8e3604ad6a986c7d7c968d72e57530b9fbad75ad326cd807639cdaba72",
+      "sourceSessionSha256": "3fa90479bc1d7a13847f1c78b808545900147d6041ff51a944fc984c8f2ae10d"
+    },
+    {
+      "caseId": "case-00047",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7d05d93b9e6912e2c13de140ea348cbbd5557f1c7d3f7b05e3612fb51fba1294",
+      "sourceSessionSha256": "6bbc36bab17ac5596be837210bffd0641bfa6aa05133d6f59885075b36849713"
+    },
+    {
+      "caseId": "case-00048",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b18f2a4d6150d3c36911e3f3729b968a1567291bcad2eb21e09522bb694385a4",
+      "sourceSessionSha256": "5168f0a689a4d88fb3e10c348689a64fefd414b4dda3b1e1673c1a5e2783bc11"
+    },
+    {
+      "caseId": "case-00049",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "fa68419af3227671e2412ece45b949c63d984a2534b2223792bc70f257992fab",
+      "sourceSessionSha256": "04f8f814fbe519c03228a2e9555c6d6abdcd59267f214789ee861bdb2d05b534"
+    },
+    {
+      "caseId": "case-00050",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ba6bce8300c6b1390232734a4995ea9f12f296bfd5b42d963a20aa8541960777",
+      "sourceSessionSha256": "f6bd63e7e4cecbb5711073c2fc271aa396f2d5aa58449bf91e91551c75bb8828"
+    },
+    {
+      "caseId": "case-00051",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6a890579fcbde83d3b78b3262dc2788ec704df786a79fc5553a9089752f0d992",
+      "sourceSessionSha256": "1a5a09233fb3655ff80bfc15f02b3dc0ab186636144d4370a08949ab04cb4b83"
+    },
+    {
+      "caseId": "case-00052",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7cc2553a02b83dc44f9c3f94f19e33d33ebefd1219f1e9f787af3e6814556c70",
+      "sourceSessionSha256": "9d4cb56999619465a1f77339d32a09dda5e13e18956bcf60b31826895d3fe213"
+    },
+    {
+      "caseId": "case-00053",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6665c06674de59bc3eb799069c9ce514e055175aa563ecf04d0b053c9fc790ad",
+      "sourceSessionSha256": "e8d606bfacaf3adb79134e53f3b7beb14296d4b4e18ce333da97ecee6520eddb"
+    },
+    {
+      "caseId": "case-00054",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "4a265ec8d1dfc57b15a3342d3f6f1fd607c9c316d86d8cd505233abad89d7ed3",
+      "sourceSessionSha256": "ab76738d352251acedefcd2ffe35e7b11f8f12ace3683e94fd652420399799c0"
+    },
+    {
+      "caseId": "case-00055",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "4a77467e64da935a49fc7744bbde0564cdcc4c1e60ee403cdaa5b8443de2de3e",
+      "sourceSessionSha256": "5a7668dca4a2ed29a0714e4da6d40e7f2a08bac5eb072bd06acce02ac00915f9"
+    },
+    {
+      "caseId": "case-00056",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "dfd97b96cc7115bc884e058c15b324fc053ebf4a2f87f92408c002356e3b4fb0",
+      "sourceSessionSha256": "2e791fc9218b88001329b8c28bc14ee67f7b7ba1c52c1fdf1346473273f92fdc"
+    },
+    {
+      "caseId": "case-00057",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b21546dda0273289df659137aac8cac65d1df8cc3bb415b1af1053b3eae1f23f",
+      "sourceSessionSha256": "2b4ef5d10ccc52e8d11f6266fb09b1ebcc495a5c1270696d12f422731bd521f5"
+    },
+    {
+      "caseId": "case-00058",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5a0b0b954326d9cbf8b1b21f95517797488023f78c16f8749b8ed34554ef4d93",
+      "sourceSessionSha256": "e0cb17d54be3b882bbd3b7da4b316a168d512f48be336f09089106a8ae295042"
+    },
+    {
+      "caseId": "case-00059",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "61442d1d2468759ba88beaf1d41c27713ae12fa4e042a0d8fa954c05605cd58e",
+      "sourceSessionSha256": "9b2a8bd97590725b6d36a9e6b0dbbbf7d341a863fb8e2184c4e6e677d3e1b112"
+    },
+    {
+      "caseId": "case-00060",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "dd587f9f8569b1d0fecaea8aa3ab9ee7c45336b27af95a381e54ec3ed767a240",
+      "sourceSessionSha256": "433a512a429293081cb8e92aa2fddc61f7a0968b4f47c5652498f0f0c07624e2"
+    },
+    {
+      "caseId": "case-00061",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0919b3ebfcefb092c7d5204c77ae7d4ec11c87ade00422bc55ad9a2ee80aacac",
+      "sourceSessionSha256": "59abc1f5cceafcd3cdea68ea4aa174b6b3f80bafa6eb4cbcef30d795afa25e24"
+    },
+    {
+      "caseId": "case-00062",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "2d39f08fd4a48c937a55ab230ad1fe3307796ee230839acce561497949bba886",
+      "sourceSessionSha256": "4c4ea9969e9720348110cbe2cf8716a17db053c111af21665cc6d0413fffff6e"
+    },
+    {
+      "caseId": "case-00063",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "628bd13a672887e3b101aded23cc1d23e0d5a979427d69d2fc2aa8bcfa8c1356",
+      "sourceSessionSha256": "58c0c328d2e0c4d93274064ffbd25953ec3661ea4217118ef6d28c24068a7c41"
+    },
+    {
+      "caseId": "case-00064",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "c2e7105018842500eb043833f969c01c91edd154ea043b280eba90ac454a7d83",
+      "sourceSessionSha256": "c4a632d4c6f2795d9f0a003f773d40dcd030b15a093a1d22101d3c8f25dec24d"
+    },
+    {
+      "caseId": "case-00065",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "d2ad086daec4e5f5ba3a5b62aa6a6ed04dc620ca021fd709ff7ddc8395aaffd1",
+      "sourceSessionSha256": "6643736f31a5100d7e8c297e9733210fcfc7b20b5864466570948ca9555fd9ae"
+    },
+    {
+      "caseId": "case-00066",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "060a981df16706c986415f8df633bfd9cd8ef1c8c0e63cb25f89aaa737f463aa",
+      "sourceSessionSha256": "202c697befbf552620e4703918ef63905447e63200d6cbba2bf90799aca3df11"
+    },
+    {
+      "caseId": "case-00067",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "096359bbb21b16ece55c3503ee123f60d330a01a7ea8148c1453e625cd8a3eab",
+      "sourceSessionSha256": "5f4873af429e284c9c587a800164264829e6a64168430f353cd53540270e2424"
+    },
+    {
+      "caseId": "case-00068",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a372a28dc49bd355fb2421025ee44a04e424c7c8795b662fdfca8af36f16db07",
+      "sourceSessionSha256": "8678c0aec216de8beadf4f15ca24d789ed3f1e95af723dccfed9e3fd59485fc7"
+    },
+    {
+      "caseId": "case-00069",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c57f90889583bebde687afcdea8835ceeaa0065c21c5da25e6c3f04128111c3b",
+      "sourceSessionSha256": "cce7d6e22475dbb0d8d326cf90f8684b0c7123e3f25455966bfc94e60a48b9d9"
+    },
+    {
+      "caseId": "case-00070",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6f126e5a6a0e0d1204020bab83ad7d20264dfea364d70f7f940c8f6d49f962e7",
+      "sourceSessionSha256": "6300bfff091afaa8f1976e492d5507d1a8d621067edb22c56e8f2a49052c94c0"
+    },
+    {
+      "caseId": "case-00071",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "616fa27ee76df0b6cb8b7dcc6fa067871c5d0d3eefa87ca9f59746585b5b2456",
+      "sourceSessionSha256": "5a40b9e27954d9cbf12e9cc09033ab2b2b45d4dbaebde3631f7232d2065f36dc"
+    },
+    {
+      "caseId": "case-00072",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "cd11be5f88f200a9701821045e1bf4ec0565c48cc60d1fdcbaebafe673efe18f",
+      "sourceSessionSha256": "456a92952efad1bd2d33aa0cb32cc4eac498c786da7f6a567c606283820a332e"
+    },
+    {
+      "caseId": "case-00073",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "72c9f8d25a19152b78ec068da232af6724ac12061b4d939d10b34d2795295db0",
+      "sourceSessionSha256": "f9f83186f3a3aa0e0358052e7c84a7bcebe2205d588ea8651f7bb27aa0bc312b"
+    },
+    {
+      "caseId": "case-00074",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "4ff5522b09d8fcde3de1a71c4016b0919ad4b494e5feb29aef1d1e85bc51097f",
+      "sourceSessionSha256": "c1836a356dd0d3dacbe815b53f6df48b5e71a049c921ab4b584fcbe7db5cffe2"
+    },
+    {
+      "caseId": "case-00075",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6352875e434aa71b339855f8dddfe27bdff16822d3861112d25bbfe1f921d077",
+      "sourceSessionSha256": "3aaeb0fc8d5d2923f189a91a84d3b01d2e9bf5238d6d1f4cbc404bd1f0e77ca7"
+    },
+    {
+      "caseId": "case-00076",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d89d427921da41b4a238bc36339642762185b1e0c9acf581c39352a55441c9e7",
+      "sourceSessionSha256": "ced8456d01e6d20713d7607ad06305543d7a0ed4b4f088ca9ba0591561de1d5b"
+    },
+    {
+      "caseId": "case-00077",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6e3940b8bdfcdf1a30ca8e6ab7c78b713520319ed6c556d75058aba2b58aed1f",
+      "sourceSessionSha256": "e7f60faec52532324b0b0b3566d9610e2961eb29f6dd27d58a87e6876941a79d"
+    },
+    {
+      "caseId": "case-00078",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1c3a828443d1487b40b87bc2e6b58fe156b27f5673fb9505c44424bf3241a3f8",
+      "sourceSessionSha256": "b67beb90220a8451833800f2e9e6568a868143d8cdf7c9892914ac36187dac60"
+    },
+    {
+      "caseId": "case-00079",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "cea28d35212381b58ba2c363131b60b565e7bdb3b8004e092a83911acb78d493",
+      "sourceSessionSha256": "d3ede9e2e6c94f41287b1ff8a33c2ee146f2a617f173927c1c7bfcd46926ef02"
+    },
+    {
+      "caseId": "case-00080",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2de0b086f1f1ee58e6be768595173b668d1adbf0b5720f9c0b5cce15d554c182",
+      "sourceSessionSha256": "db7486b6ddf29f9204c8a1b8873624a76733f91fe0167c73cc53b43684814db3"
+    },
+    {
+      "caseId": "case-00081",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a9c08b2814043bfaf71d1752b2b97b571bdf9784a91c1d63379ed8b4393155dd",
+      "sourceSessionSha256": "5c456a4b538d14d4ee921e180c9797974f0c6df2565bdb9560bb0e3a579fe87f"
+    },
+    {
+      "caseId": "case-00082",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "141d878d65d4c55959d6b0f77fbaf18296cd04705a51d6e96f18693af01b6291",
+      "sourceSessionSha256": "ff267040e50214de47742c5c63550c266dd9579e9028ac8df0f6e93f72abca21"
+    },
+    {
+      "caseId": "case-00083",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "69d0de8769a452337b7f8cca14a9fe536e68de29602798d6a981d602c955af66",
+      "sourceSessionSha256": "21f8e8a33725cca6b99d1de6f37739b49599a29f3e28b3c6b5c5b3c83e6de553"
+    },
+    {
+      "caseId": "case-00084",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "7e189bf3ffd2ad4a072d9061d8b756b82d5540b6f2518ff14d2a5e035ad59fbe",
+      "sourceSessionSha256": "a49a75097a40cb1638a2fcbfde41ff90457c6b31e55c0f710c2faf6079d7f3ad"
+    },
+    {
+      "caseId": "case-00085",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "7185ac4a2622c4b68135b168ee57a59a6bc2f46b2cf5899adbecb870fa1dc25a",
+      "sourceSessionSha256": "544a00a4251d2fbfe2756d4b47724352225a0bc83a08313a72f2f820f896925d"
+    },
+    {
+      "caseId": "case-00086",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3737850ccf34a9a43e923b0aa7b8bed85fec25b6f1d4812391e07d32c8b95832",
+      "sourceSessionSha256": "aba212762774056e24d92484078bff9b0d1c2870508a99f9eea24b67dc6d2cbc"
+    },
+    {
+      "caseId": "case-00087",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "82ff7894fbf382a099d7e671d47e07b2746c22db4bceddc62654c6e9ddb3f926",
+      "sourceSessionSha256": "30680ddbf6dcba49945332ee1fcc20eab91c16ba4eea18eb7812ca2f9c94b39b"
+    },
+    {
+      "caseId": "case-00088",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "458e97c89e5f34bcc3522b9e888b661d7e81373440946c84aa492303f246bb86",
+      "sourceSessionSha256": "77b256513648559e0c3852b85c754b2c0c742d2c5f1abb390bce9f4708ab0f1c"
+    },
+    {
+      "caseId": "case-00089",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "97ec979ea631627d52ebb145b061103629b0eecf85dd9d912f13e26c3a7079fa",
+      "sourceSessionSha256": "6e88c37615f4b31d794da5fb8186bfbcbd2ec0db146c5227425f3287733b087d"
+    },
+    {
+      "caseId": "case-00090",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1ed42a257fc74dfe03f57c1c9669af637992331f3d482ae3da1741f3c220d139",
+      "sourceSessionSha256": "858a4e9a38210db63bcd368a53bf2b4445833a03f0520295ce4eb6a4e242f960"
+    },
+    {
+      "caseId": "case-00091",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2f774512307e00cbe4f0272bc7b40050d1563622895c3bb3b322471ecefd6e92",
+      "sourceSessionSha256": "f18d4d1bdbf0ddf7e91cad1f505dbd0a9214016d185177c6cab3c6abd2f27f1a"
+    },
+    {
+      "caseId": "case-00092",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d24b1580ed9c83b4fc6dada6af2a4191d83751757fb719bf09cba07ef62d04f0",
+      "sourceSessionSha256": "fd13455930de5b4c79e1bd303c2d9ed17d7eb8af75a23ee4eadb53ebb01ae7db"
+    },
+    {
+      "caseId": "case-00093",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1098831f686351e64d6bffcbc5513fcebcae83fd18f9afd606fd8e3612fe79ca",
+      "sourceSessionSha256": "7fb6281d98f0a88b7056076e4968595d089ca19675f8f461511e9ded7e32d212"
+    },
+    {
+      "caseId": "case-00094",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f9ac76798ecc59419118413c46a246167e78b66ab9fa18c0b258092bce84224f",
+      "sourceSessionSha256": "7a5e71bdbe0886634fca25ca6ab86e51475bc9409fcfd68e1e1e523ffbf43ed0"
+    },
+    {
+      "caseId": "case-00095",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "334992d1449e8abe71c2198105b1cf4e97d8a4a0e2d07f592458112beb9a8965",
+      "sourceSessionSha256": "3810cd39aa4cba419c53a15346add0d952e91567d9a00e49a6851fc02eb4de40"
+    },
+    {
+      "caseId": "case-00096",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "e7843f8ac422d10d7d8a487d39520db7406c97cfc42cf6531f8e5f819e5432a6",
+      "sourceSessionSha256": "52ba6c4b70dc075ecf7f5f80cd8b39b6fd8adb9eda621f8605a588bee36093fb"
+    },
+    {
+      "caseId": "case-00097",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7af21f41a28d522960a087af2248fd336bbdba3d028d196cda4cf98627c85d55",
+      "sourceSessionSha256": "44e69ef9ac79520a1d8e57e9c838c5988b28ae0befe93808083f590831286d35"
+    },
+    {
+      "caseId": "case-00098",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "19a9fd7b1f5faedc9cb123330aba03191ab8d54362aba229ffeb9d85fba6c294",
+      "sourceSessionSha256": "c0f7550e6e2da3dc49fa564b94c1f7bb3f9ea1cdd23739e2a21f6107db566536"
+    },
+    {
+      "caseId": "case-00099",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5b78cbf4381bf8e3b56abc4a23bcf3f5fded5dc22854ebb376e96404c7582e96",
+      "sourceSessionSha256": "ecfc787b9f9252487426086c95e2b76c5713e7c35e217ac36207f98adc4b0034"
+    },
+    {
+      "caseId": "case-00100",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "41755583a823543db04bbaf1e3bb402629f3baa7ac1e30a99d3435e227fb7f34",
+      "sourceSessionSha256": "f43c69c8d97d9c6efc2d7f0839dd078ccb01fcdcbf56029f4d9e175fac4141af"
+    },
+    {
+      "caseId": "case-00101",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6c29e1598fead77d33b4efe598ea00329a930ef2896c824d7cca7e3c544c267f",
+      "sourceSessionSha256": "adbb31e5ec3107d8d0934535c1bac73a5b06da4663253c8dd37e1a04b72ef35e"
+    },
+    {
+      "caseId": "case-00102",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "d07852658db9dd11cc6813534602f1c309516d9d2926f90656a7d072fdf93247",
+      "sourceSessionSha256": "e4662fff26aa243f2f24480d5b4ff9c341e295613b537783cd10c8a099c723ff"
+    },
+    {
+      "caseId": "case-00103",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "82bc63e3763b2006608e5c3e627088780b22989d9e5bb60ea7e854d6cab0d194",
+      "sourceSessionSha256": "9ece899246d78b6416431168aef6cf516599f023fb392c114e9e361e77f273c8"
+    },
+    {
+      "caseId": "case-00104",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "1672bb0a1ece44ff5f1d70d469394032707a6b62141b33882ac87b4faaf9d3f6",
+      "sourceSessionSha256": "84158e34098b30033e2b63e04d1d46fd6eb3e1bf445fa2b46c4cb1302fc7dd9b"
+    },
+    {
+      "caseId": "case-00105",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "f9638b00ad8e76fe3fff45afd6fc4a4cced80bfa9230403da12f514146e76b9e",
+      "sourceSessionSha256": "6e5770597a8e1254df9b67f40188cba99b7f4231be1dc8d05ddb0160c0555218"
+    },
+    {
+      "caseId": "case-00106",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "bab0410eacea227a4c63712ec4c17d5862a3468b64c3dd6f90e772a4a040eb43",
+      "sourceSessionSha256": "0debf0f8a81feec02f3e1764a2b5dc33ab553e6c04b3f65c3ba06cd832cc3491"
+    },
+    {
+      "caseId": "case-00107",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "72a8aba617118efb857834f6eeeb8d5db2612d492cf73c87c6355bd003d67d35",
+      "sourceSessionSha256": "84c98283e85cc27aafaed40e008033ac283db443f19e44f57baf56799500586f"
+    },
+    {
+      "caseId": "case-00108",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "19b3db248936859639eaeeb2fe645167e2cbf623391bac7efd743ea0b7146225",
+      "sourceSessionSha256": "8db492f56e0947a5852dc7a029cec8c477f041588dd697be782551cdd8abac47"
+    },
+    {
+      "caseId": "case-00109",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "9358d43e62dea23b4a37c1a0d77f76e922002135e0a367154c98bc0d43ef8df4",
+      "sourceSessionSha256": "8e9b8e8936c4375cc561a630e45c8f33a1b44a99e769b235612f890626dd27c4"
+    },
+    {
+      "caseId": "case-00110",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "78370034d79aa5025f9fc8d516c4fc4b134687c8b2e3e7b5a88dab48369a8e20",
+      "sourceSessionSha256": "6dd9dc5dd4984a387a831b5c8dc381b6e78f48df0dcc8e81e0f286ab6ad78a7a"
+    },
+    {
+      "caseId": "case-00111",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a99d17056a491f6bef5b205cd95018871e1fe787c6f7f0592d3c7e5086c43e31",
+      "sourceSessionSha256": "c73b27171999093f8adb20b3e971ba662bf384ff52f9fa74db3065438bbb53d3"
+    },
+    {
+      "caseId": "case-00112",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3b1b4fe5ef2e75a1d6857f1acc8c367edb0e964f813db3f0988fa25687b9546c",
+      "sourceSessionSha256": "c7aa3e2096041c009877f1b1401567a9a51bc88eac714ad1d9c07f13990d0758"
+    },
+    {
+      "caseId": "case-00113",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7dd2fc06a2b72c40c387d8145ee310461dbde05339fa2d8f9ed2eb91099f6418",
+      "sourceSessionSha256": "71b8d67bb42124d74f22a90d8a1d712e5dc7ac8fca93c652e249d18a36fa1bc3"
+    },
+    {
+      "caseId": "case-00114",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "dc208ec78abab2166c139badd34e560f8c2baaafccbea4b9877606b1cbc1245d",
+      "sourceSessionSha256": "bfe43382516e9bc85b6b6e56eba3b4fcc22c2aaf025ed590b5af0135ef495808"
+    },
+    {
+      "caseId": "case-00115",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7c1e36a8fc8ec55afcce0f7cb8016a04d2f4ac6424a57c0df50af5353bf70684",
+      "sourceSessionSha256": "ec51df7ac7d55b7061a3c8655f001d1c83a64d46ec0e8e07fccfefde116f1016"
+    },
+    {
+      "caseId": "case-00116",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b33db0824c028929779e2f30c0d77c32f45638de1118bf59afb576f080edc19f",
+      "sourceSessionSha256": "5bb96d109b16467140011d099321a38d8af90e55d452b21be9402221bcf2269b"
+    },
+    {
+      "caseId": "case-00117",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "980ba453fb2be3da75909d03de5878089916e577e4087516622b9573f186f9bd",
+      "sourceSessionSha256": "6d7bd628507265e5d36abe4cf4a61551c0f459ac049ff3a1a6712e3b5fa46b57"
+    },
+    {
+      "caseId": "case-00118",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0b029df377bc4b15fc78688f373ef80f3c49e012b0fbd9dc7a4c70683d7a8559",
+      "sourceSessionSha256": "2c9399dd9b6685212df268e66526ba13dcf0eca1d2f0f9f88caa4074f03fb0a0"
+    },
+    {
+      "caseId": "case-00119",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "00da5b5ec6a113eab232b6ef73f610b80ac987edc4339990b83e5b473f647965",
+      "sourceSessionSha256": "7a3b17c7aefa1d39f7000b1cb14ac7336dc4a320210940d1df23ff512d612b30"
+    },
+    {
+      "caseId": "case-00120",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "cde08949bfeb54787f420c08618998db8a7d1eeae64a558ec4bb189259f19400",
+      "sourceSessionSha256": "1b5b303c684fe311b9f887ebf93c5da7a515c3e15c848163ccc60a8591448119"
+    },
+    {
+      "caseId": "case-00121",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c7fe4d35bc32481acdb4979857ee0a70e8afb161c6b4286aee8ec3ddd0f796c9",
+      "sourceSessionSha256": "760835aa1a3177e6a00229a3d52e2fc07315a47c5f7753b30a2d5de06db01300"
+    },
+    {
+      "caseId": "case-00122",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "a18e4ba3c03a6e2c08233f5da5563aa577bb35f4443a6f8839828ce19ad4afb7",
+      "sourceSessionSha256": "658e55e54fe4b9da96142eb9ef06cb90bf5527c0a752bd89067701a1c956e6e9"
+    },
+    {
+      "caseId": "case-00123",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "cd01631c17836f78b5cc1e05b58127a1280c928ab3023199585f67483b68393a",
+      "sourceSessionSha256": "2f0ee615c122ec8f61ca10fc5e61633001eaf1d4f5244ed76bdf760cca3f20f3"
+    },
+    {
+      "caseId": "case-00124",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "f60b15ecc30ba34a7614a50862cbc0afa74a260746231a620fad27e93f9f10b8",
+      "sourceSessionSha256": "f721b8494ac2d2a5e75e8fb1991a93e6cca87ceb5953a3e8797e997080a217eb"
+    },
+    {
+      "caseId": "case-00125",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "a4e058fbb359b86170e1582366b44157bfea7f03d7f2a3f1edbaea27d06fcb87",
+      "sourceSessionSha256": "05c873146b6f7e0714a8885254f9b2e82954642578725fe2570974714a37e1fc"
+    },
+    {
+      "caseId": "case-00126",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "450b51ffd618a66af4719b459083b52889a07c073d769964cbb1cd9386074c36",
+      "sourceSessionSha256": "6b1cd78b90e2c4352adb2bb1b12cc4b045834a413496dc9bab8a19395260069c"
+    },
+    {
+      "caseId": "case-00127",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c8b8085d6fcce0e1f71049cfa6ace02d0d89b44715334f343ad4b45232b6e843",
+      "sourceSessionSha256": "7d7c74b66e33e7ab2d1560cbb67619435a86880a2ea6839d31e0f06064a0d455"
+    },
+    {
+      "caseId": "case-00128",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2fff83980b2296bb38f8b1c3fb217c4473e1773d8b2b0bd15b4acd7b89a9c22c",
+      "sourceSessionSha256": "b7d5e14cfaa1fa9baf95a7069c48f9811cbf8966abf59cee5c0fa99ee34b9c30"
+    },
+    {
+      "caseId": "case-00129",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "eac354fde8dc64d6ab52d0f7e02c58863cff1af8884be39efbdcf13e5e1e6743",
+      "sourceSessionSha256": "5d01f8571981b83573fcd2db47b364debe06a0f992e8af95bc1d1edcfceb8389"
+    },
+    {
+      "caseId": "case-00130",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2413b2cffd11add0e245ed5904b8739342870b8c6dfedc035f157bf035333964",
+      "sourceSessionSha256": "3808d16ed1e777ba04134fc2552e6181debdb460ff15ca722b389c80b7fad7ac"
+    },
+    {
+      "caseId": "case-00131",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2ae55d88ab8da66cd424f81ba5b46602af7cc363c4e880d19af69628a1c5b59d",
+      "sourceSessionSha256": "b1f484de90add3601d5bb551962bf89a9bc5de34eaefc88372fe83467b8b2d16"
+    },
+    {
+      "caseId": "case-00132",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f2ebdda2b51f78a984062b6b0ee7079d75136d69d385d4cbf2c89cecb8e4d020",
+      "sourceSessionSha256": "c28de899997e3882d1e5d8342086480ef52ea46e1383b5013309132aa3acc64e"
+    },
+    {
+      "caseId": "case-00133",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7309fe647ac02f6c8a54217632c0092b894542d7465a7575214ebeb85a764a7a",
+      "sourceSessionSha256": "95f0955da1c27455bab7db47b2fa16f11070542042195786cf3c9139a64be2d3"
+    },
+    {
+      "caseId": "case-00134",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "32f9409702bca5c97b8caacf1bf499c8003ebb7daf0f7c98bbe1513c097cbe56",
+      "sourceSessionSha256": "f358a2fbe3caf64fbd25e4fabadb7d05b2191ceaba6d38ace1f97e1b426c349b"
+    },
+    {
+      "caseId": "case-00135",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2ec4142bdc37dd93ed84a46efb7dc126885496e8f61b32173eaebd6c998fe1b3",
+      "sourceSessionSha256": "21d928c05446663edc86b720b0b84e7526199c48780396d3b11ad19a613939b6"
+    },
+    {
+      "caseId": "case-00136",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "270056660c12081a98600eb2a9e02ed9a66908220053e244e1fafb970ad6dc8a",
+      "sourceSessionSha256": "b4aa05a193ff66cc9ce0b382beeedad413daa8497254f3f722a8a504314bdf0a"
+    },
+    {
+      "caseId": "case-00137",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1488ae969a58735067940620618374725ebbbb95308a101b2a9d332ad63ebe4d",
+      "sourceSessionSha256": "3199103eb6ebf360a4ca6cb5d9544d84f08f0fefa078f651525b9b2dc5a8f16d"
+    },
+    {
+      "caseId": "case-00138",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c8b321da0aa72e9215aa3511c39b57dbdc9d6c8afb5e9d01557fd5f239586051",
+      "sourceSessionSha256": "3fcbb6a3b84afdf2649df6dd4b593644250f0e6d98ee8e91dc9cf895eedc2c47"
+    },
+    {
+      "caseId": "case-00139",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d0955be2cc05fa0a572f541bdbe58d15b8ad321b49704ba620307a9511601e20",
+      "sourceSessionSha256": "0dc9d7855a5711af4c08720f52189f5e1aa0c8da23297ce27faca268052772a6"
+    },
+    {
+      "caseId": "case-00140",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ecbfbe8fc5a902b0e21001842e6647e5d63c32d56edccad1c245b7bd5396437a",
+      "sourceSessionSha256": "e9d69617573e79c11e74e17d8ca85bc0a8a236e2638c1b399c7f73a8672d56c5"
+    },
+    {
+      "caseId": "case-00141",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "21f40acbb7fe6af3dceb741de12a12b476435ef0e573d50e5716157043df33e9",
+      "sourceSessionSha256": "9263fe35c3a8fc9fd3f574a5026b4f4638e090ed38eb75dfd0456ce4cc0a6a6a"
+    },
+    {
+      "caseId": "case-00142",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "3b8306ecf7b7c27766f5cae655308e53c3e0b5323a0eac08cd3f8d76e3f66171",
+      "sourceSessionSha256": "8b8ff79333efa19b827b79b05f4ede7d1c56eb3cd0c2c9d2817f6a5cca8db90a"
+    },
+    {
+      "caseId": "case-00143",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "3669b65bcff7f3841e795cbf39091ba9e427eede33178177fdd4d1f5c414130f",
+      "sourceSessionSha256": "79ac724a5e7f1f88d8c8cb9dba0db5ddb6474bbf79b913f43c2440eeb3235ff5"
+    },
+    {
+      "caseId": "case-00144",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "b3da258c43e37ea44fc141cdfafcaa59cd008bc9999b91e7c53b83b2c307ea07",
+      "sourceSessionSha256": "6130ed4e30be73a1b2c685fc87a3dd3438efb68e9a0ee72333d865ae1687bcd8"
+    },
+    {
+      "caseId": "case-00145",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "fcd1d18d9194a48098615e5ac989b9d32f6e612ecf6f73e4936850f9aa3a96df",
+      "sourceSessionSha256": "91d9d322f69166d6207cb4b365b3e16490f5f35116cac151e2609e3d671e11ff"
+    },
+    {
+      "caseId": "case-00146",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "22eba4de6ac0db7e3e78397be8ec94ffee7f12cb55c52a02f2a02c964adfa3cf",
+      "sourceSessionSha256": "c47dcbfab2f614bc1f069b4554e6f6caca3ba9725fb53c8c82a1b7181e5478d4"
+    },
+    {
+      "caseId": "case-00147",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3dea62623ac001d6689d155256e4019be08157d10e904557bb00a0e26b617e16",
+      "sourceSessionSha256": "9157b154c6f4cc754f60c4e0b49d79c95a9bc9b7ce931d72a7309e6a1d51d668"
+    },
+    {
+      "caseId": "case-00148",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c219a7d73db22a1768a45a59573ec73d9db6d67f3321bb7294ef94f206447baa",
+      "sourceSessionSha256": "20fc0e9ce6a9457057abb0cfb852811f4aff93369c8667857d37a0f13709b32f"
+    },
+    {
+      "caseId": "case-00149",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c118478d1cc628105dddeb2a5e6576e346927e2d78777783671ed0ed53df329b",
+      "sourceSessionSha256": "56cbb9e881ea85db38b541d7552a4bfafbe1d7ad73dfb146d430e2e3de122efe"
+    },
+    {
+      "caseId": "case-00150",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "794d29c26d201f82df09416df4f833ebcb754f92adaf57b534169233db804a90",
+      "sourceSessionSha256": "b70cc59887ada8471810a4a1e6bcae560e14eadb4bac1eb3d5360ce8d97f1b27"
+    },
+    {
+      "caseId": "case-00151",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a94d57d98748de7a852f96eeeb6af392441272edcb6173fd7bc4540a6b289e0d",
+      "sourceSessionSha256": "9a4e4b4210027643a7bfdc6bceeb4c8350b014513b42a271b9752ab7b3c3cade"
+    },
+    {
+      "caseId": "case-00152",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "9e1ef3f78a90d66094fba3068aa9d00406e5e01cb87e407d5696c9dfdcf1119a",
+      "sourceSessionSha256": "cfd1b1ca2293757b4e667046cc854ec438e6f497be811b716a9c468cae81fbdc"
+    },
+    {
+      "caseId": "case-00153",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d290b65a625c3e5be4adda4210199fbd65ba7fbac75162d4ce6647427f8ca5d1",
+      "sourceSessionSha256": "544ff3c95eeb280018c0cf6896177843302c997bd8b193e8a121dabc011544df"
+    },
+    {
+      "caseId": "case-00154",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5b10f98a4a1a86bbb510fe248f623f6aa28aa92e7d00045588aa9af7c814bbde",
+      "sourceSessionSha256": "417a84f5d41d1afc6516d214b68741da4e66012c3d2c91e2061a030019bf6813"
+    },
+    {
+      "caseId": "case-00155",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "91c7ec6f107d21d5d39281c498a932ecf152c32038379894444d22d2e58517a3",
+      "sourceSessionSha256": "01e54c873a2b602c74ccaab439101a6ba234b36b2a7a9812a5514483f743d1b7"
+    },
+    {
+      "caseId": "case-00156",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c88b1db6b22a24b99c8a74e84d0197e1b6593973d2124b90af03c96945230d79",
+      "sourceSessionSha256": "0b19e275cc24913cad25f5733cae55ae699c4e0afe23471583e9c202336b8f43"
+    },
+    {
+      "caseId": "case-00157",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f1bc2e3dec23b07df58dc46af652ea60468f291d0e4842869179c9206b3df914",
+      "sourceSessionSha256": "cf14bf0e74dbe19baf7ab52f63ee1ca4a09a2bb7399d996972f055aeb34bdfa9"
+    },
+    {
+      "caseId": "case-00158",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d61244557fd6118c608bd05d266c0c40c9f13275939e40b3983492f766ebbd5e",
+      "sourceSessionSha256": "1ea0bfb364c3303a46a113037cbbc91b5fc70af574e1e23b66aa36e118d8edc0"
+    },
+    {
+      "caseId": "case-00159",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "936223e63e078f003f83be10a19543a9c5c418bbba0b3a263e7065a0c168cdd8",
+      "sourceSessionSha256": "396c3413a2b0ed1707d7ba3eb89dd19d6ff26cc2d5f445f45bf2c277e8a62947"
+    },
+    {
+      "caseId": "case-00160",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d9eac6841553b1387d5774add4f4bab8ad03e671bd9d7d8d432e33ddf20a0c66",
+      "sourceSessionSha256": "77152c2e774c0e7510e2064c5702a3e9eaab51d86ea3a7106d84c700ac11e620"
+    },
+    {
+      "caseId": "case-00161",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "112b1d14652169d3d07fb462b1cb5402db61cead5fbc9f54ace7b4ad1c838486",
+      "sourceSessionSha256": "d973c7ee4876a7bb0934366f10b6114dee5629206a427f1450a01bcab581a13c"
+    },
+    {
+      "caseId": "case-00162",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "78a03994cf1dcb2c626e056973db72c367c8f402e4761fc64918a1dccdf89de6",
+      "sourceSessionSha256": "d8776c6021bdadd35e7b645fc0d972ff38fe2afe43124f55cc31f3eb8fb59f96"
+    },
+    {
+      "caseId": "case-00163",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "85e1655577ed4499b1a0244bb5502a97295c359e88f8ca14047e3a7bdddea1b2",
+      "sourceSessionSha256": "83a1d896b36d6e9c9e8624b9d33a1611f465b94304b4e34426d9cb3318edf5b2"
+    },
+    {
+      "caseId": "case-00164",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "e335a47dd310d1b6b1c2a93e8def4465ae1d1809590b3a1e2eee124d82201540",
+      "sourceSessionSha256": "78c569107478e32565543050ae14a11427627b81b5bd71c6a18933b1b7e85594"
+    },
+    {
+      "caseId": "case-00165",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "235df05470b658a1a4bf5d6420e65afc46024c0a25f58f7613ddcb3d1a35bb06",
+      "sourceSessionSha256": "449d743195d574c862ec583a79906ac4ea209642a80de63e3378e45978d7a8ab"
+    },
+    {
+      "caseId": "case-00166",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7f26b7c9b8a3c9faf405b825b17ebdd9c1c03d7bc6dd415dd824752b3debe1eb",
+      "sourceSessionSha256": "4756d5028c3e37adeeeff5c0d7c1e05ef54c711f9c1bec13388696bbc2c1e746"
+    },
+    {
+      "caseId": "case-00167",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2c93391865a66b98d3e63bcdaa83ab580ca20eac2ee005059348f39a51f309f1",
+      "sourceSessionSha256": "d28fede9299843d3834b71e6d30ef52dffceae5047af2ff42dc6927fe9deff02"
+    },
+    {
+      "caseId": "case-00168",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c12c915fb8017ba69e7a1d0ad899c759d1d2b57562b20020df6e4dded7b28652",
+      "sourceSessionSha256": "239f149a7776b7f1d45ea84fba4a551549427edc06e8d2166b2defee716e7f0d"
+    },
+    {
+      "caseId": "case-00169",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "206afb1323ddb46e99cc53305c9ed16b4d3170de4848876374f461f93572a9a1",
+      "sourceSessionSha256": "d71c1517347e99504151ab396069f10766a6e981b6220bbc96d0d19abd280696"
+    },
+    {
+      "caseId": "case-00170",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "71e70ea5f96677a336e0eda9b28e407d8e041b55dea37d6859ad21cd957a9e3d",
+      "sourceSessionSha256": "c6478f148030776036360d827058c55c2371af38cf75ba4df2ed0499cdbe4162"
+    },
+    {
+      "caseId": "case-00171",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "bb6f8b2a84a2a5195c68e865fa5517d418ed1414ec1cf9264f26dc91888ecec6",
+      "sourceSessionSha256": "f4f6c1492bb28ad2bc08e2e5ded9c18bb87e7fc1fe59257651e684cc8a415149"
+    },
+    {
+      "caseId": "case-00172",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "4d06efb05c1f1cec866bed716648fd027444380ba732646f368626bc74b374aa",
+      "sourceSessionSha256": "2c6e229d57896961b18de7416945078d839ae098be68e5b82c46c08f3ffca581"
+    },
+    {
+      "caseId": "case-00173",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "88d7e5d9fe42f0ed645bb43d004cf366317138b01d5f2aefdb8f370059b8b619",
+      "sourceSessionSha256": "8f4bfc5106bc0c514f1e51f94b722a2e03e59be0c00fc228d00caf12ecbb42a1"
+    },
+    {
+      "caseId": "case-00174",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ccac3f37c3890f4ffb522da028cbeeb338ee4750153e0344bef60395cd25cc8b",
+      "sourceSessionSha256": "a62cbd094db1fdea92dbda0c5845cf4f74101b39ed11356506a32c2a5520ec5c"
+    },
+    {
+      "caseId": "case-00175",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "abf9711c9378e117ed1dc04defe2378fc479183250dd0a65aac3356523581419",
+      "sourceSessionSha256": "dd4bab9c3c9279254c0f6ba61c9ac14944ea58adf8dd3276b57277e01ec8759b"
+    },
+    {
+      "caseId": "case-00176",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "07fdd0a8f65ea70409219b1563dfad05496273cd9a6011e500f48e9d257ee69b",
+      "sourceSessionSha256": "8a55d8f0a44177b34bd66de0f6e41835c7834659ed3b386fcc0134dd85d493b5"
+    },
+    {
+      "caseId": "case-00177",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "00cf23041f3c6ed95e89291364c6668fb2aafcf2c85a83b11d02fb80845f0df9",
+      "sourceSessionSha256": "b41765b7ce43f758a35861b2431e461850e68e2473286a3ee79eee88d42b4073"
+    },
+    {
+      "caseId": "case-00178",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "71c15315ae60649abbd44d5fe5f9900739d408c42c7fe600f5751cf492e86f9e",
+      "sourceSessionSha256": "fb2fa1a704c39279bbce0d90088307b775be917db3d0ffe0415d10ec01a0a965"
+    },
+    {
+      "caseId": "case-00179",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ea9ef6ab110e2be1bd40a230305af26b79927b792dbce8f5f5c93026848c7dbc",
+      "sourceSessionSha256": "96a37cef3aae9b611f37a7041681bf3f022fa539129740d8a1800e72462e5e7a"
+    },
+    {
+      "caseId": "case-00180",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3b4a74b6258d01df955e21eee458aeabb4f2e9154822ba1c841dedf00f7df6f3",
+      "sourceSessionSha256": "13ff9269c2c8775d63eb977f2071af6c72e4324fc99bfc43f8a90a2601a5e50d"
+    },
+    {
+      "caseId": "case-00181",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7036b5ed9583449fcf42df66bed6de5b380749994166b2c6e01829adf9305095",
+      "sourceSessionSha256": "6f8b8ff4e6d37c676c0e6a37bd3553e1e6d8c3212363fc6ddab5c450895be099"
+    },
+    {
+      "caseId": "case-00182",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "4f25d1b178c32bd198d5a7f27bf4e2c0a351163813b28a392b3f3ec8179de2c2",
+      "sourceSessionSha256": "087938cf03761285c164c5766f383e4b529a9c3d471f768f47583a4e018eb723"
+    },
+    {
+      "caseId": "case-00183",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "90d3264bf9b802c0009f18a3f0c777789db2f9c1ca55200c1253a504c7273a3c",
+      "sourceSessionSha256": "f73244c70aa050b2c7c3429eafccd263f139e5e062a184609634cd4b0bac5d15"
+    },
+    {
+      "caseId": "case-00184",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "b66e9f55443a279420246443cfa597b357d7c2f5be7d3e2df4ac694f9cbfea0a",
+      "sourceSessionSha256": "b0209da2ca862f16cdc8cd87849754d4b83cc1147056115b884f4fa7e4d8f667"
+    },
+    {
+      "caseId": "case-00185",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "0f6166fe3df06c8054d68b94e613508c15f521e1466e00e3143ece52b7d1a4b6",
+      "sourceSessionSha256": "71b393d97ec406e81643de7907bc0cf10262447628216482ec944af719a9e50c"
+    },
+    {
+      "caseId": "case-00186",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0a4dc141736da0cbbb217e6b597a305339458aed0aa8efada8dc5bd094182f4f",
+      "sourceSessionSha256": "9f1b6682d2d7903e369e02c49609eb4ae29b6a0b25fe70b52d52237dd126192a"
+    },
+    {
+      "caseId": "case-00187",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f9ee5529333744f1409e5224d697ef3f881d42901046087d50b9f634cb8af762",
+      "sourceSessionSha256": "f0d7d2997b00e36d8ca2272954d25819e198bef518a8ff494698a016dd926e95"
+    },
+    {
+      "caseId": "case-00188",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "94c87c9227c8520eb830b9943c272d27416f39ef88c0b80739df1623ed1ec61a",
+      "sourceSessionSha256": "180fe616383c1592932ccba5b8ab5f74c6b4ed91e6a2e133a0cbd61913c23ca3"
+    },
+    {
+      "caseId": "case-00189",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a7f154869fdad4c5aea759c39eec795b2c9bd28e75d53db0803b9cd7ee8253ae",
+      "sourceSessionSha256": "71c73096e9e1f4b1949b18f1264e900b9d4a8552f65525580d40b1914f9a63f0"
+    },
+    {
+      "caseId": "case-00190",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b070c430cc07e1573e29b33f848ef19528493a9ee92b1f698b0646362c32213e",
+      "sourceSessionSha256": "a466c2b65b6aa0156660f4007ed4d5674e80c2e3a2d1a83b0e66067db2e8d551"
+    },
+    {
+      "caseId": "case-00191",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1e49b84c583ee1aade7f59f05abcf1bfc1aa2d7b287b91335f5f8e6b0c522682",
+      "sourceSessionSha256": "68f4ad467e8fdd787c7b606d71fb09c1a2bdf0c9ea1357c2ca09ff24832393a0"
+    },
+    {
+      "caseId": "case-00192",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "a4f410162d76f539d126ba1525275d293a158e9a881b34624fdb9c45a79bf5b1",
+      "sourceSessionSha256": "a4fbb4d03e4aaf2ce80798f54cdf8ac5ca159390b479d5494f3aa991a93a5d54"
+    },
+    {
+      "caseId": "case-00193",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "16912287310d32412e6b4dd4f3694a569609af4ca071ea7aa92abf68a0de0062",
+      "sourceSessionSha256": "e5d199c53b842a7272cf45cf984b05c3d1fb35195cc91fc83fcda4c766735b68"
+    },
+    {
+      "caseId": "case-00194",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d0ae37d99a5d3aec656482a4e6a66e5f0f944b35c2adf0faa26258b15650d41d",
+      "sourceSessionSha256": "37f0f0c756b665bd9c7369582e86a951fcbcc128e942e6ad7bff85988db40aa5"
+    },
+    {
+      "caseId": "case-00195",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "646e59d25be1e45fc14a7ef4b607168ad75faacb9235a00a76aa38d40613c0a1",
+      "sourceSessionSha256": "7e14ea7b5db5fc7f333f54c57a2d9d2365482a1e896d8bc3f859b3cc09d2dd0a"
+    },
+    {
+      "caseId": "case-00196",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1c383c5c72b2754ac3a174c6f25d16c9416bee99e547a21539dac0e47b5548ca",
+      "sourceSessionSha256": "59d385577f7710dcb6977bfa523077c9862ac312f4706c4ee119a46be1152c08"
+    },
+    {
+      "caseId": "case-00197",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "64506c049f09d40b9f45a8375d2b8372210e9a39270b1716b9c5ef52186dc647",
+      "sourceSessionSha256": "8b7f8db8cd9bd9a2c245dadf51e12632d5a60fa468486a6b9b4248145beca1c0"
+    },
+    {
+      "caseId": "case-00198",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "23672bcc33f94020339beab5b009c3162ed7cef6675bd88448f60b4f53bfe08c",
+      "sourceSessionSha256": "fef10b1b659aadc2346e4604d00ff837fbdc280a6610ce515b429363cfcb247c"
+    },
+    {
+      "caseId": "case-00199",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "f86ed7b2d3dc2aeefc79cd275512d50fe09bb79be49196a1117ca199c70c0533",
+      "sourceSessionSha256": "e437346b6c2cc9e55f76d9a5de19100c176cc4a859c0187503b7ec089f853ae6"
+    },
+    {
+      "caseId": "case-00200",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "12ab1521f5ba2c45256110963830fd01ba7d9a4d9c982360b76cfce2bb2c5b3c",
+      "sourceSessionSha256": "e75c780f407db3bf115455fa153f75ce2136dcfc94e15fefe2d5abe0367129e3"
+    },
+    {
+      "caseId": "case-00201",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0533bcfc132b99e6314ea80f9e3115fbaf5bcd3a847ed23ac4a35070d607ac99",
+      "sourceSessionSha256": "9b1fd5e53df1bd4a587546deafa716e0d1a8b49fed3883e8c6ebe2e170a52b58"
+    },
+    {
+      "caseId": "case-00202",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "a8748f174b222ae059ee8af95d9e5124b7d235a7a746ddfa3f8c328f722acf5a",
+      "sourceSessionSha256": "cd332ce31d184ecd16153b5b30d00dde8e3a4a37425c31ad25a34d774ed94915"
+    },
+    {
+      "caseId": "case-00203",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "78b168d4b287e3a067b4b19b0916f8ba8e611fe948508cd577b79070636be21a",
+      "sourceSessionSha256": "169bcbb45063f4a4ca12c177be277639138d870df5b6a7049500f11dc5725d3a"
+    },
+    {
+      "caseId": "case-00204",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "86b0f47af45412af4502b9dffc0e1d545803ab1fa8b638a631cc62f0e8ac7845",
+      "sourceSessionSha256": "1260c5b77ed87cec1523b4c1115e57edb1e71643bf39048fd6d6448ad0b0736d"
+    },
+    {
+      "caseId": "case-00205",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "46433a272c4e7bc0c73645c6c459814af9237ccea8bf0025046315804e04c1f0",
+      "sourceSessionSha256": "3ee84f2a20f1989900fa09d8ba83a01968b09c98a5e3d1408b99765c2e486eff"
+    },
+    {
+      "caseId": "case-00206",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "de2c789cd03260bcfd5b69410808a6d2e3d7036b057f7ae46e180f2e80bd2403",
+      "sourceSessionSha256": "bc59ba59c77cecd1eab94e07968a1831e0db121a47cc489f102f3e3958d21d46"
+    },
+    {
+      "caseId": "case-00207",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "106d10adad15dd196d5b238e64f6ea25423b847eec772f4bfdfbcc6e13df1c2e",
+      "sourceSessionSha256": "b6eba296733fc2d36fe28f8a513aaaba27f5abc077b9ac5729d1c15832afa2fc"
+    },
+    {
+      "caseId": "case-00208",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "c861d9b2e4dd67082dec28b765fae292d3bdc125cba0acff5d5c038d988a994d",
+      "sourceSessionSha256": "29fc25ed57ce798df77aea460a758f0825315c2fe202283e480dca627279c5c6"
+    },
+    {
+      "caseId": "case-00209",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ef03e69e384da49f9e87e0976c8e3200e7a100d9fe90890d3736aec73b44aec8",
+      "sourceSessionSha256": "227415c3d384c3e228c38d4dd5167e4ab8633134e6f25afb4c8f685b54ed9731"
+    },
+    {
+      "caseId": "case-00210",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "625a07c7c3a6e3214e47dea9f960766f9a57c7cf5dbc15d763240557d5484ced",
+      "sourceSessionSha256": "35c07c216d28344fd18e7e8ac3249ce8a72f3cded06879c1823e469a4c60b5e4"
+    },
+    {
+      "caseId": "case-00211",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "16eb536b0b4d43ca4ee0e2be27253ec55b31d5dcd8b002e8726051f5897455fb",
+      "sourceSessionSha256": "09bd59c0d60e286749b4dc0869a7db2c9830827cfdf73d4f96f721390dac1c2e"
+    },
+    {
+      "caseId": "case-00212",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b260673de732150f2cce2b8919753b11afa6a5f86bb772796d3d6b5e2c693e77",
+      "sourceSessionSha256": "2e9c641f5db37039a9ed55e389d9535df502d813ace3a67386af6c4bea88c87a"
+    },
+    {
+      "caseId": "case-00213",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "e6794b2fabaa7d3a6f2edc18a09796c4ff9552e7cd722bc0facda849d47bd94e",
+      "sourceSessionSha256": "70b500bf28370bc09e1b23d7b6cb13e8ac9fcdc01b91cd13ec80f30893e40c9a"
+    },
+    {
+      "caseId": "case-00214",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2c133eb8a265ef3859cebc5c3e845c791bbf5064fd801e940054fbc4be7ecf43",
+      "sourceSessionSha256": "268b030b38d31f7e9b324552eaf92ca21fb76a7a317623d23e4936a60fc63c47"
+    },
+    {
+      "caseId": "case-00215",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5922979fb1a7a5df31dae5eb0600b400dc23a3f893ec08294e47d04a8d98ab01",
+      "sourceSessionSha256": "dabaf4e1620f2ce9daa234e7d647a136bdbf2b8d619ecd4259d8f789aa55e3b3"
+    },
+    {
+      "caseId": "case-00216",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b85985aabd92b8255cf2bf57c2b8190ba06783c8384c7b5e08ae86585993dcba",
+      "sourceSessionSha256": "c8a8f81b701c464f0ee7b57cd99626909b658a486c1e72930ff135c1f5182732"
+    },
+    {
+      "caseId": "case-00217",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "21181cda4d8bf2603a9a08b57ae45ec350d85ee73bbb9351c1330ff0445821b9",
+      "sourceSessionSha256": "41f6d6f32521c23013834d2cbdb43b7abea3af9098f1f170011ade085e9df442"
+    },
+    {
+      "caseId": "case-00218",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "55858d0dfbee5a8b83f24b1a0e24543c66dce2e9d6896a03eb086a25128540fb",
+      "sourceSessionSha256": "534ae24816cc4873a7f05be85148d0ffe2e96a8469f5751b87248a269689d4cc"
+    },
+    {
+      "caseId": "case-00219",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "68045c4289cf17bfc54792aae1b17be1544f0f8b4dd98bc80f0ae80e92a02741",
+      "sourceSessionSha256": "025481dd7d07309c1e21feb05f0fcfaa47c975f440a453901ab752e822522bb4"
+    },
+    {
+      "caseId": "case-00220",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "44203e9f80a23cdc61c1e5b74a404cbd051494e4a64fcf95ea933a70ab21806a",
+      "sourceSessionSha256": "02906e754105b05ede4c1ac8247a3556309ed8768493d4a81398cebba06ad090"
+    },
+    {
+      "caseId": "case-00221",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "d95f9b9fd7c518e2bc973675785f4a0fb62b0d022261e98bb391d28a0eaaeb8b",
+      "sourceSessionSha256": "903e42f5e9c04da434d6403d7bf6b6bff7ec0f25b919a1385fb66cba87c54b49"
+    },
+    {
+      "caseId": "case-00222",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "deb4a1ca6c352af1407902454a46a8a4f60de47a85859ee462bd94cddb6aa51f",
+      "sourceSessionSha256": "7a0401e6aa0c8b0db1b7ecc79d7fcf4e807dbc911afef8ec9c2dccbc80ddd321"
+    },
+    {
+      "caseId": "case-00223",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "17148b6984b6e4fb502a1b0b0ac9d2e66778a802cc535b26432d2f4a32adea7b",
+      "sourceSessionSha256": "c11233d5825c754d14617eda0ce8ff2f2ceb5d1833a0335e82633fe5250504c8"
+    },
+    {
+      "caseId": "case-00224",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "02e2f6b96196b0304fafff046aae112e80989a3a141d7d5f8d879bef250f495e",
+      "sourceSessionSha256": "be1337dd23b143b3c2ae24f78f95c04f9b22c137396e6ade47418546bf1b370c"
+    },
+    {
+      "caseId": "case-00225",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "46aece2e9e88f80720e838258e77aaf3ed2bf5860ec9e8b55fc23ea2c54149c7",
+      "sourceSessionSha256": "fc92bdcdb46cabff8f94209b2be748cd837020dc98a5490a765429433b5e3c1b"
+    },
+    {
+      "caseId": "case-00226",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0ef5e18503e46456a7843ee94b0b0962452b02e7f7e4805266aa0a640daa9e4e",
+      "sourceSessionSha256": "15a57232003cc52873efc63ed787754ba6baee4dd08b69a0dba7fdf78f959802"
+    },
+    {
+      "caseId": "case-00227",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "221a3fe2e3ad890bd9d065a022e1e05a124dee43b4ab87acf110b98585e82ba6",
+      "sourceSessionSha256": "0ca3e7cf9a3f2bf91155a5b8af5d25e053b8f1ec013757b7ea0aa814363d8ee7"
+    },
+    {
+      "caseId": "case-00228",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "3cbeda8a6f7efa58ab1421671543e34892a5da5001c19f4e89bc087e11253457",
+      "sourceSessionSha256": "b4a8160430b46e53393af8af527c1f73f1cd91bf18cd98f2a3b78d96ead2e4d7"
+    },
+    {
+      "caseId": "case-00229",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "eb73ebc20850decf9184b095e180989c9d04043f65dba13387241323bd7d4d15",
+      "sourceSessionSha256": "eca13b9585b977f5f10a4c6153629debcc4b213cc2954463aad6e21a20f06c7b"
+    },
+    {
+      "caseId": "case-00230",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "1fbb3840348a8a84d69bc13f74ea5c83e51e8399b284d99b96c7e4e447edb7b0",
+      "sourceSessionSha256": "3809ebdd6962fca4a989cf7722b82260bcfd4cd4b308e94e4449183298a30f51"
+    },
+    {
+      "caseId": "case-00231",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "86ae41471b61d3437e24b266ef382f2aeca0cceeee7a75934c4ac61a44261138",
+      "sourceSessionSha256": "5f7eaa731e0f7658c82c6b3ebb98db464a5d363847520251feadb7eb9f1c5325"
+    },
+    {
+      "caseId": "case-00232",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "fb8477461c96d888f0fc6b5790a70968c477b2cae524b71dcc27200984379cb3",
+      "sourceSessionSha256": "1a811045ed2ec3caa38e8b3f34f7cf7382fc2cc13a84d1f9fb989bc9884c4a56"
+    },
+    {
+      "caseId": "case-00233",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "95777a5bbaeb03bc4f874d5d1c1497ea837cee5daf4cd740862014baa0e76763",
+      "sourceSessionSha256": "644dd665cc2aa326e5915f7eac52b237e59e746ca52d710e6f4c364b4b1abf25"
+    },
+    {
+      "caseId": "case-00234",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "656c181809553f20b3d71ddd6a5835bf4493bc2e0b55abe9f333576a972f73de",
+      "sourceSessionSha256": "3a1c0400a4ebcfedfe6cb47153103d30b2a2ecab6b13c5a21d9e8c39fc7f1c8e"
+    },
+    {
+      "caseId": "case-00235",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "7cc51712b983fdcee24669a73971081513a2e21c5dad110edb67bed124caf985",
+      "sourceSessionSha256": "bdc376d95610711582a1b3a3d77306e870010d13ca9198973e8a47fd08be7286"
+    },
+    {
+      "caseId": "case-00236",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5646bbf2ee9daf6dc6cf1652b13a8abb223f0265b7db03dcb1ecafb8d2a2fa8f",
+      "sourceSessionSha256": "e51da7305ff63d145b84bc4c75287446f6bab5fd813b316be3b12cba34062856"
+    },
+    {
+      "caseId": "case-00237",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_VEHICLES_USER_ID",
+      "kind": "VEHICLE_USER_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_VEHICLES_USER_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "941db6eaff79ec9edc09c7237b83b3f5bd1a5207b9e010cbde19bab29324c3d3",
+      "sourceSessionSha256": "c469eb10c739e8d982ff8730453c53ed87ace2672183e80dcec5200839cacdca"
+    },
+    {
+      "caseId": "case-00238",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_SESSION_STATUS",
+      "kind": "INVALID_STATUS",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_SESSION_STATUS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "e83aa2b9f2a0e764cc370e4506a053df02cf8a03b2a381cf68b5623c71d68936",
+      "sourceSessionSha256": "e7491f6b2f9322acd29872aedc10a797f444e5dde7679b2067da27bd3d5cc4a0"
+    },
+    {
+      "caseId": "case-00239",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TEXT_ENCODING",
+      "kind": "INVALID_TEXT",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TEXT_ENCODING": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "61b8b53f5ce3e0b405e7d3ae84af95978ddaf970b071139a1e92174e1a6b4731",
+      "sourceSessionSha256": "b39fa0384e61d867686cf5e81e3a58f2367fdd0af24e6d6495d931d1dc27594e"
+    },
+    {
+      "caseId": "case-00240",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_ENERGY_TARGET",
+      "kind": "INVALID_TARGET",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_ENERGY_TARGET": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "ed551521d7afd41373fe5bd6daf98aa79560cdeedf8a0c744a6551355e2b29db",
+      "sourceSessionSha256": "248cbaba8b11bcbe0028d9f00d757f4863140cc4286b9dec34a005e66a0f5e10"
+    },
+    {
+      "caseId": "case-00241",
+      "expectedAction": "DEDUPLICATE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "DUPLICATE_SESSION_ID",
+      "kind": "DUPLICATE",
+      "observedInputRows": 2,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "DUPLICATE_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "5bae45012ed03590b207169ec83d1d86a33831ef1d0c87995c7fc3babc20c6a4",
+      "sourceSessionSha256": "8559238a6d6b7682d009a8d64108bd25642eb52a80e5113c0aef51e927fb96e3"
+    },
+    {
+      "caseId": "case-00242",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "expectedReason": null,
+      "kind": "ENUM_WHITESPACE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N001",
+        "N004"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "d8ee7fae2fedd122ba46a8ebf6af471108b71a522532e08e5e338fcf74b7a4cb",
+      "sourceSessionSha256": "0d1da7c552670bf6f8dd3cde1be5d3e02802d64c52eec7391d70a000d88941ee"
+    },
+    {
+      "caseId": "case-00243",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N003"
+      ],
+      "expectedReason": null,
+      "kind": "FULLWIDTH_NUMBER",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N003"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "df73355308868ef566cda3f5d68cabd577854768b95ac78f2cbf4e54a6419e17",
+      "sourceSessionSha256": "882c7e8284bb6f1a2d7245d48f6784301cbf0d9c03703eef5858afcff6f2634a"
+    },
+    {
+      "caseId": "case-00244",
+      "expectedAction": "NORMALIZE",
+      "expectedNormalizationRules": [
+        "N002"
+      ],
+      "expectedReason": null,
+      "kind": "ZERO_WIDTH_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [
+        "N002"
+      ],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "4472ce403c1b5612847b43c710a11a3b3ad90ca4216b94b3c974de74de0281cb",
+      "sourceSessionSha256": "cbae7946093470941835d81d6016d63e73125b2734a040f55c4cbf1b10d505c6"
+    },
+    {
+      "caseId": "case-00245",
+      "expectedAction": "EQUIVALENT_TIMESTAMP",
+      "expectedNormalizationRules": [],
+      "expectedReason": null,
+      "kind": "EXPLICIT_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {},
+      "passed": true,
+      "rawRecordSha256": "4d096785a580fdf3aabcffdce334b123699219bba581e094b1bda721ae04ea16",
+      "sourceSessionSha256": "a1b2c41f8ae42a2a74a8a7810534251f73499c6e372b8116bff6d962878878db"
+    },
+    {
+      "caseId": "case-00246",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INVALID_NUMERIC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "bd6cecdd2cc841c6924910808dc8ba4f0b8f4597f0067165d040e9ee96d860a2",
+      "sourceSessionSha256": "469fdcb9f5cea697cfc9ee7bdc07e4451d0e57e9b37854563b6a7d72dad14899"
+    },
+    {
+      "caseId": "case-00247",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "INTEGER_OVERFLOW",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "6171361667f20c341512a4ecfadcddb356d660453d24c3cabb5363927858f3d4",
+      "sourceSessionSha256": "f5faaee2ff7053b799e5568f83270b564255d8b5a59b7d88fe977ce7de67c576"
+    },
+    {
+      "caseId": "case-00248",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "MISSING_TIMEZONE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "e1c28e5985f725ba702510673d36b93e7ea8c1d1205a69192c762ef8e1c05b0d",
+      "sourceSessionSha256": "e00dcec763433545fddd5de721fc5e0c377179eb5c1ae0d4f314dc435fa60d1c"
+    },
+    {
+      "caseId": "case-00249",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TYPE_OR_CSV",
+      "kind": "NONFINITE_SOC",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TYPE_OR_CSV": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "57b041566bd9bcaa7c8c0e0209b4c23b7efed198fae371c51c335f32d9d373fe",
+      "sourceSessionSha256": "350bacbfb47f354d4aeea58b9c5695578c03346df50402abad5046f6727a6d5b"
+    },
+    {
+      "caseId": "case-00250",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS",
+      "kind": "NEGATIVE_FEE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "b2280de136815a0efd029da97bcca013e7a1326d0a92512b101e9be85aca424e",
+      "sourceSessionSha256": "cedbeb895a615c98d5a3862cecab3a246a7fde6b037328f228c654dbd08ae5e5"
+    },
+    {
+      "caseId": "case-00251",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_TIME_ORDER",
+      "kind": "REVERSED_TIME",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_TIME_ORDER": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "9f4e1a757588341bbd214ec8590907237c88251b1f998da67810a85f263354db",
+      "sourceSessionSha256": "5af3b73591edec41d55b4945e376d20199cf6a8e366c3f48d2489f95ae522273"
+    },
+    {
+      "caseId": "case-00252",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INVALID_END_SOC_PCT",
+      "kind": "SOC_RANGE",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INVALID_END_SOC_PCT": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "778baa193883c4d96a23080544951ab7c10d390258f38f89535a4c91b2d3b796",
+      "sourceSessionSha256": "854a1b74eba9b3a3fa684ebeadf92d1a63f38c73b92daefea3c1057af271f927"
+    },
+    {
+      "caseId": "case-00253",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_TOTAL_FEE",
+      "kind": "FEE_IDENTITY",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_TOTAL_FEE": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "0d8631c86f39544f3aaef557e5c7a4822255149a5b0043dbc737bcc1f652f3c5",
+      "sourceSessionSha256": "2d0a207b95f7af0a0cf97bca9e426c2bdb20cf886688984a2d3418655942e75d"
+    },
+    {
+      "caseId": "case-00254",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "MISSING_SESSION_ID",
+      "kind": "MISSING_SESSION_ID",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "MISSING_SESSION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "202571a8fbf18e2d6af07e1c5fe8f75f489cc9db642a2964cf8ff676b866484f",
+      "sourceSessionSha256": "c42daca62924e2130d34f84889b4c76b0113a5d2c2f75a894ba2b52a4ebfd56b"
+    },
+    {
+      "caseId": "case-00255",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "UNKNOWN_STATION_ID",
+      "kind": "UNKNOWN_STATION",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "UNKNOWN_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2acba29bbe7f64b61765d274989dbd0a6a52099f83cbc57f4159bc3651bd5354",
+      "sourceSessionSha256": "a6c363de52dea3086ca4f641aeef1ae7fef3e545a2e49eed1326802d766d5aae"
+    },
+    {
+      "caseId": "case-00256",
+      "expectedAction": "QUARANTINE",
+      "expectedNormalizationRules": [],
+      "expectedReason": "INCONSISTENT_CHARGERS_STATION_ID",
+      "kind": "CHARGER_STATION_MISMATCH",
+      "observedInputRows": 1,
+      "observedNormalizationRules": [],
+      "observedRejections": {
+        "INCONSISTENT_CHARGERS_STATION_ID": 1
+      },
+      "passed": true,
+      "rawRecordSha256": "2905c6cce71120dfa35242ed11011d395e525c38185c7c4f2a20a6165d8e5522",
+      "sourceSessionSha256": "d1a68797774269051af4eb69c23bfae3d4e19825a00beb63e50ddd25fe3d23d7"
+    }
+  ],
+  "cleanRows": 256,
+  "datasetId": "charging_full_180d_v2",
+  "engine": {
+    "name": "PySpark",
+    "sessionTimezone": "UTC",
+    "version": "3.5.6"
+  },
+  "evidenceFiles": [
+    {
+      "bytes": 16601,
+      "path": "baseline/charging_sessions.csv.gz",
+      "sha256": "4941625f014cb671038e385f03dd8b1ba0842b7a7900d4ab9dc912381ccede4c"
+    },
+    {
+      "bytes": 0,
+      "path": "clean/charging_sessions/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 22066,
+      "path": "clean/charging_sessions/part-00000-946ca3a8-3c1e-438d-a70b-d8f020956044-c000.snappy.parquet",
+      "sha256": "03a64fb0136aa5903e40aaae9b5fc2c2211af4ff46ef75319148d72c39e4a96c"
+    },
+    {
+      "bytes": 20888,
+      "path": "clean/charging_sessions/part-00001-946ca3a8-3c1e-438d-a70b-d8f020956044-c000.snappy.parquet",
+      "sha256": "dfcafaef11336a9a3bd6313299e7e2aad16bd594f3c8f61d33c83162dd3f5e3b"
+    },
+    {
+      "bytes": 100789,
+      "path": "injection_plan.json",
+      "sha256": "9cf5e2c651ffd6954111a0169126f6a760cb159824eca3c8d680721d58c1b1e8"
+    },
+    {
+      "bytes": 0,
+      "path": "quarantine/charging_sessions/_SUCCESS",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 80140,
+      "path": "quarantine/charging_sessions/part-00000-3ef733d7-db04-426f-8ce4-e861cee3f8e9-c000.snappy.parquet",
+      "sha256": "dca615e1ce0495e5b29ca52ce236ccae6924eea6c9b2175d8c45394e69d99c7c"
+    },
+    {
+      "bytes": 16692,
+      "path": "quarantine/charging_sessions/part-00001-3ef733d7-db04-426f-8ce4-e861cee3f8e9-c000.snappy.parquet",
+      "sha256": "8c9c0bc66063f1695a916dd019c3e9a0b26e638a7b3a4e858cd1619d96361684"
+    },
+    {
+      "bytes": 17166,
+      "path": "quarantine/charging_sessions/part-00002-3ef733d7-db04-426f-8ce4-e861cee3f8e9-c000.snappy.parquet",
+      "sha256": "068fab89e66492251020d78bbcd8c058c56e908baf4519c5aec9bb35c73c6855"
+    },
+    {
+      "bytes": 18797,
+      "path": "raw/charging_sessions/part-00000.csv.gz",
+      "sha256": "7b72a511463f83e6a6fb304c389cfb84c44c11b6f72e62f934fbc3cb35c5d85c"
+    }
+  ],
+  "generatedAt": "2026-09-15T15:31:40.788419Z",
+  "inputRows": 460,
+  "invariants": {
+    "exactBaselineRestored": true,
+    "missingOrChangedBaselineRows": 0,
+    "rowConservation": true,
+    "unexpectedCleanRows": 0
+  },
+  "limitations": [
+    "Cases are deliberately balanced exercises, not an estimate of real-world defect prevalence.",
+    "One primary rejection reason per row; a row can violate additional checks.",
+    "Only recoverable presentation is normalized. Missing facts, ambiguous times and invalid values are quarantined.",
+    "This exercise reuses existing production cleaner; it does not modify the published analytics or ML training batches."
+  ],
+  "metricImpact": {
+    "afterBillDistortionCents": 0,
+    "afterCleaning": {
+      "billedCents": 767989,
+      "energyWh": 6277037,
+      "nullEnergyRows": 0,
+      "nullFeeRows": 0,
+      "rows": 256
+    },
+    "beforeBillDistortionCents": 737836,
+    "beforeNaiveParsedSum": {
+      "billedCents": 1505825,
+      "energyWh": 10776286,
+      "nullEnergyRows": 26,
+      "nullFeeRows": 0,
+      "rows": 460
+    },
+    "expectedBaseline": {
+      "billedCents": 767989,
+      "energyWh": 6277037,
+      "nullEnergyRows": 0,
+      "nullFeeRows": 0,
+      "rows": 256
+    },
+    "explanation": "Billed amounts, NOT cash revenue. The naive before sum includes invalid/duplicate rows; unparseable numeric values are NULL, not zero."
+  },
+  "passed": true,
+  "passedCases": 256,
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "privacy": "No raw user/session IDs in this report; evidence files retain synthetic IDs for relational audit.",
+  "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "rejectedRows": 204,
+  "rejectionReasons": {
+    "DUPLICATE_SESSION_ID": 13,
+    "INCONSISTENT_CHARGERS_STATION_ID": 13,
+    "INCONSISTENT_TOTAL_FEE": 13,
+    "INCONSISTENT_VEHICLES_USER_ID": 12,
+    "INVALID_END_SOC_PCT": 13,
+    "INVALID_ENERGY_TARGET": 12,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 13,
+    "INVALID_SESSION_STATUS": 12,
+    "INVALID_TEXT_ENCODING": 12,
+    "INVALID_TIME_ORDER": 13,
+    "INVALID_TYPE_OR_CSV": 52,
+    "MISSING_SESSION_ID": 13,
+    "UNKNOWN_STATION_ID": 13
+  },
+  "sampleRows": 256,
+  "scope": "ISOLATED_LABELED_CHALLENGE_NOT_PRODUCTION_ERROR_RATE",
+  "seed": 42,
+  "source": {
+    "acceptanceManifestSha256": "934883f924e2156353133a8964b6102695b70de8573bf3cc38714ce06cd75bb7",
+    "servingManifestSha256": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+    "verifiedInputFiles": [
+      {
+        "bytes": 2918,
+        "path": "clean/chargers/part-00000-210e4a98-3f66-4756-88a2-cec4a061476b-c000.snappy.parquet",
+        "sha256": "7b5d768350f3d4d9f98d85ccbf3e1747a1757e01c42b1857e0e6fc4a93ae4083"
+      },
+      {
+        "bytes": 1758854,
+        "path": "clean/charging_attempts/part-00000-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet",
+        "sha256": "675b1d67018c65a004423df7f66125397d0673eb2070946cc75592d9224928ed"
+      },
+      {
+        "bytes": 1586701,
+        "path": "clean/charging_attempts/part-00001-35c0ddd3-ef10-4d7c-b7cb-dc12dcbe5e6f-c000.snappy.parquet",
+        "sha256": "d491c245dd406263aea5e61c5c3bd48f7a1f68f108b2f5871c702a6d4f1ba2a0"
+      },
+      {
+        "bytes": 1098505,
+        "path": "clean/charging_sessions/part-00000-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "386eca2bafae364dd9692702dda2410e8f15509cecfdb309ad138a651d5a547f"
+      },
+      {
+        "bytes": 1118632,
+        "path": "clean/charging_sessions/part-00001-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "ac114fc4e9d4819b54c75c61212219f5757e26355326bc2adf59a8e1bfbccfce"
+      },
+      {
+        "bytes": 1089538,
+        "path": "clean/charging_sessions/part-00002-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "b61b8afb831a18d0c3f4c335de4c7ea58552bfd5c933057bb643f8ec3c4a9528"
+      },
+      {
+        "bytes": 1109156,
+        "path": "clean/charging_sessions/part-00003-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "1e41dbeecc361084877738b3594ad54ffe29b692f3f74b4debc13b395212c009"
+      },
+      {
+        "bytes": 1078822,
+        "path": "clean/charging_sessions/part-00004-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "3300970bcb09f78fdfb0d458d8c63a78c0df91eed1fa733467ff8e4459ddbc70"
+      },
+      {
+        "bytes": 1091571,
+        "path": "clean/charging_sessions/part-00005-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "82e339cc3d33afeaa636ffe52c6ff3b565dd2d6d9a2f7a39833cec376eae4fd6"
+      },
+      {
+        "bytes": 1089937,
+        "path": "clean/charging_sessions/part-00006-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "a5b285a7f0da7718b2227c3c3646a532bc1756d1defa89cfcc31267855949206"
+      },
+      {
+        "bytes": 1118071,
+        "path": "clean/charging_sessions/part-00007-740644e5-9da8-413a-b27a-0d9dc9c7cd20-c000.snappy.parquet",
+        "sha256": "65106fab0b7ee1d83063129a9c7c1f55547616b07d365949196a220441a2c7b7"
+      },
+      {
+        "bytes": 3689,
+        "path": "clean/stations/part-00000-0c0277b4-36aa-485f-899e-4fc24af4b717-c000.snappy.parquet",
+        "sha256": "cc0cad908a3cd45916e339463711cdd439f7cd9b136feb23ddc7acadf21e6c10"
+      },
+      {
+        "bytes": 42173,
+        "path": "clean/users/part-00000-50ae3c68-07b2-43f7-975c-b30ac724ee34-c000.snappy.parquet",
+        "sha256": "883f18d3e8e3c46bf6d24c4025eea077afbfc9fc35a6b65cb2bf4fffb24e9110"
+      },
+      {
+        "bytes": 59439,
+        "path": "clean/vehicles/part-00000-c939350d-02ef-44d5-847f-216e4e2c9acc-c000.snappy.parquet",
+        "sha256": "cc1821188e9dba29632e96a49e8d59c8f0e08230e87b2058a406c7a4c57f7298"
+      }
+    ]
+  },
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "testedCaseTypes": 20,
+  "testedCases": 256,
+  "version": "cleaning-challenge-1.0.0"
+}

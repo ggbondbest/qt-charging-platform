@@ -22,6 +22,8 @@ from .errors import ApiError
 from .models import (BatchQuery, Chart, ChartQuery, City, Dataset, Envelope, FilterQuery, Health,
                      ModelCapabilities, Overview, Page, PageQuery, PipelineRun, PredictionRequest, PredictionResult, Station)
 from . import service
+from .advanced_models import AdvancedAnalytics, AdvancedQuery
+from .advanced import analyze as advanced_analysis
 
 
 def envelope(request, data=None, code="OK", message="成功"):
@@ -135,6 +137,12 @@ def create_app(database_path=None, *, mysql_settings=None, prediction_provider=N
     @application.get("/api/v1/dashboard/charts", response_model=Envelope[Chart], responses=errors, operation_id="dashboardCharts")
     def charts(request: Request, query: Annotated[ChartQuery, Query()], snapshot=Depends(database)):
         return envelope(request, service.charts(snapshot, service.check_filters(snapshot, query), query))
+
+    @application.get("/api/v1/dashboard/advanced", response_model=Envelope[AdvancedAnalytics], responses=errors,
+                     operation_id="dashboardAdvanced")
+    def advanced(request: Request, query: Annotated[AdvancedQuery, Query()], snapshot=Depends(database)):
+        filters = service.check_filters(snapshot, query)
+        return envelope(request, advanced_analysis(snapshot.metadata, filters, query.siteType))
 
     @application.get("/api/v1/models", response_model=Envelope[ModelCapabilities], responses=errors, operation_id="modelCapabilities")
     def models(request: Request, query: Annotated[BatchQuery, Query()], snapshot=Depends(database)):
