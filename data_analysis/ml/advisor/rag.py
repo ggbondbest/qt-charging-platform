@@ -214,7 +214,7 @@ def answer(snapshot, provider, query, *, settings, deadline=None, cancelled=None
         knowledge=deepcopy(result["knowledge"]))
     # Include the actual canonical service caveats in the authoritative scope.
     payload["scope"]["limitations"] = [_clean_text(note, replacements) for note in result["limitations"]]
-    generated = llm.generate_answer(settings, payload, timeout=_remaining(deadline, cancelled))
+    generated = llm.generate_answer(settings, payload, timeout=_remaining(deadline, cancelled), cancelled=cancelled)
     _remaining(deadline, cancelled)
     allowed = {item["id"] for item in result["evidence"] + result["knowledge"]}
     if (not isinstance(generated, dict) or not isinstance(generated.get("answer"), str)

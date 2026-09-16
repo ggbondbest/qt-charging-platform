@@ -15,6 +15,8 @@ PR72 的统计页面、PR70 的小时空闲桩预测、PR67 的异常/流失模�
 首次将 `data_analysis/ml/advisor/.env.example` 复制为同目录 `.env.local`，填自己的AIPing Key后重启统一服务；
 模板预设AIPing与 `DeepSeek-V4.1-Flash`，配置有效时默认在线。每次在线提问须同意外发问题、有限历史和检索上下文，
 模型解读需结合来源复核；配置状态不等于真实供应商连通性验证。详细步骤见 [AI参谋](ml/advisor/README.md)，不新增服务器或训练任务。
+当前配置环境已实测AIPing规划、问候和MySQL聚合RAG回答。引用无效或缺失时最多追加一次生成纠错，
+仍执行严格引用校验并共享原超时预算；网络、认证、限流不自动重试。成功用例不代表模型对所有问题的判断都正确。
 HDFS 接入代码支持实际路径参数。`charging_sample_7d_v2` 和 `charging_full_180d_v2` 均已于老师 Linux/Hadoop 环境完成真实 HDFS pipeline、分析、export、HDFS 文件校验和独立统计对账；完整证据分别见 [7 天 HDFS 验证记录](docs/hdfs_sample_7d_validation.json) 与 [180 天 HDFS 验证记录](docs/hdfs_full_180d_validation.json)。
 
 网页/模型组请先看 [数据层交付指南](DATA_LAYER.md) 和 [公共契约](contracts/README.md)。
