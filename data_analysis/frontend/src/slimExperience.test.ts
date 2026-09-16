@@ -27,6 +27,7 @@ vi.mock("./components/Chart.vue", () => ({ default: { render: () => h("chart-stu
 vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { render: () => h("dashboard-stub") } }));
 vi.mock("./components/ForecastPanel.vue", () => ({ default: { render: () => h("forecast-stub") } }));
 vi.mock("./components/ManagementInsights.vue", () => ({ default: { render: () => h("insights-stub") } }));
+vi.mock("./components/AiPet.vue", () => ({ default: { render: () => h("ai-pet") } }));
 vi.mock("./components/RecommendationRoute.vue", () => ({
   default: {
     props: ["candidate", "loading", "error"],

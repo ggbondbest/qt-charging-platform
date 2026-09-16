@@ -31,6 +31,7 @@ import AutoHideHeader from "./components/AutoHideHeader.vue";
 import OriginPicker from "./components/OriginPicker.vue";
 import RecommendationRoute from "./components/RecommendationRoute.vue";
 import { createRoutePreview } from "./routePreview";
+import AiPet from "./components/AiPet.vue";
 
 type Tab = "dashboard" | "explore" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -1473,6 +1474,7 @@ onBeforeUnmount(() => {
         <Icon name="check" :size="18" />{{ toast }}
       </div></Transition
     >
+    <AiPet />
   </div>
 </template>
 

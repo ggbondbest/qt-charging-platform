@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "policy": {
+    "kinds": ["navigate", "fill"],
+    "fill_submits": false,
+    "comment": "白名单动作清单。navigate=点已注册按钮切页;fill=只写值+发 input/change,永不代为提交。selector 均为队友 DOM(零修改,纯外部操作),与 App.vue 字面量的对账由 test_ml_advisor 与 advisorActions.test 双向钉死(#76 砍掉行程页后:navigate 7 页、fill 8 框;补电/行驶时间输入框随表单迁到了智能找站页)。admin 控制台与桌宠自身输入框刻意排除。"
+  },
+  "navigate": [
+    { "id": "overview",   "route": "dashboard", "label": "运营总览",       "selector": "#primary-header nav.main-nav > button:nth-child(1)" },
+    { "id": "explore",    "route": "explore",   "label": "智能找站",       "selector": "#primary-header nav.main-nav > button:nth-child(2)" },
+    { "id": "lab",        "route": "lab",       "label": "智能分析",       "selector": "#primary-header nav.main-nav > button:nth-child(3)" },
+    { "id": "lab-forecast",   "route": "lab", "section": "forecast",   "label": "智能分析·负荷与空闲预测", "selector": "nav.workspace-tabs[aria-label=\"智能分析分区\"] > button:nth-child(1)" },
+    { "id": "lab-insights",   "route": "lab", "section": "insights",   "label": "智能分析·用户与异常",     "selector": "nav.workspace-tabs[aria-label=\"智能分析分区\"] > button:nth-child(2)" },
+    { "id": "lab-arrival",    "route": "lab", "section": "arrival",    "label": "智能分析·到站模型",       "selector": "nav.workspace-tabs[aria-label=\"智能分析分区\"] > button:nth-child(3)" },
+    { "id": "lab-experiments","route": "lab", "section": "experiments","label": "智能分析·策略对比",       "selector": "nav.workspace-tabs[aria-label=\"智能分析分区\"] > button:nth-child(4)" }
+  ],
+  "fill": [
+    { "id": "insights-query", "route": "lab", "section": "insights", "label": "分析编号查询框", "selector": "form.insights-query input", "event": "input",  "valueRule": { "type": "string", "maxLength": 40, "pattern": "^[^\\n\\r]{1,40}$" } },
+    { "id": "dash-start",     "route": "dashboard", "label": "统计开始日期", "selector": "section.analytics-filter input[aria-label=\"统计开始日期\"]", "event": "input",  "valueRule": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" } },
+    { "id": "dash-end",       "route": "dashboard", "label": "统计结束日期", "selector": "section.analytics-filter input[aria-label=\"统计结束日期\"]", "event": "input",  "valueRule": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" } },
+    { "id": "forecast-target",    "route": "lab", "section": "forecast", "label": "预测目标",     "selector": "form.forecast-controls select[aria-label=\"预测目标\"]",  "event": "change", "valueRule": { "type": "string", "enum": ["load", "availability"] } },
+    { "id": "forecast-horizon",   "route": "lab", "section": "forecast", "label": "预测跨度(小时)", "selector": "form.forecast-controls select[aria-label=\"预测跨度\"]",  "event": "change", "valueRule": { "type": "string", "enum": ["1", "6", "24"] } },
+    { "id": "forecast-reference", "route": "lab", "section": "forecast", "label": "预测起点",     "selector": "form.forecast-controls input[aria-label=\"预测起点\"]",    "event": "input",  "valueRule": { "type": "string", "maxLength": 19, "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$" } },
+    { "id": "energy-kwh",     "route": "explore", "label": "计划补电(kWh)",  "selector": "#energy",    "event": "change", "valueRule": { "type": "string", "enum": ["5", "10", "20", "30", "40", "60"] } },
+    { "id": "max-eta",        "route": "explore", "label": "最远行驶(分钟)", "selector": "#max-eta",   "event": "change", "valueRule": { "type": "string", "enum": ["15", "30", "60"] } }
+  ]
+}
