@@ -23,10 +23,12 @@ SQLite
 
 第二阶段在独立的 [data_analysis](data_analysis/README.md) 中开发：已提供五城市、180 天、
 23 类关联数据：有来源依据的模拟充电、带署名的气象背景、Python 生成校验与 PySpark 清洗统计；不改动一期 Qt 业务。
-现已整合 Vue 运营大屏、小时负荷/空闲桩预测、到站推荐、异常/流失分析，以及独立 MySQL 行程闭环。
+现已整合 Vue 多维运营大屏、小时负荷/空闲桩预测、到站推荐、异常/流失分析和有证据的 AI运营参谋。
+演示业务使用隔离 MySQL，保留后端兼容能力，不再额外展示冗余行程页。
 **运行完整第二阶段项目请先看 [统一交付指南](data_analysis/delivery/README.md)**，统一入口为 `python -m data_analysis.delivery.cli serve`。
+功能取舍、数据边界和四分钟演示路径见 [最终交付与验收](data_analysis/docs/final_delivery.md)。
 全部运营数据和资金均为模拟；模型实际训练，不代表真实充电设备验证。
-自动 CI 保留第二阶段原 9 项检查，并增加完整模型/MySQL 和 Vue 测试，说明见 [第二阶段 CI](data_analysis/docs/ci_checks.md)。
+自动 CI 保留第二阶段原 9 项检查，并增加完整模型/MySQL、Vue和Python静态检查；新参谋与高级分析纳入回归，说明见 [最终检查清单](data_analysis/docs/final_delivery.md#验证与ci覆盖)。
 第一阶段 Ubuntu/Qt 自动工作流已移除，Qt 6.2.4 兼容要求、测试代码和下面的手工验收命令仍保留。
 一期历史文档中“必须通过 Qt CI”的描述是原阶段流程，不再代表当前 PR 的自动合并检查。
 

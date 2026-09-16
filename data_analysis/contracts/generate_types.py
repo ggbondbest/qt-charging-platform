@@ -37,8 +37,8 @@ def ts(schema):
             "null": "null"}.get(kind, "unknown")
 
 
-def generate(schema):
-    lines = ["// Generated from contracts/openapi.json. Regenerate; do not hand-edit.",
+def generate(schema, source="contracts/openapi.json"):
+    lines = [f"// Generated from {source}. Regenerate; do not hand-edit.",
              "// Amounts use integer CNY cents, energy Wh; date ranges are [startDate,endDate).", ""]
     for name, value in sorted(schema.get("components", {}).get("schemas", {}).items()):
         lines.append("export type " + identifier(name) + " = " + ts(value) + ";")

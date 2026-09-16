@@ -31,6 +31,9 @@ import AutoHideHeader from "./components/AutoHideHeader.vue";
 import OriginPicker from "./components/OriginPicker.vue";
 import RecommendationRoute from "./components/RecommendationRoute.vue";
 import { createRoutePreview } from "./routePreview";
+import AdvisorSidebar from "./components/AdvisorSidebar.vue";
+import { advisorTarget } from "./advisor";
+import type { DashboardScope } from "./dashboardScope";
 
 type Tab = "dashboard" | "explore" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -41,6 +44,11 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 ];
 const tab = ref<Tab>("dashboard");
 const dashboardPresentation = ref(false);
+const dashboardInitialSection = ref<'overview' | 'space'>('overview');
+const dashboardInitialScope = ref<DashboardScope>();
+const dashboardNavigation = ref(0);
+const insightsInitialTarget = ref<'churn' | 'anomalies'>('churn');
+const insightsNavigation = ref(0);
 const labSection = ref('forecast');
 const labSections = [
   { id: 'forecast', label: '负荷与空闲预测', description: '未来 1 / 6 / 24 小时' },
@@ -48,6 +56,20 @@ const labSections = [
   { id: 'arrival', label: '到站模型', description: '可用性与等待预测依据' },
   { id: 'experiments', label: '策略对比', description: '最近站 vs. 智能推荐' },
 ];
+function navigateFromAdvisor(target: unknown, scope: DashboardScope) {
+  if (!advisorTarget(target)) return;
+  if (target === 'overview' || target === 'advanced') {
+    dashboardInitialScope.value = { ...scope };
+    dashboardInitialSection.value = target === 'advanced' ? 'space' : 'overview';
+    dashboardNavigation.value++;
+    dashboardPresentation.value = false;
+    tab.value = 'dashboard';
+  } else {
+    if (target === 'anomalies') { insightsInitialTarget.value = 'anomalies'; insightsNavigation.value++; }
+    labSection.value = target === 'models' ? 'forecast' : 'insights';
+    tab.value = 'lab';
+  }
+}
 const boot = ref<Bootstrap>();
 const stations = ref<Station[]>([]);
 const cityId = ref("");
@@ -570,7 +592,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" />
+      <AnalyticsDashboard v-if="tab === 'dashboard'" :key="dashboardNavigation" v-model:presentation="dashboardPresentation" :initial-section="dashboardInitialSection" :initial-scope="dashboardInitialScope" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">
@@ -995,7 +1017,7 @@ onBeforeUnmount(() => {
         </section>
         <WorkspaceTabs v-model="labSection" :items="labSections" label="智能分析分区" />
         <KeepAlive><ForecastPanel v-if="labSection === 'forecast'" /></KeepAlive>
-        <KeepAlive><ManagementInsights v-if="labSection === 'insights'" /></KeepAlive>
+        <KeepAlive :max="1"><ManagementInsights v-if="labSection === 'insights'" :key="insightsNavigation" :initial-target="insightsInitialTarget" /></KeepAlive>
         <div v-if="labSection === 'arrival'" class="lab-grid single-evidence workspace-content">
           <section class="card model-card">
             <div class="section-top">
@@ -1468,6 +1490,7 @@ onBeforeUnmount(() => {
         ><span>预测不等于资源预约</span>
       </div>
     </footer>
+    <AdvisorSidebar @navigate="navigateFromAdvisor" />
     <Transition name="toast"
       ><div v-if="toast" class="toast-message" role="status">
         <Icon name="check" :size="18" />{{ toast }}

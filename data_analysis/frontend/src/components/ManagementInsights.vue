@@ -4,7 +4,8 @@ import Icon from './Icon.vue';
 import { AnalyticsError, formatValue as n, fraction, publishedRequest } from '../analytics';
 import type { Dataset, RecordData } from '../analytics';
 import '../intelligence-layout.css';
-const target = ref<'churn' | 'anomalies'>('churn'); const dataset = ref<Dataset>(); const report = ref<RecordData>();
+const props = withDefaults(defineProps<{ initialTarget?: 'churn' | 'anomalies' }>(), { initialTarget: 'churn' });
+const target = ref<'churn' | 'anomalies'>(props.initialTarget); const dataset = ref<Dataset>(); const report = ref<RecordData>();
 const listing = ref<RecordData>(); const selected = ref<RecordData>(); const query = ref(''); const error = ref('');
 const loading = ref(false); const detailLoading = ref(false); let sequence = 0; let detailSequence = 0; let alive = true;
 let controller: AbortController | undefined; let detailController: AbortController | undefined;
@@ -50,6 +51,7 @@ async function inspect(id: string) {
   } catch (failure) { if (alive && current === detailSequence && !(failure instanceof AnalyticsError && failure.code === 'CANCELLED')) error.value = failure instanceof Error ? failure.message : '详情加载失败。'; }
   finally { if (alive && current === detailSequence) detailLoading.value = false; }
 }
+watch(() => props.initialTarget, value => { target.value = value; });
 watch(target, load); onMounted(load); onBeforeUnmount(() => { alive = false; sequence++; detailSequence++; controller?.abort(); detailController?.abort(); });
 </script>
 <template>
