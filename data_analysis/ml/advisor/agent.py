@@ -13,6 +13,13 @@ import json
 from . import config, tools
 
 
+# 代码层封顶(不靠提示词自觉):一次提问至多 1 次跳转、至多 2 次预填
+# (覆盖"开始/结束日期各填一条"的合法问句)。模型多轮/并行重复调用一律被裁掉,
+# 与 SYSTEM/SPEC 对用户的承诺一致;裁剪只发生在收集层,工具回执不改。
+MAX_NAVIGATE = 1
+MAX_FILL = 2
+
+
 def _collect_actions(payload: str, sink: list[dict]) -> None:
     """页面动作凭证:只认 page_action 工具返回里的 ui_actions(模型正文说破天也不作数)。"""
     try:
@@ -21,8 +28,14 @@ def _collect_actions(payload: str, sink: list[dict]) -> None:
         return
     if isinstance(obj, dict) and obj.get("ok") and isinstance(obj.get("ui_actions"), list):
         for a in obj["ui_actions"]:
-            if isinstance(a, dict) and a not in sink:
-                sink.append(a)
+            if not isinstance(a, dict) or a in sink:
+                continue
+            kind = a.get("kind")
+            if kind == "navigate" and sum(x.get("kind") == "navigate" for x in sink) >= MAX_NAVIGATE:
+                continue
+            if kind == "fill" and sum(x.get("kind") == "fill" for x in sink) >= MAX_FILL:
+                continue
+            sink.append(a)
 
 
 def _collect_citations(payload: str, sink: list[str]) -> None:
@@ -55,8 +68,9 @@ SYSTEM = (
     "2) 你的数据工具全部只读,不能训练、不能修改任何数据、不能执行写操作;"
     "唯一的界面动作是页面引导工具(打开用户点名的页面/把用户给的内容填进输入框),"
     "它同样不写任何数据、不会代为提交。仅当用户明确说『打开/切换到某页』或"
-    "『把某内容填入某输入框』时才调用,一次提问至多一次;纯数据问答严禁调用。"
-    "调用后正文用一句人话交代即可,不要复述内部字段名或编造执行结果。"
+    "『把某内容填入某输入框』时才调用,一次提问至多一次跳转、至多两次预填"
+    "(超出会被系统丢弃);纯数据问答严禁调用。填入要用户在页面上点确认后才真正发生,"
+    "正文只说『已备好填入,点回答下方芯片确认』,不要说已经填进去了。"
     "3) 平台模型成绩均来自合成/模拟数据集,回答必须保留『模拟数据测试结果』这一表述上限。"
     "4) 中文回答,面向管理者:先结论后依据,≤300 字,可用简短列表。"
     "5) 不知道 model_id/station_id 时,先用 list_models 或 query_alerts 观察,再决定下一步。"

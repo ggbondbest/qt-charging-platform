@@ -91,6 +91,8 @@ _CITE_TAG_RE = re.compile(r"[\[（(]\s*(?:来源|出处)\s*(?:[:：][^\]）)]{0,
 # 验收补交的三层防线:
 # ① Windows 绝对路径与点分模块名(异常原文里解释器自带的,含用户名/桌面目录)
 _ABS_WIN_RE = re.compile(r"[A-Za-z]:[\\/][^\s\"'`,;)\]（）]+")
+# 同族的 POSIX 绝对路径(WSL/Linux/Mac 队友机器上的异常原文同样含用户名/目录结构)
+_ABS_NIX_RE = re.compile(r"/(?:home|Users|root|mnt|var|tmp|opt)/[^\s\"'`,;)\]（）]*")
 _MODULE_RE = re.compile(
     r"\b(?:data_analysis|outputs|datasets|clean|raw|advisor|anomaly)(?:\.[\w\-]+)+\b")
 # ② 模型复读禁规清单时吐出的裸词:扩展名/内部别名/条款编号/环境变量/供应商/凭据残片
@@ -107,6 +109,7 @@ def scrub(text: str) -> str:
     """正文安全网:模型没听话时,由代码替它守规矩。"""
     out = text
     out = _ABS_WIN_RE.sub("本机路径(已隐去)", out)
+    out = _ABS_NIX_RE.sub("本机路径(已隐去)", out)
     out = _PATH_RE.sub(lambda m: label_for(m.group(0).rstrip(".")), out)
     out = _BARE_FILE_RE.sub(lambda m: _file_label(m.group(0)), out)
     out = _MODULE_RE.sub("内部代码模块", out)
@@ -149,13 +152,33 @@ def _narrow_action(a: dict) -> dict | None:
     return None
 
 
+def _cap_actions(seq) -> list[dict]:
+    out: list[dict] = []
+    nav = fill = 0
+    for x in seq:
+        if not x:
+            continue
+        if x["kind"] == "navigate":
+            nav += 1
+            if nav > 1:
+                continue
+        else:
+            fill += 1
+            if fill > 2:
+                continue
+        out.append(x)
+    return out
+
+
 def humanize(result: dict) -> dict:
     """agent.ask 的返回 → 桌宠可安全展示的形态(默认不带 raw 路径/后端名/模型名)。"""
     backend = result.get("backend", "")
     out = {
         "answer": scrub(result.get("answer", "")),
         "sources": list(dict.fromkeys(label_for(c) for c in result.get("citations", []))),
-        "actions": [x for x in (_narrow_action(a) for a in (result.get("actions") or [])) if x],
+        # 出境侧再封一次顶(与 agent 收集层同一承诺:navigate≤1、fill≤2)。
+        # 防线不叠不能算完——收集层若被绕过,这里兜住,前端只会看到 ≤3 条芯片。
+        "actions": _cap_actions(_narrow_action(a) for a in (result.get("actions") or [])),
         "rounds": result.get("rounds"),
         "mode": "offline" if backend == "mock" else "online",
         "tools": [{"round": t.get("round"), "tool": t.get("tool")} for t in result.get("trace", [])],

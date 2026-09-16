@@ -132,7 +132,8 @@ def page_action(kind=None, target=None, value=None) -> str:
 # 工具规约(注册进 tools.REGISTRY;描述里只有中文页名,不给内部 id,防复读泄露)
 SPEC = {
     "description": ("页面引导(仅当用户明确要求打开/切换某页,或要求把某内容填入某输入框时调用;"
-                    "数据问答严禁调用,一次提问至多一次)。kind=navigate 时 target 从这些页面里选:"
+                    "数据问答严禁调用;一次提问至多一次跳转、至多两次预填,超出会被系统丢弃)。"
+                    "kind=navigate 时 target 从这些页面里选:"
                     + "、".join(t["label"] for t in manifest()["_nav"].values())
                     + ";kind=fill 时 target 从这些输入框里选:"
                     + "、".join(t["label"] for t in manifest()["_fill"].values())

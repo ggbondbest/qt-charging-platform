@@ -190,7 +190,8 @@ def lookup_weather_calendar(city_id: str, date: str) -> str:
     cal["d"] = pd.to_datetime(cal["business_date"].astype(str)).dt.strftime("%Y-%m-%d")
     crow = cal[(cal["city_id"] == city_id) & (cal["d"] == date)]
     if day.empty:
-        return _err(f"weather_hourly 无 {city_id} {date} 记录(数据窗 2025-12-01~2026-05-30 内才有)")
+        # 错误文本会被 mock/真模型逐字转述进正文,裸表名不许出现在这里(scrub 不遮表名)
+        return _err(f"天气观测记录里没有 {city_id} {date} 的数据(数据窗 2025-12-01~2026-05-30 内才有)")
     out = {"city_id": city_id, "date": date,
            "weather": {"temp_min": round(float(day["temperature_c"].min()), 1),
                        "temp_max": round(float(day["temperature_c"].max()), 1),
@@ -222,7 +223,7 @@ def queue_summary(station_id: str, date: str | None = None) -> str:
     if date:
         sel = sel[sel["d"] == date]
     if sel.empty:
-        return _err(f"queue_entries 无 {station_id} {date or ''} 记录")
+        return _err(f"排队记录里没有 {station_id} {date or ''} 的记录")
     waited = sel.dropna(subset=["called_at"])
     wait_min = (pd.to_datetime(waited["called_at"]) - pd.to_datetime(waited["joined_at"])).dt.total_seconds() / 60
     return _dump({"station_id": station_id, "date": date or "全部",
@@ -251,7 +252,7 @@ def review_feedback(station_id: str, limit: int = 10) -> str:
     r = _clean("reviews")
     sel = r[r["station_id"] == station_id]
     if sel.empty:
-        return _err(f"reviews 无 {station_id} 记录")
+        return _err(f"用户评价里没有 {station_id} 的记录")
     return _dump({"station_id": station_id, "n": int(len(sel)),
                   "rating_mean": round(float(sel["rating"].mean()), 2),
                   "issue_types": sel["issue_type"].value_counts().head(8).to_dict(),

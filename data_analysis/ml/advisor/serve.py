@@ -6,11 +6,19 @@
 
 路由:
   GET  /health          → 后端/模型/工件就绪状态(桌宠启动时探测)
-  POST /advisor/ask     → {"question":"...", "backend":"mock|openai|anthropic"(可选)}
-  GET  /advisor/ask?q=… → 同上的 curl 便车
+  POST /advisor/ask     → {"question":"...", "backend":"mock"(可选,只允许降级到离线演示)}
 
 红线与 driver 一致:只读工具、引用收集、无依据就说无依据。
 CORS 放开是为了 vite(5173)能直连;服务只绑 127.0.0.1,不出机器。
+
+CSRF 闸门(评审实锤:CORS 只挡"读回答",挡不住恶意网页静默"执行"):
+ - GET /advisor/ask 快捷通道已删除——<img src> 是无预检、无 Origin 的普通子资源
+   请求,任何防头策略都拦不住它;curl 便车改走 driver CLI。
+ - POST 必须 Content-Type: application/json —— form(text/plain) 简单请求不触发
+   预检,收紧类型后跨站 form 拼不出合法请求体。
+ - 带 Origin 头的请求必须是本机来源(无 Origin 的非浏览器客户端如 curl 不受影响)。
+ - backend 参数只认 "mock":请求方可以把在线降为离线演示,绝不允许反过来拿
+   .env/环境残留凭据强制起在线计费调用(在线/离线由操作员在 .env/面板下拉里定)。
 """
 from __future__ import annotations
 
@@ -20,12 +28,24 @@ import re
 import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from . import config
 
 _PORT = int(os.environ.get("ML_ADVISOR_PORT", "8765"))
 _LOCAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+
+
+def origin_allowed(origin: str | None) -> bool:
+    """无 Origin(非浏览器客户端)放行;带 Origin 必须是本机来源——
+    浏览器跨站请求一定带 Origin,<img>/<form> 都伪造不了也省不掉它。"""
+    return not origin or bool(_LOCAL_ORIGIN.match(origin))
+
+
+def request_backend(value) -> str | None:
+    """客户端 backend 参数只允许把在线降为 mock(离线演示),其余一律忽略回落
+    操作员配置——防拿 .env/环境残留凭据被外部强制起真实计费调用。"""
+    return "mock" if value == "mock" else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -34,8 +54,8 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- 小工具 ----------
 
     def _cors(self) -> None:
-        # 只给本机来源发 CORS 头:演示机浏览器里偶然打开的外站网页,
-        # 不该能静指使本地参谋(烧 key、读回答)。非浏览器客户端不受影响。
+        # 只给本机来源发 CORS 头(挡"读回答");"挡执行"由 do_POST 的
+        # Origin/Content-Type 闸门负责——两者缺一不可,见模块头 CSRF 闸门注释。
         origin = self.headers.get("Origin") or ""
         if _LOCAL_ORIGIN.match(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
@@ -76,13 +96,8 @@ class Handler(BaseHTTPRequestHandler):
                 body["model"] = config.model_id()
             self._json(200, body)
         elif url.path == "/advisor/ask":
-            qs = parse_qs(url.query)
-            question = (qs.get("q") or [""])[0].strip()
-            backend = (qs.get("backend") or [None])[0]
-            if not question:
-                self._json(400, {"error": "缺少 q 参数"})
-            else:
-                self._ask(question, backend)
+            # GET 便车已删:<img src="/advisor/ask?..."> 是无预检简单请求,CSRF 防不住
+            self._json(405, {"error": "请用 POST /advisor/ask(命令行请走 driver)"})
         else:
             self._json(404, {"error": f"未知路径 {url.path}"})
 
@@ -90,6 +105,14 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path != "/advisor/ask":
             self._json(404, {"error": f"未知路径 {url.path}"})
+            return
+        if not origin_allowed(self.headers.get("Origin")):
+            self._json(403, {"error": "拒绝跨站来源的页面动作/提问请求"})
+            return
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            # <form enctype=text/plain> 类简单请求的兜底:类型不对根本不解析 body
+            self._json(415, {"error": "Content-Type 必须是 application/json"})
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -101,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
         if not question:
             self._json(400, {"error": "question 不能为空"})
             return
-        self._ask(question, payload.get("backend"))
+        self._ask(question, request_backend(payload.get("backend")))
 
     def _ask(self, question: str, backend: str | None) -> None:
         from .agent import ask  # 懒导入:pandas/sklearn 在首次提问才加载

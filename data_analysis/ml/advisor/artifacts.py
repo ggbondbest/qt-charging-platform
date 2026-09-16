@@ -25,8 +25,15 @@ def export_alerts(force: bool = False) -> Path:
         print(f"复用已生成:{config.ALERTS_CSV}")
         return config.ALERTS_CSV
     from . import signals_v3  # 定义冻结副本,sklearn 链懒加载;不追队友包内符号
-    b = joblib.load(config.ANOMALY_OUT / "context-weather-fixedthr-v5.joblib")
-    ctx = pd.read_pickle(config.ANOMALY_OUT / "context_signals_v5.pkl")
+    try:
+        b = joblib.load(config.ANOMALY_OUT / "context-weather-fixedthr-v5.joblib")
+        ctx = pd.read_pickle(config.ANOMALY_OUT / "context_signals_v5.pkl")
+    except FileNotFoundError as e:
+        # 新克隆上没有冻结件(outputs/ml_anomaly 是 gitignored 的本地产物)——给明确出路
+        raise FileNotFoundError(
+            f"缺少 v5 冻结工件({config.ANOMALY_OUT}):需要 context-weather-fixedthr-v5.joblib "
+            f"与 context_signals_v5.pkl。请先在异常检测线跑通 train/eval 生成,或向队友索取冻结件。"
+        ) from e
     v3 = signals_v3.session_signals()
     allsig = {k: ctx[k] for k in ("tempW", "cellW", "curDeficit") if k in ctx.columns}
     allsig.update({k: v3[k] for k in ("thermalSpike", "currentJump", "v1Mean")})
@@ -86,12 +93,28 @@ def _chunks(text: str, size: int = 900):
             buf = buf[size:]
 
 
+def _index_rows(db: Path) -> int:
+    """库里有多少文档块;库不存在/被中途打断成半成品(空表、缺表)一律算 0。"""
+    try:
+        con = sqlite3.connect(db)
+        try:
+            return int(con.execute("SELECT COUNT(*) FROM docs").fetchone()[0])
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return 0
+
+
 def build_index(force: bool = False) -> Path:
-    if config.KNOWLEDGE_DB.exists() and not force:
+    if config.KNOWLEDGE_DB.exists() and not force and _index_rows(config.KNOWLEDGE_DB) > 0:
         print(f"复用已生成:{config.KNOWLEDGE_DB}")
         return config.KNOWLEDGE_DB
+    # 走到这里要么库不存在,要么 force,要么上次建到一半留下空表/坏库——
+    # 三种都重建;直接 CREATE 会在已存在库上炸 "table docs already exists"(评审实锤)。
     from .tools import _seg
     con = sqlite3.connect(config.KNOWLEDGE_DB)
+    con.execute("DROP TABLE IF EXISTS docs_fts")
+    con.execute("DROP TABLE IF EXISTS docs")
     con.execute("CREATE TABLE docs(id INTEGER PRIMARY KEY, source TEXT, text TEXT)")
     con.execute("CREATE VIRTUAL TABLE docs_fts USING fts5(text, content=docs, content_rowid=id)")
     rows = []

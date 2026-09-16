@@ -307,8 +307,11 @@ class PageActions(unittest.TestCase):
         a = r["actions"][0]
         self.assertEqual((a["kind"], a["target"], a["value"]),
                          ("fill", "insights-query", "SES-00111676"))  # 逐字,不被改写
-        self.assertIn("SES-00111676", r["answer"])
         self.assertIn("未提交", r["answer"])
+        # 正文刻意不内联 value:此刻还没填(点芯片才执行),且正文过 scrub、
+        # 动作不过——内联会造成"说的"与芯片"填的"分叉(评审实锤)。值由芯片逐字展示。
+        self.assertNotIn("SES-00111676", r["answer"])
+        self.assertIn("芯片", r["answer"])
 
     def test_humanize_narrows_and_drops_tampered(self):
         good = {"kind": "navigate", "target": "lab", "route": "lab",
@@ -387,6 +390,129 @@ class PageActions(unittest.TestCase):
                 n = int(_re.search(r"nth-child\((\d+)\)", t["selector"]).group(1))
                 self.assertEqual(labs_list[n - 1], t["section"],
                                  f"分区顺序漂移:{t['id']} 指第 {n} 位,{labs_list}")
+
+
+    def test_serve_http_guards(self):
+        """评审实锤的 CSRF 面:Origin 闸、Content-Type 锁 JSON、backend 只许降不许升、
+        GET 便车删净——四条各钉一枚(真回环随机端口,不触发 LLM 请求)。"""
+        import threading
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+        from data_analysis.ml.advisor import serve
+        # 纯函数层
+        self.assertTrue(serve.origin_allowed(None))          # 非浏览器客户端(curl/driver)
+        self.assertTrue(serve.origin_allowed("http://localhost:5173"))
+        self.assertTrue(serve.origin_allowed("http://127.0.0.1:8765"))
+        self.assertFalse(serve.origin_allowed("https://evil.example"))
+        self.assertFalse(serve.origin_allowed("http://localhost:5173.evil.com"))  # 后缀拼接坑
+        self.assertFalse(serve.origin_allowed("null"))
+        self.assertEqual(serve.request_backend("mock"), "mock")
+        for bad in ("openai", "anthropic", "MOCK", "", None, 42):  # 只认逐字 "mock"
+            self.assertIsNone(serve.request_backend(bad), bad)     # 不许被外部强制起在线计费
+        # 路由层(起真壳打请求)
+        with serve._NoDoubleBind(("127.0.0.1", 0), serve.Handler) as httpd:
+            port = httpd.server_address[1]
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{port}"
+            try:
+                self.assertEqual(urlopen(base + "/health").status, 200)
+                with self.assertRaises(HTTPError) as e:
+                    urlopen(base + "/advisor/ask?q=hi")
+                self.assertEqual(e.exception.code, 405)            # GET 便车已删
+                with self.assertRaises(HTTPError) as e:
+                    urlopen(Request(base + "/advisor/ask", data=b'{"question":"hi"}',
+                                    headers={"Content-Type": "text/plain"}))
+                self.assertEqual(e.exception.code, 415)            # form 简单请求拼不进来
+                with self.assertRaises(HTTPError) as e:
+                    urlopen(Request(base + "/advisor/ask", data=b'{"question":"hi"}',
+                                    headers={"Content-Type": "application/json",
+                                             "Origin": "https://evil.example"}))
+                self.assertEqual(e.exception.code, 403)
+            finally:
+                httpd.shutdown()
+
+    def test_collect_actions_caps_and_dedup(self):
+        """收集层:等值去重 + 封顶(跳转≤1、预填≤2);畸形输入一律不收。"""
+        def payload(acts):
+            return json.dumps({"ok": True, "ui_actions": acts}, ensure_ascii=False)
+        nav = {"kind": "navigate", "target": "lab", "route": "lab", "section": None, "label": "智能分析"}
+        nav2 = {"kind": "navigate", "target": "explore", "route": "explore", "section": None, "label": "智能找站"}
+        f1 = {"kind": "fill", "target": "dash-start", "route": "dashboard", "section": None,
+              "value": "2026-01-01", "label": "统计开始日期"}
+        f2 = dict(f1, target="dash-end", value="2026-01-31", label="统计结束日期")
+        f3 = dict(f1, target="insights-query", value="SES-1", route="lab",
+                  section="insights", label="分析编号查询框")
+        sink: list[dict] = []
+        agent._collect_actions(payload([nav]), sink)
+        agent._collect_actions(payload([nav]), sink)              # 跨轮重复调用:去重
+        self.assertEqual(sink, [nav])
+        agent._collect_actions(payload([nav2]), sink)             # 第二条跳转:封顶丢弃
+        self.assertEqual([a["target"] for a in sink], ["lab"])
+        agent._collect_actions(payload([f1, f2, f3]), sink)       # 预填收两条即封
+        self.assertEqual([a["kind"] for a in sink], ["navigate", "fill", "fill"])
+        self.assertEqual([a["target"] for a in sink][1:], ["dash-start", "dash-end"])
+        sink.clear()
+        agent._collect_actions("not-json", sink)
+        agent._collect_actions(json.dumps({"ok": True}), sink)                       # 缺键
+        agent._collect_actions(json.dumps({"ok": True, "ui_actions": "x"}), sink)    # 非列表
+        agent._collect_actions(payload(["string", 42]), sink)  # 非 dict 元素不收
+        self.assertEqual(sink, [])
+        # 缺 target 的 dict 会进 sink——设计如此:收集层只收 page_action 工具回执形状,
+        # 语义终闸在 actions.normalize(工具层已拦)与 friendly._narrow_action(出境必丢,
+        # 见 test_humanize_narrows_and_drops_tampered),这里不做重复校验
+        agent._collect_actions(payload([{"kind": "navigate"}]), sink)
+        self.assertEqual(sink, [{"kind": "navigate"}])
+
+    def test_humanize_caps_actions(self):
+        """出境层再封一次顶:绕过收集层也最多 1 跳转 + 2 预填;label 永远注册表版。"""
+        nav = {"kind": "navigate", "target": "lab", "route": "lab",
+               "section": None, "label": "点这里领 100 元"}
+        fills = [{"kind": "fill", "target": "insights-query", "route": "lab",
+                  "section": "insights", "value": f"SES-{i}"} for i in range(4)]
+        h = friendly.humanize({"answer": "x", "citations": [],
+                               "actions": [nav, dict(nav), *fills],
+                               "rounds": 1, "backend": "mock", "trace": []})
+        self.assertEqual([a["kind"] for a in h["actions"]], ["navigate", "fill", "fill"])
+        self.assertEqual(h["actions"][0]["label"], "智能分析")
+
+    def test_tools_error_texts_no_bare_table_names(self):
+        """工具 error 会被 mock/真模型逐字转述进正文(scrub 不遮裸表名)——
+        错误文案必须人话化,这条钉死三个重灾区。"""
+        for tool, args in (("queue_summary", {"station_id": "ST-BJ-99"}),
+                           ("lookup_weather_calendar", {"city_id": "C9", "date": "2026-01-01"}),
+                           ("review_feedback", {"station_id": "ST-BJ-99"})):
+            err = json.loads(tools.execute(tool, args)).get("error", "")
+            self.assertTrue(err, f"{tool} 应返回 error 文案")
+            for bare in ("queue_entries", "weather_hourly", "reviews", "clean/"):
+                self.assertNotIn(bare, err, f"{tool} 错误文案泄露裸表名:{err}")
+
+    def test_scrub_posix_absolute_paths(self):
+        # 评审补刀:绝对路径网不能只捞 Windows 盘符,WSL/Linux 队友的报错同样含用户名
+        dirty = ("Traceback: File \"/home/ling/.venv/lib/site.py\" line 9, in <module>\n"
+                 "打开 /mnt/c/Users/ling/Desktop/某文件 失败")
+        clean = friendly.scrub(dirty)
+        for leak in ("/home/", "/mnt/", "ling", ".venv", "site.py"):
+            self.assertNotIn(leak, clean, clean)
+
+    def test_frontend_dom_anchors_match_manifest(self):
+        """selector 对账补洞(评审 major):三拷贝字符串互证只钉住 JSON/TS/App.vue
+        脚本数组;真正拥有 DOM 的是子组件模板——队友下一次 #76 式改名必须让 CI 红,
+        而不是让用户运行时得到"输入框还没出现"。"""
+        import re
+        from pathlib import Path
+        fe = Path(actions.__file__).parent.parent.parent / "frontend" / "src"
+        blob = "\n".join(p.read_text(encoding="utf-8") for p in sorted(fe.rglob("*.vue")))
+        m = actions.manifest()
+        for anchor in ("primary-header", "main-nav", "workspace-tabs", "智能分析分区", "app-shell"):
+            self.assertIn(anchor, blob, f"跳转容器锚点在模板里查无:{anchor}")
+        for t in list(m["_nav"].values()) + list(m["_fill"].values()):
+            for tok in re.findall(r"[.#]([\w-]+)", t["selector"]):
+                self.assertIn(tok, blob, f"{t['id']} 的 selector 锚点 {tok!r} 在 .vue 源文本里查无此物")
+            for lab in re.findall(r'aria-label="([^"]+)"', t["selector"]):
+                self.assertIn(lab, blob, f"{t['id']} 的 aria-label 漂移:{lab}")
+        # 执行器依赖的交互锚点(scrollAfter 与就绪门控,清单不携带,单独钉)
+        for anchor in ("paired-experiment-results", "insights-grid", "预测电站", "intelligence-inline-error"):
+            self.assertIn(anchor, blob, f"交互锚点漂移:{anchor}")
 
 
 @unittest.skipUnless(NEED_ARTIFACTS and os.environ.get("ML_ADVISOR_LIVE") == "1",

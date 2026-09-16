@@ -144,12 +144,16 @@ class MockBackend:
                 if "error" in o:
                     continue
                 if name == "page_action":
-                    # 专属分支:不 JSON dump、不拼 [来源];label 已在服务端由注册表 resolve
+                    # 专属分支:不 JSON dump、不拼 [来源];label 已在服务端由注册表 resolve。
+                    # fill 行刻意**不内联 value**:此刻还没填(要点芯片确认才执行),
+                    # 且正文过 scrub、动作 value 不过——内联会造成"说的"与芯片"填的"分叉
+                    # (评审实锤),要填什么由芯片逐字展示。
                     for a in o.get("ui_actions", []):
                         if a.get("kind") == "navigate":
                             lines.append(f"已为你跳转到「{a['label']}」页。")
                         else:
-                            lines.append(f"已在「{a['label']}」填入:{a['value']}(未提交,请你亲手点查询)。")
+                            lines.append(f"已备好「{a['label']}」的填入内容——"
+                                         f"点回答下方的填入芯片确认才会真正写入(未提交,查询由你亲手点)。")
                 elif name == "read_test_metrics":
                     t = o.get("test") or {}
                     if t:
