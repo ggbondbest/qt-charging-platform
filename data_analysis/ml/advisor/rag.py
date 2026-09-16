@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from data_analysis.backend import service as backend_service
 from data_analysis.backend.errors import ApiError
-from . import knowledge, llm
+from . import analysis, knowledge, llm
 
 TOPIC_QUESTIONS = {
     "overview": "运营概况",
@@ -63,7 +63,7 @@ def _scope(snapshot, filters):
     safe.update(city=str(selected_city["city_name"]) if selected_city else "全部已发布城市",
                 station=str(selected_station["station_name"]) if selected_station else "全部符合筛选的电站",
                 availableCities=[str(row["city_name"]) for row in cities][:100],
-                rangePolicy="页面筛选为权威，结束日期不包含当天；正文和历史不能改变范围。模型评测另用固定历史留出样本。")
+                rangePolicy="页面筛选为当前范围，结束日期不包含当天；正文和历史不能改变范围。仅明确标注为紧邻等长前期的证据可用于前期比较，不能混充当前值。模型评测另用固定历史留出样本。")
     replacements = {str(metadata["datasetId"]): "当前数据集", str(metadata["publishedBatchId"]): "当前发布批次"}
     replacements.update({str(row["station_id"]): str(row["station_name"]) if str(row["station_id"]) not in str(row["station_name"])
                          else "电站" + str(index + 1) for index, row in enumerate(stations)})
@@ -139,8 +139,7 @@ def _safe_evidence(item, replacements):
     url = urlsplit(item["source"]["endpoint"])
     params = [(key, value) for key, value in parse_qsl(url.query) if key in {"startDate", "endDate"}]
     endpoint = url.path + ("?" + urlencode(params) if params else "")
-    field = re.sub(r"stationId=[^\]]+", "候选站点=" + item["id"].split(".")[-1].split("_")[1], item["source"]["field"]) if "stationId=" in item["source"]["field"] else item["source"]["field"]
-    result["source"] = {"endpoint": endpoint, "field": _clean_text(field, replacements)}
+    result["source"] = {"endpoint": endpoint, "field": _clean_text(item["source"]["field"], replacements)}
     return result
 
 
@@ -160,10 +159,11 @@ def answer(snapshot, provider, query, *, settings, deadline=None, cancelled=None
         return result
     question = _clean_text(query.question, replacements)
     original_history = _history(query)
-    history = [{**row, "content": _clean_text(row["content"], replacements)} for row in original_history]
+    history = [{**row, "content": llm.without_history_citations(_clean_text(row["content"], replacements))}
+               for row in original_history]
     safe_scope = {key: [_clean_text(item, replacements) for item in value] if isinstance(value, list)
                   else _clean_text(value, replacements) for key, value in safe_scope.items()}
-    plan = llm.plan_query(settings, question, history, safe_scope, timeout=_remaining(deadline, cancelled))
+    plan = llm.plan_query(settings, question, history, safe_scope, timeout=_remaining(deadline, cancelled), cancelled=cancelled)
     _remaining(deadline, cancelled)
     if (not isinstance(plan, dict) or not isinstance(plan.get("kind"), str)
             or plan["kind"] not in {"chat", "analysis", "explanation", "unsupported"}
@@ -172,6 +172,25 @@ def answer(snapshot, provider, query, *, settings, deadline=None, cancelled=None
         raise _invalid()
     kind = plan["kind"]
     topics = list(dict.fromkeys(plan["topics"]))
+    # A polite "thanks, summarize the analysis above" is still a data request.
+    # If the model calls it chat, reuse only allowed topic names from the past
+    # assistant's references, then fetch fresh CURRENT-scope evidence. No old
+    # numeric value, reference ID or scope is accepted as a new fact.
+    if (kind == "chat" and re.search(r"总结|概括|精简|简化|简短|三句话|换句话", question)
+            and re.search(r"(?:刚才|前面|上面|之前).{0,8}(?:分析|数据|结论|建议|统计|策略|回答|内容|信息)|"
+                          r"(?:上述|这些)(?:分析|数据|结论|建议|统计|策略)", question)):
+        prior_topics = []
+        for row in reversed(original_history):
+            if row["role"] != "assistant":
+                continue
+            for identifier in llm.INLINE_CITATION.findall(row["content"]):
+                topic = identifier.split(".", 1)[0]
+                if topic in TOPIC_QUESTIONS and topic not in prior_topics:
+                    prior_topics.append(topic)
+            if prior_topics:
+                break
+        if prior_topics:
+            kind, topics = "analysis", prior_topics[:3]
     result["intent"] = kind if kind in {"chat", "unsupported"} else "+".join(topics) or "explanation"
     conflict = None
     if kind != "chat" or METRIC_QUESTION.search(query.question):
@@ -184,28 +203,35 @@ def answer(snapshot, provider, query, *, settings, deadline=None, cancelled=None
         # An incorrect model plan must not route a metric question around RAG.
         raise _invalid()
     if kind != "chat":
-        batches = []
-        observed = False
-        for topic in topics:
+        packet = analysis.build_analysis(snapshot, filters, topics, deadline=deadline, cancelled=cancelled)
+        observed = packet["observed"]
+        result["evidence"].extend(packet["evidence"])
+        for key in ("limitations", "suggestions"):
+            result[key].extend(item for item in packet[key] if item not in result[key])
+        if "models" in topics:
             _remaining(deadline, cancelled)
-            canonical = SimpleNamespace(question=TOPIC_QUESTIONS[topic], mode="offline", history=[],
+            canonical = SimpleNamespace(question=TOPIC_QUESTIONS["models"], mode="offline", history=[],
                 **{key: getattr(query, key, None) for key in ("datasetId", "publishedBatchId", "cityId", "stationId", "startDate", "endDate")})
             data = service.answer(snapshot, provider, canonical, settings=None)
             observed |= data["status"] == "answered"
-            if data["status"] == "no_evidence":
-                result["limitations"].append(TOPIC_QUESTIONS[topic] + "：当前范围没有足够可用记录，不能据此作出数据判断。")
-            batches.append([{**item, "id": topic + "." + item["id"]} for item in data["evidence"]])
+            result["evidence"].extend({**item, "id": "models." + item["id"]} for item in data["evidence"])
             for key in ("limitations", "suggestions"):
                 for item in data[key]:
                     if item not in result[key]:
                         result[key].append(item)
-        # Round robin keeps every planned topic represented inside the hard cap.
-        for index in range(max((len(batch) for batch in batches), default=0)):
-            for batch in batches:
-                if index < len(batch) and len(result["evidence"]) < 36:
-                    result["evidence"].append(batch[index])
-        retrieval_question = question + " " + " ".join(row["content"] for row in history[-2:])
-        result["knowledge"] = knowledge.retrieve(retrieval_question, topics)
+        if len(result["evidence"]) > 64 or len({item["id"] for item in result["evidence"]}) != len(result["evidence"]):
+            raise _invalid()
+        # The current question wins; a long previous answer must not crowd out
+        # the new topic. History may only fill remaining lexical-match slots.
+        result["knowledge"] = knowledge.retrieve(question, topics)
+        if len(result["knowledge"]) < 4:
+            known = {row["id"] for row in result["knowledge"]}
+            for item in knowledge.retrieve(" ".join(row["content"] for row in history[-2:]), topics):
+                if item["id"] not in known:
+                    result["knowledge"].append(item)
+                    known.add(item["id"])
+                if len(result["knowledge"]) == 4:
+                    break
         if (kind == "analysis" and not observed) or (not result["evidence"] and not result["knowledge"]):
             result.update(status="no_evidence", answer="当前范围没有足够的已发布聚合或项目知识支持这个判断。请调整页面筛选或补充具体的指标问题；不会据缺失记录编造结论。")
             return result

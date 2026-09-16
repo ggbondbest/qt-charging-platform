@@ -142,7 +142,7 @@ def create_app(database_path=None, *, mysql_settings=None, prediction_provider=N
                      operation_id="dashboardAdvanced")
     def advanced(request: Request, query: Annotated[AdvancedQuery, Query()], snapshot=Depends(database)):
         filters = service.check_filters(snapshot, query)
-        return envelope(request, advanced_analysis(snapshot.metadata, filters, query.siteType))
+        return envelope(request, advanced_analysis(snapshot.metadata, filters, query.siteType, snapshot=snapshot))
 
     @application.get("/api/v1/models", response_model=Envelope[ModelCapabilities], responses=errors, operation_id="modelCapabilities")
     def models(request: Request, query: Annotated[BatchQuery, Query()], snapshot=Depends(database)):

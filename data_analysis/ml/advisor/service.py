@@ -11,15 +11,15 @@ from data_analysis.backend import advanced, service
 from data_analysis.backend.errors import ApiError
 
 QUESTIONS = [
-    {"id": "bottlenecks", "label": "运营瓶颈", "question": "当前范围的充电服务瓶颈是什么？"},
-    {"id": "stations", "label": "站点比较", "question": "比较当前范围各站的成功率、等待与利用率"},
-    {"id": "behavior", "label": "补能行为", "question": "不同用户类型的补能间隔和单次电量有何差异？"},
+    {"id": "bottlenecks", "label": "先改哪里", "question": "分析当前范围的服务瓶颈，按优先级给出两项改进建议和验证指标。"},
+    {"id": "stations", "label": "站点差异", "question": "哪些站需要优先关注？与对照站比较，说明差异和待核实原因。"},
+    {"id": "behavior", "label": "人群策略", "question": "不同用户类型的补能行为有何差异？结合样本给出分群运营建议。"},
     {"id": "models", "label": "模型说明", "question": "目前有哪些模型，它们能说明什么？"},
 ]
 DISCLOSURE = ("离线问答在本服务内计算。在线对话会将本次问题、最近最多6条对话历史、当前页面筛选说明、"
               "检索到的项目知识片段及有限聚合指标发送给已配置的在线模型，由模型生成回答。"
               "不会读取或外发用户与会话明细、密钥或完整工件；请勿在问题中填写个人信息或凭据。"
-              "业务数据均为模拟数据；每次在线提问需单独同意。")
+              "业务数据均为模拟数据；选择在线模式并点击发送即使用上述在线处理。")
 TARGETS = {"overview": "查看运营总览", "advanced": "查看多维分析", "models": "查看模型分析", "anomalies": "查看用户与异常"}
 MIN_COMPARISON_ATTEMPTS = 30
 SITE_LABELS = {"OFFICE": "办公园区", "SHOPPING": "商业中心", "MALL": "商业中心", "RESIDENTIAL": "居民社区",
@@ -36,7 +36,8 @@ SCOPE_WORDS = (
     "优先关注 优先复核 关注 复核 比较 对比 各站 哪些电站 哪些站 哪个站 电站 站点 "
     "不同用户类型 用户类型 用户 家庭 通勤 网约车 营运车队 补能间隔 充电间隔 回访间隔 补能行为 补能 "
     "平均 单次 多少 怎样 如何 什么 为什么 是多少 是什么 有何 差异 情况 原因 记录 指标 "
-    "需要 应该 请问 请 查询 查看 解释 看看 统计 分析 总共 分别 哪些 哪个 这个 所有"
+    "需要 应该 请问 请 查询 查看 解释 看看 统计 分析 总共 分别 哪些 哪个 这个 所有 "
+    "按 优先级 两项 改进 建议 验证 对照站 说明 待核实 结合 样本 分群 运营 给出"
 ).split()
 
 
@@ -242,7 +243,7 @@ def answer(snapshot, provider, query, *, settings=None, deadline=None, cancelled
         nav("overview")
 
     elif intent in ("bottlenecks", "stations", "behavior"):
-        data = advanced.analyze(metadata, filters)
+        data = advanced.analyze(metadata, filters, snapshot=snapshot)
         path = "/api/v1/dashboard/advanced"
         if intent == "bottlenecks":
             item = data["service"]

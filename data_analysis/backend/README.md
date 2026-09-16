@@ -16,6 +16,10 @@ python -m unittest data_analysis.tests.test_analytics_api -v
 
 按 [MySQL 接入说明](../docs/mysql_setup.md) 安装 MySQL 8.4，并用导入账号执行 `publishing.mysql_publish`。API 终端配置 `ANALYTICS_MYSQL_HOST`、`ANALYTICS_MYSQL_PORT`、`ANALYTICS_MYSQL_DATABASE`、`ANALYTICS_MYSQL_USER`、`ANALYTICS_MYSQL_PASSWORD`，使用仅有该库 SELECT 权限的账号。密码交互输入，不提交仓库。
 
+完整七表高级统计可按 [追加安装说明](../docs/mysql_setup.md#追加七表高级统计) 使用 `publishing.advanced_mysql` 安装到已有匹配批次，保留原查询表。
+高级分析优先读取同一只读快照中的数据库副本，仅整个扩展未安装时使用已校验文件包；部分安装、损坏或错批均报错。
+全部聚合留本地，在线参谋按问题取有界分析证据，不外发完整七表。
+
 一个数据库只对应一个数据集与一个已发布批次；更新时先发布并验证新库，再切换数据库名并重启服务。默认入口不再读取 `ANALYTICS_DB` 或自动退回 SQLite；缺少 MySQL 配置或未完成发布明确返回 503。显式传入 SQLite 文件路径的 `create_app` 仅保留给离线兼容与旧测试。
 
 ```text
