@@ -110,6 +110,7 @@ class MockEndToEnd(unittest.TestCase):
         self.assertIn("无依据", r["answer"])
 
 
+@unittest.skipUnless(HAVE_DEPS, "advisor deps missing")
 class ProtocolRender(unittest.TestCase):
     """中立 transcript → 两种线上格式的结构差异必须在这里消化,别漏到循环里。"""
 
