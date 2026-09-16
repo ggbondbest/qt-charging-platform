@@ -33,6 +33,7 @@ import RecommendationRoute from "./components/RecommendationRoute.vue";
 import { createRoutePreview } from "./routePreview";
 import OperationsAdvisor from "./components/OperationsAdvisor.vue";
 import { advisorTarget } from "./advisor";
+import type { DashboardScope } from "./dashboardScope";
 
 type Tab = "dashboard" | "explore" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -44,6 +45,7 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 const tab = ref<Tab>("dashboard");
 const dashboardPresentation = ref(false);
 const dashboardInitialSection = ref<'overview' | 'space'>('overview');
+const dashboardInitialScope = ref<DashboardScope>();
 const insightsInitialTarget = ref<'churn' | 'anomalies'>('churn');
 const insightsNavigation = ref(0);
 const labSection = ref('forecast');
@@ -54,9 +56,10 @@ const labSections = [
   { id: 'experiments', label: '策略对比', description: '最近站 vs. 智能推荐' },
   { id: 'advisor', label: 'AI运营参谋', description: '运营问题 · 数据证据' },
 ];
-function navigateFromAdvisor(target: unknown) {
+function navigateFromAdvisor(target: unknown, scope: DashboardScope) {
   if (!advisorTarget(target)) return;
   if (target === 'overview' || target === 'advanced') {
+    dashboardInitialScope.value = { ...scope };
     dashboardInitialSection.value = target === 'advanced' ? 'space' : 'overview';
     dashboardPresentation.value = false;
     tab.value = 'dashboard';
@@ -588,7 +591,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" :initial-section="dashboardInitialSection" />
+      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" :initial-section="dashboardInitialSection" :initial-scope="dashboardInitialScope" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">

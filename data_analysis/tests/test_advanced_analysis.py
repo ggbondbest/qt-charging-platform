@@ -28,6 +28,12 @@ class AdvancedDefinitionTests(unittest.TestCase):
         self.assertIn("HashAggregate(keys=[station_id], functions=[sum(energy_wh)])", result)
         self.assertIn("Statistics(sizeInBytes=2048, rowCount=121539)", result)
         self.assertEqual(sanitize_spark_plan(result, root), result)
+        # Absolute foreign-host paths are pure text, even when CI runs Windows.
+        from unittest.mock import patch
+        with patch("data_analysis.spark_jobs.advanced_analysis.Path.resolve", side_effect=AssertionError("host resolution")):
+            self.assertEqual(sanitize_spark_plan(plan, root), result)
+        neighbour = "Location: [file:" + root + "_other/clean/sessions]"
+        self.assertEqual(sanitize_spark_plan(neighbour, root), neighbour)
 
     def test_spark_plan_redacts_relative_and_uri_source_roots(self):
         from pathlib import Path
@@ -40,6 +46,33 @@ class AdvancedDefinitionTests(unittest.TestCase):
                                             "hdfs://node:8020/data/clean_batch"),
                          "Location: [${CLEAN_ROOT}/clean/stations]")
         self.assertNotIn(str(resolved), sanitize_spark_plan(plan, resolved.as_uri()))
+        from unittest.mock import patch
+        windows_roots = [r"D:\a\charging platform\datasets\clean_batch",
+                         "D:/a/charging platform/datasets/clean_batch",
+                         "file:///D:/a/charging%20platform/datasets/clean_batch"]
+        windows_plan = (
+            r"Location: [file:D:\a\charging platform\datasets\clean_batch/clean/stations]" + "\n"
+            "Location: [file:/D:/a/charging%20platform/datasets/clean_batch/clean/sessions]\n"
+            "Location: [file:///D:/a/charging%20plat...], PartitionFilters: []\n"
+            r"Location: [file:d:\a\charging plat...], PushedFilters: []" + "\n"
+            "Location: [file:/E:/a/charging...], ReadSchema: struct<energy_wh:bigint>\n"
+            "Location: [file:/D:/unrelated...], PushedFilters: []\n"
+            "Location: [file:/D:/a/charging%20platform/datasets/clean_batch_backup/clean/sessions]")
+        for source in windows_roots:
+            with self.subTest(source=source), patch("data_analysis.spark_jobs.advanced_analysis.Path.resolve",
+                                                   side_effect=AssertionError("host resolution")):
+                actual = sanitize_spark_plan(windows_plan, source)
+                self.assertNotIn(windows_roots[0], actual)
+                self.assertEqual(actual.count("file:${CLEAN_ROOT}..."), 2)
+                self.assertIn("file:${CLEAN_ROOT}/clean/stations", actual)
+                self.assertIn("${CLEAN_ROOT}/clean/sessions", actual)
+                self.assertIn("file:/E:/a/charging...", actual)
+                self.assertIn("file:/D:/unrelated...", actual)
+                self.assertIn("clean_batch_backup/clean/sessions", actual)
+        unc_root = "file://fileserver/share/charging%20platform/datasets/clean_batch"
+        unc_plan = "Location: [file://fileserver/share/charging%20plat...], PushedFilters: []"
+        self.assertEqual(sanitize_spark_plan(unc_plan, unc_root),
+                         "Location: [file:${CLEAN_ROOT}...], PushedFilters: []")
 
     def test_complete_month_boundary_is_shanghai_and_exclusive(self):
         self.assertEqual(complete_months_through("2026-05-29T16:00:00Z"), date(2026, 4, 1))

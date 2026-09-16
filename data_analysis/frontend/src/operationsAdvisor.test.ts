@@ -88,7 +88,9 @@ describe('operations advisor component and HTTP contract', () => {
     expect(root.textContent).toContain('120 次充电会话'); expect(root.textContent).toContain('大连市'); expect(root.textContent).toContain('不含结束日');
     expect(root.textContent).toContain('发布批次 B1'); expect(root.textContent).toContain('/dashboard/overview'); expect(root.textContent).toContain('metrics.sessionCount');
     expect(root.textContent).toContain('模拟历史数据，不能解释因果。'); expect(navigate).not.toHaveBeenCalled();
-    await click('查看运营总览'); expect(navigate).toHaveBeenCalledExactlyOnceWith('overview');
+    await click('查看运营总览'); expect(navigate).toHaveBeenCalledExactlyOnceWith('overview', {
+      datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-25', endDate: '2026-06-01',
+    });
   });
   it('makes online mode unavailable until configured and requires fresh explicit consent per request', async () => {
     config.onlineAvailable = true; config.onlineProvider = '已配置模型';

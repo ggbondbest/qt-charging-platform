@@ -2,12 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { AnalyticsError, formatValue, publishedRequest, shiftDate } from '../analytics';
 import type { Dataset } from '../analytics';
+import type { DashboardScope } from '../dashboardScope';
 import { advisorDatesValid, advisorDestinations, validateAdvisorResponse } from '../advisor';
 import type { AdvisorCapabilities, AdvisorRequest, AdvisorResponse, AdvisorTarget } from '../advisor';
 import Icon from './Icon.vue';
 import '../intelligence-layout.css';
 
-const emit = defineEmits<{ navigate: [target: AdvisorTarget] }>();
+const emit = defineEmits<{ navigate: [target: AdvisorTarget, scope: DashboardScope] }>();
 const dataset = ref<Dataset>();
 const capabilities = ref<AdvisorCapabilities>();
 const cities = ref<{ cityId: string; cityName: string }[]>([]);
@@ -24,6 +25,11 @@ const canAsk = computed(() => !preparing.value && !loading.value && !!capabiliti
   && (mode.value === 'offline' || (capabilities.value.onlineAvailable && consent.value)));
 const scopeCity = computed(() => cities.value.find(city => city.cityId === result.value?.scope.cityId)?.cityName || result.value?.scope.cityId || '全部城市');
 const evidenceValue = (value: unknown) => value == null ? '暂无数据' : typeof value === 'number' ? formatValue(value, Number.isInteger(value) ? 0 : 2) : String(value);
+function navigate(target: AdvisorTarget) {
+  if (!result.value) return;
+  const { datasetId, publishedBatchId, cityId, startDate, endDate } = result.value.scope;
+  emit('navigate', target, { datasetId, publishedBatchId, cityId, startDate, endDate });
+}
 
 function invalidate() {
   const wasLoading = loading.value; const hadResult = !!result.value;
@@ -123,7 +129,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
         <div v-for="item in result.evidence.slice(0, 6)" :key="item.id"><span>{{ item.label }}</span><strong>{{ evidenceValue(item.value) }} <small v-if="item.value != null">{{ item.unit }}</small></strong></div>
       </div>
       <details v-if="result.evidence.length > 6" class="advisor-extra-evidence"><summary>查看全部 {{ result.evidence.length }} 项证据</summary><div class="advisor-evidence" aria-label="补充答复依据"><div v-for="item in result.evidence.slice(6)" :key="item.id"><span>{{ item.label }}</span><strong>{{ evidenceValue(item.value) }} <small v-if="item.value != null">{{ item.unit }}</small></strong></div></div></details>
-      <div v-if="result.suggestions.length" class="advisor-next" aria-label="建议查看"><button v-for="item in result.suggestions" :key="item.target" type="button" @click="emit('navigate', item.target)">{{ advisorDestinations[item.target] }}<Icon name="arrow" :size="14"/></button></div>
+      <div v-if="result.suggestions.length" class="advisor-next" aria-label="建议查看"><button v-for="item in result.suggestions" :key="item.target" type="button" @click="navigate(item.target)">{{ advisorDestinations[item.target] }}<Icon name="arrow" :size="14"/></button></div>
       <div v-if="result.limitations.length" class="advisor-limits"><span>使用边界</span><ul><li v-for="(item, index) in result.limitations" :key="index">{{ item }}</li></ul></div>
       <details class="advisor-provenance"><summary>数据来源与发布批次</summary><p>数据集 {{ result.scope.datasetId }}<br/>发布批次 {{ result.scope.publishedBatchId }}</p><ul><li v-for="item in result.evidence" :key="item.id"><span>{{ item.label }}</span><code>{{ item.source.endpoint }} · {{ item.source.field }}</code></li></ul></details>
     </article>

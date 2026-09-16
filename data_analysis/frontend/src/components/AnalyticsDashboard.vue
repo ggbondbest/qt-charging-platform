@@ -7,13 +7,15 @@ import AdvancedAnalytics from './AdvancedAnalytics.vue';
 import WorkspaceTabs from './WorkspaceTabs.vue';
 import { AnalyticsError, energyContribution, converted, formatValue as n, fraction, publishedRequest, shiftDate, sumSnapshot } from '../analytics';
 import type { Dataset, RecordData } from '../analytics';
+import { loadDashboardScope } from '../dashboardScope';
+import type { DashboardScope } from '../dashboardScope';
 const dataset = ref<Dataset>();
 const cities = ref<RecordData[]>([]);
 const city = ref(''); const start = ref(''); const end = ref('');
 const snapshot = ref<RecordData>(); const loading = ref(false); const error = ref('');
 const sequence = ref(0); let controller: AbortController | undefined;
 const refreshing = ref(false);
-const props = withDefaults(defineProps<{ presentation?: boolean; initialSection?: 'overview' | 'space' }>(), { presentation: false, initialSection: 'overview' });
+const props = withDefaults(defineProps<{ presentation?: boolean; initialSection?: 'overview' | 'space'; initialScope?: DashboardScope }>(), { presentation: false, initialSection: 'overview' });
 const section = ref<string>(props.initialSection);
 const sections = [
   { id: 'overview', label: '运营总览', description: '网络、经营与服务指标' },
@@ -81,17 +83,13 @@ async function refresh() {
 async function initialize() {
   if (refreshing.value) return;
   refreshing.value = true; error.value = ''; snapshot.value = undefined; const current = ++sequence.value; controller?.abort(); controller = new AbortController(); const signal = controller.signal;
+  dataset.value = undefined;
   try {
-    const response = await publishedRequest<RecordData>('/datasets', {}, { signal });
+    const initial = await loadDashboardScope(props.initialScope, signal);
     if (!alive || current !== sequence.value) return;
-    const first = response.data.items?.[0];
-    if (!first) throw new Error('尚无已发布统计批次。请先完成数据清洗与发布。');
-    dataset.value = first;
-    const cityResponse = await publishedRequest<RecordData>('/cities', { datasetId: first.datasetId, publishedBatchId: first.publishedBatchId, pageSize: 100 }, { signal });
-    if (!alive || current !== sequence.value) return;
-    cities.value = cityResponse.data.items;
-    start.value = first.startDate > shiftDate(first.endDate, -7) ? first.startDate : shiftDate(first.endDate, -7);
-    end.value = first.endDate; city.value = ''; await refresh();
+    dataset.value = initial.dataset; cities.value = initial.cities;
+    start.value = initial.filters.startDate; end.value = initial.filters.endDate; city.value = initial.filters.cityId;
+    await refresh();
   } catch (failure) { if (alive && !(failure instanceof AnalyticsError && failure.code === 'CANCELLED')) error.value = failure instanceof Error ? failure.message : '加载数据集失败。'; }
   finally { if (alive) refreshing.value = false; }
 }
@@ -108,7 +106,7 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; 
       <label>开始日期<input v-model="start" type="date" aria-label="统计开始日期" :min="dataset?.startDate" :max="dataset?.endDate"/></label>
       <label>结束日期（不含当天）<input v-model="end" type="date" aria-label="统计结束日期" :min="dataset?.startDate" :max="dataset?.endDate"/></label>
       <button class="button primary" :disabled="loading || !dataset" @click="refresh"><Icon name="refresh" :size="16"/>{{ loading ? '正在查询…' : '应用筛选' }}</button>
-      <button class="text-button analytics-reload" :disabled="refreshing" @click="initialize" title="重新读取最新发布批次">重载批次</button>
+      <button class="text-button analytics-reload" :disabled="refreshing" @click="initialize" :title="initialScope ? '重新核对答复对应的发布批次' : '重新读取最新发布批次'">重载批次</button>
       <span v-if="dataset" class="analytics-range">可用 {{ dataset.startDate }} — {{ dataset.endDate }}<small>北京时间 · 右端不含</small></span>
     </section>
     <div v-if="error" role="alert" class="analytics-error"><Icon name="info" :size="20"/><div><strong>统计暂不可用</strong><p>{{ error }}</p><small>不会使用静态数值替代真实响应。</small></div><button class="button secondary" @click="initialize">重新载入</button></div>

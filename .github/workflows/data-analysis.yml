@@ -50,6 +50,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+      - name: Install IANA time-zone data on Windows
+        if: matrix.os == 'windows-latest'
+        # Windows has no system IANA database for zoneinfo; this is not a
+        # Spark/ML dependency and must not make timezone tests silently skip.
+        run: python -m pip install tzdata==2025.2
       - name: Portable regressions and committed advanced/cleaning evidence
         # Stdlib discovery includes test_advanced_bundle and ChallengePlanTests.
         # Optional API/ML/Spark cases run with their real dependencies below.

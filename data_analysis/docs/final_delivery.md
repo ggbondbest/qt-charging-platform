@@ -118,7 +118,7 @@ Key仅留在服务端，不读取其他工具的凭据，不进入前端、仓�
 | CI任务 | 实际检查 |
 | --- | --- |
 | Python static checks | Ruff语法、未定义名称等错误检查；递归包含`ml`及`advisor`、`delivery`、`chargepilot`、`backend`、Spark脚本与Python测试；不引入整库格式改写 |
-| generator / Linux、Windows | 标准库测试发现；包含真实高级分析/清洗挑战交付包哈希与守恒检查、挑战生成快速测试；另验证样例数据及完整清洗交接包 |
+| generator / Linux、Windows | 轻量测试发现（Windows额外安装IANA时区数据）；包含真实高级分析/清洗挑战交付包哈希与守恒检查、挑战生成快速测试；另验证样例数据及完整清洗交接包 |
 | API and contracts / Linux、Windows | 统计API、高级分析API、发布完整性、JSON Schema、OpenAPI/TypeScript契约漂移；Linux另跑真实MySQL发布/API/校验 |
 | Spark / cleaning、dirty-parser、dashboard、ml-features、data-export | Java17与真实PySpark；清洗挑战在dirty-parser，高级分析在data-export；均设置`RUN_SPARK_TESTS=1` |
 | Integrated delivery / ML and MySQL | 先实际训练全部既有CPU模型，再跑模型、小时预测、流失/异常、统一HTTP和并发MySQL业务集成；最后计算100用户配对仿真 |

@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 import gzip
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 from urllib.parse import quote, unquote, urlsplit
 from zoneinfo import ZoneInfo
@@ -333,27 +333,50 @@ def sanitize_spark_plan(plan, input_root):
     recognized only when its decoded path is a prefix of this exact local
     source root. Operators, schemas, other locations and statistics stay intact.
     """
-    root = str(input_root).rstrip("/")
+    root = str(input_root).rstrip("/\\")
     roots = {root}
-    parsed = urlsplit(root)
-    local_path = None
-    if parsed.scheme == "file":
-        local_path = str(Path(unquote(parsed.path)).resolve())
-    elif not parsed.scheme:
-        local_path = str(Path(root).resolve())
+
+    def local_text(value, resolve_relative=False):
+        # Source/plan paths describe the producing host, not necessarily this
+        # host. Never feed an absolute POSIX or drive path to host Path.resolve.
+        value = unquote(str(value))
+        if value.lower().startswith("file:"):
+            parsed = urlsplit(value)
+            value = ("//" + parsed.netloc if parsed.netloc else "") + parsed.path
+        elif not re.match(r"^/?[A-Za-z]:[/\\]", value) and urlsplit(value).scheme:
+            return None
+        value = value.replace("\\", "/")
+        if re.match(r"^/[A-Za-z]:/", value):
+            value = value[1:]
+        if re.match(r"^[A-Za-z]:/", value) or value.startswith("//"):
+            return PureWindowsPath(value).as_posix()
+        if value.startswith("/"):
+            return str(PurePosixPath(value))
+        if resolve_relative:
+            return local_text(str(Path(value).resolve()))
+        return None
+
+    local_path = local_text(root, resolve_relative=True)
+    windows_path = False
     if local_path is not None:
         roots.update({local_path, quote(local_path, safe="/:")})
+        windows_path = bool(re.match(r"^[A-Za-z]:/", local_path) or local_path.startswith("//"))
+        if windows_path:
+            roots.add(str(PureWindowsPath(local_path)))
 
         def redact_truncated(match):
-            prefix_path = unquote(urlsplit(match.group("uri")).path)
-            if prefix_path and local_path.startswith(prefix_path):
+            prefix_path = local_text(match.group("uri"))
+            comparison = local_path.casefold() if windows_path else local_path
+            prefix = prefix_path.casefold() if windows_path and prefix_path else prefix_path
+            if prefix and comparison.startswith(prefix):
                 return match.group("location") + "file:${CLEAN_ROOT}..."
             return match.group(0)
 
-        plan = re.sub(r"(?P<location>Location: [^\n]*?\[)(?P<uri>file:/{1,3}[^,\]\n]*?)\.\.\.(?=[,\]])",
+        plan = re.sub(r"(?P<location>Location: [^\n]*?\[)(?P<uri>file:[^,\]\n]*?)\.\.\.(?=[,\]])",
                       redact_truncated, plan)
     for source_root in sorted(roots, key=len, reverse=True):
-        plan = plan.replace(source_root, "${CLEAN_ROOT}")
+        plan = re.sub(re.escape(source_root) + r"(?=$|[/\\\],\s])", lambda _: "${CLEAN_ROOT}", plan,
+                      flags=re.IGNORECASE if windows_path else 0)
     return plan
 
 

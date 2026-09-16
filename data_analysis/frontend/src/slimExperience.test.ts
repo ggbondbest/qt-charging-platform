@@ -24,12 +24,12 @@ vi.mock("./components/WorkspaceTabs.vue", () => ({
   },
 }));
 vi.mock("./components/Chart.vue", () => ({ default: { render: () => h("chart-stub") } }));
-vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { props: ['initialSection'], setup: (props: any) => () => h('dashboard-stub', { section: props.initialSection }) } }));
+vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { props: ['initialSection', 'initialScope'], setup: (props: any) => () => h('dashboard-stub', { section: props.initialSection, scope: props.initialScope }) } }));
 vi.mock("./components/ForecastPanel.vue", () => ({ default: { render: () => h("forecast-stub") } }));
 vi.mock("./components/ManagementInsights.vue", () => ({ default: { props: ['initialTarget'], setup: (props: any) => () => h('insights-stub', { target: props.initialTarget }) } }));
 vi.mock("./components/OperationsAdvisor.vue", () => ({ default: {
   emits: ['navigate'], setup: (_: unknown, { emit }: any) => () => h('advisor-stub', [
-    h('button', { onClick: () => emit('navigate', 'advanced') }, '查看多维运营分析'),
+    h('button', { onClick: () => emit('navigate', 'advanced', { datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-01', endDate: '2026-05-08' }) }, '查看多维运营分析'),
     h('button', { onClick: () => emit('navigate', 'anomalies') }, '查看充电异常筛查'),
   ]),
 } }));
@@ -188,6 +188,7 @@ describe("slim recommendation experience", () => {
     await click('智能分析'); await click('AI运营参谋'); expect(find('advisor-stub')).toBeTruthy();
     expect(nodes().some(item => item.kind === 'dashboard-stub')).toBe(false);
     await click('查看多维运营分析'); expect(find('dashboard-stub').props.section).toBe('space');
+    expect(find('dashboard-stub').props.scope).toEqual({ datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-01', endDate: '2026-05-08' });
     await click('智能分析'); await click('AI运营参谋'); await click('查看充电异常筛查');
     expect(find('insights-stub').props.target).toBe('anomalies');
     expect(root.textContent).not.toContain('桌宠');
