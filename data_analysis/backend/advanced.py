@@ -297,8 +297,14 @@ def correlations(rows):
     return result
 
 
-def analyze(metadata, filters, site_type=None, directory=None):
-    manifest, tables = load_bundle(metadata, directory)
+def analyze(metadata, filters, site_type=None, directory=None, *, snapshot=None):
+    stored = None
+    if snapshot is not None and getattr(snapshot, "backend", None) in {"mysql", "sqlite"}:
+        from .advanced_store import load_from_snapshot
+        stored = load_from_snapshot(snapshot)
+    # Missing installation can use the original verified export; a partial,
+    # mismatched or damaged database publication raises instead of falling back.
+    manifest, tables = stored if stored is not None else load_bundle(metadata, directory)
     all_dimensions = {row["station_id"]: row for row in manifest["stations"]}
     types = sorted({r["site_type"] for r in all_dimensions.values()})
     if site_type is not None and site_type not in types:

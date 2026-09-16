@@ -17,7 +17,7 @@
 | 模拟控制台 | 回放时钟与配对实验；独立业务库，不改统计批次 |
 
 AI参谋不另起服务、不新增模型训练、不替代原有图表或预测页。离线模式没有模型供应商调用，也不需要Key。
-网页在有效在线配置存在时默认在线，未配置时默认本地统计问答；在线每次提问仍须明确同意外发。
+网页在有效在线配置存在时默认在线，未配置时默认本地统计问答；网页保留外发说明，在线模式主动发送授权本次外发，不再逐次勾选同意框。
 原始业务数据是模拟的；“实际聚合/实际模型报告”是指由这些文件计算得到的证据，不是预填问答或现场运营实测。
 
 以下两项不纳入本次交付，研究分支保留：
@@ -80,6 +80,8 @@ python -m data_analysis.delivery.cli serve
 仍须在页面实际检查高级分析与参谋响应，不能用一次模型就绪检查替代全部验收。
 
 已有 `datasets/advanced_analytics_v2` 和 `datasets/cleaning_challenge_v1` 可直接复核、展示，无须先重跑 Spark。
+七表完整聚合可按 [MySQL追加安装说明](mysql_setup.md#追加七表高级统计) 装入当前匹配统计库，不覆盖原表。
+已安装则优先使用数据库副本，只有整个扩展未安装时才用已校验文件；损坏、半安装和错批不会回退。
 重算使用新目录，命令与产物解释分别见 [多维分析](advanced_analytics.md#4-架构与复现)、
 [清洗挑战](advanced-cleaning.md#运行方法)。原批次、MySQL 库和训练输入不因挑战测试而改变。
 
@@ -89,7 +91,8 @@ python -m data_analysis.delivery.cli serve
 人物形象沿用 PR #79 的 `whale-girl.png`，保留原 MIT 署名。点击人物、收起按钮或按 Esc 可收起；
 切换页面和收起面板保留页内最近10组已完成问答，刷新页面清除。在线仅带同批次、同范围最近三组历史，
 最多6条，每条800字符、合计4000字符；历史用于理解追问，不能改变统计范围或当作事实来源。
-关闭时停止接收未完成答复，并撤销本次在线授权。聊天区及展开的设置在面板内滚动，输入区固定在底部。
+模型上下文会剥离可识别的旧引用标记，保留对话文字；历史数字不作为本期数值。总结此前统计时仍需按当前范围重新取证，不能直接复用旧答复的来源或数字。
+关闭时停止接收未完成答复，但不能撤回已经发往供应商的请求。聊天区及展开的设置在面板内滚动，输入区固定在底部。
 数据或口径解释应给出证据/知识引用、来源和适用限制；缺少模型或聚合证据时明确说明。
 在线问候由模型生成，返回 `status=chat`，不添加统计核验标记或虚构证据。
 切换筛选后再问，确认返回范围与新筛选一致。选择页面提供的下钻操作，应回到现有分析或模型内容。
@@ -100,18 +103,33 @@ python -m data_analysis.delivery.cli serve
 后端自动读取这个专用文件，也可用进程变量 `ML_ADVISOR_ENV_FILE` 指定路径。进程中的同名变量优先，
 包括 `ML_ADVISOR_ONLINE_ENABLED=0` 覆盖文件里的 `1`。已有文件直接编辑，避免覆盖原Key。
 GET接口的 `onlineAvailable:true` 只表示配置格式有效，不能证明Key、模型权限、额度和供应商网络已验证。
-本次自动化检查不使用真实AIPing Key，不代表实际供应商调用已成功；接好自己的Key后须在页面另验。
+自动化检查使用注入的响应，不使用真实AIPing Key；当前配置环境另已使用用户自己的Key，实测
+`DeepSeek-V4.1-Flash` 的规划、问候及基于MySQL发布聚合的完整RAG回答，并核对返回的指标引用。
+这证明这些用例在当前环境可用，不保证每个追问或模型判断正确；其他部署接好自己的Key后仍须在页面另验。
 
 在线模式先由模型从运营概况、瓶颈、站点、补能行为、模型说明五个受控主题中选择最多三个，
-再读取至多36项发布聚合和本地中文BM25检索的最多4段项目知识，最后由模型生成正文与引用。
-正常回答通常需要两次模型调用，非流式整条返回；总预算60秒，单次最多45秒且受剩余预算限制，没有自动重试。
-引用必须属于本次检索结果，分析答复必须引用聚合证据；知识解释可以只引用项目口径。
-这些检查不保证完全消除幻觉，模型文字、数字解读与建议仍须结合来源复核，不能扩大为真实经营或安全结论。
+再按当前范围构建完整等长期间对比、失败原因/入口、优先关注站与对照、时段重点及补能群体的受控分析证据。
+分析证据按主题成组分配，最多48项；加所选模型报告后最多64项。从本地维护的16段口径/方法知识中，中文BM25最多检索4段，每段最多1200字符。
+本次问题的实际匹配优先，历史只补剩余空位，避免长旧答复盖过短追问，再由模型生成正文与引用。
+原始文件和七表完整聚合留在本地；按问题取证，不把全量聚合或全部知识发给模型。历史不够时不截短前期，缺少观察不编造排名或改进收益。
+正常回答通常需要两次模型调用，非流式整条返回。生成阶段明确提供本次允许的引用ID；
+安全解析器容忍完整JSON代码块、BOM和字符串内裸换行等格式差异，保留有效转义；不补引号/逗号/缺括号，不截取说明中的对象。
+规划和生成各最多两次尝试。JSON格式、字段结构、截断及引用错误共享每个阶段的一次额外纠错，总计最多四次供应商调用，
+仍共享原60秒总预算，单次最多45秒且受剩余预算限制。纠错只重用原输入和证据，不回灌损坏草稿，不凭空替换引用或数据。
+网络、认证、限流、内容过滤/拒绝、工具调用、外层协议错误或超大响应不自动重试。
+精确完整ID的中文括号或组引用可规范化为独立 `[id]`；网页引用列表由规范化后正文实际出现的ID去重生成，
+不要求模型正文与冗余数组原样相等，也不补入正文未引用的来源。正文或数组中的未知引用、畸形引用仍拒绝，不猜ID或改写数值。
+分析正文必须真正引用本次聚合证据；知识解释可只引用本次项目口径，正文无引用时不能只靠数组放行。纠错后仍按同一规则核验，未通过则报错。
+错误诊断日志仅记录阶段、固定原因码、尝试次数及是否可纠错，不记录问答、历史、密钥或供应商异常原文。
+这些检查不保证完全消除幻觉，也无法绝对保证外部API持续可用；模型文字、数字解读与建议仍须结合来源复核，不能扩大为真实经营或安全结论。
 
-每次在线提问须同意外发本次问题、有限历史、页面范围说明、聚合与检索知识。
+网页展示外发说明；用户在在线模式点击发送或按Enter，即授权外发本次问题、有限历史、页面范围说明、所选聚合与检索知识。
+仅打开面板、切换在线模式或选择示例不会调用模型；HTTP仍要求 `mode:"online", consent:true`，由网页主动发送时设置。
 在线不检索或发送原始业务行、用户/会话明细及完整工件；识别出的敏感编号、凭据和本地路径会被拦截或移除。
 不要在问题中填写个人信息或凭据。Key只留在后端认证，不读取其他工具的凭据，不进入前端或模型上下文。
 收起或停止接收不能撤销已经发往供应商的调用。配置、请求契约和失败处理以 [AI参谋说明](../ml/advisor/README.md) 为准。
+请求失败后的“重试发送”由用户主动重发原问题、原范围及原历史，保留已完成聊天和新草稿，不重新载入面板。
+范围或模式改变后旧重试失效；只有初始化未载入才提供“重新载入”。主动重试是新的在线请求，可能产生额外调用。
 
 ## 四分钟验收路线
 
@@ -130,7 +148,8 @@ GET接口的 `onlineAvailable:true` 只表示配置格式有效，不能证明Ke
 [本批可复现案例](advanced_analytics.md#7-本轮可直接演示的案例)，页面不能写死该示例数字。
 真实腾讯路线和可选在线参谋均不属于无Key基础验收的前置条件。
 在线RAG另验“你好”、当前范围运营问题、口径解释及同范围追问，核对模型答复和聚合/知识引用。
-同时检查未勾选同意时不能发送、切换范围不引用旧统计、错误配置能明确报错；为模型等待留出额外时间。
+同时检查没有同意框仍可主动在线发送、仅展开/选示例不自动调用、切换范围不引用旧统计、错误配置能明确报错；为模型等待留出额外时间。
+模拟一次失败后主动“重试发送”，确认原问题及历史不变、新草稿仍保留，且修改范围后不会重发旧范围请求。
 
 ## 验证与CI覆盖
 
@@ -140,10 +159,10 @@ GET接口的 `onlineAvailable:true` 只表示配置格式有效，不能证明Ke
 | --- | --- |
 | Python static checks | Ruff语法、未定义名称等错误检查；递归包含`ml`及`advisor`、`delivery`、`chargepilot`、`backend`、Spark脚本与Python测试；不引入整库格式改写 |
 | generator / Linux、Windows | 轻量测试发现（Windows额外安装IANA时区数据）；包含真实高级分析/清洗挑战交付包哈希与守恒检查、挑战生成快速测试；另验证样例数据及完整清洗交接包 |
-| API and contracts / Linux、Windows | 统计API、高级分析API、发布完整性、JSON Schema、OpenAPI/TypeScript契约漂移；Linux另跑真实MySQL发布/API/校验 |
+| API and contracts / Linux、Windows | 统计API、高级分析API、`test_advanced_store`七表规范化/完整性/非覆盖与提交回执丢失后安全重试、JSON Schema、OpenAPI/TypeScript契约漂移；Linux另跑真实MySQL发布/API/校验 |
 | Spark / cleaning、dirty-parser、dashboard、ml-features、data-export | Java17与真实PySpark；清洗挑战在dirty-parser，高级分析在data-export；均设置`RUN_SPARK_TESTS=1` |
 | Integrated delivery / ML and MySQL | 先实际训练全部既有CPU模型，再跑模型、小时预测、流失/异常、统一HTTP和并发MySQL业务集成；最后计算100用户配对仿真 |
-| Advisor RAG retrieval, generation boundary and same-origin HTTP | 在完整交付依赖下运行`test_ml_advisor`、`test_advisor_rag`、`test_delivery_advisor`；核对检索、引用、生成边界和同源HTTP；在线协议用注入的测试传输，不使用真实Key |
+| Advisor RAG retrieval, generation boundary and same-origin HTTP | 在完整交付依赖下显式运行`test_ml_advisor`、`test_advisor_analysis`、`test_advisor_knowledge`、`test_advisor_output`、`test_advisor_rag`、`test_delivery_advisor`；核对成组分析、16段知识、安全JSON解析、分阶段纠错预算、日志边界、引用和同源HTTP；在线协议用注入的测试传输，不使用真实Key |
 | Integrated delivery / Vue | `npm ci`、Vitest、`vue-tsc`和Vite构建；高级分析筛选/格子联动、参谋操作/导航回归由`npm test`自动发现 |
 
 基础环境的测试发现允许缺少可选运行时的用例跳过；不能将它当作ML、Spark或MySQL的完整测试成绩。
@@ -153,8 +172,8 @@ GET接口的 `onlineAvailable:true` 只表示配置格式有效，不能证明Ke
 已安装交付依赖后的局部复核：
 
 ```bash
-python -m unittest data_analysis.tests.test_advanced_bundle data_analysis.tests.test_advanced_api data_analysis.tests.test_cleaning_challenge -v
-python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
+python -m unittest data_analysis.tests.test_advanced_bundle data_analysis.tests.test_advanced_api data_analysis.tests.test_advanced_store data_analysis.tests.test_cleaning_challenge -v
+python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_analysis data_analysis.tests.test_advisor_knowledge data_analysis.tests.test_advisor_output data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
 python -m data_analysis.contracts.delivery_schema --check
 ```
 

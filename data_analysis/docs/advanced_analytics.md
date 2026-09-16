@@ -10,7 +10,7 @@
 另有用户/车辆、预约/排队、支付/退款、维修、价格、节假日和气象。
 
 这些表已经能回答多维运营问题。再次扩大随机行数并不能提高分析质量，反而会使原模型、发布批次和界面口径失配。
-所以新增的是独立、可追溯的 **Spark 多维分析成果包**，不改原数据、模型或数据库。
+所以新增的是独立、可追溯的 **Spark 多维分析成果包**，并可向已有匹配 MySQL 批次追加七表只读服务副本，不改原数据、模型或原有数据库表。
 
 数据边界：充电业务是按行为规律校准的模拟数据；气象使用 ERA5 真实历史再分析数据；
 **没有使用 Caltech ACN-Data 实测充电会话，不能在答辩中称为真实国内充电运营结果。**
@@ -61,13 +61,16 @@
   → station_day / station_hour / attempt_flow / session_segments
     + user_behavior / service_hour（retention 仅兼容保留）
   → 独立 advanced_manifest.json + JSON.gz + Spark 执行计划
-  → FastAPI 校验与 MySQL 当前批次一致，在线仅合并有限聚合行
+  → 追加安装到同批次 MySQL 的七张 adv_* 表 + adv_publication
+  → FastAPI 只读快照校验完整副本，再按页面范围合并聚合
   → Vue 同批次筛选 → ECharts 联动图表 + 数据明细
 ```
 
 原 MySQL 仍是发布数据集、基本统计和城市/电站校验的来源。
-新增成果包是固定批次的只读分析副本，不是 SQLite 回退或浏览器写死的数据。
-API 不扫描 583 万条明细，不加载用户编号，不因文件丢失而返回假图表；文件损坏返回 503，批次不一致返回 409。
+新增成果包及其 MySQL 副本是固定批次的只读分析成果，不是 SQLite 回退或浏览器写死的数据。
+完整数据库副本优先；只有整个高级统计扩展未安装时才读取原已验证文件包，半安装、损坏或错批不会回退掩盖。
+API 不扫描 583 万条明细、不加载用户编号、不返回假图表；校验失败返回 503，批次不一致返回 409。
+七表全量留本地，在线参谋再从中按问题提取有界证据，不把全表交给模型。
 
 在仓库根目录，准备 Python 3.11/3.12、Java 17 和 `requirements-spark.txt`：
 
@@ -81,6 +84,16 @@ python -m data_analysis.spark_jobs.advanced_analysis \
 输出目录必须不存在，避免覆盖证据。已有完整成果无需重算；重算请指定新目录，并通过环境变量
 `ANALYTICS_ADVANCED_BUNDLE` 指向它。CLEAN 可先按项目既有 HDFS 验收流程验证后取回，分析包也可归档到 HDFS；
 此导出命令的服务副本为本地路径，不声称已经在 Linux/HDFS 上运行。
+
+已有匹配的 MySQL 基本统计库时，按 [七表安装说明](mysql_setup.md#追加七表高级统计) 配置本地导入文件后执行：
+
+```sh
+python -m data_analysis.publishing.advanced_mysql \
+  --input data_analysis/datasets/advanced_analytics_v2 \
+  --config data_analysis/.env.mysql-import.local
+```
+
+这一步新增七表及就绪清单，不重建或覆盖原库；相同完整成果再次执行只验证，不重复导入。
 
 新接口：`GET /api/v1/dashboard/advanced`，支持 `datasetId/publishedBatchId/cityId/stationId/startDate/endDate/siteType`。
 响应的 `provenance/scope/summary` 说明来源、计算批次、查询范围和分母。
@@ -105,6 +118,7 @@ python -m data_analysis.spark_jobs.advanced_analysis \
 - 实际成果的行数、校验和、执行计划与守恒结果见 `datasets/advanced_analytics_v2/advanced_manifest.json`，不要把旧版五表的行数当作新版七表的结果。
 - `test_advanced_analysis.py` 用真实 Spark 验证时间边界、前序回看、分类和关联不扩张；`test_advanced_bundle.py` 核对实际交付成果与原始 CLEAN 身份及守恒。
 - `test_advanced_api.py` 验证分母、空值、筛选、接口库存不随日期重复计数；前端组件测试验证格子选择联动与过期请求保护。
+- `test_advanced_store.py` 独立验证 JSON 类型/哈希、批次、留存范围索引、半安装拒绝、原库非覆盖与提交回执丢失后安全重试；内存数据库测试不代替真实 MySQL 安装验收。
 - 运行中的 MySQL/FastAPI 应对全域和五城市、全期及最近7天交叉检查：新分析电量、开始会话、行为分布会话、服务热力图尝试数应与原总览及对应成果一致。
 - 最终环境仍需在 Linux/HDFS 上复验；本地测试和浏览器验收不能替代最终环境验收。
 

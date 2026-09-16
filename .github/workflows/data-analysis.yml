@@ -107,6 +107,7 @@ jobs:
           python -m unittest
           data_analysis.tests.test_analytics_api
           data_analysis.tests.test_advanced_api
+          data_analysis.tests.test_advanced_store
           data_analysis.tests.test_publishing
           data_analysis.tests.test_bundle
           data_analysis.tests.test_contracts
@@ -223,7 +224,7 @@ jobs:
       - name: Advisor RAG retrieval, generation boundary and same-origin HTTP
         run: |
           python -c "from data_analysis.tests.test_delivery_advisor import HAS_DEPS; assert HAS_DEPS, 'Advisor HTTP tests must run with complete delivery dependencies'"
-          python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
+          python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_analysis data_analysis.tests.test_advisor_knowledge data_analysis.tests.test_advisor_output data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
       - name: Calculate bounded paired simulation (no hard-coded improvement)
         run: python -m data_analysis.chargepilot.cli experiment --users 100 --seed 42
 

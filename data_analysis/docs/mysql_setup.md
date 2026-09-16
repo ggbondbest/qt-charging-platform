@@ -95,6 +95,48 @@ python -m data_analysis.publishing.mysql_publish --input data_analysis/datasets/
 
 如果恰在提交时连接中断，或者数据库已提交但本地报告写入失败，客户端不能据此断言数据库未提交。此时先由管理员核对该新库的批次标识，再用只读账号运行核对脚本；不要覆盖同名库、手工补标志或自动切换 API。
 
+### 追加七表高级统计
+
+基本统计库已经完整发布后，可将同一批次的 `advanced_analytics_v2` 七张 Spark 聚合完整安装到**这个已有库**。
+这一步使用 `publishing.advanced_mysql`，不是上面的新库发布器；不重新生成原始数据、不改原有查询表、不新建或删除数据库。
+目标库必须与成果包的 `datasetId/publishedBatchId/pipelineRunId/sourceManifestSha256` 全部匹配，不能把其他批次补进当前库。
+
+在本机编辑 Git 忽略的 `data_analysis/.env.mysql-import.local`。以下全部是配置格式示例，账号、库名和密码应改为自己已有且获授权的值：
+
+```dotenv
+ANALYTICS_MYSQL_HOST=127.0.0.1
+ANALYTICS_MYSQL_PORT=3306
+ANALYTICS_MYSQL_DATABASE=charging20260914run1
+ANALYTICS_MYSQL_USER=charging_import
+ANALYTICS_MYSQL_PASSWORD='<本机已有导入账号的密码>'
+ANALYTICS_MYSQL_SSL_CA=
+```
+
+文件只接受这六个字面量配置项；不会执行 shell、展开变量或加载其他应用凭据。不要打印、提交、截图或共享此文件。
+Linux 可执行 `chmod 600 data_analysis/.env.mysql-import.local`；Windows 使用文件权限限制为本人可读写。
+进程中显式设置的同名 `ANALYTICS_MYSQL_*` 优先于文件，包括空密码；请在独立导入终端核对配置来源，避免误用正在服务的只读账号。
+导入账号只需目标库的 `CREATE/INSERT/SELECT` 等所需权限，不需要 `DROP/DELETE/UPDATE`；不要临时扩权网页账号或混用独立业务库账号。
+
+在仓库根目录执行：
+
+```text
+python -m data_analysis.publishing.advanced_mysql --input data_analysis/datasets/advanced_analytics_v2 --config data_analysis/.env.mysql-import.local
+```
+
+安装新增 `adv_station_day/adv_station_hour/adv_attempt_flow/adv_session_segments/adv_retention/adv_user_behavior/adv_service_hour`
+和 `adv_publication` 就绪清单。每行保留规范化 JSON 及哈希，额外派生站点、城市和日期索引；留存按原 `ALL/CITY/STATION` 范围及 cohort 月处理，不伪造站点。
+表结构先建，七表内容与 `READY` 清单在一个事务内写入并读回核验；成功输出 `PUBLISHED`、指纹和各表实际行数。
+相同完整发布再运行只核验并返回 `ALREADY_PUBLISHED`，不重复写入；不一致、损坏、半安装或占用 `adv_*` 名称的其他表均拒绝覆盖和自动修复。
+
+MySQL DDL 不能随数据事务回滚，失败可能留下空的 `adv_*` 表；原有表仍不被覆盖，部分高级统计会被 reader 明确拒绝。
+不要手工补 `READY`、删表重试或声称所有建表均已撤销；由管理员核对精确目标后另行处理。
+提交回执丢失也不能证明未提交：先新连接只读核验，或用相同输入重新运行上述命令，完整已提交状态会返回 `ALREADY_PUBLISHED`，半安装状态仍拒绝继续。
+
+API 继续使用只读账号，须拥有**该库 `.* SELECT`**，确保能看见新表；仅旧表逐表授权不足以识别新安装。
+新请求在同一个只读批次快照中优先完整校验数据库副本；只有整个 `adv_*` 扩展完全不存在时，才使用原来的已校验文件包。
+任何半安装、坏哈希、错误索引或错批都报错，不转回文件掩盖问题。安装后用网页账号复核 `/api/v1/dashboard/advanced` 及参谋的范围、数值、来源和延迟。
+这些完整聚合留在本地 MySQL；在线参谋只按问题选出有界分析证据及知识片段，不把七表全量发给模型。
+
 ## 5. 使用只读账号启动 API，并验证
 
 在新的 API 终端配置同一主机/端口/数据库，把 `ANALYTICS_MYSQL_USER` 改为 `charging_read`，交互输入查询密码，再执行：

@@ -208,7 +208,7 @@ def register(application, provider):
         settings = None
         if body.mode == "online":
             if body.consent is not True:
-                raise ApiError(422, "CONSENT_REQUIRED", "在线RAG需为本次问题、最近对话及检索证据外发明确勾选同意")
+                raise ApiError(422, "CONSENT_REQUIRED", "请从已配置的在线模式主动发送问题，或切换为本地问答")
             settings = config.online_settings()
             if settings is None:
                 raise ApiError(503, "ONLINE_NOT_CONFIGURED", "服务器尚未配置在线模型；离线问答仍可使用")

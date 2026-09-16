@@ -56,7 +56,11 @@ function answer(body: AdvisorRequest, extra: Partial<AdvisorResponse> = {}): Adv
 }
 const posts = () => fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST');
 function nodes(node = root): TestNode[] { return [node, ...node.children.flatMap(child => nodes(child))]; }
-function node(kind: string, text?: string) { const found = nodes().find(item => item.kind === kind && (!text || item.textContent.includes(text))); if (!found) throw new Error(`Missing ${kind}: ${text}`); return found; }
+function node(kind: string, text?: string) {
+  const candidates = nodes().filter(item => item.kind === kind);
+  const found = text ? candidates.find(item => item.textContent === text) || candidates.find(item => item.textContent.includes(text)) : candidates[0];
+  if (!found) throw new Error(`Missing ${kind}: ${text}`); return found;
+}
 function control(label: string) { const found = nodes().find(item => item.props['aria-label'] === label); if (!found) throw new Error(`Missing control: ${label}`); return found; }
 async function settle() { for (let i = 0; i < 35; i++) { await Promise.resolve(); await nextTick(); } }
 async function edit(element: TestNode, value: unknown) { element.props['onUpdate:modelValue'](value); await settle(); }
@@ -68,7 +72,10 @@ async function mount(props: { compact?: boolean; active?: boolean } = {}) {
     ...advisorProps, onNavigate: navigate, onBusy: busy, ref: (instance: any) => { advisorInstance = instance; },
   }) }); app.provide(Vue.ssrContextKey, {}); app.mount(root); await settle();
 }
-function deferred() { let resolve!: (value: Response) => void; const promise = new Promise<Response>(res => { resolve = res; }); return { promise, resolve }; }
+function deferred() {
+  let resolve!: (value: Response) => void; let reject!: (reason: Error) => void;
+  const promise = new Promise<Response>((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject };
+}
 
 beforeEach(() => {
   class TestDocument {}
@@ -92,11 +99,11 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); app = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('operations advisor component and HTTP contract', () => {
-  it.each(['你好', '您好！', '嗨', ' hello! ', 'HI?'])('posts greeting %s to the configured model with explicit consent', async greeting => {
+  it.each(['你好', '您好！', '嗨', ' hello! ', 'HI?'])('posts greeting %s with online consent when the user sends it', async greeting => {
     config.defaultMode = 'online'; config.onlineAvailable = true; config.onlineProvider = 'AIPing · DeepSeek-V4.1-Flash';
     reply = body => response(answer(body, { status: 'chat', answer: '你好，需要我帮你分析哪方面？', evidence: [], citations: [], suggestions: [], limitations: [] }));
-    await mount({ compact: true }); await edit(node('textarea'), greeting); await submit(); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await mount({ compact: true }); await edit(node('textarea'), greeting);
+    expect(posts()).toHaveLength(0); expect(node('button', '发送').props.disabled).toBe(false); await submit();
     const current = nodes().find(item => item.kind === 'article' && item.props['aria-live'] === 'polite')!;
     expect(current.textContent).toContain(greeting.trim()); expect(current.textContent).toContain('在线对话');
     expect(current.textContent).toContain('你好，需要我帮你分析哪方面？'); expect(current.textContent).not.toContain('本地问候');
@@ -120,7 +127,7 @@ describe('operations advisor component and HTTP contract', () => {
     await mount({ compact: true });
     for (let index = 0; index <= 10; index++) {
       await edit(node('textarea'), index % 2 ? `运营问题 ${index}` : '你好' + '!'.repeat(index));
-      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+      await submit();
     }
     expect(posts()).toHaveLength(11);
     expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(9);
@@ -137,16 +144,14 @@ describe('operations advisor component and HTTP contract', () => {
     }
     expect(historyItems.filter(item => item.textContent.includes('发布批次 B1'))).toHaveLength(5);
   });
-  it('requires renewed consent and includes the previous model chat in the next question', async () => {
+  it('includes the previous model chat when the next online question is sent directly', async () => {
     config.onlineAvailable = true;
     reply = body => response(answer(body, body.question === '你好！' ? { status: 'chat', answer: '你好，需要查看哪些数据？', evidence: [], citations: [], suggestions: [] } : {}));
     await mount({ compact: true }); await edit(control('参谋答复方式'), 'online'); await edit(node('textarea'), '你好！');
-    await submit(); expect(root.textContent).not.toContain('本地问候'); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await submit(); expect(root.textContent).not.toContain('本地问候');
     expect(root.textContent).toContain('在线对话'); expect(posts()).toHaveLength(1);
-    expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
-    await edit(node('textarea'), '当前运营概况如何？'); await submit(); expect(posts()).toHaveLength(1);
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await edit(node('textarea'), '当前运营概况如何？');
+    expect(node('button', '发送').props.disabled).toBe(false); await submit(); expect(posts()).toHaveLength(2);
     expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: '当前运营概况如何？', mode: 'online', consent: true, history: [
       { role: 'user', content: '你好！' }, { role: 'assistant', content: '你好，需要查看哪些数据？' },
     ] });
@@ -156,10 +161,10 @@ describe('operations advisor component and HTTP contract', () => {
     reply = body => response(answer(body, { status: 'chat', answer: '你好，需要查看哪些数据？', evidence: [], citations: [], suggestions: [] }));
     await mount({ compact: true }); const conversation = control('参谋对话');
     conversation.scrollHeight = 1000; conversation.clientHeight = 400; conversation.scrollTop = 600; conversation.props.onScroll({});
-    await edit(node('textarea'), '你好'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); expect(conversation.scrollTop).toBe(212);
+    await edit(node('textarea'), '你好'); await submit(); expect(conversation.scrollTop).toBe(212);
     conversation.props.onScroll({});
     conversation.scrollTop = 100; conversation.props.onScroll({});
-    await edit(node('textarea'), '您好'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); expect(conversation.scrollTop).toBe(100);
+    await edit(node('textarea'), '您好'); await submit(); expect(conversation.scrollTop).toBe(100);
     expect(root.scrollTop).toBe(0); expect(posts()).toHaveLength(2);
   });
   it('keeps all greetings on the API and rejects evidence-free offline factual replies', async () => {
@@ -220,7 +225,6 @@ describe('operations advisor component and HTTP contract', () => {
     const pending = deferred(); reply = () => pending.promise;
     await mount({ compact: true }); await click('运营表现如何？');
     await edit(control('参谋答复方式'), mode);
-    if (mode === 'online') await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
     await submit(); const [url, options] = posts()[0]; const firstQuestion = JSON.parse(options.body);
     expect(url).toBe('/api/v1/intelligence/advisor');
     expect(firstQuestion).toMatchObject({ question: '当前范围运营表现如何？', mode, consent: mode === 'online' });
@@ -236,15 +240,9 @@ describe('operations advisor component and HTTP contract', () => {
     expect(busy.mock.calls).toEqual([[true], [false]]);
     expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(0);
     expect(nodes().some(item => String(item.props.class).includes('advisor-pending-question'))).toBe(false);
-    if (mode === 'online') {
-      expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
-      expect(node('button', '发送').props.disabled).toBe(true);
-      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
-      await edit(node('textarea'), '哪些电站需要优先关注？');
-      expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
-      expect(node('button', '发送').props.disabled).toBe(true);
-      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
-    }
+    expect(node('button', '发送').props.disabled).toBe(false);
+    await edit(node('textarea'), '哪些电站需要优先关注？');
+    expect(node('button', '发送').props.disabled).toBe(false);
     const nextQuestion = node('textarea').value;
     reply = body => response(answer(body)); await submit();
     expect(posts()).toHaveLength(2);
@@ -254,6 +252,149 @@ describe('operations advisor component and HTTP contract', () => {
     expect(historyItems[0].textContent).toContain('当前范围运营表现如何？');
     expect(nodes().filter(item => item.kind === 'h3' && item.textContent === '当前范围运营表现如何？')).toHaveLength(1);
     expect(nodes().filter(item => item.kind === 'h3' && item.textContent === nextQuestion)).toHaveLength(1);
+  });
+  it.each(['http', 'network', 'validation'])('restores an untouched compact question after a %s failure and retries only when explicitly clicked', async failure => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); await edit(node('textarea'), '需要重试的原问题'); await submit();
+    const options = posts()[0][1];
+    expect(node('textarea').value).toBe(''); expect(options.signal.aborted).toBe(false);
+    if (failure === 'network') pending.reject(new Error('offline'));
+    else if (failure === 'http') pending.resolve(new Response(JSON.stringify({ code: 'ADVISOR_UNAVAILABLE', message: '在线模型暂不可用，请稍后重试。' }), { status: 503 }));
+    else pending.resolve(await response(answer(JSON.parse(options.body), { citations: [] })));
+    await settle();
+    expect(nodes().some(item => item.props.role === 'alert')).toBe(true);
+    expect(nodes().some(item => item.kind === 'article')).toBe(false);
+    expect(node('textarea').value).toBe('需要重试的原问题'); expect(node('button', '发送').props.disabled).toBe(false);
+    expect(busy.mock.calls).toEqual([[true], [false]]);
+    expect(root.textContent).toContain('需要重试的原问题'); expect(node('button', '重试发送').props.disabled).not.toBe(true);
+    expect(nodes().some(item => item.kind === 'button' && item.textContent.includes('重新载入'))).toBe(false);
+    expect(posts()).toHaveLength(1); expect(fetchMock).toHaveBeenCalledTimes(4);
+    reply = body => response(answer(body)); await click('重试发送');
+    expect(posts()).toHaveLength(2);
+    expect(JSON.parse(posts()[1][1].body)).toEqual(JSON.parse(options.body)); expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: '需要重试的原问题', mode: 'online', consent: true, history: [] });
+    expect(node('textarea').value).toBe(''); expect(root.textContent).toContain('120 次充电会话');
+    expect(nodes().some(item => item.kind === 'button' && item.textContent === '重试发送')).toBe(false);
+  });
+  it.each([
+    { label: 'a newer draft', edits: ['新的草稿'], expected: '新的草稿' },
+    { label: 'an intentionally cleared draft', edits: ['曾经输入的新问题', ''], expected: '' },
+    { label: 'a whitespace-only draft', edits: ['新的问题', '   '], expected: '   ' },
+    { label: 'a whitespace edit followed by clearing', edits: ['   ', ''], expected: '' },
+  ])('does not restore a failed question over $label', async ({ edits, expected }) => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); await edit(node('textarea'), '已经提交的旧问题'); await submit();
+    const options = posts()[0][1]; expect(node('textarea').value).toBe('');
+    for (const draft of edits) await edit(node('textarea'), draft);
+    expect(options.signal.aborted).toBe(false);
+    pending.reject(new Error('offline')); await settle();
+    expect(nodes().some(item => item.props.role === 'alert')).toBe(true);
+    expect(node('textarea').value).toBe(expected);
+    expect(node('button', '发送').props.disabled).toBe(!expected.trim());
+    expect(posts()).toHaveLength(1); expect(busy.mock.calls).toEqual([[true], [false]]);
+    reply = body => response(answer(body)); await click('重试发送');
+    expect(posts()).toHaveLength(2); expect(JSON.parse(posts()[1][1].body)).toEqual(JSON.parse(options.body));
+    expect(node('textarea').value).toBe(expected); expect(node('button', '发送').props.disabled).toBe(!expected.trim());
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+  it('keeps prior answers and a new draft through failure, explicit retry, success and the next question', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    const firstQuestion = '先分析当前运营概况'; const firstAnswer = '首问的已核对答复。';
+    const failedQuestion = '继续分析需要关注的电站'; const retriedAnswer = '重试后完成的电站分析。'; const nextQuestion = '接下来应该核查什么？';
+    reply = body => response(answer(body, { answer: firstAnswer }));
+    await mount({ compact: true }); await edit(control('参谋城市'), 'DL'); await edit(control('参谋开始日期'), '2026-05-20');
+    await edit(node('textarea'), firstQuestion); await submit();
+    expect(posts()).toHaveLength(1); expect(fetchMock).toHaveBeenCalledTimes(4);
+    const failure = deferred(); reply = () => failure.promise;
+    await edit(node('textarea'), failedQuestion); await submit(); const failedBody = JSON.parse(posts()[1][1].body);
+    expect(failedBody).toMatchObject({ question: failedQuestion, cityId: 'DL', startDate: '2026-05-20', mode: 'online', consent: true });
+    expect(failedBody.history).toEqual([{ role: 'user', content: firstQuestion }, { role: 'assistant', content: firstAnswer }]);
+    await edit(node('textarea'), nextQuestion); failure.reject(new Error('offline')); await settle();
+    expect(root.textContent).toContain(firstAnswer); expect(root.textContent).toContain(failedQuestion);
+    expect(node('textarea').value).toBe(nextQuestion); expect(posts()).toHaveLength(2); expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(1);
+    expect(nodes().some(item => item.kind === 'button' && item.textContent.includes('重新载入'))).toBe(false);
+    const retry = deferred(); reply = () => retry.promise;
+    const retryButton = node('button', '重试发送');
+    retryButton.props.onClick({}); retryButton.props.onClick({}); await settle();
+    expect(posts()).toHaveLength(3); expect(JSON.parse(posts()[2][1].body)).toEqual(failedBody);
+    expect(node('textarea').value).toBe(nextQuestion); expect(fetchMock).toHaveBeenCalledTimes(6);
+    await submit(); expect(posts()).toHaveLength(3);
+    retry.resolve(await response(answer(failedBody, { answer: retriedAnswer }))); await settle();
+    expect(root.textContent).toContain(firstAnswer); expect(root.textContent).toContain(retriedAnswer);
+    expect(node('textarea').value).toBe(nextQuestion); expect(posts()).toHaveLength(3);
+    expect(nodes().some(item => item.kind === 'button' && item.textContent === '重试发送')).toBe(false);
+    reply = body => response(answer(body)); await submit();
+    expect(posts()).toHaveLength(4); expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(JSON.parse(posts()[3][1].body)).toMatchObject({ question: nextQuestion, cityId: 'DL', startDate: '2026-05-20', mode: 'online', consent: true });
+    expect(JSON.parse(posts()[3][1].body).history).toEqual([
+      { role: 'user', content: firstQuestion }, { role: 'assistant', content: firstAnswer },
+      { role: 'user', content: failedQuestion }, { role: 'assistant', content: retriedAnswer },
+    ]);
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(2);
+    expect(busy.mock.calls).toEqual([[true], [false], [true], [false], [true], [false], [true], [false]]);
+  });
+  it.each([
+    { label: 'a replacement draft', edits: ['失败后写下的新问题'], expected: '失败后写下的新问题' },
+    { label: 'the same text after intentional editing', edits: ['临时的新问题', '需要重试的原问题'], expected: '需要重试的原问题' },
+    { label: 'an intentionally cleared restored question', edits: [''], expected: '' },
+    { label: 'a whitespace-only replacement', edits: ['   '], expected: '   ' },
+  ])('preserves $label when retrying a previously restored question', async ({ edits, expected }) => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = () => Promise.reject(new Error('offline'));
+    await mount({ compact: true }); await edit(node('textarea'), '需要重试的原问题'); await submit();
+    const failedBody = JSON.parse(posts()[0][1].body); expect(node('textarea').value).toBe(failedBody.question);
+    for (const draft of edits) await edit(node('textarea'), draft);
+    expect(posts()).toHaveLength(1);
+    const retry = deferred(); reply = () => retry.promise; await click('重试发送');
+    expect(node('textarea').value).toBe(expected); expect(JSON.parse(posts()[1][1].body)).toEqual(failedBody);
+    retry.resolve(await response(answer(failedBody))); await settle();
+    expect(node('textarea').value).toBe(expected); expect(posts()).toHaveLength(2); expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+  it.each([
+    ['参谋城市', 'DL'], ['参谋开始日期', '2026-05-20'],
+    ['参谋结束日期', '2026-05-30'], ['参谋答复方式', 'offline'],
+  ])('invalidates a failed request when %s changes even if its old retry handler is invoked', async (label, value) => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = () => Promise.reject(new Error('offline'));
+    await mount({ compact: true }); await edit(node('textarea'), '旧范围的失败问题'); await submit();
+    const retryClick = node('button', '重试发送').props.onClick;
+    await edit(node('textarea'), '新范围的草稿'); await edit(control(label), value);
+    expect(nodes().some(item => item.kind === 'button' && item.textContent === '重试发送')).toBe(false);
+    retryClick({}); await settle();
+    expect(posts()).toHaveLength(1); expect(fetchMock).toHaveBeenCalledTimes(4); expect(node('textarea').value).toBe('新范围的草稿');
+    reply = body => response(answer(body)); await submit();
+    expect(posts()).toHaveLength(2); expect(JSON.parse(posts()[1][1].body).question).toBe('新范围的草稿');
+  });
+  it.each(['stop', 'scope', 'close'])('cancels a pending retry on %s and ignores its late answer', async action => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = () => Promise.reject(new Error('offline'));
+    await mount({ compact: true }); await edit(node('textarea'), '需要重试的原问题'); await submit();
+    const retry = deferred(); reply = () => retry.promise; await click('重试发送'); const options = posts()[1][1];
+    expect(node('textarea').value).toBe(''); expect(options.signal.aborted).toBe(false);
+    await edit(node('textarea'), '取消后保留的草稿');
+    if (action === 'stop') await click('停止接收');
+    else if (action === 'scope') await edit(control('参谋城市'), 'DL');
+    else { advisorProps.active = false; await settle(); }
+    expect(options.signal.aborted).toBe(true);
+    retry.resolve(await response(answer(JSON.parse(options.body), { answer: '不应出现的迟到重试答复。' }))); await settle();
+    expect(root.textContent).not.toContain('不应出现的迟到重试答复。'); expect(node('textarea').value).toBe('取消后保留的草稿');
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(0);
+    expect(posts()).toHaveLength(2); expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(busy.mock.calls).toEqual([[true], [false], [true], [false]]);
+  });
+  it('offers setup reload only for initialization failures and does not post while reloading', async () => {
+    const original = fetchMock.getMockImplementation()!; let failDiscovery = true;
+    fetchMock.mockImplementation((url: string, options: RequestInit) => failDiscovery && url === '/api/v1/datasets'
+      ? Promise.reject(new Error('offline')) : original(url, options));
+    await mount({ compact: true });
+    expect(nodes().some(item => item.props.role === 'alert')).toBe(true);
+    expect(nodes().some(item => item.kind === 'button' && item.textContent === '重试发送')).toBe(false);
+    expect(posts()).toHaveLength(0); failDiscovery = false; await click('重新载入');
+    expect(nodes().some(item => item.props.role === 'alert')).toBe(false); expect(posts()).toHaveLength(0);
+    await edit(node('textarea'), '设置恢复后发送的问题'); expect(node('button', '发送').props.disabled).toBe(false);
   });
   it.each([
     ['参谋城市', 'DL'], ['参谋开始日期', '2026-05-20'],
@@ -314,25 +455,44 @@ describe('operations advisor component and HTTP contract', () => {
     expect(evidence.props.open).not.toBe(true); expect(evidence.textContent).toContain('查看 1 项数据依据');
     expect(root.textContent).toContain('120 次充电会话'); expect(node('button', '发送')).toBeDefined();
   });
-  it('pauses pending chat on close, revokes consent and ignores late replies', async () => {
+  it.each([true, false])('keeps a brief online disclosure inside settings and has no consent checkbox when compact=%s', async compact => {
+    config.defaultMode = 'online'; config.onlineAvailable = true; config.onlineProvider = 'AIPing · DeepSeek-V4.1-Flash';
+    await mount({ compact });
+    const settings = nodes().find(item => item.kind === 'details' && String(item.props.class).includes('advisor-settings'))!;
+    expect(settings.props.open).toBe(!compact);
+    const disclosure = nodes(settings).find(item => item.kind === 'p' && item.textContent.includes('在线发送'))!;
+    expect(disclosure).toBeDefined(); expect(disclosure.textContent).toContain('AIPing');
+    for (const detail of ['问题', '最近对话', '聚合统计', '知识来源']) expect(disclosure.textContent).toContain(detail);
+    expect(disclosure.textContent.length).toBeLessThan(100);
+    expect(nodes().filter(item => item.kind === 'p' && item.textContent.includes('在线发送'))).toEqual([disclosure]);
+    expect(nodes().some(item => item.kind === 'input' && item.props.type === 'checkbox')).toBe(false);
+    expect(root.textContent).not.toContain('每次提问需重新勾选');
+    await edit(node('textarea'), '直接发送的问题');
+    expect(node('button', compact ? '发送' : '生成运营答复').props.disabled).toBe(false); expect(posts()).toHaveLength(0);
+  });
+  it('pauses pending chat on close, ignores late replies and can send the draft after reopening', async () => {
     config.onlineAvailable = true;
     const pending = deferred(); reply = () => pending.promise;
     await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); const options = posts()[0][1];
+    await submit(); const options = posts()[0][1]; await edit(node('textarea'), '重新打开后继续的问题');
     advisorProps.active = false; await settle(); expect(options.signal.aborted).toBe(true);
     pending.resolve(await response(answer(JSON.parse(options.body)))); await settle();
     expect(root.textContent).not.toContain('120 次充电会话');
-    advisorProps.active = true; await settle(); expect(node('button', '发送').props.disabled).toBe(true);
+    advisorProps.active = true; await settle(); expect(node('button', '发送').props.disabled).toBe(false);
+    expect(node('textarea').value).toBe('重新打开后继续的问题');
     expect(posts()).toHaveLength(1);
+    reply = body => response(answer(body)); await submit();
+    expect(posts()).toHaveLength(2);
+    expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: '重新打开后继续的问题', mode: 'online', consent: true, history: [] });
   });
   it('preserves a completed reply across pause and reopening without additional requests', async () => {
     config.onlineAvailable = true;
     await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(true);
-    advisorInstance!.pause(); await settle(); expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
+    await submit(); await edit(node('textarea'), '保留的新问题');
+    advisorInstance!.pause(); await settle();
     advisorProps.active = false; await settle(); advisorProps.active = true; await settle();
     expect(root.textContent).toContain('120 次充电会话'); expect(posts()).toHaveLength(1);
+    expect(node('textarea').value).toBe('保留的新问题'); expect(node('button', '发送').props.disabled).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
   it('loads four editable examples and posts an offline question pinned to the published date range', async () => {
@@ -350,19 +510,22 @@ describe('operations advisor component and HTTP contract', () => {
       datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-25', endDate: '2026-06-01',
     });
   });
-  it('makes online mode unavailable until configured and requires fresh explicit consent per request', async () => {
+  it('sends configured online requests directly with consent and keeps the next send available', async () => {
     config.onlineAvailable = true; config.onlineProvider = '已配置模型';
     await mount(); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    expect(node('button', '生成运营答复').props.disabled).toBe(true); expect(root.textContent).toContain('当前筛选聚合统计和知识片段');
-    await submit(); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(node('button', '生成运营答复').props.disabled).toBe(false); expect(posts()).toHaveLength(0);
+    await submit();
     expect(JSON.parse(posts()[0][1].body)).toMatchObject({ mode: 'online', consent: true });
-    expect(node('button', '生成运营答复').props.disabled).toBe(true);
-    await submit(); expect(posts()).toHaveLength(1);
+    await edit(node('textarea'), '还需要关注什么？'); expect(node('button', '生成运营答复').props.disabled).toBe(false);
+    await submit(); expect(posts()).toHaveLength(2);
+    expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: '还需要关注什么？', mode: 'online', consent: true });
   });
   it('disables unconfigured online mode and invalid date submissions', async () => {
     await mount(); expect(node('option', '在线模型 · 未配置').props.disabled).toBe(true);
     expect(root.textContent).toContain('在后端配置 AIPing API Key'); expect(root.textContent).toContain('密钥仅保存在后端');
+    await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
+    expect(node('button', '生成运营答复').props.disabled).toBe(true); await submit(); expect(posts()).toHaveLength(0);
+    await edit(control('参谋答复方式'), 'offline');
     await click('运营表现如何？'); await edit(control('参谋开始日期'), '2027-01-01');
     expect(node('button', '生成运营答复').props.disabled).toBe(true); await submit(); expect(posts()).toHaveLength(0);
     expect(root.textContent).toContain('开始日期须早于结束日期');
@@ -374,12 +537,13 @@ describe('operations advisor component and HTTP contract', () => {
     await mount(); await edit(node('textarea'), '运营表现如何？'); await submit();
     expect(root.textContent).toContain('数据集缺少发布批次'); expect(posts()).toHaveLength(0);
   });
-  it('revokes online consent when a question or range changes', async () => {
+  it('allows an edited online question and valid range to be sent without another control', async () => {
     config.onlineAvailable = true; await mount(); await click('运营表现如何？');
-    await edit(control('参谋答复方式'), 'online'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
+    await edit(control('参谋答复方式'), 'online');
     expect(node('button', '生成运营答复').props.disabled).toBe(false);
-    await edit(node('textarea'), '哪些站点需要关注？');
-    expect(node('button', '生成运营答复').props.disabled).toBe(true); await submit(); expect(posts()).toHaveLength(0);
+    await edit(node('textarea'), '哪些站点需要关注？'); await edit(control('参谋城市'), 'DL'); await edit(control('参谋开始日期'), '2026-05-20');
+    expect(node('button', '生成运营答复').props.disabled).toBe(false); await submit(); expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body)).toMatchObject({ question: '哪些站点需要关注？', cityId: 'DL', startDate: '2026-05-20', mode: 'online', consent: true });
   });
   it('clears stale conclusions and aborts a pending answer when scope changes', async () => {
     await mount(); await click('运营表现如何？'); await submit(); expect(root.textContent).toContain('120 次充电会话');
@@ -447,12 +611,36 @@ describe('operations advisor component and HTTP contract', () => {
     config.defaultMode = 'online'; config.onlineAvailable = true;
     const knowledge = [{ id: 'knowledge-model', title: '模型说明', text: '<img src=x onerror=alert(1)>需要结合时间范围理解预测。', source: 'docs/model-guide.md' }];
     reply = body => response(answer(body, { evidence: [], citations: ['knowledge-model'], knowledge, answer: '预测误差应结合模型说明理解。[knowledge-model]' }));
-    await mount({ compact: true }); await edit(node('textarea'), '预测结果怎么理解？');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await mount({ compact: true }); await edit(node('textarea'), '预测结果怎么理解？'); await submit();
     expect(root.textContent).toContain('模型解读 · 请结合来源复核'); expect(root.textContent).not.toContain('已核对统计范围');
-    expect(control('答复引用').textContent).toContain('knowledge-model · 模型说明 · docs/model-guide.md');
+    const citations = control('答复引用'); expect(citations.kind).toBe('details'); expect(citations.props.open).not.toBe(true);
+    expect(citations.children.find(item => item.kind === 'summary')?.textContent).toBe('查看 1 项引用来源');
+    expect(citations.textContent).toContain('knowledge-model · 模型说明 · docs/model-guide.md');
+    expect(control('知识来源').kind).toBe('details'); expect(control('知识来源').props.open).not.toBe(true);
     expect(control('知识来源').textContent).toContain('<img src=x onerror=alert(1)>');
     expect(nodes().some(item => item.kind === 'img')).toBe(false);
+  });
+  it.each([true, false])('keeps current and archived citation sources collapsed with accurate counts when compact=%s', async compact => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    const knowledge = [{ id: 'knowledge-model', title: '模型说明', text: '需要结合时间范围理解预测。', source: 'docs/model-guide.md' }];
+    reply = body => response(answer(body, { citations: ['sessions', 'knowledge-model'], knowledge, answer: '当前范围有 120 次充电会话。[sessions] 请结合模型说明理解。[knowledge-model]' }));
+    await mount({ compact }); await edit(node('textarea'), '查看数据和知识来源'); await submit();
+    const current = control('答复引用');
+    expect(current.kind).toBe('details'); expect(current.props.open).not.toBe(true);
+    expect(current.children.find(item => item.kind === 'summary')?.textContent).toBe('查看 2 项引用来源');
+    expect(nodes(current).filter(item => item.kind === 'li')).toHaveLength(2);
+    expect(current.textContent).toContain('sessions · 充电会话 · /dashboard/overview · metrics.sessionCount');
+    expect(current.textContent).toContain('knowledge-model · 模型说明 · docs/model-guide.md');
+    if (compact) {
+      await edit(node('textarea'), '后续问题'); await submit();
+      const archived = control('历史答复引用');
+      expect(archived.kind).toBe('details'); expect(archived.props.open).not.toBe(true);
+      expect(archived.children.find(item => item.kind === 'summary')?.textContent).toBe('查看 2 项引用来源');
+      expect(nodes(archived).filter(item => item.kind === 'li')).toHaveLength(2);
+      expect(archived.textContent).toContain('/dashboard/overview'); expect(archived.textContent).toContain('docs/model-guide.md');
+      expect(control('历史知识来源').kind).toBe('details'); expect(control('历史知识来源').props.open).not.toBe(true);
+      expect(control('答复引用').props.open).not.toBe(true);
+    }
   });
   it.each([
     { citations: [] }, { citations: ['unknown-source'] }, { citations: ['sessions', 'unknown-source'] },
@@ -461,16 +649,14 @@ describe('operations advisor component and HTTP contract', () => {
   ])('rejects invalid online sources before rendering factual claims: %j', async extra => {
     config.defaultMode = 'online'; config.onlineAvailable = true;
     reply = body => response(answer(body, extra));
-    await mount({ compact: true }); await edit(node('textarea'), '当前运营情况？');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await mount({ compact: true }); await edit(node('textarea'), '当前运营情况？'); await submit();
     expect(nodes().some(item => item.props.role === 'alert')).toBe(true);
     expect(root.textContent).not.toContain('120 次充电会话'); expect(navigate).not.toHaveBeenCalled();
   });
   it('reports a model failure for a greeting without creating a substitute answer', async () => {
     config.defaultMode = 'online'; config.onlineAvailable = true;
     reply = () => Promise.resolve(new Response(JSON.stringify({ code: 'ADVISOR_UNAVAILABLE', message: '在线模型暂不可用，请稍后重试。' }), { status: 503 }));
-    await mount({ compact: true }); await edit(node('textarea'), '你好');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await mount({ compact: true }); await edit(node('textarea'), '你好'); await submit();
     expect(posts()).toHaveLength(1); expect(root.textContent).toContain('在线模型暂不可用');
     expect(nodes().some(item => item.kind === 'article')).toBe(false); expect(root.textContent).not.toContain('本地问候');
   });
@@ -479,19 +665,16 @@ describe('operations advisor component and HTTP contract', () => {
     reply = body => response(answer(body, { answer: `答复：${body.question}` }));
     await mount({ compact: true });
     for (let index = 1; index <= 5; index++) {
-      await edit(node('textarea'), `问题${index}`);
-      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+      await edit(node('textarea'), `问题${index}`); await submit();
     }
     expect(JSON.parse(posts()[4][1].body).history).toEqual([
       { role: 'user', content: '问题2' }, { role: 'assistant', content: '答复：问题2' },
       { role: 'user', content: '问题3' }, { role: 'assistant', content: '答复：问题3' },
       { role: 'user', content: '问题4' }, { role: 'assistant', content: '答复：问题4' },
     ]);
-    await edit(control('参谋城市'), 'DL'); await edit(node('textarea'), '大连问题');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await edit(control('参谋城市'), 'DL'); await edit(node('textarea'), '大连问题'); await submit();
     expect(JSON.parse(posts()[5][1].body).history).toEqual([]);
-    await edit(control('参谋开始日期'), '2026-05-20'); await edit(node('textarea'), '新日期问题');
-    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await edit(control('参谋开始日期'), '2026-05-20'); await edit(node('textarea'), '新日期问题'); await submit();
     expect(JSON.parse(posts()[6][1].body).history).toEqual([]);
   });
   it('allows the model sixty seconds before the advisor-specific seventy-second timeout', async () => {
@@ -502,6 +685,7 @@ describe('operations advisor component and HTTP contract', () => {
     await vi.advanceTimersByTimeAsync(61000); expect(signal.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(9000); await settle(); expect(signal.aborted).toBe(true);
     expect(root.textContent).toContain('数据请求超时'); expect(nodes().some(item => item.kind === 'article')).toBe(false);
+    expect(node('textarea').value).toBe('运营情况？'); expect(node('button', '发送').props.disabled).toBe(false);
   });
 });
 
