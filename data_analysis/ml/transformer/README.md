@@ -53,8 +53,10 @@
 ## 分配腿：一条必须先讲清的不变式
 
 单 tick 交付总功率 = `min(cap, Σdemand)`，**与策略无关**。所以绑定时 `servedFraction` 与欠供
-总量在四策略间**恒等**——`stress.py` 把这条不变式**实测**出来（同一 tick 跨策略 servedFraction
-最大离差 = 0.0，三档收紧容量全是）。策略真正的分化只在**欠供怎么分**：
+总量在四策略间**恒等**——`stress.py` 把这条不变式**实测**出来：度量的不是舍到 6 位的
+`servedFraction`，而是每个 tick 上未舍入的**实付总功率跨策略极差**（`_xpolicyDeliveredSpreadMaxKw`，
+三档收紧容量全是 0.0kW；早期版本拿舍入后的比值当尺子，等于把测量分辨率封死在 5e-7 以下，
+小于那个量的漏发根本测不出来）。策略真正的分化只在**欠供怎么分**：
 
 真实需求流（705,924 个"在充"站·tick、1,217,829 行逐桩需求）在 **cap=100kW**（91,813 个 binding
 tick，占在充 tick 的 13.0%）下的对比：
@@ -76,11 +78,21 @@ tick，占在充 tick 的 13.0%）下的对比：
   等待最短的那个被欠得更多"的 tick 占比：maxmin 有 **15.96%** 如此（它按需求份额抬平，把需求大的
   久等者排在后面），两条贪心策略与 proportional 都是 0.0%。镜像互换时加权和能相等，这一列不能。
 * **`priority_wait` 与 `greedy_fcfs` 在本批是同一条策略，而且这是实测不是注释**：逐 tick 分配不同的
-  tick 数 = **0 / 91,813**（另两档 0 / 44,178、0 / 5,389）。原因写在 `policy_report.json` 的
-  `policyEquivalence.sessionOrderCheck` 里：121,539 个会话上 rank(`session_id`) 与 rank(会话开始)
-  的 Spearman = **+1.000**，而需求长表按 `session_id` 稳定排序 ⇒ 组内行序**就是**等待降序
+  tick 数 = **0 / 91,813**（另两档 0 / 44,178、0 / 5,389）。判据只准**绝对**容差
+  （`PAIR_DIFF_ATOL_KW = 1e-9` kW，`rtol=0`）——早先写法 `allclose(a, b, atol=1e-9)` 还带着 numpy 默认的
+  `rtol=1e-5`，在 100kW 量级的分配上等于"1 瓦以内的差异算相同"，"不同的 tick 数"就成了容差的函数。
+  两把尺都落盘，且结论不靠容差：塌缩那一对 `greedy_fcfs!=priority_wait` 在**逐位精确**尺下同样是 **0**
+  （`maxHiddenDiffKw = 0.0`，即逐比特相同，不是"差得小于容差"）。被容差判成相同的只有 maxmin 相关两对、
+  cap=100 档合计 **15,562** 个 tick，其最大逐位差 **1.42e-14 kW**（浮点尘埃，远小于任何真实功率）。
+  原因写在 `policy_report.json` 的 `policyEquivalence.sessionOrderCheck` 里：121,539 个会话上
+  rank(`session_id`) 与 rank(会话开始) 的 **tie-aware** Spearman = **+1.000**、且"开始时间随 id 非递减"
+  检查通过，而需求长表按 `session_id` 稳定排序 ⇒ 组内行序**就是**等待降序
   （89,911/91,813 个 tick 组内等待确有差异，不是并列造成的假象）⇒ "先来先服务"已经等于"等待最久优先"。
   两条策略仍分开实现（换到 id 不随开始时间递增的真实数据会分道），但**本批四种策略只有三种行为**。
+  这条对账有个必须说出来的边界：**64.11%** 的会话与别的会话共享同一开始时间戳（`tiedStartSessionPct`），
+  这部分"同序"不含信息量；旧版用 `argsort(argsort())` 造秩，会把并列按行序拆开、照样报 +1.0，
+  把"没测到信息"读成"已证实同序"。所以现在同序只是**旁证**，等不等价仍以逐 tick 计数为准，
+  且退化输入（单会话、全并列）下读数给 `None` 并明写"无从判定"。
   真正分开的对：greedy 家族 vs proportional（**100%** 的 binding tick 分配不同）、vs maxmin（**45.5%**）。
 
 一句话方法论：**聚合指标相等 ≠ 策略等价；两个策略名重合 ≠ 它们是两条策略**——两个方向都得测，
@@ -94,7 +106,7 @@ python -m data_analysis.ml.transformer.features     # 站×tick 帧 + 分配需�
 python -m data_analysis.ml.transformer.train        # VALIDATION 选容量档，存 bundle
 python -m data_analysis.ml.transformer.evaluate     # TEST 一次性盲测
 python -m data_analysis.ml.transformer.stress       # 分配策略压力回放（独立输出目录，只需 features）
-python -m unittest data_analysis.ml.transformer.tests.test_transformer -v   # 37 项纯合成单元测试
+python -m unittest data_analysis.ml.transformer.tests.test_transformer -v   # 46 项纯合成单元测试
 ```
 
 > 为什么用 `unittest` 而不是 `pytest`：仓库 CI 跑的是 `python -m unittest discover -s data_analysis/tests`
@@ -105,7 +117,8 @@ python -m unittest data_analysis.ml.transformer.tests.test_transformer -v   # 37
 `tick_demands.parquet`、`gbdt-station-tick-load-v1.joblib`、`train_metrics.json`、
 `evaluation_report.{json,md}`；分配腿 `ml_transformer_stress/policy_report.{json,md}`。
 换表即中止：`train`/`evaluate` 走 `train.load_matrix` 复核 `featuresSha256`（bundle 里另存一份，
-两边对不上即中止），`stress` 读长表前先对 `demandLongSha256`。`O_EXCL` 独占写，脚本入口
+两边对不上即中止），`stress` 读长表前先对 `demandLongSha256`——**这条哈希键缺失也中止**，
+不按"查不到就算通过"处理（旧版正是那样 fail-open 的：整条完整性检查随上游字段改名一起静默消失）。`O_EXCL` 独占写，脚本入口
 `require_empty_run_dir` 拒绝就地改写已发布目录；`train`/`evaluate` 靠 `extra_allowed` 白名单支持
 断点续跑，不靠"允许覆盖"。
 
@@ -114,12 +127,12 @@ python -m unittest data_analysis.ml.transformer.tests.test_transformer -v   # 37
 | 文件 | 职责 |
 | --- | --- |
 | `common.py` | 批次绑定（fail-closed）、clean 装载、时间切分、`write_new_*`/`require_empty_run_dir`；指标与命令戳从 `ml.common` import（不复制 `sha256_file`/`mae`） |
-| `allocate.py` | 四种分配策略 + `policy_metrics`（Gini 在**全体参与者**上算、配对敏感的 `longestWaitStarved`）+ `priority_order`（排序键单点定义，策略与对账共用）；纯函数、零数据依赖 |
+| `allocate.py` | 四种分配策略 + `check_inputs`（NaN/inf/负需求/负容量/形状不符一律拒，不给静默兜底——负需求旧版能算出"分配 10kW 给一个 −5kW 的桩"）+ `policy_metrics`（Gini 在**全体参与者**上算、配对敏感的 `longestWaitStarved`）+ `priority_order`（排序键单点定义，策略与对账共用）；纯函数、零数据依赖 |
 | `features.py` | 遥测→站×tick 宽矩阵→长表：滞后（只用过去）+ 下一 tick 目标 + 1-tick purge；另出分配需求长表 |
 | `train.py` | 下一 tick 负荷 GBDT，三基线（globalMean/persistence/climatology），VAL RMSE 选容量档，余量读数 |
 | `evaluate.py` | TEST 盲测：模型 vs 基线、top-decile 误差、越限复核 |
 | `stress.py` | 分配腿反事实：真实需求流 × {360,100,125,150}kW × 四策略；实测不变式 + 逐 tick 两两差异 + **策略名对账**（`policyEquivalence`） |
-| `tests/test_transformer.py` | 分配不变式（逐策略×逐需求向量×逐容量全对）+ 指标语义（Gini 含被喂满者、饿死列配对敏感）+ 站×tick 帧滞后/目标/边界 + 分配腿入口端到端（`stress.main()` 落两份报告并拒绝重跑） |
+| `tests/test_transformer.py` | 分配不变式（逐策略×逐需求向量×逐容量全对，含 `Σalloc = min(cap, Σd)` 的闭式对账）+ 输入门禁（NaN/inf/负需求/负容量/形状不符）+ 指标语义（Gini 含被喂满者、饿死列配对敏感、max-min 对闭式水填充）+ 两把尺的判据（绝对容差、`rtol=0`、容差吞掉的量级自证）+ 措辞由实测生成（等价句、零 binding 分支同键）+ 站×tick 帧滞后/目标/边界 + 分配腿入口端到端（`stress.main()` 落两份报告并拒绝重跑）+ 哈希键缺失即中止 |
 
 ## 已知不足
 
@@ -131,6 +144,11 @@ python -m unittest data_analysis.ml.transformer.tests.test_transformer -v   # 37
   行为——要真正比较等待敏感性，需要排队等待时间（或用户未开成的会话）这类本批没有的记录。
 - 负荷模型与成员 A 的 `ml/load/`、`ml/availability/` 是不同粒度/目标（站×5min 总需求 vs 站×小时），
   但同吃遥测——若日后统一时频底座，本线 `features.py` 应改读那张共享站×tick 事实表，避免三处重算。
+- **等价结论的输入侧边界**：本批 **64.11%** 的会话与其他会话共享同一开始时间戳，"id 序 = 开始时间序"
+  这条旁证在并列部分不含信息量，故等价与否只以逐 tick 差异计数为准；且这条对账是**批次性质**，
+  换一批 `session_id` 不随开始时间递增的数据，四种策略名可能真的变成四种行为（所以那句话由产物生成）。
+- **CI 跑不到本线测试**：`.github/workflows/data-analysis.yml` 的 ML 侧是**逐个点名**（如
+  `data_analysis.ml.tests.test_delivery_safety`），不含本目录，而该文件属共享领地、本线只提案不改。
 - 契约边界：本线产物用 `write_new_bytes`/`write_new_json` 自存，**不写 `model_metadata.json`、不进
   `delivery/`、不动 `contracts/`**——`model_metadata.schema.json` 的 `target`/`metrics` 键仍锁死在
   load/availability，新目标上线需要先由 owner 扩契约（本线只提案，不改）。

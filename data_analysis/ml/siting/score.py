@@ -11,7 +11,8 @@ CSV 会被单独拷走、单独打开，状态标记不能只活在 JSON 侧文�
 **城内置换零线**之下（它学的是倒置结构），以及同一批数据里 `site_type` 可外推。
 详见 backtest.md 的三层结论。需求口径这里用
 `demand_incl_unmet = 会话数 + ABANDONED 弃队数`——把"想充没充上"的未满足需求也算进可吸收面
-（其中 476 条弃队 24h 内同人同站又充上了，属双计；`CALL_EXPIRED` 未并入，见 common 模块 docstring）。
+（其中一部分弃队在离队后 24h 内同人同站又充上了，属双计；`CALL_EXPIRED` 未并入。两者条数与口径
+由 `common.unmet_proxy_caveats()` 现算并写进 `backtest.json.unmetProxyCaveats`，本文件不抄数字）。
 
 用法（仓库根目录）：先 python -m data_analysis.ml.siting.backtest，再 python -m data_analysis.ml.siting.score
 """
@@ -32,8 +33,26 @@ TOP_N_PER_CITY = 5
 MIN_DIST_FROM_EXISTING_KM = 2.0
 
 
+def _need(container: dict, key: str, what: str) -> object:
+    """从 backtest.json 取必需字段：缺就拒算，而不是抛裸 KeyError 或静默用 None。"""
+    value = container.get(key)
+    if value is None:
+        raise common.BatchMismatch(f"{common.BACKTEST_JSON.name} 里没有 {key}（{what}），请重跑 backtest")
+    return value
+
+
 def read_backtest_verdict() -> dict:
-    """引用回测结论就**必须**读得到它：缺文件即中止，不靠 docstring 里的记忆写免责声明。"""
+    """引用回测结论就**必须**读得到它：缺文件即中止，不靠 docstring 里的记忆写免责声明。
+
+    三道检查，一道比一道深：
+
+    1. 文件在不在、批次对不对、所需读数在不在（旧版只做到这里，且缺字段时抛裸 ``KeyError``）；
+    2. **输入表摘要对不对**——批次号只回答"哪一批"，同一批的 clean 表被追加/换过后，
+       旧的 ``backtest.json`` 读数已经不代表将要打分的数据，而批次号一点没变。README 里
+       "换表即产物失效"这句话此前只在代码里存在一半，这里补上；
+    3. 弃队代理口径（``unmetProxyCaveats``）读得到——``demandBasis`` 的数字从这里取，
+       不在本文件里抄第二份（旧版抄了个 ``476``，与现算的 ``492`` 在同一个产物目录里互相打脸）。
+    """
     if not common.BACKTEST_JSON.exists():
         raise FileNotFoundError(
             f"缺少 {common.BACKTEST_JSON.name}：本脚本的免责声明与 CSV 状态列都从它取数，"
@@ -44,19 +63,53 @@ def read_backtest_verdict() -> dict:
         raise common.BatchMismatch(
             f"{common.BACKTEST_JSON.name} 绑的批次 {report.get('publishedBatchId')!r} "
             f"!= 本线 {common.EXPECTED_PUBLISHED_BATCH_ID!r}，请先重跑 backtest")
+    recorded = report.get("sourceTablesSha256")
+    if not recorded:
+        raise common.BatchMismatch(
+            f"{common.BACKTEST_JSON.name} 没有 sourceTablesSha256，无从核对它用的表；请重跑 backtest")
+    current = common.source_table_digests()
+    drifted = sorted(t for t in current if recorded.get(t) != current[t])
+    if drifted:
+        raise common.BatchMismatch(
+            f"输入表内容与 {common.BACKTEST_JSON.name} 记录的不一致：{drifted}。"
+            "同一批次号下表也可能被追加/替换过，此时 backtest 读数已不代表将要打分的数据，请重跑 backtest")
     radius = str(common.CAPTURE_KM)
     by_radius = report.get("losobyRadius", {}).get(radius)
     nulls = report.get("permutationNulls", {}).get(radius, {}).get("nulls", {})
     if not by_radius or not nulls.get("inCity"):
         raise common.BatchMismatch(f"{common.BACKTEST_JSON.name} 缺 r={radius}km 的读数，请重跑 backtest")
+    caveats = report.get("unmetProxyCaveats")
+    if not isinstance(caveats, dict) or not all(
+            k in caveats for k in ("windowHours", "statusCounts", "abandonedRechargedAfter",
+                                   "abandonedRechargedAfterPct")):
+        raise common.BatchMismatch(
+            f"{common.BACKTEST_JSON.name} 的 unmetProxyCaveats 缺失或键形不符（本文件需要现算口径的"
+            " windowHours/statusCounts/abandonedRechargedAfter/abandonedRechargedAfterPct），请重跑 backtest")
+    field_block = _need(by_radius, "field", "场 LOSO 读数")
+    in_city = _need(nulls["inCity"], "nullMean", "城内置换零线均值")
     return {
-        "fieldSpearmanAtCaptureKm": by_radius["field"]["spearman"],
-        "inCityNullMean": nulls["inCity"]["nullMean"],
-        "inCityShareAtOrBelowObserved": nulls["inCity"]["shareOfNullAtOrBelowObserved"],
+        "fieldSpearmanAtCaptureKm": _need(field_block, "spearman", "场 Spearman"),
+        "inCityNullMean": in_city,
+        "inCityShareAtOrBelowObserved": _need(nulls["inCity"], "shareOfNullAtOrBelowObserved",
+                                              "单侧 P（零线≤观察）"),
         "siteTypeShareSpearman": report.get("siteTypeSignal", {}).get("losoOnWithinCityShare", {}).get("spearman"),
         "captureKm": common.CAPTURE_KM,
         "backtestFile": common.BACKTEST_JSON.name,
+        "sourceTablesSha256": current,
+        "unmetProxyCaveats": caveats,
     }
+
+
+def demand_basis_text(caveats: dict) -> str:
+    """需求口径那句话**由产物里的现算读数拼**——这里不留任何手抄数字。"""
+    window = caveats["windowHours"]
+    counts = caveats["statusCounts"]
+    return ("demand_incl_unmet = 会话数 + ABANDONED 弃队数（未满足需求代理；条数 "
+            f"{counts.get('ABANDONED', 0):,}）。其中 {caveats['abandonedRechargedAfter']:,} 条"
+            f"（{caveats['abandonedRechargedAfterPct']}%）在**离队后** {window:g}h 内同人同站又开成了会话"
+            " = 双计；CALL_EXPIRED "
+            f"{counts.get('CALL_EXPIRED', 0):,} 条同为未满足需求但**未并入**（本线没做它的敏感性分析）。"
+            "口径与全部读数见 backtest.json.unmetProxyCaveats。")
 
 
 def main() -> dict:
@@ -110,8 +163,7 @@ def main() -> dict:
                     "'用邻居外推'代数上必然为负，故结论不是'没有空间信号'，而是"
                     "'本批的可学规律在站型（site_type 份额 LOSO "
                     f"{backtest['siteTypeShareSpearman']}），不在空间位置'。"),
-        "demandBasis": "demand_incl_unmet = 会话数 + ABANDONED 弃队数（未满足需求代理；"
-                       "其中 476 条 24h 内已复充 = 双计，CALL_EXPIRED 未并入）",
+        "demandBasis": demand_basis_text(backtest["unmetProxyCaveats"]),
         "gridParams": {"padDeg": PAD_DEG, "stepDeg": STEP_DEG,
                        "captureKm": common.CAPTURE_KM, "topNPerCity": TOP_N_PER_CITY,
                        "minDistFromExistingKm": MIN_DIST_FROM_EXISTING_KM},

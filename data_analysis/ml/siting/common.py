@@ -5,11 +5,15 @@
 `ABANDONED` 作为"未满足需求"代理）。因此本线交付的是**确定性的场模型 + 一次真盲测回测**，
 不是一个已被验证有外推力的模型——回测结论（见 README）是负的。
 
-已知的口径脏处（写在这里、也写进产物，不留到 README 才说）：
-* ``abandoned`` 里 476/10,143（4.69%）的弃队，同一 user 在同一站 24h 内又开成了会话——这部分
-  "想充没充上"后来充上了，``demand_incl_unmet`` 会把它们双计；
-* ``CALL_EXPIRED``（4,037 条）同为未满足需求，本线**没有**计入 ``abandoned``——并入会改变站间
-  排序、而本线没做那份敏感性分析，故只披露不合并。
+已知的口径脏处（数字一律由 ``unmet_proxy_caveats()`` **现算**并写进产物，代码里不留字面量）：
+* 弃队与超时**不是一种东西**：``ABANDONED`` 的 ``called_at`` 全空（没叫到号就走），``CALL_EXPIRED``
+  的 ``called_at`` 全非空（叫到号没接）；且两者 ``session_id`` 均为空——"后来到底充上没充上"
+  没有外键可查，只能用 (user_id, station_id, 时间窗) 代理匹配。
+* 按**离队时刻** ``resolved_at`` 计，ABANDONED 里约 4.85% 在 24h 内同人同站又开成了会话，
+  ``demand_incl_unmet`` 把它们双计了；另有约 2.9% 的弃队，在离队**之前** 24h 内同站同人已有一段
+  会话——说明"弃队"这条记录本身也不严格等于"这次没充上"。
+* ``CALL_EXPIRED`` 本线**没有**计入 ``abandoned``——并入会改变站间排序、而本线没做那份敏感性
+  分析，故只披露不合并。它的 24h 内复充率（约 5.6%）与 ABANDONED 同量级，不是"更没充上"的一类。
 
 样本单位：一站一行（站级需求强度）+ 候选网格点。本线**读** `charging_sessions` /
 `queue_entries` / `charger_telemetry` / `stations`，全部只读，零新增数据。
@@ -51,6 +55,11 @@ SCORE_JSON = OUT_DIR / "score_summary.json"
 #: 半径档位本身是模型假设，非数据事实。
 RADII_KM = (2.0, 3.0, 5.0, 8.0, 12.0)
 CAPTURE_KM = 3.0
+
+#: 弃队"后来有没有充上"的代理匹配窗口（小时）。窗口长度是**假设**，写进产物；换窗口即换读数。
+RECHARGE_WINDOW_HOURS = 24.0
+#: queue_entries 的三种终态。本线只把 ABANDONED 计入未满足需求代理，另两种只披露不合并。
+SOURCE_QUEUE_STATUSES = ("SERVED", "ABANDONED", "CALL_EXPIRED")
 
 SOURCE_TABLES = {
     "stations": "station_id→city_id/latitude/longitude/site_type（坐标与分组）",
@@ -135,6 +144,67 @@ def station_intensity() -> pd.DataFrame:
     return frame
 
 
+def unmet_proxy_caveats(window_hours: float = RECHARGE_WINDOW_HOURS) -> dict:
+    """弃队/超时代理口径的**现算**读数。写死数字等于把结论和数据解绑，所以这里只算不抄。
+
+    匹配规则（全部写进返回值，便于换口径复核）：
+
+    * 没有外键可用：``ABANDONED`` 与 ``CALL_EXPIRED`` 的 ``session_id`` 在本批**全为空**，
+      所以"这人次后来充上了吗"只能用 ``(user_id, station_id)`` + 时间窗代理匹配；
+    * 锚点必须是 ``resolved_at``（离队时刻）。以 ``joined_at``（入队时刻）为锚会把排队超过
+      窗口的记录漏出窗外——本批实测两种锚点差 16 条（476 vs 492），旧版本用的正是错的入队锚；
+    * 只算**正向**复充（会话晚于离队）。早于离队的另成一类读数返回，因为它说明
+      "弃队"这条记录并不严格等于"这次没充上"，但把它算进双计会重复计到同一次充电。
+    """
+    queue = load_clean_table("queue_entries", ["queue_id", "user_id", "station_id", "joined_at",
+                                               "called_at", "resolved_at", "status", "session_id"])
+    sessions = load_clean_table("charging_sessions", ["user_id", "station_id", "started_at"])
+    for column in ("joined_at", "called_at", "resolved_at"):
+        queue[column] = _naive_utc(queue[column])
+    sessions["started_at"] = _naive_utc(sessions["started_at"])
+
+    counts = queue["status"].value_counts()
+    status_counts = {str(name): int(counts.get(name, 0)) for name in SOURCE_QUEUE_STATUSES}
+    anchor_variants = {}
+    for status in ("ABANDONED", "CALL_EXPIRED"):
+        sub = queue[queue["status"] == status]
+        joined = sub.merge(sessions, on=["user_id", "station_id"], how="inner")
+        per_anchor = {}
+        for anchor in ("resolved_at", "joined_at"):
+            gap = (joined["started_at"] - joined[anchor]).dt.total_seconds() / 3600.0
+            per_anchor[anchor] = {
+                "rechargedAfter": int(joined.loc[(gap > 0) & (gap <= window_hours), "queue_id"].nunique()),
+                "sessionBefore": int(joined.loc[(gap < 0) & (gap >= -window_hours), "queue_id"].nunique()),
+            }
+        anchor_variants[status] = per_anchor
+
+    def share(status: str) -> dict:
+        sub = queue[queue["status"] == status]
+        return {"rows": int(len(sub)),
+                "withCalledAt": int(sub["called_at"].notna().sum()),
+                "withSessionId": int(sub["session_id"].notna().sum())}
+
+    abandoned = status_counts.get("ABANDONED", 1)
+    call_expired = status_counts.get("CALL_EXPIRED", 1)
+    ab_after = anchor_variants["ABANDONED"]["resolved_at"]["rechargedAfter"]
+    ce_after = anchor_variants["CALL_EXPIRED"]["resolved_at"]["rechargedAfter"]
+    return {
+        "windowHours": float(window_hours),
+        "statusCounts": status_counts,
+        "semantics": {"ABANDONED": share("ABANDONED"), "CALL_EXPIRED": share("CALL_EXPIRED")},
+        "abandonedRechargedAfter": ab_after,
+        "abandonedRechargedAfterPct": round(100.0 * ab_after / max(abandoned, 1), 2),
+        "callExpiredRechargedAfter": ce_after,
+        "callExpiredRechargedAfterPct": round(100.0 * ce_after / max(call_expired, 1), 2),
+        "abandonedWithSessionBeforeLeaving": anchor_variants["ABANDONED"]["resolved_at"]["sessionBefore"],
+        "anchorVariants": anchor_variants,
+        "note": ("demand_incl_unmet = 会话数 + ABANDONED；abandonedRechargedAfter 条弃队在离队后 "
+                 f"{window_hours:g}h 内同人同站又开成会话（双计）。CALL_EXPIRED 未并入（未做敏感性分析），"
+                 "且它与 ABANDONED 不是一类：前者 called_at 全非空（叫到号没接）、后者全空（没叫到号就走），"
+                 "两者 session_id 均为空，故复充只能按 (user, station, 时间窗) 代理匹配。"),
+    }
+
+
 def data_note() -> str:
     return ("全部指标为模拟数据测试结果（第二阶段发布批次 "
             f"{EXPECTED_PUBLISHED_BATCH_ID}），不代表真实运营数据表现。本线未新增任何数据：需求强度、"
@@ -163,10 +233,11 @@ def sha256_bytes(blob: bytes) -> str:
 
 __all__ = [
     "DATA_ANALYSIS_ROOT", "SOURCE_DATASET_DIR", "CLEAN_DIR", "OUT_DIR", "DATASET_ID",
-    "SEED", "BUSINESS_OFFSET_HOURS",
+    "SEED", "BUSINESS_OFFSET_HOURS", "RECHARGE_WINDOW_HOURS", "SOURCE_QUEUE_STATUSES",
     "EXPECTED_PUBLISHED_BATCH_ID", "BACKTEST_JSON", "BACKTEST_MD", "OPPORTUNITIES_CSV",
     "SCORE_JSON", "RADII_KM", "CAPTURE_KM", "SOURCE_TABLES", "BatchMismatch",
     "read_source_manifest", "verify_batch", "load_clean_table", "station_intensity",
+    "unmet_proxy_caveats",
     "data_note", "source_table_digests", "sha256_bytes",
     "write_new_json", "write_new_text", "write_new_csv", "require_empty_run_dir",
     "sha256_file", "dependency_versions", "invocation", "stamp",

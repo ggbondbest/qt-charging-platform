@@ -6,8 +6,9 @@
 
 钉住的东西分三类：
 
-* **分配不变式**：``0 ≤ alloc ≤ demand``、``Σalloc ≤ cap``（逐策略 × 逐需求向量 × 逐容量全对）；
-  水填充/比例公平的解析解；FCFS 与优先级贪心的出队次序。
+* **分配不变式**：``0 ≤ alloc ≤ demand``、``Σalloc == min(cap, Σdemand)``（上界**与**下界，逐策略 ×
+  逐需求向量 × 逐容量全对；旧版只有 ``Σalloc ≤ cap``，一只漏发的分配器能整片绿灯）；
+  水填充/比例公平的解析解；FCFS 与优先级贪心的出队次序；``allocate()`` 对脏输入拒算。
 * **指标语义**（本 PR 审过、改过的两处，回归钉子写在这里）：Gini 在**全体参与者**上算——
   赢家通吃必须给出显著不均衡（旧实现只在欠供>0 的子集上算，恰好在那一刻归零）；
   ``longestWaitStarved`` 是配对敏感的，能区分两个加权和相等的策略。
@@ -66,6 +67,62 @@ class AllocationInvariants(unittest.TestCase):
                         self.assertTrue(np.all(alloc >= -1e-9), (policy, case, cap, alloc))
                         self.assertTrue(np.all(alloc <= demands + 1e-9), (policy, case, cap, alloc))
                         self.assertLessEqual(float(alloc.sum()), cap + 1e-9)
+
+    def test_delivery_equals_min_cap_and_total_demand(self):
+        """交付总量必须**正好**是 min(cap, Σdemand)——上界加下界一起钉。
+
+        旧测试只有 ``Σalloc <= cap`` 与逐元素上下界，一只系统性漏发 1% 的分配器能整片绿灯；
+        跨策略 servedFraction 相等那条也只测"彼此一致"，不测"等于该交付的量"。
+        """
+        for policy in allocate.POLICIES:
+            for case in DEMAND_CASES:
+                demands = np.asarray(case, dtype=float)
+                for cap in CAPS:
+                    with self.subTest(policy=policy, demands=case, cap=cap):
+                        alloc = allocate.allocate(policy, demands, cap, wait_min=_wait(len(demands)))
+                        self.assertAlmostEqual(float(alloc.sum()), min(cap, float(demands.sum())), delta=1e-9)
+
+    def test_allocate_rejects_dirty_inputs(self):
+        """``allocate()`` 的输入闸：负/NaN/inf 需求、负容量、长度不符都要**拒算**。
+
+        回归钉子：负需求会击穿"0 <= alloc <= demand"——``_clip`` 把 ``[0, demand]`` 当区间，
+        demand 为负时取到负值，``greedy([-5,10], cap=7)`` 曾给出 ``[-5,10]``（某桩实抽 10kW > 容量）。
+        真实长表实测无负值/无 NaN，所以这是**契约**问题不是当期数据问题——契约要靠拒算守住。
+        """
+        wait = np.array([1.0, 2.0])
+        with self.assertRaises(ValueError):
+            allocate.allocate("greedy_fcfs", np.array([-5.0, 10.0]), 7.0, wait_min=wait)
+        with self.assertRaises(ValueError):
+            allocate.allocate("proportional", np.array([np.nan, 10.0]), 7.0, wait_min=wait)
+        with self.assertRaises(ValueError):
+            allocate.allocate("maxmin", np.array([np.inf, 10.0]), 7.0, wait_min=wait)
+        with self.assertRaises(ValueError):
+            allocate.allocate("greedy_fcfs", np.array([5.0, 10.0]), -1.0, wait_min=wait)
+        with self.assertRaises(ValueError):
+            allocate.allocate("greedy_fcfs", np.array([5.0, 10.0]), 7.0, wait_min=np.array([1.0]))
+        with self.assertRaises(ValueError):
+            allocate.allocate("priority_wait", np.array([5.0, 10.0]), 7.0, wait_min=np.array([1.0, np.nan]))
+        # 二维输入也曾让"逐桩需求"变成矩阵广播，静默给出形状不同的分配
+        with self.assertRaises(ValueError):
+            allocate.allocate("greedy_fcfs", np.array([[5.0, 10.0]]), 7.0)
+
+    def test_maxmin_waterfill_matches_closed_form(self):
+        """与解析式 ``min(d_i, L)``（L 由 Σ min(d,L)=cap 决定）对账：独立参考实现，不看代码抄答案。"""
+        rng = np.random.default_rng(11)
+        for _ in range(200):
+            demands = np.round(rng.uniform(0, 200, int(rng.integers(1, 9))), 1)
+            cap = float(rng.uniform(0, demands.sum() * 1.2))
+            lo, hi = 0.0, float(cap)
+            for _ in range(200):                      # 二分水位线
+                mid = (lo + hi) / 2.0
+                if np.minimum(demands, mid).sum() < cap:
+                    lo = mid
+                else:
+                    hi = mid
+            want = np.minimum(demands, (lo + hi) / 2.0)
+            got = allocate.allocate_maxmin(demands, cap)
+            with self.subTest(demands=demands.tolist(), cap=cap):
+                self.assertTrue(np.allclose(got, want, atol=1e-3), (got, want))
 
     def test_maxmin_waterfill_hand_case(self):
         alloc = allocate.allocate_maxmin(np.array([10.0, 200.0, 5.0]), 100.0)
@@ -141,9 +198,19 @@ class PolicyMetrics(unittest.TestCase):
         self.assertEqual(fair["unfairnessGini"], 0.0)
 
     def test_gini_ignores_idle_chargers(self):
-        """没需求的桩（share 无定义）不参与不均衡度：单桩在充且被喂满 → 0。"""
-        metrics = allocate.policy_metrics(np.array([10.0, 0.0, 0.0]), np.array([10.0, 0.0, 0.0]))
-        self.assertEqual(metrics["unfairnessGini"], 0.0)
+        """没需求的桩（share 无定义）不参与不均衡度——而且这条断言**有区分力**。
+
+        旧版此处只用了一个单桩在充的例子：参与者数 = 1，Gini 对任何实现都返回 0，
+        把闲置桩错误地算进去也照样通过（恒真测试）。这里改成：3 个参与者份额 (0, .5, 1)
+        的正确值 = 0.4444；若把第 4 个闲置桩（份额被 where 置 0）一起算，值会变成 0.5833。
+        两个数不同，才真把"参与者集合"这件事钉住。
+        """
+        demands = np.array([10.0, 10.0, 10.0, 0.0])
+        alloc = np.array([10.0, 5.0, 0.0, 0.0])
+        self.assertAlmostEqual(allocate.policy_metrics(demands, alloc)["unfairnessGini"], 0.4444, places=4)
+        # 对照：单参与者（含闲置桩）无从谈不均衡
+        self.assertEqual(allocate.policy_metrics(np.array([10.0, 0.0, 0.0]),
+                                                 np.array([10.0, 0.0, 0.0]))["unfairnessGini"], 0.0)
 
     def test_wait_weighted_only_when_wait_given(self):
         demands = np.array([50.0, 50.0])
@@ -393,7 +460,7 @@ class StressReplay(unittest.TestCase):
     def test_binding_tick_yields_invariant_and_pair_diffs(self):
         block = stress.replay(self._long(), 60.0)                 # Σ=115 > 60
         self.assertEqual(block["_bindingTicks"], 1)
-        self.assertEqual(block["_xpolicyServedSpreadMax"], 0.0)   # 交付总量与策略无关
+        self.assertLess(block["_xpolicyDeliveredSpreadMaxKw"], 1e-9)   # 交付总量与策略无关（浮点意义下）
         # 行序就是等待降序（SES-00000000 等 30 分钟排在前）→ 两条贪心策略逐 tick 全等
         self.assertEqual(block["_perTickAllocationDiffTicks"]["greedy_fcfs!=priority_wait"], 0)
         self.assertEqual(block["_priorityOrderEqualsFcfsOrderTicks"], 1)
@@ -401,13 +468,38 @@ class StressReplay(unittest.TestCase):
         for policy in allocate.POLICIES:
             self.assertIn("longestWaitStarvedPct", block[policy])
 
+    def test_spread_is_measured_below_the_rounding_floor(self):
+        """不变式的测量**不能**被指标舍入限住分辨率。
+
+        旧版拿 ``policy_metrics`` 里 round(...,6) 后的 servedFraction 求极差，于是小于 5e-7
+        （150kW tick 上约 0.1W）的跨策略漏发永远测不出 0 以外的值。现改测未舍入的 alloc.sum()，
+        所以这里注入一个只漏 1e-9 相对量的分配器，它也必须被抓出来。
+        """
+        original = allocate.allocate_proportional
+
+        def leaky(demands, cap):
+            return original(demands, cap) * (1.0 - 1e-9)
+
+        with mock.patch.object(allocate, "allocate_proportional", leaky):
+            leaked = stress.replay(self._long(), 60.0)
+        self.assertGreater(leaked["_xpolicyDeliveredSpreadMaxKw"], 0.0)
+        self.assertLess(leaked["_xpolicyDeliveredSpreadMaxKw"], 1e-4)   # 确实是"小于舍入地板"的量
+
     def test_non_binding_branch_carries_the_same_keys(self):
-        """从不 binding 的容量档也必须给出同一套键，否则下游取数要按分支分叉。"""
-        block = stress.replay(self._long(), 1e6)
-        self.assertEqual(block["_bindingTicks"], 0)
-        self.assertEqual(block["_perTickAllocationDiffTicks"], {})
+        """从不 binding 的容量档也必须给出同一套**顶层**键，否则下游取数要按分支分叉。
+
+        旧版这个测试只比对每策略的子字典——而缺的键（``_xpolicyDeliveredSpread*Kw``）在顶层，
+        于是测试名字承诺的东西恰好没测：非 binding 分支真的少了两个键也照样绿。
+        """
+        loose = stress.replay(self._long(), 1e6)
+        binding = stress.replay(self._long(), 60.0)
+        self.assertEqual(loose["_bindingTicks"], 0)
+        self.assertEqual(loose["_perTickAllocationDiffTicks"], {})
+        self.assertEqual(set(loose), set(binding))               # 顶层键集一致
+        self.assertIsNone(loose["_xpolicyDeliveredSpreadMaxKw"])  # 没测≠测出 0
         for policy in allocate.POLICIES:
-            self.assertEqual(set(block[policy]), {"bindingTicks", "servedFraction", "meanShortfallKw",
+            self.assertEqual(set(loose[policy]), set(binding[policy]))
+            self.assertEqual(set(loose[policy]), {"bindingTicks", "servedFraction", "meanShortfallKw",
                                                  "unfairnessGini", "waitWeightedShortfall",
                                                  "longestWaitStarvedPct"})
 
@@ -416,14 +508,122 @@ class StressReplay(unittest.TestCase):
         self.assertEqual(block["_priorityOrderEqualsFcfsOrderTicks"], 0)
         self.assertEqual(block["_perTickAllocationDiffTicks"]["greedy_fcfs!=priority_wait"], 1)
 
+    def _verdicts(self, diffs):
+        block = {"_bindingTicks": 10, "_perTickAllocationDiffTicks": dict(diffs),
+                 "_priorityOrderEqualsFcfsOrderTicks": 10, "_ticksWithVaryingWait": 10}
+        per_cap = {str(cap): block for cap in common.STRESS_CAPS}
+        verdicts = stress._pair_verdicts(per_cap)
+        return verdicts, stress._behaviour_families(verdicts)
+
+    def test_equivalence_statement_is_generated_from_measurement(self):
+        """结论句必须跟着实测翻转——回归钉子：旧版把"greedy ≡ priority、不同 tick 数 = 0"写死在正文里。
+
+        写死的句子在换一批数据（id 序与开始时间不同序）后会**反过来**说假话，而产物看起来一样正规。
+        """
+        order_check = {"implication": "（证据略）"}
+        collapsed_diffs = {"greedy_fcfs!=priority_wait": 0, "greedy_fcfs!=proportional": 7,
+                           "greedy_fcfs!=maxmin": 3, "proportional!=maxmin": 5,
+                           "proportional!=priority_wait": 7, "maxmin!=priority_wait": 3}
+        verdicts, families = self._verdicts(collapsed_diffs)
+        self.assertTrue(verdicts["greedy_fcfs!=priority_wait"]["indistinguishable"])
+        self.assertEqual(len(families), 3)
+        text = stress._equivalence_statement(verdicts, families, order_check)
+        self.assertIn("greedy_fcfs 与 priority_wait", text)
+        self.assertIn("一次都没不同", text)
+        # 全部分开：同一套代码必须换一句话，而不是继续宣称塌缩
+        open_diffs = {k: (1 if k == "greedy_fcfs!=priority_wait" else 2) for k in collapsed_diffs}
+        verdicts, families = self._verdicts(open_diffs)
+        text = stress._equivalence_statement(verdicts, families, order_check)
+        self.assertNotIn("一次都没不同", text)
+        self.assertIn("4 种行为", text)
+        self.assertEqual(len(families), 4)
+        # 一个 binding tick 都没测到：既不能说相同、也不能说不同
+        block = {"_bindingTicks": 0, "_perTickAllocationDiffTicks": {},
+                 "_priorityOrderEqualsFcfsOrderTicks": 0, "_ticksWithVaryingWait": 0}
+        verdicts = stress._pair_verdicts({str(c): block for c in common.STRESS_CAPS})
+        text = stress._equivalence_statement(verdicts, stress._behaviour_families(verdicts), order_check)
+        self.assertIn("没测", text)
+
+    def test_pair_diff_ruling_is_absolute_only(self):
+        """回归钉子：np.allclose 的**默认相对容差**会把真实差异判成"相同"。
+
+        旧写法 `allclose(a, b, atol=1e-9)` 还带着 rtol=1e-5——100kW 量级的分配上，判据实际是
+        |a−b| ≤ 1e-9 + 1e-3 kW，也就是**1 瓦以内的差异被算作相同**，"不同的 tick 数"于是成了
+        容差的函数（换个 numpy 默认值就换个结论）。现在只准绝对项 1e-9kW（一毫瓦）。
+        """
+        base = np.array([100.0, 50.0])
+        half_watt = np.array([100.0 + 5e-4, 50.0])          # 差 0.5 瓦：真差异，不是浮点尘埃
+        self.assertTrue(stress._tick_differs(base, half_watt))
+        # 旧判据（带默认 rtol）在这里回答"相同"——0.5 瓦被 1e-5×100kW=1 瓦 的相对项吞掉了
+        self.assertTrue(np.allclose(base, half_watt, atol=1e-9))
+        dust = np.array([100.0 + 1e-12, 50.0])              # 差 1e-12：求和噪声，不计为差异
+        self.assertFalse(stress._tick_differs(base, dust))
+        self.assertFalse(np.array_equal(base, dust))        # 但精确尺会记下来 → 两把尺的差额可见
+
+    def test_pair_verdicts_report_both_rulers(self):
+        """容差吞掉的 tick 数必须自己说出来（toleranceHiddenTicks），不能只留一个计数。"""
+        block = {"_bindingTicks": 10, "_priorityOrderEqualsFcfsOrderTicks": 10,
+                 "_ticksWithVaryingWait": 10,
+                 "_perTickAllocationDiffTicks": {"greedy_fcfs!=priority_wait": 0},
+                 "_perTickAllocationDiffTicksExact": {"greedy_fcfs!=priority_wait": 4},
+                 "_perTickAllocationDiffMaxHiddenKw": {"greedy_fcfs!=priority_wait": 1.4e-14}}
+        verdict = stress._pair_verdicts({str(c): dict(block) for c in common.STRESS_CAPS})
+        pair = verdict["greedy_fcfs!=priority_wait"]
+        self.assertEqual(pair["diffTicks"], 0)
+        self.assertEqual(pair["diffTicksExact"], 12)
+        self.assertEqual(pair["toleranceHiddenTicks"], 12)
+        # 吞掉的量级也要报出来：只报"吞了 12 个 tick"，读者无从判断那是尘埃还是真差异
+        self.assertAlmostEqual(pair["maxHiddenDiffKw"], 1.4e-14)
+        self.assertEqual(pair["diffToleranceKw"], stress.PAIR_DIFF_ATOL_KW)
+        self.assertTrue(pair["indistinguishable"])          # 仍按物理上无意义的 1e-9kW 判"不可分辨"
+
     def test_session_order_check_reads_the_table_instead_of_assuming(self):
         check = stress.session_order_check(self._long())
         self.assertEqual(check["sessions"], 2)
-        self.assertAlmostEqual(check["spearmanSessionIdRankVsStartRank"], 1.0, places=9)
-        self.assertIn("同序", check["implication"])
+        self.assertTrue(check["idOrderMatchesStartOrder"])
+        self.assertAlmostEqual(check["spearmanTieAwareSessionIdVsStart"], 1.0, places=9)
+        self.assertIn("预期同分配", check["implication"])
         swapped = self._long()
         swapped["session_id"] = ["SES-00000001", "SES-00000000"]   # id 与开始时间反序
-        self.assertIn("排序键确实不同", stress.session_order_check(swapped)["implication"])
+        reverse = stress.session_order_check(swapped)
+        self.assertFalse(reverse["idOrderMatchesStartOrder"])
+        self.assertIn("不一致", reverse["implication"])
+
+    def test_session_order_check_does_not_claim_from_degenerate_data(self):
+        """退化输入**不许**被读成结论：旧版单会话给 NaN 却照样输出"排序键确实不同"。
+
+        更要紧的是全并列：``argsort(argsort(x))`` 造的秩会把并列按行序拆开，于是它也报 +1.0
+        ——把"没信息"当成"已证实同序"。现在并列占比要显式写出来，且退化时读数给 None。
+        """
+        single = stress.session_order_check(self._long().head(1))
+        self.assertEqual(single["sessions"], 1)
+        self.assertIsNone(single["idOrderMatchesStartOrder"])
+        self.assertIsNone(single["spearmanTieAwareSessionIdVsStart"])
+        self.assertIn("无从判定", single["implication"])
+        self.assertNotIn("确实不同", single["implication"])
+        # 多 tick 同一会话：按 session_id 去重，不能把 4 行数成 4 个会话
+        many = self._long().loc[self._long().index.repeat(4)].reset_index(drop=True)
+        many["tick_ts"] = pd.to_datetime([pd.Timestamp("2026-01-01 00:00:00")] * 4
+                                         + [pd.Timestamp("2026-01-01 00:05:00")] * 4)
+        many["session_id"] = ["SES-00000000"] * 4 + ["SES-00000001"] * 4
+        self.assertEqual(stress.session_order_check(many)["sessions"], 2)
+        # 开始时间完全并列
+        tied = self._long()
+        tied["wait_min"] = [10.0, 10.0]
+        check = stress.session_order_check(tied)
+        self.assertIsNone(check["spearmanTieAwareSessionIdVsStart"])
+        self.assertIn("完全并列", check["implication"])
+
+    def test_load_demands_refuses_when_the_digest_key_is_absent(self):
+        """哈希检查不能在"键不存在"上失败开放——那等于这道闸形同虚设。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            real = json.loads(stress.common.TICK_SUMMARY_PATH.read_text(encoding="utf-8"))
+            stripped = {k: v for k, v in real.items() if k != "demandLongSha256"}
+            path = Path(tmp) / "features_summary.json"
+            path.write_text(json.dumps(stripped), encoding="utf-8")
+            with mock.patch.object(stress.common, "TICK_SUMMARY_PATH", path):
+                with self.assertRaises(common.BatchMismatch):
+                    stress.load_demands()
 
     def test_main_writes_both_reports_then_freezes_the_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

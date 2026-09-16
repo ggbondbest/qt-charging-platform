@@ -18,9 +18,12 @@ Spearman 在所有吸引半径上为负，且**落在正确的置换零线之下
    (b) 同一批数据里 **``site_type`` 是能外推的**（城内归一份额的 LOSO Spearman ≈ +0.90）——
    本批可学的规律是"建什么类型"，不是"建在哪"。
 
-另需记住两条统计边界：n=25 站的截面、且 25 个 LOSO 预测共享同一批 24 个需求值（彼此强相关），
+另需记住三条统计边界：n=25 站的截面、且 25 个 LOSO 预测共享同一批 24 个需求值（彼此强相关），
 所以 scipy 的 p 值**只是名义显著性**，真正的对照是上面的置换零线；站间距均匀不代表"无空间结构"——
-实测最近邻站需求与本站需求 **−0.66**，比随机切分的理论地板（−1/(k−1)=−0.25）负得多，是**倒置梯度**。
+本批最近邻站需求与本站需求 **−0.66**，与**同统计量**的城内置换零线带（均值 −0.25 = 理论期望
+−1/(k−1)、最低可到 −0.87）比，单侧 P≈0.04：**勉强**算倒置结构的弱证据。
+（旧版把 −1/(k−1) 称作"随机切分的理论地板"、用"深负于地板"当结论，那是**误称导致的夸大**：
+它是零线期望、不是下界，比它更负在随机切分下很常见。现读数由 ``mechanism_diagnostic`` 现算。）
 
 用法（仓库根目录）：python -m data_analysis.ml.siting.backtest
 """
@@ -35,6 +38,32 @@ from . import common, field
 
 #: 置换零线的重抽次数。钉死在 SEED 上，换 seed 即换产物。
 NULL_REPS = 200
+#: "最近邻需求 vs 本站"这条**机制诊断**零线的重抽次数。它与上面的半径零线不是同一条带
+#: （统计量不同：一个是场 LOSO 排序，一个是裸最近邻配对），单侧 P 要分辨 ~0.04 的位置，200 次
+#: 太粗，故单独给更大的次数；这个数本身也是假设，随读数写进产物。
+NN_NULL_REPS = 2000
+
+
+def _inversion_phrase(inversion: float, null: dict) -> str:
+    """"城内是**倒置**梯度"这句话的强度，由现算的单侧 P 决定，不由 −1/(k−1) 这个阈值决定。
+
+    旧版写成"观察值 < 理论地板 ⇒ 倒置梯度"，而那个"地板"其实是随机置换的**期望**：随机切分
+    经常比它更负（本批零线最低能到 −0.87），于是任何 −0.25 以下的读数都会被旧版判成"深负于地板"
+    ——一条几乎必然报警的判据不能当证据。现在按 P 分档措辞，P 太大时明确收回结论。
+    """
+    share = null["shareOfNullAtOrBelowObserved"]
+    if not np.isfinite(inversion) or share is None or not null["reps"]:
+        return ("最近邻相关性或零线在此退化（常数打分/样本不足），机制诊断**不下**倒置与否的结论")
+    band = f"随机切分可达 [{null['nullMin']:+.3f}, {null['nullP95']:+.3f}]"
+    if share <= 0.001:
+        return (f"随机切分几乎造不出这么负的读数（{null['reps']} 次里 P={share:.4f}、{band}）"
+                "→ 城内是**倒置梯度**（仿真给近邻配了互补份额）这条结论证据较强")
+    if share <= 0.05:
+        return (f"读数确实低于随机切分（P={share:.3f}、{band}），但只是**勉强**过 5% 水平 "
+                "→ 只能说有**弱**证据支持倒置梯度，不能说『深负于理论地板』"
+                "（那个数是零线期望、不是界）")
+    return (f"读数虽为负，但随机切分常有更负的（P={share:.3f}、{band}）→ "
+            "**不能**据此断言倒置结构：它与'城内无空间信号'不可区分")
 
 
 def _rank_eval(pred: np.ndarray, actual: np.ndarray) -> dict:
@@ -166,8 +195,16 @@ def baseline_evals(intensity: pd.DataFrame) -> dict:
     }
 
 
-def mechanism_diagnostic(intensity: pd.DataFrame) -> dict:
-    """场模型为什么负：零和切分 + **倒置**空间结构 + 两把需求尺子互不一致。"""
+def mechanism_diagnostic(intensity: pd.DataFrame, nn_reps: int = NN_NULL_REPS) -> dict:
+    """场模型为什么负：零和切分 + **倒置**空间结构 + 两把需求尺子互不一致。
+
+    这里踩过一个**夸大**的坑，改法要写清：旧版把 ``−1/(k−1)`` 叫"随机切分的理论地板"，
+    再用"观察值比它更负"当倒置结构的证据。那是**误称**——``−1/(k−1)`` 是城内随机置换下
+    ρ(最近邻需求, 本站需求) 的**期望**（固定城市总量时 Cov = −Var/(k−1)），不是可达的下界：
+    随机切分很容易比它更负（本批实测零线 p5 就在 −0.6 附近），所以"深负于 −0.25"本身几乎不含信息。
+    现在把它当它该被当的东西用：**现算**一条同统计量的城内置换零线，报告观察值落在带的哪一侧、
+    有多大比例的零线读数不高于它；"倒置"这个结论只在 P 足够小时才说，且按 P 的大小改措辞。
+    """
     demand = intensity["demand"].to_numpy(dtype=float)
     city = intensity["city_id"].to_numpy()
     city_other = np.empty(len(demand))
@@ -183,21 +220,49 @@ def mechanism_diagnostic(intensity: pd.DataFrame) -> dict:
     iu = np.triu_indices(len(coords), 1)
     intra = D[iu][same[iu]]
     inter = D[iu][~same[iu]]
-    nearest = np.array([demand[np.argsort(D[i])[1]] for i in range(len(coords))])
+    nn_index = np.array([np.argsort(D[i])[1] for i in range(len(coords))])   # 每站的最近邻站下标
+    nearest = demand[nn_index]
     nearest_eval = _rank_eval(nearest, demand)
     stations_per_city = int(same[0].sum())
-    floor = -1.0 / (stations_per_city - 1)
+    theory_mean = -1.0 / (stations_per_city - 1)      # 随机切分的**期望**（不是下界，见 docstring）
     two_views = float(spearmanr(intensity["demand"], intensity["charging_ticks"]).correlation)
     spread = round(float(city_totals.std() / city_totals.mean()), 4)
     view_phrase = ("两口径一致性尚可" if two_views > 0.9 else
                    "连'需求'本身都没有一把干净的尺子")
     inversion = (nearest_eval.get("spearman") if nearest_eval.get("spearman") is not None else float("nan"))
     within_rho = (within.get("spearman") if within.get("spearman") is not None else float("nan"))
+
+    # 与观察值**同统计量**的城内置换零线：保住每城总量与站位，只打乱"哪一份需求配给哪个站"。
+    rng = np.random.default_rng(common.SEED)
+    null_values = []
+    for _ in range(nn_reps):
+        shuffled = _permute_in_city(demand, city, rng)
+        corr = spearmanr(shuffled[nn_index], shuffled).correlation
+        if np.isfinite(corr):
+            null_values.append(float(corr))
+    nn_null = np.asarray(null_values, dtype=float)
+    null_block = {
+        "reps": int(nn_null.size),
+        "nullMean": round(float(nn_null.mean()), 4) if nn_null.size else None,
+        "nullP5": round(float(np.percentile(nn_null, 5)), 4) if nn_null.size else None,
+        "nullP95": round(float(np.percentile(nn_null, 95)), 4) if nn_null.size else None,
+        "nullMin": round(float(nn_null.min()), 4) if nn_null.size else None,
+        # 单侧比例：零线里有多大比例**不高于**观察值。这个才是"随机切分造不出来"的证据。
+        "shareOfNullAtOrBelowObserved": (round(float((nn_null <= inversion).mean()), 4)
+                                         if nn_null.size else None),
+        "theoryMean": round(theory_mean, 4),
+        "theoryNote": ("−1/(k−1) 是本统计量在城内随机置换下的**期望**（固定城市总量时 Cov = −Var/(k−1)），"
+                       "零线均值应与之一致；它是均值、**不是下界**，所以观察值比它更负本身不构成结论"
+                       "——要比的是上面这条带。"),
+    }
+    inversion_verdict = _inversion_phrase(inversion, null_block)
     return {
         "cityOtherSumVsOwnDemand": within,
         "nearestNeighbourDemandVsOwn": nearest_eval,
         "stationsPerCity": stations_per_city,
-        "randomSplitFloor": round(floor, 4),
+        "randomAssignmentTheoryMean": round(theory_mean, 4),
+        "randomAssignmentNull": null_block,
+        "inversionVerdict": inversion_verdict,
         "cityTotals": {str(c): int(v) for c, v in city_totals.items()},
         "cityTotalSpread": spread,
         "cityTotalsNearConstant": bool(spread < 0.05),
@@ -208,10 +273,9 @@ def mechanism_diagnostic(intensity: pd.DataFrame) -> dict:
         "interpretation": (
             f"城内其余站需求之和预测本站 = {_num(within_rho)}——每城总量近恒定（归一化离散 "
             f"{spread}）、在 {stations_per_city} 站间切分，这是**代数**层面的必然。更要紧的是：最近邻站需求与"
-            f"本站 = {inversion:+.3f}，{'远负于' if inversion < floor else '未负于'}随机切分的理论地板 "
-            f"−1/(k−1)={floor:.2f}"
-            + ("，即城内不是'无空间梯度'而是**倒置梯度**（仿真给近邻配了互补份额）" if inversion < floor
-               else "，即城内确实接近无空间梯度")
+            f"本站 = {inversion:+.3f}，而**同统计量**的城内置换零线均值 {null_block['nullMean']}"
+            f"（带 [{null_block['nullP5']}, {null_block['nullP95']}]、最低 {null_block['nullMin']}、"
+            f"重抽 {null_block['reps']} 次、理论期望 {null_block['theoryMean']}）。{inversion_verdict}"
             + "。需求场靠邻居外推，于是把倒置结构当成预测信号 → 半径越大越接近"
               "Σ其它站需求 = T_c − 本站，读数总体也越负（是否严格单调见 verdict.radiusDriftPhrase）。"
               f"会话数与 5 分钟充电 tick 两口径的秩相关 = {two_views:.3f}（{view_phrase}）。"),
@@ -259,6 +323,12 @@ def main() -> dict:
     type_signal = site_type_signal(intensity)
     baselines = baseline_evals(intensity)
     mechanism = mechanism_diagnostic(intensity)
+    # "倒置邻接结构"这句结论的**门槛**是现算的单侧 P，不是 −1/(k−1)（那是零线期望、不是界）。
+    nn_null = mechanism["randomAssignmentNull"]
+    inversion_strong = (nn_null["shareOfNullAtOrBelowObserved"] is not None
+                        and nn_null["shareOfNullAtOrBelowObserved"] <= 0.05)
+    structure_claim = ("本批真实的**倒置邻接结构**" if inversion_strong else
+                       "与随机切分**不可区分**的负号（单侧 P>0.05，不足以称为倒置结构）")
 
     all_field_negative = all(by_radius[str(r)]["field"]["spearman"] < 0 for r in common.RADII_KM)
     best_radius = max(by_radius, key=lambda r: by_radius[r]["field"]["spearman"])
@@ -292,14 +362,9 @@ def main() -> dict:
         "stations": int(len(demand)),
         "obsDays": int(intensity["obs_days"].iloc[0]),
         "abandonedTotal": int(intensity["abandoned"].sum()),
-        # 弃队代理的双计口径（复核过的事实，不留到 README 才说）
-        "unmetProxyCaveats": {
-            "abandonedRechargedWithin24h": 476,
-            "abandonedRechargedWithin24hPct": round(100.0 * 476 / max(int(intensity["abandoned"].sum()), 1), 2),
-            "callExpiredExcluded": 4037,
-            "note": ("demand_incl_unmet = 会话数 + ABANDONED；其中 476 条弃队在 24h 内同人同站又开成"
-                     "会话（双计），CALL_EXPIRED 4,037 条同为未满足需求但未并入（未做敏感性分析）。"),
-        },
+        # 弃队代理的双计口径：**现算**（旧版在此写死 476 / 4037，且 476 是以入队为锚算的，
+        # 会把排队超过 24h 才放弃的记录漏出窗外——本批实测两种锚点差 16 条）。
+        "unmetProxyCaveats": common.unmet_proxy_caveats(),
         "sourceTablesSha256": common.source_table_digests(),
         "losobyRadius": by_radius,
         "permutationNulls": nulls,
@@ -329,9 +394,10 @@ def main() -> dict:
                 "而场模型在全部半径上都**落在其 p5 之下**"
                 f"（经验 p≤{1.0 / NULL_REPS:.3f}）：证据强度来自'低于零线带'，不来自'ρ<0'。这才是"
                 f"『比无信号更糟』的正经读法。它的来源可拆两半："
-                f"短半径读到的是本批真实的**倒置邻接结构**（最近邻需求 vs 本站 "
-                f"{mechanism['nearestNeighbourDemandVsOwn']['spearman']:+.3f}，深于随机切分地板 "
-                f"{mechanism['randomSplitFloor']}），{handoff}\n"
+                f"短半径读到的是{structure_claim}（最近邻需求 vs 本站 "
+                f"{mechanism['nearestNeighbourDemandVsOwn']['spearman']:+.3f}、同统计量城内置换零线均值 "
+                f"{mechanism['randomAssignmentNull']['nullMean']}、单侧 "
+                f"P={mechanism['randomAssignmentNull']['shareOfNullAtOrBelowObserved']}），{handoff}\n"
                 "  (3) 有信息量的第二条：同一批数据里 **site_type 可外推**（城内归一份额 LOSO Spearman "
                 f"{type_signal['losoOnWithinCityShare']['spearman']:+.3f}）——本批能学的是'建什么类型'，"
                 "不是'建在哪'。因此对'用邻居需求外推新站空间需求'这条选址前提，本批证据是**否**；"
@@ -357,7 +423,8 @@ def main() -> dict:
           f" · random {baselines['randomGlobalPermutation']['spearmanMean']:+.3f}")
     print(f"[backtest] site_type 外推份额 spearman={type_signal['losoOnWithinCityShare']['spearman']:+.3f}"
           f" · 最近邻需求 vs 本站 {mechanism['nearestNeighbourDemandVsOwn']['spearman']:+.3f}"
-          f"（随机切分地板 {mechanism['randomSplitFloor']}）")
+          f"（城内置换零线均值 {nn_null['nullMean']}、带 [{nn_null['nullP5']}, {nn_null['nullP95']}]"
+          f"、P={nn_null['shareOfNullAtOrBelowObserved']}）")
     print(f"[backtest] -> {common.BACKTEST_MD}")
     return report
 
@@ -377,9 +444,25 @@ def _markdown(report: dict) -> str:
     lines.append(f"- 站数 {report['stations']} · 观测业务天数 {report['obsDays']} · 网络弃队 "
                  f"{report['abandonedTotal']:,} · seed {report['seed']} · 置换重抽 {report['nullReps']} 次")
     caveats = report["unmetProxyCaveats"]
-    lines.append(f"- 弃队代理脏处：{caveats['abandonedRechargedWithin24h']} 条（"
-                 f"{caveats['abandonedRechargedWithin24hPct']}%）弃队 24h 内同人同站又充上了 → "
-                 f"`demand_incl_unmet` 双计；`CALL_EXPIRED` {caveats['callExpiredExcluded']:,} 条未并入")
+    # 先把跨字段的读数提成局部量：替换字段不能跨两段隐式拼接的 f-string 字面量（`{` 在本段内没闭合
+    # 就是语法错误），跟引号嵌套无关——本机是 3.13.9，PEP 701 之后同型引号嵌套本身是合法的。
+    sem_ab = caveats["semantics"]["ABANDONED"]
+    sem_ce = caveats["semantics"]["CALL_EXPIRED"]
+    session_id_blank_total = sem_ab["withSessionId"] + sem_ce["withSessionId"]
+    joined_anchor_gap = (caveats["abandonedRechargedAfter"]
+                         - caveats["anchorVariants"]["ABANDONED"]["joined_at"]["rechargedAfter"])
+    lines.append(f"- 弃队代理脏处（窗口 {caveats['windowHours']:g}h、锚点 = 离队时刻 `resolved_at`）："
+                 f"`ABANDONED` {caveats['statusCounts']['ABANDONED']:,} 条中有 "
+                 f"{caveats['abandonedRechargedAfter']:,} 条（{caveats['abandonedRechargedAfterPct']}%）"
+                 f"同人同站又开成了会话 → `demand_incl_unmet` 双计；另有 "
+                 f"{caveats['abandonedWithSessionBeforeLeaving']:,} 条在离队**前**窗口内已有同站会话"
+                 f"（故弃队不严格等于『没充上』）。`CALL_EXPIRED` "
+                 f"{caveats['statusCounts']['CALL_EXPIRED']:,} 条未并入，且与 `ABANDONED` 不是一类："
+                 f"前者 `called_at` 非空 {sem_ce['withCalledAt']:,}/{sem_ce['rows']:,}（叫到号没接），"
+                 f"后者非空 {sem_ab['withCalledAt']:,}/{sem_ab['rows']:,}（没叫到号就走）；"
+                 f"两者 `session_id` 均为空 {session_id_blank_total:,}，只能代理匹配。"
+                 f"换成以入队时刻 `joined_at` 为锚则少算 {joined_anchor_gap} "
+                 f"条（旧版正是那个口径）。")
     lines.append("")
     lines.append("## 需求场 vs 真实需求（留一站）+ 两种置换零线")
     lines.append("| 吸引半径 km | 场 Spearman | 名义 p | 城内置换零线均值 | 零线 [p5,p95] | P(零线≤观察) | 全局置换零线均值 |")
@@ -424,14 +507,17 @@ def _markdown(report: dict) -> str:
                                               for k, v in ts["shareByType"].items()))
     lines.append("")
     mech = report["mechanism"]
+    nn_null = mech["randomAssignmentNull"]
     lines.append("## 机制诊断")
     lines.append(f"- 城内其余站之和 vs 本站 Spearman = **{mech['cityOtherSumVsOwnDemand']['spearman']:+.2f}**"
                  f"（cityMean 与之同秩：{report['baselines']['cityMean']['spearman']:+.2f}）")
     lines.append(f"- 最近邻站需求 vs 本站 Spearman = **{mech['nearestNeighbourDemandVsOwn']['spearman']:+.2f}**"
-                 f"（随机切分理论地板 {mech['randomSplitFloor']} → "
-                 + ("**倒置梯度**，不是'无梯度'"
-                    if mech['nearestNeighbourDemandVsOwn']['spearman'] < mech['randomSplitFloor']
-                    else "确实接近'无空间梯度'") + "）")
+                 f"；同统计量的城内置换零线：均值 {nn_null['nullMean']}（理论期望 {nn_null['theoryMean']}）、"
+                 f"带 [{nn_null['nullP5']}, {nn_null['nullP95']}]、最低 {nn_null['nullMin']}、"
+                 f"重抽 {nn_null['reps']} 次、单侧 P={nn_null['shareOfNullAtOrBelowObserved']}")
+    lines.append(f"  → {mech['inversionVerdict']}")
+    lines.append("  （旧版在此把 −1/(k−1) 叫『理论地板』、拿『低于它』当证据，是**误称**：那是零线期望，"
+                 "随机切分经常比它更负——见 `randomAssignmentNull.theoryNote`）")
     lines.append(f"- 各城总量：{mech['cityTotals']}（归一化离散 {mech['cityTotalSpread']}"
                  + ("，近恒定 → '其余站之和 = T_c − 本站' 近似代数恒等"
                     if mech.get('cityTotalsNearConstant') else "，城市总量本身有差异") + "）")

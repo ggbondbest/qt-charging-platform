@@ -11,8 +11,9 @@
 * ``gradient``（需求沿位置平滑变化、核半径小于站距）→ 需求场**为正**，而**不用坐标的**
   池化均值连排序都做不到（常数 → None）。旧版用"两簇水平不同"的合成，池化均值靠簇间水平差
   就能到 Pearson 0.98，所以那个用例证明不了"空间"；换成簇内梯度后才真正只考坐标。
-* ``permutation_nulls``（城内置换零线）→ 在零和结构下正确的零线**本身就深负**（≈ 代数地板），
-  所以"场比随机差"必须跟它比，不能跟全局置换（均值 ~0）比。
+* ``permutation_nulls``（城内置换零线）→ 它**不保证落在 0**：打乱站位只打破"谁站在哪"、保住每城总量，
+  场的位置级正相关仍能蒙到一点（本批实测 +0.13~+0.23）。所以有内容的说法是"观察值落在零线 p5 之下"，
+  不是"零线均值 ≈ 0"、也不是"比 0 差"；全局置换那一列打破城市零和结构，对本模型是错的对照。
 """
 
 from __future__ import annotations
@@ -181,9 +182,15 @@ class ZeroSumStructure(unittest.TestCase):
         frame = _zero_sum_frame()
         self.assertIsNone(backtest.baseline_evals(frame)["globalMean"]["spearman"])
 
-    def test_random_split_floor_tracks_station_count(self):
+    def test_random_split_theory_mean_tracks_station_count(self):
+        """``−1/(k−1)`` 随每城站数走，且实测城内置换零线均值应与它一致（**期望**不是下界）。"""
         frame = _zero_sum_frame()
-        self.assertAlmostEqual(backtest.mechanism_diagnostic(frame)["randomSplitFloor"], -0.5)
+        mech = backtest.mechanism_diagnostic(frame, nn_reps=300)
+        self.assertAlmostEqual(mech["randomAssignmentTheoryMean"], -0.5)
+        null = mech["randomAssignmentNull"]
+        self.assertAlmostEqual(null["nullMean"], null["theoryMean"], delta=0.12)
+        self.assertLess(null["nullMin"], null["theoryMean"])   # 零线能比期望更负 → 比它更负不算证据
+        self.assertNotIn("randomSplitFloor", mech)              # 误称不许回来
 
     def test_loso_by_radius_keys_have_no_dead_field(self):
         """回归钉子：早先的 ``predictedMeanKw``（永远为 None 的死列）不许回来。"""
@@ -312,31 +319,59 @@ class SiteTypeSignal(unittest.TestCase):
 
 @unittest.skipUnless(STACK, "numpy/pandas/scipy not installed")
 class Mechanism(unittest.TestCase):
-    def test_inverted_gradient_is_reported_not_greyed_out(self):
-        """最近邻需求 vs 本站 深于随机切分地板 → 诊断要说"倒置梯度"，不能写"无空间梯度"。
+    """机制诊断的**说法强度**必须由现算的单侧 P 决定。
 
-        合成：每城两对"贴脸站"（相距 220m），配对内部需求互补（900↔10、500↔20）——
-        最近邻关系是个完美匹配，ρ(最近邻, 本站) = −1，深于地板 −1/(k−1) = −0.333。
-        真实批的对应读数是 −0.663 vs 地板 −0.25，同向。
-        """
-        frame = _intensity([
-            ("a1", "C1", 0.000, 0.00, "MALL", 900, 900, 0),
-            ("a2", "C1", 0.002, 0.00, "STREET", 10, 10, 0),
-            ("a3", "C1", 0.050, 0.00, "ROAD", 500, 500, 0),
-            ("a4", "C1", 0.052, 0.00, "DEPOT", 20, 20, 0),
-            ("b1", "C2", 10.000, 10.0, "MALL", 10, 10, 0),
-            ("b2", "C2", 10.002, 10.0, "STREET", 900, 900, 0),
-            ("b3", "C2", 10.050, 10.0, "ROAD", 20, 20, 0),
-            ("b4", "C2", 10.052, 10.0, "DEPOT", 500, 500, 0),
-        ])
-        mech = backtest.mechanism_diagnostic(frame)
-        self.assertAlmostEqual(mech["nearestNeighbourDemandVsOwn"]["spearman"], -1.0)
-        self.assertLess(mech["nearestNeighbourDemandVsOwn"]["spearman"], mech["randomSplitFloor"])
+    这里是个真实踩过的坑：旧版把 ``−1/(k−1)`` 叫"随机切分的理论地板"，再用"最近邻读数比它更负"
+    当"倒置梯度"的证据。那个数是零线**期望**，随机切分经常比它更负——下面的合成帧就是活例子：
+    ρ 打到理论下限 −1，可它在随机置换里出现的概率并不小，于是"深负于地板"这句话什么也没排除。
+    """
+
+    _TIED_PAIRS = [
+        ("a1", "C1", 0.000, 0.00, "MALL", 900, 900, 0),
+        ("a2", "C1", 0.002, 0.00, "STREET", 10, 10, 0),
+        ("a3", "C1", 0.050, 0.00, "ROAD", 500, 500, 0),
+        ("a4", "C1", 0.052, 0.00, "DEPOT", 20, 20, 0),
+        ("b1", "C2", 10.000, 10.0, "MALL", 10, 10, 0),
+        ("b2", "C2", 10.002, 10.0, "STREET", 900, 900, 0),
+        ("b3", "C2", 10.050, 10.0, "ROAD", 20, 20, 0),
+        ("b4", "C2", 10.052, 10.0, "DEPOT", 500, 500, 0),
+    ]
+
+    def test_inversion_claim_carries_its_own_p_value(self):
+        mech = backtest.mechanism_diagnostic(_intensity(self._TIED_PAIRS), nn_reps=300)
+        rho = mech["nearestNeighbourDemandVsOwn"]["spearman"]
+        null = mech["randomAssignmentNull"]
+        self.assertAlmostEqual(rho, -1.0)
         self.assertEqual(mech["stationsPerCity"], 4)
-        self.assertAlmostEqual(mech["randomSplitFloor"], -0.3333)     # 产物保留 4 位
-        self.assertIn("倒置梯度", mech["interpretation"])
+        self.assertAlmostEqual(mech["randomAssignmentTheoryMean"], -0.3333)
+        self.assertIn("shareOfNullAtOrBelowObserved", null)
+        self.assertEqual(null["reps"], 300)
+        # 结论文句与 P 必须是同一套数：不许一句话讲一个更强的结论
+        self.assertEqual(mech["inversionVerdict"], backtest._inversion_phrase(rho, null))
+        self.assertIn(mech["inversionVerdict"], mech["interpretation"])
+        small_p = null["shareOfNullAtOrBelowObserved"] <= 0.05
+        self.assertEqual("倒置梯度" in mech["inversionVerdict"], small_p)
+
+    def test_inversion_phrase_scales_with_the_measured_p(self):
+        """三档措辞 + 退化档：P 大就得收回结论，P 小才许说倒置。"""
+        base = {"reps": 2000, "nullMean": -0.25, "nullP5": -0.6, "nullP95": 0.1, "nullMin": -0.87}
+        strong = dict(base, shareOfNullAtOrBelowObserved=0.0005)
+        marginal = dict(base, shareOfNullAtOrBelowObserved=0.04)
+        weak = dict(base, shareOfNullAtOrBelowObserved=0.3)
+        self.assertIn("证据较强", backtest._inversion_phrase(-0.9, strong))
+        self.assertIn("勉强", backtest._inversion_phrase(-0.9, marginal))
+        self.assertIn("据此断言", backtest._inversion_phrase(-0.6, weak))
+        self.assertIn("无空间信号", backtest._inversion_phrase(-0.6, weak))
+        self.assertIn("不下", backtest._inversion_phrase(float("nan"), dict(weak, reps=0)))
+        self.assertIn("不下", backtest._inversion_phrase(
+            -0.6, dict(weak, shareOfNullAtOrBelowObserved=None)))
+
+    def test_mechanism_geometry_and_two_rulers_are_reported(self):
+        mech = backtest.mechanism_diagnostic(_intensity(self._TIED_PAIRS), nn_reps=200)
+        self.assertEqual(mech["stationsPerCity"], 4)
         self.assertIn("cityTotalSpread", mech)
         self.assertGreater(mech["interCityPairKmP50"], mech["intraCityPairKmP50"])
+        self.assertIn("nearestNeighborKm", mech)
 
 
 # ------------------------------------------------------------------ 数据层聚合口径
@@ -401,6 +436,84 @@ class StationIntensity(unittest.TestCase):
 
 
 @unittest.skipUnless(STACK, "numpy/pandas/scipy not installed")
+class UnmetProxyCaveats(unittest.TestCase):
+    """弃队代理的脏处必须**算出来**，不许是抄进来的字面量。
+
+    旧版在 `backtest.py` 里写死 `476` / `4037`，而 476 是以 `joined_at`（入队）为锚算的——
+    排队超过窗口才放弃的记录会被漏出窗外。这一组用例专门盯住"换数据就得换数字"。
+    """
+
+    def _loader(self, queue_rows, session_rows):
+        def load(name, columns=None):
+            if name == "queue_entries":
+                frame = pd.DataFrame(queue_rows)
+            elif name == "charging_sessions":
+                frame = pd.DataFrame(session_rows)
+            else:
+                raise AssertionError(name)
+            return frame[columns] if columns else frame
+        return load
+
+    def _stamps(self, values):
+        return pd.to_datetime(values).tz_localize(None)
+
+    def test_double_count_is_measured_after_the_abandonment_not_before(self):
+        # u1：入队 30h 前、离队 1h 前、复充在离队后 2h → 只有离队锚能抓到（旧口径会漏算）
+        # u2：正常事后复充；u3：会话早于入队（两个锚都不算双计，但离队锚把它列进"弃队前已有会话"）
+        # u4：复充在窗口外
+        queue_rows = {
+            "queue_id": ["q1", "q2", "q3", "q4", "q5"],
+            "user_id": ["u1", "u2", "u3", "u4", "u9"],
+            "station_id": ["s1", "s1", "s1", "s1", "s1"],
+            "joined_at": self._stamps(["2025-01-01T00:00:00", "2025-01-02T00:00:00",
+                                       "2025-01-02T00:00:00", "2025-01-02T00:00:00",
+                                       "2025-01-02T00:00:00"]),
+            "called_at": self._stamps([None, None, None, None, "2025-01-02T06:00:00"]),
+            "resolved_at": self._stamps(["2025-01-02T05:00:00", "2025-01-02T06:00:00",
+                                         "2025-01-02T12:00:00", "2025-01-02T06:00:00",
+                                         "2025-01-02T07:00:00"]),
+            "status": ["ABANDONED", "ABANDONED", "ABANDONED", "ABANDONED", "CALL_EXPIRED"],
+            "session_id": [None, None, None, None, None],
+        }
+        session_rows = {
+            "user_id": ["u1", "u2", "u3", "u4"],
+            "station_id": ["s1", "s1", "s1", "s1"],
+            "started_at": self._stamps(["2025-01-02T07:00:00", "2025-01-02T20:00:00",
+                                        "2025-01-01T20:00:00", "2025-01-06T00:00:00"]),
+        }
+        with mock.patch.object(common, "load_clean_table", self._loader(queue_rows, session_rows)):
+            caveats = common.unmet_proxy_caveats()
+        self.assertEqual(caveats["abandonedRechargedAfter"], 2)          # q1 + q2，q4 在窗口外
+        self.assertEqual(caveats["abandonedWithSessionBeforeLeaving"], 1)  # q3 会话早于离队
+        self.assertEqual(caveats["statusCounts"], {"SERVED": 0, "ABANDONED": 4, "CALL_EXPIRED": 1})
+        # 锚点差异被披露出来：入队锚会漏掉 q1（30h 前入队）
+        self.assertEqual(caveats["anchorVariants"]["ABANDONED"]["joined_at"]["rechargedAfter"], 1)
+        self.assertEqual(caveats["anchorVariants"]["ABANDONED"]["resolved_at"]["rechargedAfter"], 2)
+        # 语义区分：ABANDONED 没被叫号，CALL_EXPIRED 被叫过号
+        self.assertEqual(caveats["semantics"]["ABANDONED"]["withCalledAt"], 0)
+        self.assertEqual(caveats["semantics"]["CALL_EXPIRED"]["withCalledAt"], 1)
+        self.assertEqual(caveats["semantics"]["ABANDONED"]["withSessionId"], 0)
+
+    def test_numbers_move_when_the_window_moves(self):
+        """窗口是假设，不是常数：换成 12h 必须改变读数（写死的字面量做不到这点）。"""
+        queue_rows = {
+            "queue_id": ["a", "b"], "user_id": ["u1", "u2"], "station_id": ["s"] * 2,
+            "joined_at": self._stamps(["2025-01-01T00:00:00"] * 2),
+            "called_at": self._stamps([None, None]),
+            "resolved_at": self._stamps(["2025-01-02T00:00:00"] * 2),
+            "status": ["ABANDONED"] * 2, "session_id": [None, None],
+        }
+        session_rows = {"user_id": ["u1", "u2"], "station_id": ["s", "s"],
+                        "started_at": self._stamps(["2025-01-02T05:00:00", "2025-01-02T20:00:00"])}
+        with mock.patch.object(common, "load_clean_table", self._loader(queue_rows, session_rows)):
+            wide = common.unmet_proxy_caveats(window_hours=24.0)
+            narrow = common.unmet_proxy_caveats(window_hours=12.0)
+        self.assertEqual(wide["abandonedRechargedAfter"], 2)
+        self.assertEqual(narrow["abandonedRechargedAfter"], 1)
+        self.assertGreater(wide["abandonedRechargedAfterPct"], narrow["abandonedRechargedAfterPct"])
+
+
+@unittest.skipUnless(STACK, "numpy/pandas/scipy not installed")
 class Digests(unittest.TestCase):
     def test_sha256_bytes_known_vector(self):
         self.assertEqual(common.sha256_bytes(b""),
@@ -408,17 +521,51 @@ class Digests(unittest.TestCase):
         self.assertEqual(common.sha256_bytes(b"abc"),
                          "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
 
-    def test_every_source_table_has_a_digest(self):
-        with mock.patch.object(common, "CLEAN_DIR", Path(tempfile.mkdtemp())):
-            with mock.patch.object(common, "sha256_bytes", side_effect=lambda blob: blob.decode()):
-                digests = common.source_table_digests()
-        self.assertEqual(sorted(digests), sorted(common.SOURCE_TABLES))
+    def test_digests_are_content_bound_not_just_key_shaped(self):
+        """摘要必须**随字节变**。
+
+        旧测试把 ``sha256_bytes`` 换成 ``blob.decode()``、又把 ``CLEAN_DIR`` 指向空目录，于是
+        所有摘要都成空串、断言只剩键名——把 ``source_table_digests`` 整体换成
+        ``{name: "" for ...}`` 也照样通过。它守的正是"换表即产物失效"那条链，不能是恒真的。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            for name in common.SOURCE_TABLES:
+                (base / name).mkdir()
+                pd.DataFrame({"a": [1]}).to_parquet(base / name / "p0.parquet")
+            with mock.patch.object(common, "CLEAN_DIR", base):
+                first = common.source_table_digests()
+            self.assertEqual(sorted(first), sorted(common.SOURCE_TABLES))
+            for name, value in first.items():
+                self.assertRegex(value, r"^[0-9a-f]{64}$", name)
+            # 改一张表的字节 → 只有那张表的摘要动
+            (base / "stations" / "p1.parquet").write_bytes(b"different bytes")
+            with mock.patch.object(common, "CLEAN_DIR", base):
+                second = common.source_table_digests()
+            self.assertEqual([k for k in first if first[k] != second[k]], ["stations"])
+            # 多一个分区文件也算换表（拼接顺序由文件名决定，写进产物的是全表摘要）
+            (base / "charging_sessions" / "p0.parquet").write_bytes(b"rewritten")
+            with mock.patch.object(common, "CLEAN_DIR", base):
+                third = common.source_table_digests()
+            self.assertNotEqual(third["charging_sessions"], second["charging_sessions"])
 
 
 # ------------------------------------------------------------------ score 的引用纪律
 @unittest.skipUnless(STACK, "numpy/pandas/scipy not installed")
 class ScoreBacktestReadback(unittest.TestCase):
-    """打分腿引用回测结论，就必须读得到那份结论——缺文件即中止，不靠 docstring 记忆免责。"""
+    """打分腿引用回测结论：缺文件、批次不符、**表换了**、口径读不到——四种都得中止。
+
+    ``source_table_digests`` 会 sha256 全部 clean 分区，测试里换成固定字典：既省钱，也让
+    "表变了但批次号没变"这个场景可造（真实场景正是它）。
+    """
+
+    DIGESTS = {"stations": "1" * 64, "charging_sessions": "2" * 64,
+               "charger_telemetry": "3" * 64, "queue_entries": "4" * 64}
+    CAVEATS = {"windowHours": 24.0,
+               "statusCounts": {"SERVED": 91000, "ABANDONED": 10143, "CALL_EXPIRED": 4037},
+               "abandonedRechargedAfter": 492, "abandonedRechargedAfterPct": 4.85,
+               "callExpiredRechargedAfter": 226, "callExpiredRechargedAfterPct": 5.6,
+               "abandonedWithSessionBeforeLeaving": 294}
 
     def _write(self, directory: Path, payload: dict) -> Path:
         path = directory / "backtest.json"
@@ -428,14 +575,21 @@ class ScoreBacktestReadback(unittest.TestCase):
     def _payload(self) -> dict:
         radius = str(common.CAPTURE_KM)
         return {"publishedBatchId": common.EXPECTED_PUBLISHED_BATCH_ID,
+                "sourceTablesSha256": dict(self.DIGESTS),
+                "unmetProxyCaveats": dict(self.CAVEATS),
                 "losobyRadius": {radius: {"field": {"spearman": -0.88}, "n": 25}},
                 "permutationNulls": {radius: {"nulls": {"inCity": {"nullMean": -0.45,
                                                                    "shareOfNullAtOrBelowObserved": 0.0}}}},
                 "siteTypeSignal": {"losoOnWithinCityShare": {"spearman": 0.8969}}}
 
+    def _guards(self, path, digests=None):
+        return mock.patch.multiple(common, BACKTEST_JSON=path,
+                                   source_table_digests=lambda: dict(
+                                       digests if digests is not None else self.DIGESTS))
+
     def test_missing_backtest_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(common, "BACKTEST_JSON", Path(tmp) / "backtest.json"):
+            with self._guards(Path(tmp) / "backtest.json"):
                 with self.assertRaises(FileNotFoundError):
                     score.read_backtest_verdict()
 
@@ -443,7 +597,40 @@ class ScoreBacktestReadback(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(Path(tmp), {**self._payload(),
                                            "publishedBatchId": "analytics-deadbeef"})
-            with mock.patch.object(common, "BACKTEST_JSON", path):
+            with self._guards(path):
+                with self.assertRaises(common.BatchMismatch):
+                    score.read_backtest_verdict()
+
+    def test_stale_input_tables_raise_even_same_batch(self):
+        """批次号没变、表内容变了 → 那份 backtest.json 的读数不再代表要打分的数据。
+
+        README 里"换表即产物失效"此前只有代码做一半：``score`` 只查批次号与字段存在性。
+        """
+        drifted = dict(self.DIGESTS, charging_sessions="9" * 64)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(Path(tmp), self._payload())
+            with self._guards(path, digests=drifted):
+                with self.assertRaises(common.BatchMismatch) as caught:
+                    score.read_backtest_verdict()
+        self.assertIn("charging_sessions", str(caught.exception))
+
+    def test_missing_caveats_or_digest_raise(self):
+        for key in ("unmetProxyCaveats", "sourceTablesSha256"):
+            payload = self._payload()
+            del payload[key]
+            with tempfile.TemporaryDirectory() as tmp, self.subTest(missing=key):
+                path = self._write(Path(tmp), payload)
+                with self._guards(path):
+                    with self.assertRaises(common.BatchMismatch):
+                        score.read_backtest_verdict()
+
+    def test_malformed_field_is_a_refusal_not_a_keyerror(self):
+        """必需读数缺字段要给出**可解释的拒算**，不是裸 KeyError 堆栈。"""
+        payload = self._payload()
+        payload["permutationNulls"][str(common.CAPTURE_KM)]["nulls"]["inCity"].pop("nullMean")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(Path(tmp), payload)
+            with self._guards(path):
                 with self.assertRaises(common.BatchMismatch):
                     score.read_backtest_verdict()
 
@@ -452,18 +639,35 @@ class ScoreBacktestReadback(unittest.TestCase):
             payload = self._payload()
             payload["permutationNulls"] = {}
             path = self._write(Path(tmp), payload)
-            with mock.patch.object(common, "BACKTEST_JSON", path):
+            with self._guards(path):
                 with self.assertRaises(common.BatchMismatch):
                     score.read_backtest_verdict()
 
     def test_readback_returns_the_numbers_the_csv_repeats(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(Path(tmp), self._payload())
-            with mock.patch.object(common, "BACKTEST_JSON", path):
+            with self._guards(path):
                 read = score.read_backtest_verdict()
             self.assertEqual(read["fieldSpearmanAtCaptureKm"], -0.88)
             self.assertEqual(read["inCityNullMean"], -0.45)
             self.assertEqual(read["siteTypeShareSpearman"], 0.8969)
+            self.assertEqual(read["unmetProxyCaveats"], self.CAVEATS)
+
+    def test_demand_basis_text_is_made_of_readback_numbers(self):
+        """口径句里的每个数字都从产物取：换 dict 就换句子，**不许**留手抄字面量。
+
+        回归钉子：旧版在 ``score_summary.json.demandBasis`` 里写死 ``476``，而同目录的
+        ``backtest.json`` 已经现算出 ``492``——同一次运行、同一件事、两个数。
+        """
+        text = score.demand_basis_text(self.CAVEATS)
+        self.assertIn("492", text)
+        self.assertIn("4.85", text)
+        self.assertIn("4,037", text)
+        self.assertNotIn("476", text)
+        moved = dict(self.CAVEATS, abandonedRechargedAfter=500, abandonedRechargedAfterPct=4.93)
+        moved_text = score.demand_basis_text(moved)
+        self.assertIn("500", moved_text)
+        self.assertNotIn("492", moved_text)
 
     def test_main_stamps_status_into_every_csv_row(self):
         """状态标记必须活在 CSV 表体里：CSV 会被单独拷走、单独打开，不能只活在 JSON 侧文件。
@@ -490,11 +694,18 @@ class ScoreBacktestReadback(unittest.TestCase):
                     mock.patch.object(common, "verify_batch", lambda manifest=None: {}), \
                     mock.patch.object(common, "read_source_manifest", lambda: {"pipelineRunId": "test-run"}), \
                     mock.patch.object(common, "station_intensity", fake_intensity), \
-                    mock.patch.object(common, "source_table_digests", lambda: {"stations": "deadbeef"}):
+                    mock.patch.object(common, "source_table_digests", lambda: dict(self.DIGESTS)):
                 summary = score.main()
                 ranked = pd.read_csv(base / "candidate_opportunities.csv")
                 with self.assertRaises(FileExistsError):        # 冻结写入：第二次跑必须拒绝覆盖
                     score.main()
+                # 端到端再走一遍"表换了即中止"：批次号、文件、字段全都在，只有内容动了
+                with mock.patch.object(common, "source_table_digests",
+                                       lambda: dict(self.DIGESTS, stations="f" * 64)):
+                    (base / "candidate_opportunities.csv").unlink()
+                    (base / "score_summary.json").unlink()
+                    with self.assertRaises(common.BatchMismatch):
+                        score.main()
             self.assertEqual(set(ranked["model_status"]), {"NOT-BACKTEST-VALIDATED"})
             self.assertEqual(set(ranked["backtest_field_spearman"]), {-0.88})
             self.assertEqual(set(ranked["backtest_incity_null_spearman"]), {-0.45})

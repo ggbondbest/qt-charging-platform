@@ -11,8 +11,14 @@
 * ``allocate_maxmin``        max-min 公平（水填充）：先抬高最小需求者，逐层涨到饱和；
 * ``allocate_priority``      优先级贪心：按优先级高者先给满（优先级 = 等待分钟等）。
 
-需求与分配都用 kW 向量；``cap`` 是站级总容量。返回值与 demands 同形状且
-``0 <= alloc <= demand``、``sum(alloc) <= cap``（测试钉死这两条不变式）。
+需求与分配都用 kW 向量。入口 ``allocate()`` 会先校验输入（``0 <= demand``、有限、``cap >= 0``、
+``wait_min`` 同长），校验通过后返回值满足 ``0 <= alloc <= demand`` 且 ``sum(alloc) <= cap``
+（测试逐策略钉死这两条 + ``sum(alloc) == min(cap, sum(demand))``）。
+
+校验不是装饰：负需求会击穿上面第一条——``_clip`` 把分配夹到 ``[0, demand]``，demand 为负时
+"下界 0"与"上界 demand"自相矛盾，``np.minimum`` 取后者，于是**返回负分配**，而负值还会把
+站级总功率抵掉（``greedy([-5,10], cap=7)`` 给出 ``[-5,10]``：某桩实抽 10kW > 容量 7kW）。
+真实长表已实测无负值/无 NaN，但那是**数据碰巧干净**，不是函数性质；宁可拒算。
 """
 
 from __future__ import annotations
@@ -21,7 +27,11 @@ import numpy as np
 
 
 def _clip(demands: np.ndarray, alloc: np.ndarray) -> np.ndarray:
-    """把分配夹回 ``[0, demand]``。``sum(alloc) <= cap`` 由各策略的构造保证（测试逐策略钉死）。"""
+    """把分配夹回 ``[0, demand]``。``sum(alloc) <= cap`` 由各策略的构造保证（测试逐策略钉死）。
+
+    前提 ``demands >= 0``（由 ``allocate()`` 的 ``check_inputs`` 把住）：需求为负时 ``[0, demand]``
+    是空区间，``np.minimum`` 会取到负的那一头，"非负"这条不变式当场失效。
+    """
     alloc = np.clip(np.asarray(alloc, dtype=float), 0.0, None)
     return np.minimum(alloc, demands)
 
@@ -88,8 +98,33 @@ def allocate_priority(demands: np.ndarray, cap: float, priority: np.ndarray) -> 
 POLICIES = ("greedy_fcfs", "proportional", "maxmin", "priority_wait")
 
 
+def check_inputs(demands: np.ndarray, cap: float, wait_min: np.ndarray | None = None) -> np.ndarray:
+    """把"输入必须是可分配的需求"从注释变成代码。返回转换后的 demands（不复制语义由调用方负责）。"""
+    demands = np.asarray(demands, dtype=float)
+    if demands.ndim != 1:
+        raise ValueError(f"demands 必须是一维向量，收到 ndim={demands.ndim}")
+    if not np.isfinite(demands).all():
+        bad = int(np.count_nonzero(~np.isfinite(demands)))
+        raise ValueError(f"demands 含 {bad} 个 NaN/inf：无法分配（NaN 会污染整 tick 的所有指标）")
+    if (demands < 0).any():
+        raise ValueError(f"demands 含负值（min={demands.min()}）：需求非负是分配语义的前提")
+    if not np.isfinite(cap) or cap < 0:
+        raise ValueError(f"cap 必须是有限非负数，收到 {cap!r}")
+    if wait_min is not None:
+        wait_min = np.asarray(wait_min, dtype=float)
+        if wait_min.shape != demands.shape:
+            raise ValueError(f"wait_min 与 demands 形状不一致：{wait_min.shape} vs {demands.shape}")
+        if not np.isfinite(wait_min).all():
+            raise ValueError("wait_min 含 NaN/inf：等待加权指标会变成 NaN")
+    return demands
+
+
 def allocate(policy: str, demands: np.ndarray, cap: float, *, wait_min: np.ndarray | None = None) -> np.ndarray:
-    """统一入口；``priority_wait`` 策略需要 ``wait_min``（各桩已等分钟）。"""
+    """统一入口；``priority_wait`` 策略需要 ``wait_min``（各桩已等分钟）。
+
+    先 ``check_inputs`` 再分派：四个策略共用同一道闸，不在各自内部重复宽松假设。
+    """
+    demands = check_inputs(demands, cap, wait_min)
     if policy == "greedy_fcfs":
         return allocate_greedy(demands, cap)
     if policy == "proportional":
