@@ -97,6 +97,8 @@ interface FakeEl {
   scrolled: boolean;
   attrs: Record<string, string>;
   onClick?: () => void;
+  // 可见性断言用 typeof 守卫:假 DOM 默认不挂此方法→测试自动跳过;单独用例里显式挂
+  getClientRects?: () => unknown[];
   dispatchEvent(e: Event): boolean;
   getAttribute(k: string): string | null;
   click(): void;
@@ -163,6 +165,18 @@ describe("runAction:navigate(fail-closed 断言链)", () => {
     await expect(runAction(act, { doc: doc.doc, sleep: noSleep })).rejects.toThrow("子分区切换未生效");
   });
 
+  it("跳转后子分区按钮始终未渲染 → 等超时抛错(不半执行)", async () => {
+    const doc = fakeDoc();
+    const nav = fakeEl("BUTTON");
+    nav.onClick = () => { doc.els.set(".app-shell.workspace-lab", fakeEl()); }; // 页切了,分区条没渲染
+    doc.els.set(NAV_BTN(3), nav);
+    let t = 0;
+    await expect(runAction(act, { doc: doc.doc,
+      sleep: () => { t += 60; return Promise.resolve(); } }))
+      .rejects.toThrow("子分区按钮未出现");
+    expect(t).toBeGreaterThan(0); // 确实轮询过
+  });
+
   it("lab-experiments 完成后滚到结果锚点", async () => {
     const doc = fakeDoc();
     const sec = fakeEl("BUTTON");
@@ -185,6 +199,7 @@ describe("runAction:fill(prefill-only 军规)", () => {
     const input = fakeEl("INPUT");
     sec.onClick = () => {
       sec.attrs["aria-pressed"] = "true";
+      doc.els.set(".insights-grid", fakeEl()); // 就绪门:grid 出现=load() 的异步覆写已落定
       doc.els.set("form.insights-query input", input); // 输入框渲染在 insights 分区内
     };
     await runAction({ kind: "fill", target: "insights-query", route: "lab",
@@ -234,6 +249,46 @@ describe("runAction:fill(prefill-only 军规)", () => {
                              timeoutMs: 120 }))
       .rejects.toThrow("输入框还没出现");
     expect(t).toBeGreaterThan(0); // 确实轮询过
+  });
+
+  // insights-query 带 readySels 就绪门(load() 会无条件覆写框值);以下用例共用骨架:
+  // 进 lab→点 insights 分区(已 pressed)→按需给就绪信号与输入框
+  const INSIGHTS_FILL: PetAction = { kind: "fill", target: "insights-query", route: "lab",
+                                     section: "insights", value: "SES-00111676", label: "x" };
+  function insightsPage(input: FakeEl | null, ready: boolean) {
+    const doc = fakeDoc();
+    const sec = fakeEl("BUTTON");
+    sec.onClick = () => { sec.attrs["aria-pressed"] = "true"; };
+    labNav(doc, 2, sec);
+    if (ready) doc.els.set(".insights-grid", fakeEl());
+    if (input) doc.els.set("form.insights-query input", input);
+    return doc;
+  }
+
+  it("就绪门:grid 一直没渲染 → 拒写(赌覆写没落定就是瞬时真相)", async () => {
+    const doc = insightsPage(fakeEl("INPUT"), false); // 框在,但数据没加载完
+    await expect(runAction(INSIGHTS_FILL, { doc: doc.doc, sleep: noSleep }))
+      .rejects.toThrow("页面数据还没就绪");
+  });
+
+  it("输入框被 v-show 隐藏(getClientRects 为空)→ 拒写,不半执行", async () => {
+    const doc = insightsPage(null, true);
+    const input = fakeEl("INPUT");
+    input.getClientRects = () => []; // 大屏模式收起了筛选区
+    doc.els.set("form.insights-query input", input);
+    await expect(runAction(INSIGHTS_FILL, { doc: doc.doc, sleep: noSleep }))
+      .rejects.toThrow("被页面隐藏");
+    expect(input.value).toBe("");
+    expect(input.events).toEqual([]); // 没写值也没发事件
+  });
+
+  it("写入后回读不符(组件受控拒收)→ 抛错,绝不播报成功", async () => {
+    const doc = insightsPage(null, true);
+    const input = fakeEl("INPUT");
+    Object.defineProperty(input, "value", { get: () => "", set: () => {}, configurable: true });
+    doc.els.set("form.insights-query input", input);
+    await expect(runAction(INSIGHTS_FILL, { doc: doc.doc, sleep: noSleep }))
+      .rejects.toThrow("填入后回读不一致");
   });
 });
 

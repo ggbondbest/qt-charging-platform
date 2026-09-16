@@ -10,7 +10,16 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import whaleGirl from "../assets/whale-girl.png";
 import { resolveActions, runAction, type PetAction } from "../advisorActions";
 
-const BASE = "http://127.0.0.1:8765";
+// 端口可覆盖:README 宣传 ML_ADVISOR_PORT 换端口,桌宠跟着走。
+// node 测试环境的 window stub 可能没有 localStorage,try/catch 守卫住。
+const ADVISOR_PORT = (() => {
+  try {
+    const p = window.localStorage?.getItem("ml_advisor_port");
+    if (p && /^\d{1,5}$/.test(p)) return p;
+  } catch { /* 读不到就用默认端口 */ }
+  return "8765";
+})();
+const BASE = `http://127.0.0.1:${ADVISOR_PORT}`;
 const PET_SIZE = 88; // 桌宠占位边长(方形立绘)
 
 interface Msg {
@@ -20,8 +29,11 @@ interface Msg {
   html: string; // shown 的渲染结果
   sources: string[]; // 人话标签(服务端已翻译)
   actions?: PetAction[]; // 页面动作(已过前端本地注册表二次过滤)
-  naviDone?: boolean; // navigate 自动执行过(打字机完成后)
-  fillState?: "done" | "void"; // fill 确认芯片的终态(未标记=待确认)
+  // 终态挂在**每条动作**上,key=`${kind}:${数组下标}`(评审 major:per-message 旗会让
+  // 未执行/失败的芯片跟着一起变 ✓——回显撒谎)。done=执行成功 fail=跳转失败(可重试)
+  // void=填入已终结(失败一次性作废/新提问与关面板作废未确认的填入)
+  actState?: Record<string, "done" | "fail" | "void">;
+  note?: boolean; // 操作回执气泡(已带你到/已填入):日志不是数据论断,不渲染"依据"行
   meta?: string;
   error?: boolean;
   retry?: string;
@@ -187,7 +199,7 @@ async function checkHealth() {
 
 let ctrl: AbortController | null = null; // 停止按钮用的 AbortController
 
-function pushNote(text: string, opts: { error?: boolean; retry?: string } = {}) {
+function pushNote(text: string, opts: { error?: boolean; retry?: string; note?: boolean } = {}) {
   messages.value.push({ role: "assistant", text, shown: "", html: "", sources: [], ...opts });
   typeInto(messages.value[messages.value.length - 1]);
 }
@@ -202,33 +214,54 @@ function flashFail() {
 
 // ---------- 页面动作(navigate 自动/fill 需确认,全部 fail-closed) ----------
 let execBusy = false;
+const akey = (kind: string, i: number) => `${kind}:${i}`;
+function setActState(m: Msg, key: string, v: "done" | "fail" | "void") {
+  m.actState = { ...(m.actState || {}), [key]: v }; // 整体换新对象,响应式重渲染最稳
+}
 function voidPendingFills() {
   for (const x of messages.value) {
-    if (x.actions?.some((a) => a.kind === "fill") && !x.fillState) x.fillState = "void";
+    (x.actions || []).forEach((a, i) => {
+      if (a.kind === "fill" && !x.actState?.[akey("fill", i)]) setActState(x, akey("fill", i), "void");
+    });
   }
 }
-async function runNavs(m: Msg) {
-  if (execBusy || m.naviDone) return;
-  const navs = (m.actions || []).filter((a) => a.kind === "navigate");
-  if (!navs.length) return;
-  m.naviDone = true;
+async function runNavs(m: Msg, onlyIdx?: number) {
+  if (execBusy) return;
+  const idxs = (m.actions || [])
+    .map((a, i) => ({ a, i }))
+    .filter(({ a, i }) => a.kind === "navigate"
+      && (onlyIdx === undefined || onlyIdx === i)
+      && m.actState?.[akey("navigate", i)] !== "done")
+    .map(({ i }) => i);
+  if (!idxs.length) return;
+  // 自动路径(打字机完成回调):用户关了面板或已改问下一题,旧答案的跳转意图就地作废,
+  // 绝不把页面从用户脚下抢走(评审 major);芯片按钮保留,想跳仍可手动点。
+  if (onlyIdx === undefined && (!open.value || messages.value[messages.value.length - 1] !== m)) return;
   execBusy = true;
   try {
-    for (const a of navs) {
-      try { await runAction(a, { doc: document }); pushNote(`已带你到「${a.label}」。`); }
-      catch (e) { pushNote(`没能打开「${a.label}」:${e instanceof Error ? e.message : "页面状态不对"},可以手动点顶部导航。`, { error: true }); }
+    for (const i of idxs) {
+      const a = (m.actions as PetAction[])[i];
+      try {
+        await runAction(a, { doc: document });
+        setActState(m, akey("navigate", i), "done"); // 成功才亮 ✓——先置旗会在失败时假回显(评审 major)
+        pushNote(`已带你到「${a.label}」。`, { note: true });
+      } catch (e) {
+        setActState(m, akey("navigate", i), "fail"); // 失败保留可点击的 ↻ 重试入口
+        pushNote(`没能打开「${a.label}」:${e instanceof Error ? e.message : "页面状态不对"},可以手动点顶部导航。`, { error: true });
+      }
     }
   } finally { execBusy = false; }
 }
-async function runFill(m: Msg, a: PetAction) {
-  if (execBusy || m.fillState) return;
+async function runFill(m: Msg, idx: number) {
+  const a = (m.actions || [])[idx];
+  if (execBusy || !a || a.kind !== "fill" || m.actState?.[akey("fill", idx)]) return;
   execBusy = true; // 同步置锁挡双击;成败之前芯片文案不变,不骗用户
   try {
     await runAction(a, { doc: document });
-    m.fillState = "done";
-    pushNote(`已在「${a.label}」填入「${a.value}」——未提交,请你亲手点查询确认。`);
+    setActState(m, akey("fill", idx), "done");
+    pushNote(`已在「${a.label}」填入「${a.value}」——未提交,请你亲手点查询确认。`, { note: true });
   } catch (e) {
-    m.fillState = "void";
+    setActState(m, akey("fill", idx), "void"); // 一次性纪律:失败即作废(执行器 fail-closed,页面可能已半切换)
     pushNote(`填入失败:${e instanceof Error ? e.message : "页面状态不对"},值没有改动。`, { error: true });
   } finally { execBusy = false; }
 }
@@ -244,7 +277,13 @@ async function ask(text: string) {
   nearBottom.value = true;
   scrollPanel();
   ctrl = new AbortController();
-  const watchdog = window.setTimeout(() => ctrl?.abort("timeout"), 120000);
+  // 超时用本地旗标判,别信 err.name==="AbortError":Chrome 98+/Firefox 现行实现里
+  // fetch 以 abort reason(字符串 "timeout")原样 reject,按 name 判断是死分支
+  // (评审实锤:超时会被误报成"连不上参谋服务")。stopAsk 不带 reason 才走 AbortError。
+  let timedOut = false;
+  const watchdog = window.setTimeout(() => {
+    if (ctrl) { timedOut = true; ctrl.abort("timeout"); }
+  }, 120000);
   let gotResponse = false; // "连不上"与"服务端回了错误"的分水岭:看是否拿到过响应,不猜错误文本
   try {
     const r = await fetch(`${BASE}/advisor/ask`, {
@@ -284,16 +323,14 @@ async function ask(text: string) {
       window.setTimeout(() => { if (petState.value === "success") petState.value = "idle"; }, 1400);
     }
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      if (ctrl && ctrl.signal.reason === "timeout") {
-        pushNote("查询超时(120 秒),已自动停止——把问题拆小一点,或点重试。", { error: true, retry: q });
-        flashFail();
-      } else {
-        pushNote("(已停止)");
-      }
+    if (timedOut) {
+      pushNote("查询超时(120 秒),已自动停止——把问题拆小一点,或点重试。", { error: true, retry: q });
+      flashFail();
+    } else if (err instanceof Error && err.name === "AbortError") {
+      pushNote("(已停止)");
     } else if (!gotResponse) {
       // 网络级:fetch 直接 reject,才是真"连不上",给启动命令并可重试
-      pushNote("连不上参谋服务(127.0.0.1:8765)。在仓库根目录跑:\n`python -m data_analysis.ml.advisor.serve`\n没起服务前也可切右上角「离线演示」看管线。",
+      pushNote(`连不上参谋服务(127.0.0.1:${ADVISOR_PORT})。在仓库根目录跑:\n\`python -m data_analysis.ml.advisor.serve\`\n没起服务前也可切右上角「离线演示」看管线。`,
                { error: true, retry: q });
       online.value = false;
       petState.value = "offline";
@@ -517,18 +554,25 @@ const statusText = computed(() => {
               </button>
             </div>
           </div>
-          <div v-if="m.role === 'assistant' && !m.error && m.text !== '(已停止)'" class="pp-sources">
+          <div v-if="m.role === 'assistant' && !m.error && !m.note && m.text !== '(已停止)'" class="pp-sources">
             <span class="pp-src-label">依据</span>
             <span v-if="!m.sources.length" class="pp-src none">无出处</span>
             <span v-for="s in m.sources" :key="s" class="pp-src">{{ s }}</span>
           </div>
           <div v-if="m.actions?.length" class="pp-acts">
-            <span v-for="a in m.actions" :key="a.target" class="pp-act">
-              <button v-if="a.kind === 'navigate' && !m.naviDone" type="button" @click="runNavs(m)">↪ 打开「{{ a.label }}」</button>
-              <span v-else-if="a.kind === 'navigate'">✓ 已打开「{{ a.label }}」</span>
-              <button v-else-if="!m.fillState" type="button" @click="runFill(m, a)">✎ 填入「{{ a.value }}」</button>
-              <span v-else-if="m.fillState === 'done'">✓ 已填入「{{ a.label }}」(未提交)</span>
-              <span v-else>已作废</span>
+            <!-- 状态逐条挂动作(评审 major):多动作消息里,未执行/失败的芯片绝不跟着变 ✓ -->
+            <span v-for="(a, ai) in m.actions" :key="a.kind + ':' + ai" class="pp-act">
+              <template v-if="a.kind === 'navigate'">
+                <button v-if="m.actState?.['navigate:' + ai] !== 'done'" type="button" @click="runNavs(m, ai)">
+                  {{ m.actState?.['navigate:' + ai] === 'fail' ? '↻ 再试打开' : '↪ 打开' }}「{{ a.label }}」
+                </button>
+                <span v-else>✓ 已打开「{{ a.label }}」</span>
+              </template>
+              <template v-else>
+                <button v-if="!m.actState?.['fill:' + ai]" type="button" @click="runFill(m, ai)">✎ 填入「{{ a.value }}」</button>
+                <span v-else-if="m.actState?.['fill:' + ai] === 'done'">✓ 已填入「{{ a.label }}」(未提交)</span>
+                <span v-else>已作废</span>
+              </template>
             </span>
           </div>
           <div v-if="m.role === 'assistant' && m.meta" class="pp-meta">{{ m.meta }}</div>

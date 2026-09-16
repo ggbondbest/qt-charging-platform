@@ -15,7 +15,12 @@ export interface PetAction {
   label?: string;
 }
 interface NavSpec { route: string; section?: string; label: string; scrollAfter?: string; }
-interface FillSpec { route: string; section?: string; selector: string; event: "input" | "change"; label: string; maxLen: number; pattern?: RegExp; enums?: readonly string[]; }
+interface FillSpec { route: string; section?: string; selector: string; event: "input" | "change"; label: string; maxLen: number; pattern?: RegExp; enums?: readonly string[];
+  // 就绪门控:这些框的值会被组件异步加载完成时**无条件覆写**(insights 的 load() 填首个
+  // 编号、ForecastPanel 的 initialize() 填默认起点)。不等到覆写落定就写入,回读虽然一致,
+  // 几百毫秒后用户看到的值会被页面悄悄改回去(评审实锤"瞬时真相")。readySels 命中任一
+  // 选择器 = 加载已终态(成功或报错都不再覆写),才允许写。
+  readySels?: string[]; }
 
 const TAB_ORDER = ["dashboard", "explore", "lab"]; // #76 起行程页已删;admin 刻意排除:需令牌且多为写操作入口
 const SEC_ORDER = ["forecast", "insights", "arrival", "experiments"];
@@ -34,12 +39,12 @@ export const NAV_REGISTRY: Record<string, NavSpec> = {
   "lab-experiments": { route: "lab", section: "experiments", label: "智能分析·策略对比", scrollAfter: "#paired-experiment-results" },
 };
 export const FILL_REGISTRY: Record<string, FillSpec> = {
-  "insights-query": { route: "lab", section: "insights", selector: "form.insights-query input", event: "input", label: "分析编号查询框", maxLen: 40, pattern: /^[^\n\r]{1,40}$/ },
+  "insights-query": { route: "lab", section: "insights", selector: "form.insights-query input", event: "input", label: "分析编号查询框", maxLen: 40, pattern: /^[^\n\r]{1,40}$/, readySels: [".insights-grid", ".intelligence-inline-error"] },
   "dash-start": { route: "dashboard", selector: 'section.analytics-filter input[aria-label="统计开始日期"]', event: "input", label: "统计开始日期", maxLen: 10, pattern: /^\d{4}-\d{2}-\d{2}$/ },
   "dash-end": { route: "dashboard", selector: 'section.analytics-filter input[aria-label="统计结束日期"]', event: "input", label: "统计结束日期", maxLen: 10, pattern: /^\d{4}-\d{2}-\d{2}$/ },
   "forecast-target": { route: "lab", section: "forecast", selector: 'form.forecast-controls select[aria-label="预测目标"]', event: "change", label: "预测目标", maxLen: 12, enums: ["load", "availability"] },
   "forecast-horizon": { route: "lab", section: "forecast", selector: 'form.forecast-controls select[aria-label="预测跨度"]', event: "change", label: "预测跨度(小时)", maxLen: 2, enums: ["1", "6", "24"] },
-  "forecast-reference": { route: "lab", section: "forecast", selector: 'form.forecast-controls input[aria-label="预测起点"]', event: "input", label: "预测起点", maxLen: 19, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/ },
+  "forecast-reference": { route: "lab", section: "forecast", selector: 'form.forecast-controls input[aria-label="预测起点"]', event: "input", label: "预测起点", maxLen: 19, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, readySels: ['select[aria-label="预测电站"] option', ".intelligence-inline-error"] },
   "energy-kwh": { route: "explore", selector: "#energy", event: "change", label: "计划补电(kWh)", maxLen: 2, enums: ["5", "10", "20", "30", "40", "60"] },
   "max-eta": { route: "explore", selector: "#max-eta", event: "change", label: "最远行驶(分钟)", maxLen: 2, enums: ["15", "30", "60"] },
 };
@@ -99,6 +104,17 @@ async function waitForEl(doc: Document, selector: string, sleep: (ms: number) =>
     waited += 60;
   }
 }
+// 任一选择器命中即算就绪(异步覆写见 FillSpec.readySels 注释:成功/失败两种终态都要放行,
+// 失败态不会覆写值,填入是安全的)
+async function waitAny(doc: Document, selectors: string[], sleep: (ms: number) => Promise<void>, timeoutMs: number): Promise<boolean> {
+  let waited = 0;
+  for (;;) {
+    if (selectors.some((s) => doc.querySelector(s))) return true;
+    if (waited >= timeoutMs) return false;
+    await sleep(60);
+    waited += 60;
+  }
+}
 const doubleRaf = (sleep: (ms: number) => Promise<void>) => sleep(20).then(() => sleep(20));
 
 async function gotoTarget(route: string, navSelectorArg: string, sectionSelector: string | undefined,
@@ -137,8 +153,15 @@ export async function runAction(a: PetAction, ctx: ExecCtx): Promise<void> {
   const nav = navBtn(TAB_ORDER.indexOf(spec.route) + 1);
   const secSel = spec.section ? secBtn(SEC_ORDER.indexOf(spec.section) + 1) : undefined;
   await gotoTarget(spec.route, nav, secSel, ctx, sleep);
+  if (spec.readySels?.length && !(await waitAny(ctx.doc, spec.readySels, sleep, Math.max(to, 4000))))
+    throw new Error("页面数据还没就绪(加载中或暂无可展示样本),过几秒再点填入");
   const el = await waitForEl(ctx.doc, spec.selector, sleep, to);
   if (!el) throw new Error("输入框还没出现(页面数据可能未就绪)");
+  // 可见性断言(评审实锤):v-show 隐藏的元素照样能设值回读——大屏模式下
+  // dashboard 筛选区 display:none,填了用户看不见却播报成功。写之前先拒,保持"不做半执行"。
+  // getClientRects 用 typeof 守卫:node 假 DOM 没有该方法,测试环境自动跳过。
+  if (typeof (el as HTMLElement).getClientRects === "function" && (el as HTMLElement).getClientRects().length === 0)
+    throw new Error("输入框当前被页面隐藏(比如大屏模式收起了筛选区),未写入");
   const value = a.value ?? "";
   // 鸭子类型认 select(tagName),不用 instanceof HTMLSelectElement——后者在 node 测试环境不存在
   if (el.tagName === "SELECT") {
