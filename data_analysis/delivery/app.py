@@ -46,11 +46,16 @@ def create_app(*, settings=None, mysql_settings=None, database_path=None, provid
     application.state.models = provider
     application.state.operational_app = cp_app
     limiter = WindowLimiter()
+    from .advisor import register as register_advisor
+    advisor_runner = register_advisor(application, provider)
 
     @asynccontextmanager
     async def lifespan(app):
-        async with cp_app.router.lifespan_context(cp_app):
-            yield
+        try:
+            async with cp_app.router.lifespan_context(cp_app):
+                yield
+        finally:
+            advisor_runner.close()
     application.router.lifespan_context = lifespan
 
     def snapshot(request: Request):

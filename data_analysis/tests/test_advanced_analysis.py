@@ -7,11 +7,40 @@ import unittest
 
 from data_analysis.spark_jobs.advanced_analysis import (
     DEFINITIONS, INPUT_TABLES, MAX_EXPORT_ROWS, TABLE_NAMES, accepted_clean_inventory,
-    complete_months_through, first_complete_month, verify_clean_shard,
+    complete_months_through, first_complete_month, sanitize_spark_plan, verify_clean_shard,
 )
 
 
 class AdvancedDefinitionTests(unittest.TestCase):
+    def test_spark_plan_redacts_complete_and_truncated_local_source_only(self):
+        root = "/Users/developer/Projects/charging platform/datasets/clean_batch"
+        plan = ("HashAggregate(keys=[station_id], functions=[sum(energy_wh)])\n"
+                "Location: InMemoryFileIndex(1 paths)[file:" + root + "/clean/sessions], PushedFilters: []\n"
+                "Location: InMemoryFileIndex(1 paths)[file:/Users/developer/Projects/charging..., PartitionFilters: []\n"
+                "Location: InMemoryFileIndex(1 paths)[file:///Users/developer/Projects/charging%20plat...], ReadSchema: struct<energy_wh:bigint>\n"
+                "Location: InMemoryFileIndex(1 paths)[file:/public/other...], PushedFilters: []\n"
+                "Statistics(sizeInBytes=2048, rowCount=121539)")
+        result = sanitize_spark_plan(plan, root)
+        self.assertNotIn("/Users/developer", result)
+        self.assertIn("file:${CLEAN_ROOT}/clean/sessions", result)
+        self.assertEqual(result.count("file:${CLEAN_ROOT}..."), 2)
+        self.assertIn("file:/public/other...", result)
+        self.assertIn("HashAggregate(keys=[station_id], functions=[sum(energy_wh)])", result)
+        self.assertIn("Statistics(sizeInBytes=2048, rowCount=121539)", result)
+        self.assertEqual(sanitize_spark_plan(result, root), result)
+
+    def test_spark_plan_redacts_relative_and_uri_source_roots(self):
+        from pathlib import Path
+        relative = "data_analysis/datasets/clean_batch"
+        resolved = Path(relative).resolve()
+        plan = "Location: InMemoryFileIndex(1 paths)[file:" + str(resolved) + "/clean/stations]"
+        self.assertEqual(sanitize_spark_plan(plan, relative),
+                         "Location: InMemoryFileIndex(1 paths)[file:${CLEAN_ROOT}/clean/stations]")
+        self.assertEqual(sanitize_spark_plan("Location: [hdfs://node:8020/data/clean_batch/clean/stations]",
+                                            "hdfs://node:8020/data/clean_batch"),
+                         "Location: [${CLEAN_ROOT}/clean/stations]")
+        self.assertNotIn(str(resolved), sanitize_spark_plan(plan, resolved.as_uri()))
+
     def test_complete_month_boundary_is_shanghai_and_exclusive(self):
         self.assertEqual(complete_months_through("2026-05-29T16:00:00Z"), date(2026, 4, 1))
         self.assertEqual(complete_months_through("2026-05-31T16:00:00Z"), date(2026, 5, 1))

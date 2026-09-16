@@ -1,6 +1,1 @@
-"""AI 运营参谋(advisor):检索增强的只读 agent 层。
-
-定位:大模型只负责"查什么、怎么把查到的说成人话",所有数字一律来自本地冻结工件
-(评测 json / 告警清单 / 模型卡 / FTS5 文本索引),答案逐条带来源,无据即答"无依据"。
-本包不训练、不改写任何盲评工件、不写 datasets/;派生工件只落 outputs/ml_advisor/。
-"""
+"""Published-batch operational advisor; program-rendered, verifiable evidence."""

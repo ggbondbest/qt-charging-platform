@@ -14,6 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from urllib.parse import quote, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 from data_analysis.charging_data.schema import SCHEMA_VERSION
@@ -324,6 +325,38 @@ def _digest(path):
     return result.hexdigest()
 
 
+def sanitize_spark_plan(plan, input_root):
+    """Redact only this source location, including Spark's truncated file URI.
+
+    Spark can shorten a Location before the dataset's directory name appears,
+    so replacing the complete root alone is insufficient. A truncated URI is
+    recognized only when its decoded path is a prefix of this exact local
+    source root. Operators, schemas, other locations and statistics stay intact.
+    """
+    root = str(input_root).rstrip("/")
+    roots = {root}
+    parsed = urlsplit(root)
+    local_path = None
+    if parsed.scheme == "file":
+        local_path = str(Path(unquote(parsed.path)).resolve())
+    elif not parsed.scheme:
+        local_path = str(Path(root).resolve())
+    if local_path is not None:
+        roots.update({local_path, quote(local_path, safe="/:")})
+
+        def redact_truncated(match):
+            prefix_path = unquote(urlsplit(match.group("uri")).path)
+            if prefix_path and local_path.startswith(prefix_path):
+                return match.group("location") + "file:${CLEAN_ROOT}..."
+            return match.group(0)
+
+        plan = re.sub(r"(?P<location>Location: [^\n]*?\[)(?P<uri>file:/{1,3}[^,\]\n]*?)\.\.\.(?=[,\]])",
+                      redact_truncated, plan)
+    for source_root in sorted(roots, key=len, reverse=True):
+        plan = plan.replace(source_root, "${CLEAN_ROOT}")
+    return plan
+
+
 def accepted_clean_inventory(acceptance, serving, serving_sha256):
     """Bind the files to the previously completed acceptance bundle, not today.
 
@@ -491,8 +524,7 @@ def export_advanced_analysis(spark, input_root, output_root, max_rows=MAX_EXPORT
                 plan = spark._jvm.PythonSQLUtils.explainString(frame._jdf.queryExecution(), "formatted")
                 # Share the actual plan without embedding a developer's home
                 # directory. Only source-root text changes, not plan operators.
-                for source_root in sorted({str(input_root), str(Path(input_root).resolve())}, key=len, reverse=True):
-                    plan = plan.replace(source_root, "${CLEAN_ROOT}")
+                plan = sanitize_spark_plan(plan, input_root)
                 (plan_dir / (name + ".txt")).write_text(plan, encoding="utf-8")
                 metadata[name] = {"file": filename, "rows": rows, "bytes": output.stat().st_size,
                     "sha256": _digest(output), "schema": [{"name": field.name, "type": field.dataType.simpleString(),

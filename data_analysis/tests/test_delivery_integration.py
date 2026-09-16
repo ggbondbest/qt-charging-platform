@@ -271,6 +271,36 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
         self.assertNotIn("/api/v1/chargepilot/recommendations", main_schema.json()["paths"])
         self.assertEqual(self.client.get("/docs").status_code, 200)
 
+    def test_advisor_uses_real_mysql_rollups_and_current_model_outputs(self):
+        route = "/api/v1/intelligence/advisor"
+        pin = dict(datasetId=self.publication["datasetId"],
+                   publishedBatchId=self.publication["publishedBatchId"],
+                   startDate="2026-05-23", endDate="2026-05-30", cityId="DL")
+        body = dict(**pin, mode="offline", consent=False)
+        capability = self.client.get(route)
+        self.assertEqual(capability.status_code, 200)
+        self.assertEqual(capability.json()["data"]["defaultMode"], "offline")
+        overview = self.envelope(self.client.get("/api/v1/dashboard/overview", params=pin))
+        result = self.envelope(self.client.post(route, json={**body, "question": "运营概况"}))
+        values = {item["id"]: item["value"] for item in result["evidence"]}
+        self.assertEqual(result["scope"]["cityId"], "DL")
+        self.assertAlmostEqual(values["energy"], overview["metrics"]["energyWh"] / 1000)
+        self.assertEqual(values["sessions"], overview["metrics"]["startedSessions"])
+        advanced = self.envelope(self.client.get("/api/v1/dashboard/advanced", params=pin))
+        result = self.envelope(self.client.post(route, json={**body, "question": "当前范围的充电服务瓶颈是什么？"}))
+        values = {item["id"]: item["value"] for item in result["evidence"]}
+        self.assertEqual(values["attempts"], advanced["service"]["attemptCount"])
+        self.assertEqual(values["failed"], advanced["service"]["failedAttempts"])
+        result = self.envelope(self.client.post(route, json={**body, "question": "目前有哪些模型？"}))
+        states = {item["id"]: item["value"] for item in result["evidence"] if item["id"].endswith("_status")}
+        self.assertEqual(set(states), {name + "_status" for name in ("load", "availability", "insights", "arrival")})
+        self.assertEqual(set(states.values()), {"就绪"})
+        result = self.envelope(self.client.post(route, json={**body, "question": "异常会话清单"}))
+        expected = self.provider.insight("anomalies", self.publication, limit=3)
+        values = {item["id"]: item["value"] for item in result["evidence"]}
+        self.assertEqual(values["anomaly_count"], expected["total"])
+        self.assertEqual(values["inspected_count"], expected["inspectedSessions"])
+
     def test_outer_cors_allows_operational_patch_but_not_untrusted_origin(self):
         route = "/api/v1/chargepilot/admin/config"
         headers = {"Origin": "http://127.0.0.1:5173", "Access-Control-Request-Method": "PATCH",

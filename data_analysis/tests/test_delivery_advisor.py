@@ -1,0 +1,262 @@
+"""Actual snapshot/advanced rollups and ForecastService over tiny test fixtures."""
+import asyncio
+import importlib.util
+import json
+import os
+import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+import threading
+from http.client import IncompleteRead
+import unittest
+from unittest.mock import patch
+
+HAS_DEPS = all(importlib.util.find_spec(name) for name in ("fastapi", "httpx", "pandas", "numpy", "sklearn", "joblib", "pyarrow"))
+if HAS_DEPS:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from data_analysis.backend.errors import ApiError
+    from data_analysis.delivery.advisor import AdvisorRunner, AdvisorRequest
+    from data_analysis.delivery.app import create_app
+    from data_analysis.delivery.models import ForecastService
+    from data_analysis.chargepilot.settings import Settings
+    from data_analysis.tests.test_analytics_api import fixture
+    from data_analysis.tests.test_advanced_api import write_bundle
+    from data_analysis.tests.test_delivery_forecasts import FakeAdapter
+    from data_analysis.ml.advisor import config, llm, service
+
+PATH = "/api/v1/intelligence/advisor"
+
+
+class TinyInsights:
+    def report(self):
+        return {"status": "READY", "anomaly": {"test": {"precision": .5, "recall": .25}}}
+
+    def list_anomalies(self, limit=3):
+        return {"total": 1, "inspectedSessions": 4, "items": [self.inspect_session("SES-001")]}
+
+    def inspect_session(self, entity):
+        if entity != "SES-001":
+            raise KeyError(entity)
+        return {"sessionId": entity, "anomalyScore": .8, "threshold": .7, "flagged": True,
+                "features": {"private": "never-send"}}
+
+
+@unittest.skipUnless(HAS_DEPS, "Install unified delivery dependencies")
+class DeliveryAdvisorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="delivery-advisor-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.db = self.root / "fixture.sqlite"
+        self.meta = fixture(self.db)
+        write_bundle(self.root, self.meta)
+        self.env = patch.dict(os.environ, {"ANALYTICS_ADVANCED_BUNDLE": str(self.root), "ML_ADVISOR_ONLINE_ENABLED": "0"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.provider = ForecastService(FakeAdapter(), FakeAdapter("availability"), TinyInsights(),
+            SimpleNamespace(catalog=[], metadata={}), self.meta)
+        self.app = create_app(settings=Settings(), database_path=self.db, provider=self.provider, operational_app=FastAPI())
+        self.addCleanup(self.app.state.advisor_runner.close)
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+    def ask(self, question, **changes):
+        body = dict(question=question, datasetId=self.meta["datasetId"], publishedBatchId=self.meta["publishedBatchId"])
+        body.update(changes)
+        return self.client.post(PATH, json=body)
+
+    def data(self, response):
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["meta"]["publishedBatchId"], "batch-1")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(payload["data"]["scope"]["dataKind"], "SIMULATED")
+        return payload["data"]
+
+    def test_configuration_is_available_without_model_or_database(self):
+        result = self.client.get(PATH).json()["data"]
+        self.assertFalse(result["onlineAvailable"])
+        self.assertEqual(result["defaultMode"], "offline")
+        self.assertEqual(len(result["supportedQuestions"]), 4)
+        self.assertIn("不发送问题原文", result["disclosure"])
+
+    def test_real_advanced_bottleneck_values_and_reproducible_source(self):
+        with patch.object(llm, "choose_focus", side_effect=AssertionError("offline must not call model")):
+            result = self.data(self.ask("充电服务瓶颈是什么？"))
+        evidence = {row["id"]: row for row in result["evidence"]}
+        self.assertEqual(evidence["attempts"]["value"], 3)
+        self.assertEqual(evidence["failed"]["value"], 1)
+        self.assertEqual(evidence["failure_share"]["value"], 100)
+        response = self.client.get(evidence["attempts"]["source"]["endpoint"])
+        self.assertEqual(response.json()["data"]["service"]["attemptCount"], evidence["attempts"]["value"])
+        self.assertNotIn("actions", result)
+
+    def test_behavior_and_station_comparison_use_real_rollup(self):
+        behavior = self.data(self.ask("不同用户类型的补能间隔和单次电量？"))
+        values = {row["id"]: row["value"] for row in behavior["evidence"]}
+        self.assertEqual(values["intervals"], 1)
+        self.assertEqual(values["first_observed"], 1)
+        self.assertEqual(values["segment_0_interval"], 1)
+        stations = self.data(self.ask("比较各站的成功率与等待"))
+        values = {row["id"]: row["value"] for row in stations["evidence"]}
+        self.assertEqual(values["station_count"], 1)
+        self.assertEqual(values["comparable_station_count"], 0)
+        self.assertNotIn("station_0_success", values)
+        self.assertIn("样本太少", stations["answer"])
+
+    def test_city_mentioned_in_prose_must_match_actual_page_filter(self):
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE cities SET city_name='北京市' WHERE city_id='C1'")
+            db.execute("UPDATE cities SET city_name='上海市' WHERE city_id='C2'")
+        for question, filters in [("北京市运营概况", {}), ("北京电量", {"cityId": "C2"}),
+                                  ("天津市运营概况", {}), ("北京和上海电量", {"cityId": "C1"}),
+                                  ("天津电量是多少", {}), ("天津电量是多少", {"cityId": "C1"}),
+                                  ("北京和天津市电量是多少", {"cityId": "C1"}),
+                                  ("在未发布地区的电量是多少", {})]:
+            result = self.data(self.ask(question, **filters))
+            self.assertEqual(result["status"], "unsupported")
+            self.assertEqual(result["evidence"], [])
+            self.assertIn("城市与页面筛选", result["answer"])
+        self.assertEqual(self.data(self.ask("北京市运营概况", cityId="C1"))["status"], "answered")
+        self.assertEqual(self.data(self.ask("北京电量", stationId="S1"))["status"], "answered")
+
+    def test_chinese_adjacent_dates_and_identifiers_are_not_ignored(self):
+        for question in ("2025-12-02的电量是多少", "查询2025-12-01电量", "2025-12-01至2025-12-04电量", "2025年12月1日电量"):
+            result = self.data(self.ask(question))
+            self.assertEqual(result["status"], "unsupported")
+            self.assertEqual(result["evidence"], [])
+            self.assertIn("日期控件", result["answer"])
+        self.assertEqual(self.ask("解释异常会话SES-999").status_code, 404)
+        self.assertEqual(self.ask("解释异常会话SES-001的情况").status_code, 200)
+        for question in ("ST-BJ-01的电量", "查询ST-BJ-01电量", "异常会话SES-001和SES-999"):
+            result = self.data(self.ask(question))
+            self.assertEqual(result["status"], "unsupported")
+            self.assertEqual(result["evidence"], [])
+
+    def test_small_samples_excluded_from_priority_and_bottlenecks_include_context(self):
+        data = service.advanced.analyze(self.meta, dict(start="2025-12-01", end="2025-12-04", city=None, station=None))
+        base = data["stations"][0]
+        data["stations"] = [dict(base, attemptCount=90, successRate=2/3),
+                            dict(base, stationId="S2", stationName="单次失败站", attemptCount=1, successRate=0)]
+        cell = next(row for row in data["service"]["cells"] if row["attemptCount"])
+        data["service"]["cells"] = [dict(cell, attemptCount=90, successfulAttempts=60, successRate=2/3),
+                                     dict(cell, hour=1, attemptCount=1, successfulAttempts=0, successRate=0)]
+        data["behavior"]["segments"] = [dict(data["behavior"]["segments"][0], userSegment=kind)
+                                        for kind in ("COMMUTER", "FAMILY", "RIDE_HAILING", "FLEET")]
+        with patch.object(service.advanced, "analyze", return_value=data):
+            priority = self.data(self.ask("当前范围内，哪些电站需要优先关注？"))
+            evidence = {row["id"]: row for row in priority["evidence"]}
+            self.assertEqual(evidence["station_0_attempts"]["value"], 90)
+            self.assertNotIn("单次失败站", priority["answer"])
+            self.assertEqual(evidence["comparable_station_count"]["value"], 1)
+            bottleneck = self.data(self.ask("服务瓶颈"))
+            evidence = {row["id"]: row for row in bottleneck["evidence"]}
+            self.assertEqual(evidence["cell_failed"]["value"], 30)
+            self.assertEqual(evidence["cell_wait"]["value"], 5)
+            self.assertEqual(evidence["cell_utilization"]["value"], 30)
+            self.assertIn("办公园区 · 00:00", evidence["cell_attempts"]["label"])
+            self.assertLess(len(bottleneck["answer"]), 350)
+            self.assertGreaterEqual(len(bottleneck["evidence"]), 13)
+            self.assertNotIn("完整观测站点小时", bottleneck["answer"])
+            self.assertIn("90次尝试", bottleneck["answer"])
+            self.assertIn("66.67%", bottleneck["answer"])
+            behavior = self.data(self.ask("用户类型补能行为"))
+            labels = " ".join(row["label"] for row in behavior["evidence"])
+            for label in ("家庭用户", "网约车用户", "营运车队", "通勤用户"):
+                self.assertIn(label, labels)
+            self.assertNotIn("RIDE_HAILING", labels)
+            self.assertLess(len(behavior["answer"]), 260)
+            self.assertLessEqual(behavior["answer"].count("单次电量"), 2)
+            self.assertGreaterEqual(len(behavior["evidence"]), 11)
+
+    def test_overview_uses_snapshot_service_and_missing_scope_is_honest(self):
+        result = self.data(self.ask("运营概况"))
+        values = {row["id"]: row["value"] for row in result["evidence"]}
+        self.assertEqual(values["energy"], 13)
+        empty = self.data(self.ask("补能行为", stationId="S2"))
+        self.assertEqual(empty["status"], "no_evidence")
+        empty_stations = self.data(self.ask("比较各站成功率", stationId="S2"))
+        self.assertEqual(empty_stations["status"], "no_evidence")
+        unknown = self.data(self.ask("今天光伏发电量是多少？"))
+        self.assertEqual(unknown["status"], "unsupported")
+        self.assertEqual(unknown["evidence"], [])
+
+    def test_real_forecast_provider_batch_check_and_historical_model_scope(self):
+        models = self.data(self.ask("目前有哪些模型？", stationId="S1", startDate="2025-12-02"))
+        self.assertTrue(any("不改变模型" in note for note in models["limitations"]))
+        self.assertIn("precision", {row["id"] for row in models["evidence"]})
+        anomaly = self.data(self.ask("解释异常会话 SES-001"))
+        self.assertEqual(anomaly["evidence"][0]["value"], .8)
+        self.assertNotIn("never-send", json.dumps(anomaly))
+        self.assertEqual(self.ask("解释异常会话 SES-999").status_code, 404)
+        with patch.object(self.provider.insights, "list_anomalies", return_value={"total": 0, "inspectedSessions": 4, "items": []}):
+            zero_alerts = self.data(self.ask("异常会话清单"))
+            self.assertEqual(zero_alerts["status"], "answered")
+            self.assertIn("没有会话超过", zero_alerts["answer"])
+        self.provider.manifest = {**self.meta, "publishedBatchId": "other"}
+        self.assertEqual(self.ask("目前有哪些模型？").status_code, 409)
+
+    def test_batch_dates_entities_and_missing_artifacts_fail_closed(self):
+        for changes, status in [({"publishedBatchId": "old"}, 409), ({"datasetId": "other"}, 404),
+                                ({"stationId": "unknown"}, 404), ({"cityId": "C2", "stationId": "S1"}, 400),
+                                ({"startDate": "2027-01-01"}, 422), ({"startDate": "2025-02-30"}, 422)]:
+            self.assertEqual(self.ask("运营概况", **changes).status_code, status)
+        with patch.dict(os.environ, {"ANALYTICS_ADVANCED_BUNDLE": str(self.root / "missing")}):
+            self.assertEqual(self.ask("充电服务瓶颈").status_code, 503)
+        self.provider.insights = None
+        self.assertEqual(self.ask("异常会话清单").status_code, 503)
+
+    def test_json_limits_and_online_consent_before_network(self):
+        self.assertEqual(self.ask("x" * 301).status_code, 422)
+        self.assertEqual(self.ask("x" * 300).status_code, 200)
+        for data in ([], None, {"question": 5}, {"question": "x" * 301}, {"question": "   "}):
+            self.assertEqual(self.client.post(PATH, content=json.dumps(data), headers={"Content-Type": "application/json"}).status_code, 422)
+        self.assertEqual(self.client.post(PATH, content="x" * 8200, headers={"Content-Type": "application/json"}).status_code, 413)
+        self.assertEqual(self.client.post(PATH, content="{}", headers={"Content-Type": "text/plain"}).status_code, 415)
+        self.assertEqual(self.ask("运营概况", mode="online").json()["code"], "CONSENT_REQUIRED")
+        self.assertEqual(self.ask("运营概况", mode="online", consent="true").status_code, 422)
+        self.assertEqual(self.ask("运营概况", mode="online", consent=True).json()["code"], "ONLINE_NOT_CONFIGURED")
+        self.assertEqual(self.client.post(PATH, json={}, headers={"Origin": "https://evil.example"}).status_code, 403)
+
+    def test_online_only_selects_existing_evidence_and_timeout_is_safe(self):
+        settings = config.OnlineSettings("fake-key", "https://model.example/v1", "configured", "测试模型")
+        with patch.object(config, "online_settings", return_value=settings), patch.object(llm, "choose_focus", return_value="failed") as choose:
+            result = self.data(self.ask("充电服务瓶颈是什么？", mode="online", consent=True))
+        payload = choose.call_args.args[1]
+        self.assertNotIn("充电服务瓶颈是什么", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(set(payload), {"intent", "metrics"})
+        self.assertIn("未成功开始", result["answer"])
+        with patch.object(config, "online_settings", return_value=settings), patch.object(llm, "choose_focus", side_effect=ApiError(504, "ADVISOR_TIMEOUT", "在线模型响应超时")):
+            self.assertEqual(self.ask("充电服务瓶颈", mode="online", consent=True).status_code, 504)
+
+    def test_online_read_failure_does_not_become_snapshot_unavailable(self):
+        settings = config.OnlineSettings("private-key", "https://model.example/v1", "configured", "测试模型")
+        for error in (IncompleteRead(b"private-key", 10), ConnectionResetError("private-key")):
+            with patch.object(config, "online_settings", return_value=settings), patch.object(llm, "build_opener") as opener:
+                opener.return_value.open.return_value.__enter__.return_value.read.side_effect = error
+                response = self.ask("充电服务瓶颈", mode="online", consent=True)
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json()["code"], "ONLINE_UNAVAILABLE")
+            self.assertNotIn("private-key", response.text)
+
+    def test_timeout_retains_busy_slot_until_actual_worker_exits(self):
+        async def scenario():
+            runner = AdvisorRunner(workers=1, timeout=.03)
+            gate = threading.Event()
+            try:
+                with self.assertRaises(ApiError) as first:
+                    await runner.run(lambda: gate.wait(1))
+                self.assertEqual(first.exception.status, 504)
+                with self.assertRaises(ApiError) as second:
+                    await runner.run(lambda: 1)
+                self.assertEqual(second.exception.status, 429)
+            finally:
+                gate.set()
+                runner.close()
+        asyncio.run(scenario())
+
+
+if __name__ == "__main__":
+    unittest.main()

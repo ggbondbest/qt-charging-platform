@@ -2,7 +2,7 @@
 
 本目录独立于原 Qt 客户端和服务端，不修改一期业务数据库、协议或 Qt 构建。
 主流程为 **可复现模拟数据 → Spark 清洗统计 → 发布 MySQL / HDFS 验证 → FastAPI → Vue 大屏与预测**。
-**完整项目启动、分工整合结果和验收流程见 [统一交付指南](delivery/README.md)**；只启动旧统计 API 不会提供完整网页和智能找桩。
+**完整项目启动见 [统一交付指南](delivery/README.md)，演示路径和最终范围见 [最终交付与验收](docs/final_delivery.md)**；只启动旧统计 API 不会提供完整网页和智能找桩。
 
 本次已完成数据层：数据生成、独立脏数据注入、关联校验、真实 Spark 清洗、经营统计、
 历史特征/未来标签、数据包发布、只读 HTTP 查询 API 及公共接口契约。
@@ -10,8 +10,8 @@
 PR66 负荷预测接入、独立 MySQL 排队/充电/支付/积分闭环和配对实验。它是明确标注的模拟运营沙盒，
 统一服务保留原统计查询契约，并注册真实负荷/空闲桩模型；不把模型结果冒充真实电站状态。
 PR72 的统计页面、PR70 的小时空闲桩预测、PR67 的异常/流失模块现已统一接入；历史偏好排序仅保留离线研究入口。
-HDFS 接入代码已预留实际路径参数，但老师提供的 Linux/Hadoop 环境仍需单独验证。
-历史特征/未来标签、数据包发布、只读 HTTP 查询 API 及公共接口契约。**还没有实现完整网页或训练模型**。
+新增七表多维分析、补能行为/服务瓶颈联动和20类清洗挑战。AI运营参谋复用当前发布批次与已有模型，
+在同源服务内提供本地证据问答及可选在线关注项辅助；不新增独立桌宠或服务器。
 HDFS 接入代码支持实际路径参数。`charging_sample_7d_v2` 和 `charging_full_180d_v2` 均已于老师 Linux/Hadoop 环境完成真实 HDFS pipeline、分析、export、HDFS 文件校验和独立统计对账；完整证据分别见 [7 天 HDFS 验证记录](docs/hdfs_sample_7d_validation.json) 与 [180 天 HDFS 验证记录](docs/hdfs_full_180d_validation.json)。
 
 网页/模型组请先看 [数据层交付指南](DATA_LAYER.md) 和 [公共契约](contracts/README.md)。
@@ -82,13 +82,15 @@ data_analysis/
       serving_manifest.json     查询包版本、批次和 CSV 哈希
       acceptance_manifest.json  清洗明细、报告和分析附件的批次与文件校验清单
     analytics_sample_7d_v1/  原有 7 天统计交付包，独立批次
+    advanced_analytics_v2/  同一180天批次的多维聚合、Spark计划与守恒证据
+    cleaning_challenge_v1/  独立脏数据挑战及修复/隔离证据，不污染原训练输入
   spark_jobs/            真正执行清洗和统计的 PySpark 作业
   backend/               已实现的只读统计 HTTP API；模型尚未就绪时明确返回 503
   contracts/             OpenAPI、TS 类型、表结构、预测/模型契约和真实响应示例
   publishing/            CSV校验、便携包、不可覆盖的 MySQL 批次发布；SQLite 离线兼容
   scripts/               一键运行数据层、生成实际接口示例
   delivery/              统一启动、模型注册与预测聚合、交付说明
-  frontend/              Vue3 + ECharts + 地图：运营大屏、找站、行程、智能分析、模拟控制台
+  frontend/              Vue3 + ECharts + 地图：运营大屏、找站、智能分析/参谋、模拟控制台
   chargepilot/           到站模型、推荐排序、独立 MySQL 运营闭环、FastAPI、对照仿真
   ml/                    预测任务、训练切分和防泄漏约定
   docs/                  运营指标调研、数据字典、参考资料分析、交接说明

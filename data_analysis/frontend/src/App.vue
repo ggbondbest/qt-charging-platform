@@ -31,7 +31,8 @@ import AutoHideHeader from "./components/AutoHideHeader.vue";
 import OriginPicker from "./components/OriginPicker.vue";
 import RecommendationRoute from "./components/RecommendationRoute.vue";
 import { createRoutePreview } from "./routePreview";
-import AiPet from "./components/AiPet.vue";
+import OperationsAdvisor from "./components/OperationsAdvisor.vue";
+import { advisorTarget } from "./advisor";
 
 type Tab = "dashboard" | "explore" | "lab" | "admin";
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -42,13 +43,29 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 ];
 const tab = ref<Tab>("dashboard");
 const dashboardPresentation = ref(false);
+const dashboardInitialSection = ref<'overview' | 'space'>('overview');
+const insightsInitialTarget = ref<'churn' | 'anomalies'>('churn');
+const insightsNavigation = ref(0);
 const labSection = ref('forecast');
 const labSections = [
   { id: 'forecast', label: '负荷与空闲预测', description: '未来 1 / 6 / 24 小时' },
   { id: 'insights', label: '用户与异常', description: '回访风险 · 充电复核' },
   { id: 'arrival', label: '到站模型', description: '可用性与等待预测依据' },
   { id: 'experiments', label: '策略对比', description: '最近站 vs. 智能推荐' },
+  { id: 'advisor', label: 'AI运营参谋', description: '运营问题 · 数据证据' },
 ];
+function navigateFromAdvisor(target: unknown) {
+  if (!advisorTarget(target)) return;
+  if (target === 'overview' || target === 'advanced') {
+    dashboardInitialSection.value = target === 'advanced' ? 'space' : 'overview';
+    dashboardPresentation.value = false;
+    tab.value = 'dashboard';
+  } else {
+    if (target === 'anomalies') { insightsInitialTarget.value = 'anomalies'; insightsNavigation.value++; }
+    labSection.value = target === 'models' ? 'forecast' : 'insights';
+    tab.value = 'lab';
+  }
+}
 const boot = ref<Bootstrap>();
 const stations = ref<Station[]>([]);
 const cityId = ref("");
@@ -571,7 +588,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" />
+      <AnalyticsDashboard v-if="tab === 'dashboard'" v-model:presentation="dashboardPresentation" :initial-section="dashboardInitialSection" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">
@@ -996,7 +1013,8 @@ onBeforeUnmount(() => {
         </section>
         <WorkspaceTabs v-model="labSection" :items="labSections" label="智能分析分区" />
         <KeepAlive><ForecastPanel v-if="labSection === 'forecast'" /></KeepAlive>
-        <KeepAlive><ManagementInsights v-if="labSection === 'insights'" /></KeepAlive>
+        <KeepAlive :max="1"><ManagementInsights v-if="labSection === 'insights'" :key="insightsNavigation" :initial-target="insightsInitialTarget" /></KeepAlive>
+        <OperationsAdvisor v-if="labSection === 'advisor'" @navigate="navigateFromAdvisor" />
         <div v-if="labSection === 'arrival'" class="lab-grid single-evidence workspace-content">
           <section class="card model-card">
             <div class="section-top">
@@ -1474,7 +1492,6 @@ onBeforeUnmount(() => {
         <Icon name="check" :size="18" />{{ toast }}
       </div></Transition
     >
-    <AiPet />
   </div>
 </template>
 

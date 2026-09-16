@@ -15,6 +15,24 @@ permissions:
   contents: read
 
 jobs:
+  python-static:
+    name: Python static checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.13.2
+      - name: Check Python syntax and undefined names, including ML and advisor
+        # Fatal/error checks only: do not impose a new formatting policy on the
+        # existing research modules. Recursive ML coverage includes new modules.
+        run: >-
+          python -m ruff check --select E9,F63,F7,F82
+          data_analysis/ml data_analysis/delivery data_analysis/chargepilot
+          data_analysis/backend data_analysis/spark_jobs data_analysis/contracts data_analysis/tests
+
   generator:
     name: generator (${{ matrix.os }})
     strategy:
@@ -32,7 +50,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - name: Generator and integrity regression tests
+      - name: Portable regressions and committed advanced/cleaning evidence
+        # Stdlib discovery includes test_advanced_bundle and ChallengePlanTests.
+        # Optional API/ML/Spark cases run with their real dependencies below.
         run: python -m unittest discover -s data_analysis/tests -v
       - name: Validate committed sample data
         run: python -m data_analysis.charging_data.validate --dataset data_analysis/datasets/charging_sample_7d_v2
@@ -157,6 +177,10 @@ jobs:
     env:
       OMP_NUM_THREADS: '2'
       OPENBLAS_NUM_THREADS: '2'
+      # Online protocol/error handling is exercised with an injected transport;
+      # CI never requires a real provider, API key or paid request.
+      ML_ADVISOR_ONLINE_ENABLED: '0'
+      ML_ADVISOR_API_KEY: ''
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -188,8 +212,13 @@ jobs:
           data_analysis.tests.test_ml_anomaly_churn
           data_analysis.tests.test_ml_insights_delivery
           data_analysis.tests.test_delivery_forecasts
+          data_analysis.tests.test_delivery_contracts
           data_analysis.tests.test_delivery_integration
           data_analysis.ml.tests.test_delivery_safety -v
+      - name: Advisor local evidence, consent boundary and same-origin HTTP
+        run: |
+          python -c "from data_analysis.tests.test_delivery_advisor import HAS_DEPS; assert HAS_DEPS, 'Advisor HTTP tests must run with complete delivery dependencies'"
+          python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_delivery_advisor -v
       - name: Calculate bounded paired simulation (no hard-coded improvement)
         run: python -m data_analysis.chargepilot.cli experiment --users 100 --seed 42
 

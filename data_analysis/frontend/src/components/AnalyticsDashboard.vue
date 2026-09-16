@@ -13,13 +13,13 @@ const city = ref(''); const start = ref(''); const end = ref('');
 const snapshot = ref<RecordData>(); const loading = ref(false); const error = ref('');
 const sequence = ref(0); let controller: AbortController | undefined;
 const refreshing = ref(false);
-const section = ref('overview');
+const props = withDefaults(defineProps<{ presentation?: boolean; initialSection?: 'overview' | 'space' }>(), { presentation: false, initialSection: 'overview' });
+const section = ref<string>(props.initialSection);
 const sections = [
   { id: 'overview', label: '运营总览', description: '网络、经营与服务指标' },
   { id: 'space', label: '时空与效率', description: '需求热力、环境关联、多指标对比' },
   { id: 'service', label: '用户与服务', description: '补能行为、流失原因、瓶颈定位' },
 ];
-withDefaults(defineProps<{ presentation?: boolean }>(), { presentation: false });
 const emit = defineEmits<{ 'update:presentation': [value: boolean] }>();
 let alive = true;
 const metrics = computed(() => snapshot.value?.overview.metrics || {});

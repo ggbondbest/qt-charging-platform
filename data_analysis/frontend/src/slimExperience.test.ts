@@ -24,10 +24,15 @@ vi.mock("./components/WorkspaceTabs.vue", () => ({
   },
 }));
 vi.mock("./components/Chart.vue", () => ({ default: { render: () => h("chart-stub") } }));
-vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { render: () => h("dashboard-stub") } }));
+vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { props: ['initialSection'], setup: (props: any) => () => h('dashboard-stub', { section: props.initialSection }) } }));
 vi.mock("./components/ForecastPanel.vue", () => ({ default: { render: () => h("forecast-stub") } }));
-vi.mock("./components/ManagementInsights.vue", () => ({ default: { render: () => h("insights-stub") } }));
-vi.mock("./components/AiPet.vue", () => ({ default: { render: () => h("ai-pet") } }));
+vi.mock("./components/ManagementInsights.vue", () => ({ default: { props: ['initialTarget'], setup: (props: any) => () => h('insights-stub', { target: props.initialTarget }) } }));
+vi.mock("./components/OperationsAdvisor.vue", () => ({ default: {
+  emits: ['navigate'], setup: (_: unknown, { emit }: any) => () => h('advisor-stub', [
+    h('button', { onClick: () => emit('navigate', 'advanced') }, '查看多维运营分析'),
+    h('button', { onClick: () => emit('navigate', 'anomalies') }, '查看充电异常筛查'),
+  ]),
+} }));
 vi.mock("./components/RecommendationRoute.vue", () => ({
   default: {
     props: ["candidate", "loading", "error"],
@@ -178,6 +183,15 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); vi.unstubAllGlobals(); });
 
 describe("slim recommendation experience", () => {
+  it('keeps the advisor inside intelligent analysis and navigates only on explicit evidence-page clicks', async () => {
+    await mount(); expect(nodes().some(item => item.kind === 'advisor-stub')).toBe(false);
+    await click('智能分析'); await click('AI运营参谋'); expect(find('advisor-stub')).toBeTruthy();
+    expect(nodes().some(item => item.kind === 'dashboard-stub')).toBe(false);
+    await click('查看多维运营分析'); expect(find('dashboard-stub').props.section).toBe('space');
+    await click('智能分析'); await click('AI运营参谋'); await click('查看充电异常筛查');
+    expect(find('insights-stub').props.target).toBe('anomalies');
+    expect(root.textContent).not.toContain('桌宠');
+  });
   it("opens a route directly from a recommendation and preserves the plain reward badge", async () => {
     await mount();
     await showRoute();

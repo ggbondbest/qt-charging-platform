@@ -15,6 +15,10 @@ import hashlib
 import json
 import os
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from . import common
 
