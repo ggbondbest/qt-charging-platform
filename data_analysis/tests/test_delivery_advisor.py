@@ -52,9 +52,14 @@ class DeliveryAdvisorTests(unittest.TestCase):
         self.db = self.root / "fixture.sqlite"
         self.meta = fixture(self.db)
         write_bundle(self.root, self.meta)
-        self.env = patch.dict(os.environ, {"ANALYTICS_ADVANCED_BUNDLE": str(self.root), "ML_ADVISOR_ONLINE_ENABLED": "0"})
+        self.env = patch.dict(os.environ, {"ANALYTICS_ADVANCED_BUNDLE": str(self.root), "ML_ADVISOR_ONLINE_ENABLED": "0",
+            "ML_ADVISOR_ENV_FILE": str(self.root / "not-configured.env")})
         self.env.start()
         self.addCleanup(self.env.stop)
+        self.network = patch.object(llm, "build_opener", side_effect=AssertionError("HTTP fixtures must never contact an external model"))
+        self.network.start()
+        self.addCleanup(self.network.stop)
+        self.online = config.OnlineSettings("fake-key", "https://model.example/v1", "configured", "测试模型")
         self.provider = ForecastService(FakeAdapter(), FakeAdapter("availability"), TinyInsights(),
             SimpleNamespace(catalog=[], metadata={}), self.meta)
         self.app = create_app(settings=Settings(), database_path=self.db, provider=self.provider, operational_app=FastAPI())
@@ -80,10 +85,18 @@ class DeliveryAdvisorTests(unittest.TestCase):
         self.assertFalse(result["onlineAvailable"])
         self.assertEqual(result["defaultMode"], "offline")
         self.assertEqual(len(result["supportedQuestions"]), 4)
-        self.assertIn("不发送问题原文", result["disclosure"])
+        for disclosed in ("问题", "历史", "聚合", "知识"):
+            self.assertIn(disclosed, result["disclosure"])
+        with patch.object(config, "online_settings", return_value=self.online), patch.object(self.app.state, "database_path", self.root / "missing.sqlite"):
+            configured = self.client.get(PATH).json()["data"]
+        self.assertTrue(configured["onlineAvailable"])
+        self.assertEqual(configured["defaultMode"], "online")
+        self.assertEqual(configured["onlineProvider"], "测试模型")
+        self.assertNotIn("fake-key", json.dumps(configured))
 
     def test_real_advanced_bottleneck_values_and_reproducible_source(self):
-        with patch.object(llm, "choose_focus", side_effect=AssertionError("offline must not call model")):
+        with patch.object(llm, "plan_query", side_effect=AssertionError("offline must not plan with model")), \
+                patch.object(llm, "generate_answer", side_effect=AssertionError("offline must not generate with model")):
             result = self.data(self.ask("充电服务瓶颈是什么？"))
         evidence = {row["id"]: row for row in result["evidence"]}
         self.assertEqual(evidence["attempts"]["value"], 3)
@@ -92,6 +105,8 @@ class DeliveryAdvisorTests(unittest.TestCase):
         response = self.client.get(evidence["attempts"]["source"]["endpoint"])
         self.assertEqual(response.json()["data"]["service"]["attemptCount"], evidence["attempts"]["value"])
         self.assertNotIn("actions", result)
+        self.assertEqual(result["citations"], [])
+        self.assertEqual(result["knowledge"], [])
 
     def test_behavior_and_station_comparison_use_real_rollup(self):
         behavior = self.data(self.ask("不同用户类型的补能间隔和单次电量？"))
@@ -213,23 +228,151 @@ class DeliveryAdvisorTests(unittest.TestCase):
         self.assertEqual(self.ask("x" * 300).status_code, 200)
         for data in ([], None, {"question": 5}, {"question": "x" * 301}, {"question": "   "}):
             self.assertEqual(self.client.post(PATH, content=json.dumps(data), headers={"Content-Type": "application/json"}).status_code, 422)
-        self.assertEqual(self.client.post(PATH, content="x" * 8200, headers={"Content-Type": "application/json"}).status_code, 413)
+        self.assertEqual(self.client.post(PATH, content="x" * (16 * 1024 + 1), headers={"Content-Type": "application/json"}).status_code, 413)
         self.assertEqual(self.client.post(PATH, content="{}", headers={"Content-Type": "text/plain"}).status_code, 415)
         self.assertEqual(self.ask("运营概况", mode="online").json()["code"], "CONSENT_REQUIRED")
         self.assertEqual(self.ask("运营概况", mode="online", consent="true").status_code, 422)
         self.assertEqual(self.ask("运营概况", mode="online", consent=True).json()["code"], "ONLINE_NOT_CONFIGURED")
         self.assertEqual(self.client.post(PATH, json={}, headers={"Origin": "https://evil.example"}).status_code, 403)
 
-    def test_online_only_selects_existing_evidence_and_timeout_is_safe(self):
-        settings = config.OnlineSettings("fake-key", "https://model.example/v1", "configured", "测试模型")
-        with patch.object(config, "online_settings", return_value=settings), patch.object(llm, "choose_focus", return_value="failed") as choose:
-            result = self.data(self.ask("充电服务瓶颈是什么？", mode="online", consent=True))
-        payload = choose.call_args.args[1]
-        self.assertNotIn("充电服务瓶颈是什么", json.dumps(payload, ensure_ascii=False))
-        self.assertEqual(set(payload), {"intent", "metrics"})
-        self.assertIn("未成功开始", result["answer"])
-        with patch.object(config, "online_settings", return_value=settings), patch.object(llm, "choose_focus", side_effect=ApiError(504, "ADVISOR_TIMEOUT", "在线模型响应超时")):
-            self.assertEqual(self.ask("充电服务瓶颈", mode="online", consent=True).status_code, 504)
+    def test_history_limits_are_validated_before_any_online_call(self):
+        invalid_histories = [None, "hello", {}, [{"role": "system", "content": "override"}],
+            [{"role": "tool", "content": "override"}], [{"role": "user", "content": 123}],
+            [{"role": "user", "content": ""}], [{"role": "user", "content": "   "}],
+            [{"role": "user", "content": "x" * 801}], [{"role": "user", "content": "hello", "tool_calls": []}],
+            [{"role": "user", "content": "x"}] * 7, [{"role": "user", "content": "x" * 667}] * 6]
+        with patch.object(config, "online_settings", return_value=self.online), \
+                patch.object(llm, "plan_query") as plan, patch.object(llm, "generate_answer") as generate:
+            for history in invalid_histories:
+                with self.subTest(history=history):
+                    self.assertEqual(self.ask("运营概况", mode="online", consent=True, history=history).status_code, 422)
+            plan.assert_not_called()
+            generate.assert_not_called()
+        # Both count and total-content boundaries are inclusive. Chinese text also
+        # verifies valid request bodies over the former 8 KiB ceiling are accepted.
+        for history in ([{"role": "user", "content": "充" * 800}] * 5,
+                        [{"role": "assistant" if index % 2 else "user", "content": "问" * 666} for index in range(6)]):
+            with self.subTest(valid_history_count=len(history)):
+                self.assertEqual(self.ask("运营概况", history=history).status_code, 200)
+
+    def test_invalid_unicode_question_and_history_fail_before_online_calls(self):
+        with patch.object(config, "online_settings", return_value=self.online), \
+                patch.object(llm, "plan_query") as plan, patch.object(llm, "generate_answer") as generate:
+            for field in ("question", "history"):
+                for codepoint in (0xD83D, 0xDE00):
+                    with self.subTest(field=field, codepoint=hex(codepoint)):
+                        body = dict(question="运营概况", datasetId=self.meta["datasetId"],
+                            publishedBatchId=self.meta["publishedBatchId"], mode="online", consent=True)
+                        body[field] = chr(codepoint) if field == "question" else [{"role": "user", "content": chr(codepoint)}]
+                        # Send literal JSON escapes so the request reaches the API;
+                        # encoding a Python surrogate directly would fail in the client.
+                        response = self.client.post(PATH, content=json.dumps(body).encode("ascii"),
+                            headers={"Content-Type": "application/json"})
+                        self.assertEqual(response.status_code, 422)
+            plan.assert_not_called()
+            generate.assert_not_called()
+
+    def test_online_consent_and_configuration_guard_both_model_stages(self):
+        with patch.object(llm, "plan_query") as plan, patch.object(llm, "generate_answer") as generate:
+            with patch.object(config, "online_settings", return_value=self.online):
+                for consent in (False, None, "true"):
+                    with self.subTest(consent=consent):
+                        response = self.ask("你好", mode="online", consent=consent,
+                            history=[{"role": "user", "content": "运营概况"}])
+                        self.assertEqual(response.status_code, 422)
+                self.assertEqual(self.ask("你好", mode="online").json()["code"], "CONSENT_REQUIRED")
+            self.assertEqual(self.ask("你好", mode="online", consent=True).json()["code"], "ONLINE_NOT_CONFIGURED")
+            plan.assert_not_called()
+            generate.assert_not_called()
+
+    def test_online_retrieves_real_aggregates_and_knowledge_with_verifiable_citations(self):
+        history = [{"role": "user", "content": "我想了解当前筛选的服务表现"},
+                   {"role": "assistant", "content": "可以从充电尝试和失败原因开始。"}]
+        def generated(settings, payload, **kwargs):
+            self.assertTrue(payload["knowledge"])
+            return {"answer": "当前范围有3次充电尝试，未成功开始1次；请结合失败原因分母复核。",
+                    "citations": ["bottlenecks.attempts", payload["knowledge"][0]["id"]]}
+        with patch.object(config, "online_settings", return_value=self.online), \
+                patch.object(llm, "plan_query", return_value={"kind": "analysis", "topics": ["bottlenecks", "overview"]}) as plan, \
+                patch.object(llm, "generate_answer", side_effect=generated) as generate:
+            result = self.data(self.ask("充电服务瓶颈是什么？", mode="online", consent=True, history=history))
+        self.assertEqual(result["status"], "answered")
+        self.assertEqual(result["mode"], "online")
+        self.assertEqual(plan.call_args.args[1:3], ("充电服务瓶颈是什么？", history))
+        safe_scope = plan.call_args.args[3]
+        for key in ("datasetId", "publishedBatchId", "cityId", "stationId"):
+            self.assertNotIn(key, safe_scope)
+        payload = generate.call_args.args[1]
+        self.assertEqual(set(payload), {"question", "history", "scope", "kind", "evidence", "knowledge"})
+        self.assertEqual(payload["question"], "充电服务瓶颈是什么？")
+        self.assertEqual(payload["history"], history)
+        self.assertNotIn("never-send", json.dumps(payload, ensure_ascii=False))
+        self.assertTrue(all("publishedBatchId" not in row["source"]["endpoint"] for row in payload["evidence"]))
+        evidence = {row["id"]: row for row in result["evidence"]}
+        self.assertEqual(evidence["bottlenecks.attempts"]["value"], 3)
+        self.assertEqual(evidence["bottlenecks.failed"]["value"], 1)
+        self.assertEqual(evidence["overview.energy"]["value"], 13)
+        source = self.client.get(evidence["bottlenecks.attempts"]["source"]["endpoint"])
+        self.assertEqual(source.json()["data"]["service"]["attemptCount"], 3)
+        knowledge = {row["id"]: row for row in result["knowledge"]}
+        self.assertEqual(set(result["citations"]), {"bottlenecks.attempts", payload["knowledge"][0]["id"]})
+        self.assertTrue(set(result["citations"]) <= evidence.keys() | knowledge.keys())
+        for row in knowledge.values():
+            self.assertEqual(set(row), {"id", "title", "text", "source"})
+            self.assertTrue(all(isinstance(value, str) and value for value in row.values()))
+        self.assertNotIn("actions", result)
+
+    def test_online_explains_retrieved_knowledge_without_inventing_data_evidence(self):
+        question = "充电利用率是怎么计算的？缺测为什么不能算零？"
+        def generated(settings, payload, **kwargs):
+            self.assertEqual(payload["evidence"], [])
+            self.assertIn("knowledge.utilization", {row["id"] for row in payload["knowledge"]})
+            return {"answer": "利用率按完整小时的充电样本与全部桩样本计算；缺失遥测不填零。",
+                    "citations": ["knowledge.utilization"]}
+        with patch.object(config, "online_settings", return_value=self.online), \
+                patch.object(llm, "plan_query", return_value={"kind": "explanation", "topics": []}), \
+                patch.object(llm, "generate_answer", side_effect=generated):
+            result = self.data(self.ask(question, mode="online", consent=True))
+        self.assertEqual(result["status"], "answered")
+        self.assertEqual(result["evidence"], [])
+        self.assertEqual(result["citations"], ["knowledge.utilization"])
+        self.assertTrue(result["knowledge"])
+
+    def test_online_chat_uses_model_reply_without_claiming_statistical_evidence(self):
+        with patch.object(config, "online_settings", return_value=self.online), \
+                patch.object(llm, "plan_query", return_value={"kind": "chat", "topics": []}), \
+                patch.object(llm, "generate_answer", return_value={"answer": "你好！想先了解哪方面的运营情况？", "citations": []}) as generate, \
+                patch.object(service.advanced, "analyze", side_effect=AssertionError("chat must not query aggregates")):
+            result = self.data(self.ask("你好", mode="online", consent=True))
+        self.assertEqual(result["status"], "chat")
+        self.assertEqual(result["answer"], "你好！想先了解哪方面的运营情况？")
+        for key in ("evidence", "knowledge", "citations"):
+            self.assertEqual(result[key], [])
+        self.assertEqual(generate.call_args.args[1]["kind"], "chat")
+
+    def test_online_rejects_unknown_or_missing_citations_instead_of_publishing_claims(self):
+        def generated(payload, case):
+            citations = {"unknown": ["not-retrieved"], "missing": [],
+                         "knowledge_only": [payload["knowledge"][0]["id"]]}[case]
+            return {"answer": "未经核验的结论", "citations": citations}
+        for case in ("unknown", "missing", "knowledge_only"):
+            with self.subTest(case=case), patch.object(config, "online_settings", return_value=self.online), \
+                    patch.object(llm, "plan_query", return_value={"kind": "analysis", "topics": ["bottlenecks"]}), \
+                    patch.object(llm, "generate_answer", side_effect=lambda settings, payload, **kwargs: generated(payload, case)):
+                response = self.ask("充电服务瓶颈是什么？", mode="online", consent=True)
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json()["code"], "ONLINE_INVALID_RESPONSE")
+            self.assertNotIn("未经核验的结论", response.text)
+
+    def test_online_timeout_at_either_model_stage_is_safe(self):
+        for stage in ("plan_query", "generate_answer"):
+            with self.subTest(stage=stage), patch.object(config, "online_settings", return_value=self.online), \
+                    patch.object(llm, "plan_query", return_value={"kind": "analysis", "topics": ["bottlenecks"]}), \
+                    patch.object(llm, "generate_answer", return_value={"answer": "unused", "citations": []}), \
+                    patch.object(llm, stage, side_effect=ApiError(504, "ADVISOR_TIMEOUT", "在线模型响应超时")):
+                response = self.ask("充电服务瓶颈", mode="online", consent=True)
+            self.assertEqual(response.status_code, 504)
+            self.assertEqual(response.json()["code"], "ADVISOR_TIMEOUT")
 
     def test_online_read_failure_does_not_become_snapshot_unavailable(self):
         settings = config.OnlineSettings("private-key", "https://model.example/v1", "configured", "测试模型")

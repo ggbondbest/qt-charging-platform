@@ -220,10 +220,10 @@ jobs:
           data_analysis.tests.test_delivery_contracts
           data_analysis.tests.test_delivery_integration
           data_analysis.ml.tests.test_delivery_safety -v
-      - name: Advisor local evidence, consent boundary and same-origin HTTP
+      - name: Advisor RAG retrieval, generation boundary and same-origin HTTP
         run: |
           python -c "from data_analysis.tests.test_delivery_advisor import HAS_DEPS; assert HAS_DEPS, 'Advisor HTTP tests must run with complete delivery dependencies'"
-          python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_delivery_advisor -v
+          python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
       - name: Calculate bounded paired simulation (no hard-coded improvement)
         run: python -m data_analysis.chargepilot.cli experiment --users 100 --seed 42
 

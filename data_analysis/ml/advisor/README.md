@@ -1,49 +1,115 @@
-# AI运营参谋：当前发布批次的证据问答
+# AI运营参谋：在线 RAG 与本地统计问答
 
-随 `python -m data_analysis.delivery.cli serve` 一起运行，使用同源
-`GET/POST /api/v1/intelligence/advisor`。不需要第二个进程、8765端口、
-额外训练、旧异常检测冻结工件或 `prepare`。历史实验代码保留在 Git 历史中。
+参谋随 `python -m data_analysis.delivery.cli serve` 运行，使用同源
+`GET/POST /api/v1/intelligence/advisor`。在线模式由模型理解问题、规划检索，再结合当前发布聚合
+和项目知识生成带引用的回答；问候也由在线模型生成。参谋复用统一服务，无需额外训练任务。
 
-默认离线模式使用确定性的意图规则和程序生成答案，不冒充大模型推理。
-支持运营瓶颈、站点比较、补能行为、运营概况、当前模型说明及历史异常会话。
-不支持的问题明确返回 `unsupported`，没有观测返回 `no_evidence`；
-不随机选择检索结果，不回答实时数据、不写业务数据、不自动跳转或预填页面。
+有效在线配置存在时，网页默认选择在线模式；未配置时默认选择无需 Key 的本地统计问答。
+离线模式继续使用确定性规则和程序生成的统计说明，适用于运营概况、瓶颈、站点比较、补能行为、
+模型说明和历史异常复核。离线模式不是通用聊天模型。
 
-## 网页入口
+## 先接好 AIPing
 
-点击网页右下角的鲸鱼娘展开聊天，再次点击人物、收起按钮或按 Escape 收起。
-人物沿用 PR79 的 `whale-girl.png` 和 MIT 许可；不再单独占用智能分析页签。
-在「范围与设置」中选择城市、日期和运行模式；Enter 发送，Shift+Enter 换行。
-聊天内容和展开后的设置在窗口内独立滚动，输入区固定在底部；面板内滚轮不带动背景页面。
-纯「你好／您好／嗨／hello／hi」在聊天界面显示本地欢迎回复，不调用模型或数据问答接口，
-也不标为已核对的统计结论。其他问题仍受运营证据问答范围限制，并非通用闲聊。
+以下步骤在仓库根目录、已有统一服务和数据库配置的环境中执行。
 
-切换页面或收起后保留当前页面内最近 10 组已完成问答和草稿，刷新页面即清除。
-历史记录仅供回看，不作为后续问题的隐式模型上下文。收起时停止等待未完成的请求，
-并清除本次在线外发同意；已发送给供应商的请求不能撤回。
+1. 首次配置时，将模板复制为参谋专用的本地文件。已有 `.env.local` 时直接编辑，保留原配置。
 
-## 数据与证据
+   ```bash
+   cp -n data_analysis/ml/advisor/.env.example data_analysis/ml/advisor/.env.local
+   ```
 
-- 运营概况复用 `backend.service.overview`；瓶颈、站点比较和补能行为复用
-  `backend.advanced.analyze`，使用与页面相同的 MySQL 发布批次和校验后的 Spark 聚合。
-- 模型查询通过当前 `ForecastService.registry/insight`，不复制推理算法、
-  不自行加载 pickle。批次/来源不一致和缺失模型沿用现有错误。
-- 每条证据提供数值、单位、来源接口和具体字段。接口 URL 包含数据集、批次和
-  实际筛选参数；百分比或单位换算在字段说明中写明。
-- `scope` 描述页面所选日期、城市和电站，日期为北京时间，结束日期不包含当天。
-  **模型训练/评测仍是固定历史留出范围，不随页面日期或站点筛选改变**，回答单独提示。
-- 全部业务数据为模拟数据。失败分布是描述统计，不能从关联推出故障因果；
-  异常分数不是故障概率，也不是实时安全诊断。
-- 站点优先比较与站型×小时瓶颈要求至少30次尝试，避免单次失败占据排序首位。
-  30次只是展示门槛，不是显著性保证。瓶颈同时给出该组合的失败量、成功率、等待样本、
-  占位比例与完整小时利用率，保留不同事件口径的限制。样本不足时明确不做优先排序。
-- 问题中明确指定的已发布城市名必须与页面城市（或所选电站归属）一致；否则提示调整
-  筛选，不静默用全国数据回答某城问题。明写未发布的中文“某市”也会拒绝。
+   Windows PowerShell 首次复制可用：
 
-## 请求
+   ```powershell
+   Copy-Item data_analysis/ml/advisor/.env.example data_analysis/ml/advisor/.env.local
+   ```
 
-GET 无需连接数据库，返回默认模式、在线是否可用、供应商展示名称、外发说明和四个示例问题。
-POST 使用项目标准 `{code,message,data,meta}` envelope：
+2. 在 `data_analysis/ml/advisor/.env.local` 填入自己的 `ML_ADVISOR_API_KEY`。模板已预设：
+
+   ```dotenv
+   ML_ADVISOR_ONLINE_ENABLED=1
+   ML_ADVISOR_API_KEY=
+   ML_ADVISOR_BASE_URL=https://aiping.cn/api/v1
+   ML_ADVISOR_MODEL=DeepSeek-V4.1-Flash
+   ML_ADVISOR_PROVIDER_LABEL=AIPing
+   ```
+
+   只需补齐空白 Key；模型名称和使用权限仍须与自己的 AIPing 账户一致。Key 保留在后端，
+   `.env.local` 已被 Git 忽略，不写入 Vue、仓库或聊天问题。
+
+3. 保留原有数据库配置，重启统一后端，并在网页重新载入参谋：
+
+   ```bash
+   python -m data_analysis.delivery.cli serve
+   ```
+
+4. 查看 `http://127.0.0.1:8000/api/v1/intelligence/advisor`。
+   有效配置应返回 `onlineAvailable:true`、`defaultMode:"online"`、`onlineProvider:"AIPing"`。
+   这一步只检查配置格式，不会发模型请求，不能证明 Key、余额、模型权限或网络已可用。
+   在网页逐次勾选外发同意后发送“你好”，再询问“当前范围的充电服务瓶颈是什么？”并核对来源，
+   才能检验自己的实际在线链路。
+
+配置加载只读取参谋目录中的 `.env.local`，或进程环境变量 `ML_ADVISOR_ENV_FILE` 指定的文件。
+进程中的同名 `ML_ADVISOR_*` 变量优先于文件：例如进程里仍为 `ML_ADVISOR_ONLINE_ENABLED=0`，
+会覆盖文件里的 `1`；已有空 Key 环境变量也会覆盖文件值。遇到仍显示未配置时，先检查这些覆盖项。
+不会读取其他应用的 `OPENAI_*`、`ANTHROPIC_*` 凭据，也不会执行文件中的 shell 表达式。
+文件使用上面的五个 `名称=值` 配置项，允许空行和整行 `#` 注释；重复项、未知项或超过8KiB的文件不会加载。
+
+`BASE_URL` 必须为 HTTPS API 根地址，程序去除末尾 `/` 后追加 `/chat/completions`。
+不要填写完整的 `/chat/completions` 地址、Responses API 地址，或含账号密码、查询参数的 URL。
+当前客户端使用 OpenAI-compatible Chat Completions JSON 协议；更换供应商须确认该协议及模型参数兼容。
+仓库没有附带真实 Key，本次自动化验证不代表已完成真实 AIPing 调用。
+
+## RAG 怎样回答
+
+1. 规划模型接收本次问题、有限历史和当前页面范围，选择 `chat`、`analysis`、`explanation` 或 `unsupported`。
+   数据检索只能从 `overview`、`bottlenecks`、`stations`、`behavior`、`models` 五个主题中选最多三个，
+   不能生成任意 SQL、URL、文件路径或写操作。
+2. 后端按当前数据集、发布批次和筛选范围读取已有统计或模型报告，最多保留36项聚合证据。
+   项目口径知识在 [knowledge.py](knowledge.py) 中维护，以中文双字切分及 BM25 本地检索最多4段。
+   无需向量数据库或额外 embedding API；这里检索的是已维护的项目知识，不能当作任意文件上传问答。
+3. 生成模型接收检索结果并返回正文和引用。分析答复至少引用一项本次聚合证据；纯口径解释可只引用知识段落。
+   未知引用或缺少必要引用会被拒绝。聊天答复使用 `status:"chat"`，不附加统计证据或伪造数据核验标记。
+
+正常在线回答通常有“规划、生成”两次供应商调用；不支持或证据不足时可能提前结束。
+两阶段共用60秒请求预算，单次模型调用最多45秒且受剩余预算约束，无自动重试。
+当前使用非流式请求，等待完整回答后一次显示，不逐字输出。
+
+引用校验能约束来源，不能证明每一句模型解读都正确。请对照引用中的数值、单位、范围和口径复核，
+尤其不要把相关性说成因果，或把模型建议视为已验证的经营结论。不能承诺完全消除幻觉。
+
+## 网页与对话历史
+
+点击网页右下角人物展开聊天，再次点击人物、收起按钮或按 Escape 收起。
+人物沿用 PR79 的 `whale-girl.png` 和 MIT 许可。Enter 发送，Shift+Enter 换行。
+聊天内容和展开设置在窗口内滚动，输入区固定在底部；面板内滚轮不带动背景页面。
+
+页面内保留最近10组已完成问答和草稿，切换页面或收起不会清除，刷新页面清除。
+在线请求只带同一数据集、批次及筛选范围内最近三组问答，最多6条历史，每条最多800字符、合计最多4000字符。
+历史用于理解追问，不是新的统计证据，也不能覆盖页面筛选。改变日期、城市或站点后须按新范围提问。
+收起会停止接收未完成答复，并清除本次在线同意；已经发往供应商的请求无法撤回。
+
+## 数据来源与外发边界
+
+- 运营概况复用 `backend.service.overview`；瓶颈、站点比较和补能行为复用 `backend.advanced.analyze`；
+  模型说明复用当前 `ForecastService`。证据与页面使用同一发布批次，不在 HTTP 请求中训练或另行加载模型。
+- 每条聚合证据提供数值、单位、来源接口和字段；页面展示的来源保留实际批次及筛选参数。
+  知识段落提供标题、正文和仓库内的口径来源。模型正文中的引用可与这些内容逐项核对。
+- 统计日期采用 `Asia/Shanghai`，开始日期包含、结束日期不包含。正文或历史指定其他范围时应先调整控件，
+  不能将整段统计当作单日或单站值。模型训练和评测仍使用固定历史留出范围，不随页面筛选改变。
+- 全部业务数据为模拟数据。站点优先比较和站型×小时瓶颈至少需要30次尝试；这只是展示门槛，
+  不保证统计显著性。异常分数不是故障概率，模型不提供实时设备安全诊断。
+- 每次在线提问都须明确同意发送本次问题、有限历史、页面范围说明、聚合证据和检索知识。
+  问题原文和历史文本经过下述处理后，会与检索内容一起发给已配置供应商。
+  在线路径不检索或发送原始业务行、用户/会话明细及完整模型工件；对识别出的敏感编号、凭据和本地路径做拦截或移除，
+  数据集/发布批次等内部标识不进入生成上下文。请勿在问题或历史中填写个人信息和凭据。
+- Key 只用于后端请求认证，不进入模型提示、响应或来源。请求不能改变供应商、模型或地址，重定向被拒绝。
+  参谋只读，不自动修改业务、执行预约/支付、安排维修或跳转页面。
+
+## HTTP 契约与失败处理
+
+GET 无需数据库或模型调用，返回配置可用状态、建议默认模式、供应商展示名称、外发说明和四个示例问题。
+POST 使用项目标准 `{code,message,data,meta}` 包装。在线示例：
 
 ```json
 {
@@ -52,53 +118,36 @@ POST 使用项目标准 `{code,message,data,meta}` envelope：
   "publishedBatchId": "页面当前发布批次",
   "startDate": "2025-12-01",
   "endDate": "2026-05-30",
-  "mode": "offline",
-  "consent": false
+  "mode": "online",
+  "consent": true,
+  "history": []
 }
 ```
 
-可选 `cityId`、`stationId`，复用现有城市归属/日期校验。
-`question` 最多300字符，body最多8192字节，未知字段拒绝。
-`data` 包含 `status/mode/intent/answer/scope/evidence/limitations/suggestions`。
-建议目标只能是 `overview/advanced/models/anomalies`，由用户点击后导航。
+可选 `cityId`、`stationId`，沿用城市归属及日期校验。省略 `mode` 的原始 POST 仍使用离线模式；
+在线请求必须传 `mode:"online", consent:true`。`question` 最多300字符，请求体最多16KiB，未知字段拒绝。
+`history` 只接受 `user`、`assistant` 两种角色及非空白字符串，并执行上述条数和字符上限。
 
-主要错误：422输入无效或未同意外发、409批次冲突、503数据/模型未就绪或线上未配置、
-429并发或频率超限、502模型协议错误、504回答超时。错误不返回供应商原文、密钥或本机路径。
+`data` 包含 `status/mode/intent/answer/scope/evidence/knowledge/citations/limitations/suggestions`。
+`knowledge` 项为 `{id,title,text,source}`；`citations` 是本次证据或知识的 ID 列表。
+`status` 为 `answered`、`chat`、`unsupported` 或 `no_evidence`。
+离线响应的 `knowledge`、`citations` 为空；导航建议仅指向已有 `overview/advanced/models/anomalies` 页面，由用户点击。
 
-## 可选在线辅助
+主要错误包括422输入无效或未同意外发、409批次冲突、503数据/模型未就绪或在线未配置、
+429本地并发/频率限制或供应商限流、502供应商认证/模型配置/协议错误、504超时。
+认证失败检查 Key 和模型权限，限流或额度不足检查账户，模型错误检查模型名和接口配置；
+错误响应不回显供应商原文或密钥。
 
-服务器显式设置本目录 `.env.example` 列出的专属环境变量：
-
-| 变量 | 要求 |
-| --- | --- |
-| `ML_ADVISOR_ONLINE_ENABLED` | 只有逐字 `1` 开启 |
-| `ML_ADVISOR_API_KEY` | 参谋专用供应商密钥 |
-| `ML_ADVISOR_BASE_URL` | 经运营方选择的HTTPS OpenAI-compatible基础地址，程序追加 `/chat/completions` |
-| `ML_ADVISOR_MODEL` | 该服务支持的模型名称 |
-| `ML_ADVISOR_PROVIDER_LABEL` | 用户勾选同意前看到的供应商名称 |
-
-不自动读取 `.env`，也不读取 `OPENAI_*`、`ANTHROPIC_*` 等其他应用凭据。
-请求不能修改供应商、模型或接口地址。跨域重定向被拒绝，密钥仅发送给配置地址。
-每次请求仍必须明确传 `mode:"online", consent:true`；界面不会记住同意状态。
-
-**外发白名单仅包含固定意图、聚合指标ID、数值和单位**。不发送问题原文、站点名称、
-用户或会话ID、自由备注、评论、原始明细、完整工件或来源路径。
-在线模型只可返回一个已有证据ID，程序决定是否接受；模型返回的数字、正文、额外字段、
-工具调用和未知ID一律拒绝。最终文字和所有数字仍由程序生成。
-模型查询等没有可外发聚合项的请求不会调用在线服务，并在回答中明确说明。
-
-单次在线调用最大8秒，无重试；API最大等待15秒，同一进程最多两个工作线程，
-每个客户端每分钟20次。超时不会提前释放仍运行的线程名额，阻止请求积压；
-数据库快照由工作线程自行关闭。浏览器取消等待不能撤回已经发给供应商的请求，
-页面应明确区分停止等待和取消供应商计费。
+同一进程最多两个参谋工作线程，每个客户端每分钟20次。超时不提前释放仍运行的线程名额。
+浏览器停止接收不等于撤销供应商请求，也不保证停止计费。
 
 ## 验证
 
 ```bash
-python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_delivery_advisor -v
+python -m unittest data_analysis.tests.test_ml_advisor data_analysis.tests.test_advisor_rag data_analysis.tests.test_delivery_advisor -v
+python -m data_analysis.contracts.delivery_schema --check
 ```
 
-核心测试不需网络和模型依赖。HTTP测试使用微型独立SQLite快照、带校验的高级聚合、
-真实 `ForecastService` 和小型模型接口替身，不需要MySQL或训练；缺HTTP/ML依赖时按
-仓库惯例跳过，完整交付依赖下必须执行。覆盖正确数值与来源复查、错误批次/日期/电站、
-缺失工件、未知问题、JSON边界、显式同意、恶意模型输出、外发白名单和超时后并发控制。
+在线协议测试注入模型响应，不使用真实 Key，不产生外部模型调用。RAG/HTTP测试使用小型独立 SQLite 快照、
+经过校验的聚合和模型替身，核对真实统计、知识来源、引用、范围、历史边界、逐次同意及超时后的并发控制。
+完整 HTTP 测试需安装交付依赖，不能将缺依赖时的跳过当作通过。前端另运行 `npm test` 和 `npm run build`。

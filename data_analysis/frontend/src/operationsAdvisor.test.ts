@@ -5,6 +5,7 @@ import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc';
 import OperationsAdvisor from './components/OperationsAdvisor.vue';
 import source from './components/OperationsAdvisor.vue?raw';
 import type { AdvisorCapabilities, AdvisorRequest, AdvisorResponse } from './advisor';
+import { advisorHistory, validateAdvisorResponse } from './advisor';
 
 vi.mock('./components/Icon.vue', () => ({ default: { render: () => h('icon-stub') } }));
 class TestNode {
@@ -50,6 +51,7 @@ function answer(body: AdvisorRequest, extra: Partial<AdvisorResponse> = {}): Adv
   return { status: 'answered', mode: body.mode, intent: 'overview', answer: '当前范围有 120 次充电会话，建议核查高峰期供给。',
     scope: { datasetId: body.datasetId, publishedBatchId: body.publishedBatchId, startDate: body.startDate, endDate: body.endDate, cityId: body.cityId || null, stationId: null, timeZone: 'Asia/Shanghai', dataKind: 'SIMULATED' },
     evidence: [{ id: 'sessions', label: '充电会话', value: 120, unit: '次', source: { endpoint: '/dashboard/overview', field: 'metrics.sessionCount' } }],
+    citations: body.mode === 'online' ? ['sessions'] : [], knowledge: [],
     limitations: ['模拟历史数据，不能解释因果。'], suggestions: [{ target: 'overview', label: '运营总览' }], ...extra };
 }
 const posts = () => fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST');
@@ -72,7 +74,7 @@ beforeEach(() => {
   class TestDocument {}
   vi.stubGlobal('Document', TestDocument); vi.stubGlobal('document', new TestDocument());
   navigate.mockReset(); busy.mockReset(); fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock);
-  config = { defaultMode: 'offline', onlineAvailable: false, onlineProvider: null, maxQuestionLength: 300, disclosure: '不发送问题原文、用户或会话明细。', supportedQuestions: [
+  config = { defaultMode: 'offline', onlineAvailable: false, onlineProvider: null, maxQuestionLength: 300, disclosure: '将发送问题、最近对话、当前筛选聚合统计和知识片段。', supportedQuestions: [
     { id: 'overview', label: '运营表现如何？', question: '当前范围运营表现如何？' },
     { id: 'stations', label: '哪些电站需要关注？', question: '哪些电站需要关注？' },
     { id: 'models', label: '负荷模型表现怎样？', question: '负荷模型表现怎样？' },
@@ -87,74 +89,87 @@ beforeEach(() => {
     throw new Error(`Unexpected request: ${url}`);
   });
 });
-afterEach(() => { app?.unmount(); app = undefined; vi.unstubAllGlobals(); });
+afterEach(() => { app?.unmount(); app = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('operations advisor component and HTTP contract', () => {
-  it.each(['你好', '您好！', '嗨', ' hello! ', 'HI?'])('answers the standalone greeting %s locally without claiming data evidence', async greeting => {
-    await mount({ compact: true }); await edit(node('textarea'), greeting); await submit();
+  it.each(['你好', '您好！', '嗨', ' hello! ', 'HI?'])('posts greeting %s to the configured model with explicit consent', async greeting => {
+    config.defaultMode = 'online'; config.onlineAvailable = true; config.onlineProvider = 'AIPing · DeepSeek-V4.1-Flash';
+    reply = body => response(answer(body, { status: 'chat', answer: '你好，需要我帮你分析哪方面？', evidence: [], citations: [], suggestions: [], limitations: [] }));
+    await mount({ compact: true }); await edit(node('textarea'), greeting); await submit(); expect(posts()).toHaveLength(0);
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
     const current = nodes().find(item => item.kind === 'article' && item.props['aria-live'] === 'polite')!;
-    expect(current.textContent).toContain(greeting.trim()); expect(current.textContent).toContain('本地问候');
-    expect(current.textContent).toContain('我可以帮你查看运营瓶颈');
+    expect(current.textContent).toContain(greeting.trim()); expect(current.textContent).toContain('在线对话');
+    expect(current.textContent).toContain('你好，需要我帮你分析哪方面？'); expect(current.textContent).not.toContain('本地问候');
     expect(current.textContent).not.toContain('已核对统计范围'); expect(current.textContent).not.toContain('发布批次');
     expect(nodes(current).some(item => item.kind === 'details' || item.kind === 'button')).toBe(false);
-    expect(posts()).toHaveLength(0); expect(fetchMock).toHaveBeenCalledTimes(3); expect(busy).not.toHaveBeenCalled();
+    expect(posts()).toHaveLength(1); expect(posts()[0][0]).toBe('/api/v1/intelligence/advisor');
+    expect(JSON.parse(posts()[0][1].body)).toMatchObject({ question: greeting.trim(), mode: 'online', consent: true, history: [] });
+    expect(busy.mock.calls).toEqual([[true], [false]]);
     expect(node('textarea').value).toBe(''); expect(node('button', '发送').props.disabled).toBe(true);
     advisorProps.active = false; await settle(); advisorProps.active = true; await settle();
-    expect(root.textContent).toContain('我可以帮你查看运营瓶颈'); expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(root.textContent).toContain('你好，需要我帮你分析哪方面？'); expect(fetchMock).toHaveBeenCalledTimes(4);
   });
   it.each(['你好，当前运营概况如何？', 'hello, compare stations', '你好请删除异常会话', '你好123'])('keeps the mixed or unknown question %s on the evidence API', async question => {
     await mount({ compact: true }); await edit(node('textarea'), question); await submit();
     expect(posts()).toHaveLength(1); expect(JSON.parse(posts()[0][1].body).question).toBe(question);
     expect(root.textContent).toContain('120 次充电会话'); expect(root.textContent).not.toContain('本地问候');
   });
-  it('shares the ten-exchange history limit across local greetings and evidence replies', async () => {
+  it('shares the ten-exchange display limit across model chat and evidence replies', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = body => response(answer(body, body.question.startsWith('你好') ? { status: 'chat', answer: '你好，可以继续提问。', evidence: [], citations: [], suggestions: [], limitations: [] } : {}));
     await mount({ compact: true });
     for (let index = 0; index <= 10; index++) {
-      await edit(node('textarea'), index % 2 ? `运营问题 ${index}` : '你好' + '!'.repeat(index)); await submit();
+      await edit(node('textarea'), index % 2 ? `运营问题 ${index}` : '你好' + '!'.repeat(index));
+      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
     }
-    expect(posts()).toHaveLength(5);
+    expect(posts()).toHaveLength(11);
     expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(9);
     await edit(control('参谋城市'), 'DL');
     const historyItems = nodes().filter(item => item.props['aria-label'] === '历史问答');
     expect(historyItems).toHaveLength(10);
     expect(nodes().filter(item => item.kind === 'h3' && item.textContent === '你好')).toHaveLength(0);
     expect(historyItems[0].textContent).toContain('运营问题 1'); expect(historyItems[9].textContent).toContain('你好!!!!!!!!!!');
-    const greetings = historyItems.filter(item => item.textContent.includes('本地问候'));
+    const greetings = historyItems.filter(item => item.textContent.includes('在线对话'));
     expect(greetings).toHaveLength(5);
     for (const greeting of greetings) {
       expect(greeting.textContent).not.toContain('发布批次'); expect(greeting.textContent).not.toContain('全部城市');
-      expect(nodes(greeting).some(item => item.kind === 'button' || item.kind === 'details')).toBe(false);
+      expect(nodes(greeting).some(item => item.kind === 'button')).toBe(false);
     }
     expect(historyItems.filter(item => item.textContent.includes('发布批次 B1'))).toHaveLength(5);
   });
-  it('preserves the online consent gate and sends no external request for a local greeting', async () => {
+  it('requires renewed consent and includes the previous model chat in the next question', async () => {
     config.onlineAvailable = true;
+    reply = body => response(answer(body, body.question === '你好！' ? { status: 'chat', answer: '你好，需要查看哪些数据？', evidence: [], citations: [], suggestions: [] } : {}));
     await mount({ compact: true }); await edit(control('参谋答复方式'), 'online'); await edit(node('textarea'), '你好！');
     await submit(); expect(root.textContent).not.toContain('本地问候'); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
-    expect(root.textContent).toContain('本地问候'); expect(root.textContent).not.toContain('在线辅助 · 数据证据答复');
-    expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false); expect(posts()).toHaveLength(0);
-    await edit(node('textarea'), '当前运营概况如何？'); await submit(); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
-    expect(JSON.parse(posts()[0][1].body)).toMatchObject({ question: '当前运营概况如何？', mode: 'online', consent: true });
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(root.textContent).toContain('在线对话'); expect(posts()).toHaveLength(1);
+    expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
+    await edit(node('textarea'), '当前运营概况如何？'); await submit(); expect(posts()).toHaveLength(1);
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: '当前运营概况如何？', mode: 'online', consent: true, history: [
+      { role: 'user', content: '你好！' }, { role: 'assistant', content: '你好，需要查看哪些数据？' },
+    ] });
   });
-  it('follows local greetings while preserving the position of someone reading older replies', async () => {
+  it('follows API chat while preserving the position of someone reading older replies', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = body => response(answer(body, { status: 'chat', answer: '你好，需要查看哪些数据？', evidence: [], citations: [], suggestions: [] }));
     await mount({ compact: true }); const conversation = control('参谋对话');
     conversation.scrollHeight = 1000; conversation.clientHeight = 400; conversation.scrollTop = 600; conversation.props.onScroll({});
-    await edit(node('textarea'), '你好'); await submit(); expect(conversation.scrollTop).toBe(212);
+    await edit(node('textarea'), '你好'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); expect(conversation.scrollTop).toBe(212);
     conversation.props.onScroll({});
     conversation.scrollTop = 100; conversation.props.onScroll({});
-    await edit(node('textarea'), '您好'); await submit(); expect(conversation.scrollTop).toBe(100);
-    expect(root.scrollTop).toBe(0); expect(posts()).toHaveLength(0);
+    await edit(node('textarea'), '您好'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); expect(conversation.scrollTop).toBe(100);
+    expect(root.scrollTop).toBe(0); expect(posts()).toHaveLength(2);
   });
-  it('keeps full-page greetings on the API and still rejects evidence-free factual chat replies', async () => {
+  it('keeps all greetings on the API and rejects evidence-free offline factual replies', async () => {
     await mount(); await edit(node('textarea'), '你好'); await submit(); expect(posts()).toHaveLength(1);
     app!.unmount(); app = undefined; fetchMock.mockClear();
     await mount({ compact: true }); await edit(node('textarea'), '你好'); await submit();
     reply = body => response(answer(body, { evidence: [] }));
     await edit(node('textarea'), '当前运营概况如何？'); await submit();
-    expect(posts()).toHaveLength(1); expect(root.textContent).toContain('服务未返回支持答复的数据证据');
-    expect(root.textContent).not.toContain('120 次充电会话');
+    expect(posts()).toHaveLength(2); expect(root.textContent).toContain('服务未返回支持答复的数据证据');
+    expect(nodes().some(item => item.kind === 'article' && item.props['aria-live'] === 'polite')).toBe(false);
   });
   it('retains at most ten completed compact exchanges with their own scope and no historical actions', async () => {
     await mount({ compact: true }); await edit(control('参谋城市'), 'DL');
@@ -205,7 +220,7 @@ describe('operations advisor component and HTTP contract', () => {
     const pending = deferred(); reply = () => pending.promise;
     await mount({ compact: true }); await click('运营表现如何？');
     await edit(control('参谋答复方式'), mode);
-    if (mode === 'online') await edit(control('允许本次发送问题意图和聚合统计'), true);
+    if (mode === 'online') await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
     await submit(); const [url, options] = posts()[0]; const firstQuestion = JSON.parse(options.body);
     expect(url).toBe('/api/v1/intelligence/advisor');
     expect(firstQuestion).toMatchObject({ question: '当前范围运营表现如何？', mode, consent: mode === 'online' });
@@ -222,13 +237,13 @@ describe('operations advisor component and HTTP contract', () => {
     expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(0);
     expect(nodes().some(item => String(item.props.class).includes('advisor-pending-question'))).toBe(false);
     if (mode === 'online') {
-      expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+      expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
       expect(node('button', '发送').props.disabled).toBe(true);
-      await edit(control('允许本次发送问题意图和聚合统计'), true);
+      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
       await edit(node('textarea'), '哪些电站需要优先关注？');
-      expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+      expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
       expect(node('button', '发送').props.disabled).toBe(true);
-      await edit(control('允许本次发送问题意图和聚合统计'), true);
+      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
     }
     const nextQuestion = node('textarea').value;
     reply = body => response(answer(body)); await submit();
@@ -288,7 +303,7 @@ describe('operations advisor component and HTTP contract', () => {
   });
   it('renders compact chat with collapsed settings and evidence while retaining scope controls', async () => {
     await mount({ compact: true });
-    expect(root.textContent).toContain('你好，我是你的运营参谋');
+    expect(root.textContent).toContain('运营参谋');
     expect(nodes().some(item => item.kind === 'h2')).toBe(false);
     const settings = nodes().find(item => item.kind === 'details' && String(item.props.class).includes('advisor-settings'))!;
     expect(settings.props.open).toBe(false);
@@ -303,7 +318,7 @@ describe('operations advisor component and HTTP contract', () => {
     config.onlineAvailable = true;
     const pending = deferred(); reply = () => pending.promise;
     await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit(); const options = posts()[0][1];
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit(); const options = posts()[0][1];
     advisorProps.active = false; await settle(); expect(options.signal.aborted).toBe(true);
     pending.resolve(await response(answer(JSON.parse(options.body)))); await settle();
     expect(root.textContent).not.toContain('120 次充电会话');
@@ -313,9 +328,9 @@ describe('operations advisor component and HTTP contract', () => {
   it('preserves a completed reply across pause and reopening without additional requests', async () => {
     config.onlineAvailable = true;
     await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
-    await edit(control('允许本次发送问题意图和聚合统计'), true); expect(control('允许本次发送问题意图和聚合统计').checked).toBe(true);
-    advisorInstance!.pause(); await settle(); expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(true);
+    advisorInstance!.pause(); await settle(); expect(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段').checked).toBe(false);
     advisorProps.active = false; await settle(); advisorProps.active = true; await settle();
     expect(root.textContent).toContain('120 次充电会话'); expect(posts()).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -338,15 +353,16 @@ describe('operations advisor component and HTTP contract', () => {
   it('makes online mode unavailable until configured and requires fresh explicit consent per request', async () => {
     config.onlineAvailable = true; config.onlineProvider = '已配置模型';
     await mount(); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
-    expect(node('button', '生成运营答复').props.disabled).toBe(true); expect(root.textContent).toContain('不发送问题原文');
+    expect(node('button', '生成运营答复').props.disabled).toBe(true); expect(root.textContent).toContain('当前筛选聚合统计和知识片段');
     await submit(); expect(posts()).toHaveLength(0);
-    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
     expect(JSON.parse(posts()[0][1].body)).toMatchObject({ mode: 'online', consent: true });
     expect(node('button', '生成运营答复').props.disabled).toBe(true);
     await submit(); expect(posts()).toHaveLength(1);
   });
   it('disables unconfigured online mode and invalid date submissions', async () => {
     await mount(); expect(node('option', '在线模型 · 未配置').props.disabled).toBe(true);
+    expect(root.textContent).toContain('在后端配置 AIPing API Key'); expect(root.textContent).toContain('密钥仅保存在后端');
     await click('运营表现如何？'); await edit(control('参谋开始日期'), '2027-01-01');
     expect(node('button', '生成运营答复').props.disabled).toBe(true); await submit(); expect(posts()).toHaveLength(0);
     expect(root.textContent).toContain('开始日期须早于结束日期');
@@ -360,7 +376,7 @@ describe('operations advisor component and HTTP contract', () => {
   });
   it('revokes online consent when a question or range changes', async () => {
     config.onlineAvailable = true; await mount(); await click('运营表现如何？');
-    await edit(control('参谋答复方式'), 'online'); await edit(control('允许本次发送问题意图和聚合统计'), true);
+    await edit(control('参谋答复方式'), 'online'); await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true);
     expect(node('button', '生成运营答复').props.disabled).toBe(false);
     await edit(node('textarea'), '哪些站点需要关注？');
     expect(node('button', '生成运营答复').props.disabled).toBe(true); await submit(); expect(posts()).toHaveLength(0);
@@ -426,5 +442,95 @@ describe('operations advisor component and HTTP contract', () => {
     await mount(); await click('运营表现如何？'); await submit();
     expect(root.textContent).toContain('<img src=x onerror=alert(1)>'); expect(nodes().some(item => item.kind === 'img')).toBe(false);
     expect(root.textContent).not.toContain('执行管理操作'); expect(navigate).not.toHaveBeenCalled();
+  });
+  it('accepts cited knowledge-only model answers and renders their sources as text', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    const knowledge = [{ id: 'knowledge-model', title: '模型说明', text: '<img src=x onerror=alert(1)>需要结合时间范围理解预测。', source: 'docs/model-guide.md' }];
+    reply = body => response(answer(body, { evidence: [], citations: ['knowledge-model'], knowledge, answer: '预测误差应结合模型说明理解。[knowledge-model]' }));
+    await mount({ compact: true }); await edit(node('textarea'), '预测结果怎么理解？');
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(root.textContent).toContain('模型解读 · 请结合来源复核'); expect(root.textContent).not.toContain('已核对统计范围');
+    expect(control('答复引用').textContent).toContain('knowledge-model · 模型说明 · docs/model-guide.md');
+    expect(control('知识来源').textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(nodes().some(item => item.kind === 'img')).toBe(false);
+  });
+  it.each([
+    { citations: [] }, { citations: ['unknown-source'] }, { citations: ['sessions', 'unknown-source'] },
+    { citations: null as any }, { citations: [17] as any },
+    { knowledge: [{ id: 'missing-source', title: '说明', text: '内容' }] as any },
+  ])('rejects invalid online sources before rendering factual claims: %j', async extra => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = body => response(answer(body, extra));
+    await mount({ compact: true }); await edit(node('textarea'), '当前运营情况？');
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(nodes().some(item => item.props.role === 'alert')).toBe(true);
+    expect(root.textContent).not.toContain('120 次充电会话'); expect(navigate).not.toHaveBeenCalled();
+  });
+  it('reports a model failure for a greeting without creating a substitute answer', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = () => Promise.resolve(new Response(JSON.stringify({ code: 'ADVISOR_UNAVAILABLE', message: '在线模型暂不可用，请稍后重试。' }), { status: 503 }));
+    await mount({ compact: true }); await edit(node('textarea'), '你好');
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(posts()).toHaveLength(1); expect(root.textContent).toContain('在线模型暂不可用');
+    expect(nodes().some(item => item.kind === 'article')).toBe(false); expect(root.textContent).not.toContain('本地问候');
+  });
+  it('sends at most three prior exchanges and excludes a different city or date range', async () => {
+    config.defaultMode = 'online'; config.onlineAvailable = true;
+    reply = body => response(answer(body, { answer: `答复：${body.question}` }));
+    await mount({ compact: true });
+    for (let index = 1; index <= 5; index++) {
+      await edit(node('textarea'), `问题${index}`);
+      await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    }
+    expect(JSON.parse(posts()[4][1].body).history).toEqual([
+      { role: 'user', content: '问题2' }, { role: 'assistant', content: '答复：问题2' },
+      { role: 'user', content: '问题3' }, { role: 'assistant', content: '答复：问题3' },
+      { role: 'user', content: '问题4' }, { role: 'assistant', content: '答复：问题4' },
+    ]);
+    await edit(control('参谋城市'), 'DL'); await edit(node('textarea'), '大连问题');
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(JSON.parse(posts()[5][1].body).history).toEqual([]);
+    await edit(control('参谋开始日期'), '2026-05-20'); await edit(node('textarea'), '新日期问题');
+    await edit(control('允许本次向在线模型发送问题、最近对话、当前筛选聚合和知识片段'), true); await submit();
+    expect(JSON.parse(posts()[6][1].body).history).toEqual([]);
+  });
+  it('allows the model sixty seconds before the advisor-specific seventy-second timeout', async () => {
+    vi.useFakeTimers();
+    reply = (_body, options) => new Promise((_resolve, reject) => options.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+    await mount({ compact: true }); await edit(node('textarea'), '运营情况？'); await submit();
+    const signal = posts()[0][1].signal;
+    await vi.advanceTimersByTimeAsync(61000); expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(9000); await settle(); expect(signal.aborted).toBe(true);
+    expect(root.textContent).toContain('数据请求超时'); expect(nodes().some(item => item.kind === 'article')).toBe(false);
+  });
+});
+
+describe('advisor context and response boundary', () => {
+  const request: AdvisorRequest = { question: '当前情况？', datasetId: 'D1', publishedBatchId: 'B1', startDate: '2026-05-25', endDate: '2026-06-01', mode: 'online', consent: true };
+  it('defaults omitted legacy offline citation and knowledge fields to empty lists', () => {
+    const offline = { ...request, mode: 'offline' as const, consent: false };
+    const data = answer(offline); delete data.citations; delete data.knowledge;
+    expect(validateAdvisorResponse(data, offline)).toMatchObject({ citations: [], knowledge: [] });
+    expect(() => validateAdvisorResponse({ ...data, mode: 'online' }, request)).toThrow('有效引用');
+  });
+  it.each(['datasetId', 'publishedBatchId', 'startDate', 'endDate', 'cityId'] as const)('does not reuse history when %s differs', field => {
+    const previous = answer(request); previous.scope[field] = 'another-scope';
+    expect(advisorHistory([{ question: '旧问题', response: previous }], request)).toEqual([]);
+  });
+  it('bounds conversation size to six messages, eight hundred characters each and four thousand total', () => {
+    const exchanges = Array.from({ length: 8 }, (_, index) => ({ question: `${index}`.repeat(300), response: answer(request, { answer: '答'.repeat(3000) }) }));
+    const context = advisorHistory(exchanges, request);
+    expect(context).toHaveLength(6); expect(context[0].content).toBe('5'.repeat(300));
+    expect(context.map(item => item.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
+    expect(context.every(item => item.content.length <= 800)).toBe(true);
+    expect(context.reduce((total, item) => total + item.content.length, 0)).toBeLessThanOrEqual(4000);
+  });
+  it.each([798, 799])('keeps whole emoji when truncating a reply after %i preceding characters', prefixLength => {
+    const question = '你好😊';
+    const context = advisorHistory([{ question, response: answer(request, { answer: '甲'.repeat(prefixLength) + '😊尾' }) }], request);
+    expect(context[0].content).toBe(question);
+    expect(context[1].content).toBe('甲'.repeat(prefixLength) + (prefixLength === 798 ? '😊' : ''));
+    expect(context[1].content.length).toBeLessThanOrEqual(800);
+    expect(() => encodeURIComponent(context[1].content)).not.toThrow();
   });
 });
