@@ -3,6 +3,7 @@ import { nextTick, ref } from 'vue';
 import OperationsAdvisor from './OperationsAdvisor.vue';
 import Icon from './Icon.vue';
 import character from '../assets/whale-girl.png';
+import { containPanelWheel } from '../panelScroll';
 // Original character: MeteorNOX/DeepSeek-Balance-Whale-Widget (MIT).
 // Attribution is retained in assets/whale-girl.LICENSE.txt, as in PR #79.
 import type { AdvisorTarget } from '../advisor';
@@ -37,7 +38,7 @@ function navigate(target: AdvisorTarget, scope: DashboardScope) {
   <div class="advisor-companion">
     <section v-if="visited" v-show="open" id="advisor-conversation" ref="panel" class="companion-panel"
       role="dialog" aria-labelledby="companion-title" :aria-hidden="!open" :inert="!open" tabindex="-1"
-      @keydown.esc.stop.prevent="close">
+      @keydown.esc.stop.prevent="close" @wheel="containPanelWheel">
       <header class="companion-header">
         <div class="companion-portrait"><img :src="character" alt="" width="50" height="50"/></div>
         <div class="companion-heading"><h2 id="companion-title">AI 运营参谋</h2><p><span aria-hidden="true"/>陪你读懂每一份数据</p></div>
@@ -68,6 +69,7 @@ function navigate(target: AdvisorTarget, scope: DashboardScope) {
 .companion-label { display:flex; align-items:center; gap:14px; padding:11px 14px; border:1px solid #e6e9ef; border-radius:14px 14px 4px 14px; background:#fffffff5; box-shadow:0 4px 18px #1625450a; font-size:12px; font-weight:500; letter-spacing:.2px; color:#465369; white-space:nowrap; }
 .companion-label>span { font-size:17px; color:#7c89a0; }
 .companion-panel { position:absolute; right:0; bottom:115px; width:min(440px,calc(100vw - 32px)); height:min(720px,calc(100vh - 151px)); height:min(720px,calc(100dvh - 151px)); display:flex; flex-direction:column; border:1px solid #e0e5ef; border-radius:22px; background:#fff; overflow:hidden; box-shadow:0 20px 75px #1a2b4c24,0 4px 16px #1a2b4c0b; animation:companion-appear .2s ease-out; }
+.companion-panel { overscroll-behavior:contain; }
 .companion-panel:focus { outline:none; }
 .companion-header { display:flex; align-items:center; gap:12px; padding:17px 19px; flex-shrink:0; border-bottom:1px solid #edf0f5; background:linear-gradient(115deg,#f6f8fd,#fff 80%); }
 .companion-portrait { width:48px; height:48px; flex-shrink:0; overflow:hidden; border:1px solid #e5eafa; border-radius:15px; background:#edf1fb; }

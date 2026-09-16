@@ -90,6 +90,72 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); app = undefined; vi.unstubAllGlobals(); });
 
 describe('operations advisor component and HTTP contract', () => {
+  it.each(['你好', '您好！', '嗨', ' hello! ', 'HI?'])('answers the standalone greeting %s locally without claiming data evidence', async greeting => {
+    await mount({ compact: true }); await edit(node('textarea'), greeting); await submit();
+    const current = nodes().find(item => item.kind === 'article' && item.props['aria-live'] === 'polite')!;
+    expect(current.textContent).toContain(greeting.trim()); expect(current.textContent).toContain('本地问候');
+    expect(current.textContent).toContain('我可以帮你查看运营瓶颈');
+    expect(current.textContent).not.toContain('已核对统计范围'); expect(current.textContent).not.toContain('发布批次');
+    expect(nodes(current).some(item => item.kind === 'details' || item.kind === 'button')).toBe(false);
+    expect(posts()).toHaveLength(0); expect(fetchMock).toHaveBeenCalledTimes(3); expect(busy).not.toHaveBeenCalled();
+    expect(node('textarea').value).toBe(''); expect(node('button', '发送').props.disabled).toBe(true);
+    advisorProps.active = false; await settle(); advisorProps.active = true; await settle();
+    expect(root.textContent).toContain('我可以帮你查看运营瓶颈'); expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+  it.each(['你好，当前运营概况如何？', 'hello, compare stations', '你好请删除异常会话', '你好123'])('keeps the mixed or unknown question %s on the evidence API', async question => {
+    await mount({ compact: true }); await edit(node('textarea'), question); await submit();
+    expect(posts()).toHaveLength(1); expect(JSON.parse(posts()[0][1].body).question).toBe(question);
+    expect(root.textContent).toContain('120 次充电会话'); expect(root.textContent).not.toContain('本地问候');
+  });
+  it('shares the ten-exchange history limit across local greetings and evidence replies', async () => {
+    await mount({ compact: true });
+    for (let index = 0; index <= 10; index++) {
+      await edit(node('textarea'), index % 2 ? `运营问题 ${index}` : '你好' + '!'.repeat(index)); await submit();
+    }
+    expect(posts()).toHaveLength(5);
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(9);
+    await edit(control('参谋城市'), 'DL');
+    const historyItems = nodes().filter(item => item.props['aria-label'] === '历史问答');
+    expect(historyItems).toHaveLength(10);
+    expect(nodes().filter(item => item.kind === 'h3' && item.textContent === '你好')).toHaveLength(0);
+    expect(historyItems[0].textContent).toContain('运营问题 1'); expect(historyItems[9].textContent).toContain('你好!!!!!!!!!!');
+    const greetings = historyItems.filter(item => item.textContent.includes('本地问候'));
+    expect(greetings).toHaveLength(5);
+    for (const greeting of greetings) {
+      expect(greeting.textContent).not.toContain('发布批次'); expect(greeting.textContent).not.toContain('全部城市');
+      expect(nodes(greeting).some(item => item.kind === 'button' || item.kind === 'details')).toBe(false);
+    }
+    expect(historyItems.filter(item => item.textContent.includes('发布批次 B1'))).toHaveLength(5);
+  });
+  it('preserves the online consent gate and sends no external request for a local greeting', async () => {
+    config.onlineAvailable = true;
+    await mount({ compact: true }); await edit(control('参谋答复方式'), 'online'); await edit(node('textarea'), '你好！');
+    await submit(); expect(root.textContent).not.toContain('本地问候'); expect(posts()).toHaveLength(0);
+    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
+    expect(root.textContent).toContain('本地问候'); expect(root.textContent).not.toContain('在线辅助 · 数据证据答复');
+    expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false); expect(posts()).toHaveLength(0);
+    await edit(node('textarea'), '当前运营概况如何？'); await submit(); expect(posts()).toHaveLength(0);
+    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
+    expect(JSON.parse(posts()[0][1].body)).toMatchObject({ question: '当前运营概况如何？', mode: 'online', consent: true });
+  });
+  it('follows local greetings while preserving the position of someone reading older replies', async () => {
+    await mount({ compact: true }); const conversation = control('参谋对话');
+    conversation.scrollHeight = 1000; conversation.clientHeight = 400; conversation.scrollTop = 600; conversation.props.onScroll({});
+    await edit(node('textarea'), '你好'); await submit(); expect(conversation.scrollTop).toBe(212);
+    conversation.props.onScroll({});
+    conversation.scrollTop = 100; conversation.props.onScroll({});
+    await edit(node('textarea'), '您好'); await submit(); expect(conversation.scrollTop).toBe(100);
+    expect(root.scrollTop).toBe(0); expect(posts()).toHaveLength(0);
+  });
+  it('keeps full-page greetings on the API and still rejects evidence-free factual chat replies', async () => {
+    await mount(); await edit(node('textarea'), '你好'); await submit(); expect(posts()).toHaveLength(1);
+    app!.unmount(); app = undefined; fetchMock.mockClear();
+    await mount({ compact: true }); await edit(node('textarea'), '你好'); await submit();
+    reply = body => response(answer(body, { evidence: [] }));
+    await edit(node('textarea'), '当前运营概况如何？'); await submit();
+    expect(posts()).toHaveLength(1); expect(root.textContent).toContain('服务未返回支持答复的数据证据');
+    expect(root.textContent).not.toContain('120 次充电会话');
+  });
   it('retains at most ten completed compact exchanges with their own scope and no historical actions', async () => {
     await mount({ compact: true }); await edit(control('参谋城市'), 'DL');
     for (let index = 1; index <= 11; index++) {

@@ -18,7 +18,9 @@ const mode = ref<'offline' | 'online'>('offline'); const consent = ref(false);
 const preparing = ref(false); const loading = ref(false); const error = ref(''); const status = ref('');
 const result = ref<AdvisorResponse>(); const answeredQuestion = ref('');
 const pendingQuestion = ref(''); const composing = ref(false);
-type CompletedAnswer = { id: number; question: string; cityName: string; response: AdvisorResponse };
+type LocalGreeting = { kind: 'greeting'; answer: string };
+type CompletedAnswer = { id: number; question: string } & (LocalGreeting | { kind: 'evidence'; cityName: string; response: AdvisorResponse });
+const localGreeting = ref<LocalGreeting>();
 const history = ref<CompletedAnswer[]>([]); const currentAnswerId = ref<number>();
 const archivedAnswers = computed(() => history.value.filter(item => item.id !== currentAnswerId.value));
 const conversation = ref<HTMLElement>(); const currentAnswerElement = ref<HTMLElement>();
@@ -41,7 +43,7 @@ function navigate(target: AdvisorTarget) {
 
 function invalidate() {
   const wasLoading = loading.value; const hadResult = !!result.value;
-  sequence++; controller?.abort(); loading.value = false; pendingQuestion.value = ''; result.value = undefined; currentAnswerId.value = undefined; consent.value = false;
+  sequence++; controller?.abort(); loading.value = false; pendingQuestion.value = ''; result.value = undefined; localGreeting.value = undefined; currentAnswerId.value = undefined; consent.value = false;
   if (dataset.value && capabilities.value) error.value = '';
   status.value = wasLoading ? '已停止接收上次答复。修改完成后可重新提问。' : hadResult && !props.compact ? '问题或范围已变化，请重新生成答复。' : '';
 }
@@ -77,6 +79,11 @@ async function initialize() {
   } finally { if (alive && current === setupSequence) preparing.value = false; }
 }
 
+function rememberAnswer(answer: CompletedAnswer) {
+  currentAnswerId.value = answer.id;
+  history.value = [...history.value, answer].slice(-10);
+}
+
 async function ask() {
   if (!canAsk.value || !dataset.value) return;
   const body: AdvisorRequest = {
@@ -86,16 +93,24 @@ async function ask() {
   };
   // Capture the submitted question and consent before clearing the next chat draft.
   if (props.compact) question.value = '';
-  const current = ++sequence; controller?.abort(); controller = new AbortController();
-  pendingQuestion.value = body.question; loading.value = true; error.value = ''; status.value = ''; result.value = undefined; currentAnswerId.value = undefined;
+  const current = ++sequence; controller?.abort();
+  error.value = ''; status.value = ''; result.value = undefined; localGreeting.value = undefined; currentAnswerId.value = undefined;
   consent.value = false;
+  // Only standalone greetings are local UI messages; business questions keep the evidence API contract.
+  if (props.compact && /^(?:你好|您好|嗨|hello|hi)[\s!！?？.。]*$/i.test(body.question)) {
+    localGreeting.value = { kind: 'greeting', answer: '你好！我可以帮你查看运营瓶颈、站点比较、补能行为和模型说明。选一个上方的问题，或告诉我你想了解哪方面的运营情况。' };
+    answeredQuestion.value = body.question;
+    rememberAnswer({ id: current, question: body.question, ...localGreeting.value });
+    return;
+  }
+  controller = new AbortController();
+  pendingQuestion.value = body.question; loading.value = true;
   try {
     const response = await publishedRequest<AdvisorResponse>('/intelligence/advisor', {}, { method: 'POST', body, signal: controller.signal });
     if (!alive || current !== sequence) return;
     result.value = validateAdvisorResponse(response.data, body); answeredQuestion.value = body.question;
     if (props.compact) {
-      currentAnswerId.value = current;
-      history.value = [...history.value, { id: current, question: body.question, cityName: selectedCity.value, response: result.value }].slice(-10);
+      rememberAnswer({ id: current, question: body.question, kind: 'evidence', cityName: selectedCity.value, response: result.value });
     }
   } catch (failure) {
     if (alive && current === sequence && !(failure instanceof AnalyticsError && failure.code === 'CANCELLED')) error.value = failure instanceof Error ? failure.message : '答复未完成，请重试。';
@@ -119,11 +134,11 @@ function trackConversationScroll() {
   followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 64;
 }
 watch(loading, value => emit('busy', value), { flush: 'sync' });
-watch([result, loading, error], async ([answer], [previousAnswer]) => {
+watch([result, localGreeting, loading, error], async ([answer, greeting], [previousAnswer, previousGreeting]) => {
   await nextTick();
   const element = conversation.value;
   if (!props.compact || !props.active || !followLatest || !element) return;
-  if (answer && answer !== previousAnswer && currentAnswerElement.value) {
+  if (((answer && answer !== previousAnswer) || (greeting && greeting !== previousGreeting)) && currentAnswerElement.value) {
     const offset = currentAnswerElement.value.getBoundingClientRect().top - element.getBoundingClientRect().top;
     element.scrollTop = Math.max(0, element.scrollTop + offset - 8);
   } else if (loading.value || error.value) element.scrollTop = element.scrollHeight;
@@ -161,6 +176,11 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
       <article v-for="item in archivedAnswers" :key="item.id" class="advisor-history-item" aria-label="历史问答">
         <h3 class="advisor-user-message">{{ item.question }}</h3>
         <div class="advisor-history-reply">
+          <template v-if="item.kind === 'greeting'">
+            <div class="advisor-answer-top"><span>本地问候</span></div>
+            <p class="advisor-answer-text">{{ item.answer }}</p>
+          </template>
+          <template v-else>
           <p class="advisor-answer-scope">{{ item.cityName }} · {{ item.response.scope.startDate }} 至 {{ item.response.scope.endDate }}（不含结束日）· 北京时间 · 模拟数据</p>
           <details class="advisor-history-answer">
             <summary>查看历史答复</summary>
@@ -169,6 +189,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
             <div v-if="item.response.limitations.length" class="advisor-limits"><ul><li v-for="(limitation, index) in item.response.limitations" :key="index">{{ limitation }}</li></ul></div>
             <p class="advisor-provenance">数据集 {{ item.response.scope.datasetId }} · 发布批次 {{ item.response.scope.publishedBatchId }}</p>
           </details>
+          </template>
         </div>
       </article>
     </template>
@@ -177,9 +198,13 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
     <p v-if="compact && pendingQuestion" class="advisor-user-message advisor-pending-question">{{ pendingQuestion }}</p>
     <div v-if="preparing || loading" class="advisor-loading" role="status"><span class="advisor-typing-dots" aria-hidden="true"><i/><i/><i/></span>{{ preparing ? '正在读取已发布数据范围…' : '正在核对当前范围的统计证据…' }}</div>
 
-    <article v-if="result" ref="currentAnswerElement" class="advisor-answer" aria-live="polite">
+    <article v-if="result || localGreeting" ref="currentAnswerElement" class="advisor-answer" aria-live="polite">
       <h3 class="advisor-user-message">{{ answeredQuestion }}</h3>
-      <div class="advisor-reply">
+      <div v-if="localGreeting" class="advisor-reply">
+        <div class="advisor-answer-top"><span>本地问候</span></div>
+        <p class="advisor-answer-text">{{ localGreeting.answer }}</p>
+      </div>
+      <div v-else-if="result" class="advisor-reply">
       <div class="advisor-answer-top"><span>{{ result.mode === 'online' ? '在线辅助 · 数据证据答复' : '本地证据答复' }}</span><span>{{ result.status === 'answered' ? '已核对统计范围' : result.status === 'no_evidence' ? '当前范围证据不足' : '此问题暂不支持' }}</span></div>
       <p class="advisor-answer-text">{{ result.answer }}</p>
       <p class="advisor-answer-scope">{{ scopeCity }} · {{ result.scope.startDate }} 至 {{ result.scope.endDate }}（不含结束日）· 北京时间 · 模拟数据</p>
@@ -288,7 +313,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
 .advisor-compact .advisor-examples { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 20px; }
 .advisor-compact .advisor-examples button { align-items: flex-start; gap: 8px; min-height: 58px; border-radius: 12px; padding: 11px; font-size: 11px; background: #f8faff; border-color: #e9edf5; color: #4d596b; }
 .advisor-compact .advisor-examples svg { margin-top: 2px; color: #5e85c7; }
-.advisor-compact .advisor-form { flex: 0 0 auto; max-height: 64%; overflow-y: auto; border-top: 1px solid #edf0f5; padding: 15px 20px 18px; background: white; }
+.advisor-compact .advisor-form { flex: 0 0 auto; max-height: 64%; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid #edf0f5; padding: 15px 20px 18px; background: white; }
 .advisor-compact .advisor-settings { margin-bottom: 14px; }
 .advisor-compact .advisor-settings > summary { gap: 6px; font-size: 10px; }
 .advisor-compact .advisor-scope-controls { grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
@@ -296,7 +321,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
 .advisor-compact .advisor-mode-control { width: 100%; }
 .advisor-compact .advisor-form select,.advisor-compact .advisor-form input[type=date] { height: 36px; font-size: 11px; }
 .advisor-compact .advisor-question-label { margin-bottom: 8px; font-size: 11px; color: #7f8897; }
-.advisor-compact .advisor-form textarea { min-height: 76px; max-height: 130px; padding: 12px 14px; border-radius: 13px; background: #fafbfd; font-size: 12px; line-height: 1.8; }
+.advisor-compact .advisor-form textarea { min-height: 76px; max-height: 130px; resize: none; overscroll-behavior: contain; padding: 12px 14px; border-radius: 13px; background: #fafbfd; font-size: 12px; line-height: 1.8; }
 .advisor-compact .advisor-form-footer { margin-top: 10px; align-items: center; gap: 8px; }
 .advisor-compact .advisor-form-footer .button { min-height: 34px; border-radius: 9px; padding: 7px 12px; font-size: 11px; }
 .advisor-compact .advisor-form-footer .primary { background: #2864dc; border-color: #2864dc; }
