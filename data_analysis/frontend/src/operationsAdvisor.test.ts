@@ -10,10 +10,16 @@ vi.mock('./components/Icon.vue', () => ({ default: { render: () => h('icon-stub'
 class TestNode {
   parent: TestNode | null = null; children: TestNode[] = []; props: Record<string, any> = {}; text = ''; value: any;
   selected = false; selectedIndex = -1; multiple = false; checked = false; listeners: Record<string, Function> = {};
+  scrollHeight = 0; scrollTop = 0; clientHeight = 0;
   constructor(public kind: string) {}
   get tagName() { return this.kind.toUpperCase(); }
   get options() { return this.children.filter(child => child.kind === 'option'); }
   get textContent(): string { return this.text + this.children.map(child => child.textContent).join(''); }
+  getBoundingClientRect() {
+    let container = this.parent;
+    while (container && container.props['aria-label'] !== '参谋对话') container = container.parent;
+    return { top: 100 + (this.kind === 'article' ? 220 : 0) - (container?.scrollTop || 0) };
+  }
   getRootNode() { return document; }
   addEventListener(name: string, handler: Function) { this.listeners[name] = handler; }
   removeEventListener(name: string) { delete this.listeners[name]; }
@@ -34,8 +40,10 @@ const renderCode = compiled.code.replace(/import \{([^}]+)\} from "vue"/g, (_mat
 const component = { ...OperationsAdvisor, render: new Function('Vue', renderCode)(Vue) } as unknown as Vue.Component;
 const dataset = { datasetId: 'D1', publishedBatchId: 'B1', startDate: '2026-01-01', endDate: '2026-06-01' };
 let config: AdvisorCapabilities;
-const fetchMock = vi.fn(); const navigate = vi.fn();
+const fetchMock = vi.fn(); const navigate = vi.fn(); const busy = vi.fn();
 let root: TestNode; let app: ReturnType<typeof renderer.createApp> | undefined;
+let advisorProps: { compact: boolean; active: boolean };
+let advisorInstance: { pause: () => void } | null;
 let reply: (body: AdvisorRequest, options: RequestInit) => Promise<Response>;
 function response(data: unknown, meta = { datasetId: 'D1', publishedBatchId: 'B1' }) { return Promise.resolve(new Response(JSON.stringify({ code: 'OK', message: 'ok', data, meta }), { status: 200 })); }
 function answer(body: AdvisorRequest, extra: Partial<AdvisorResponse> = {}): AdvisorResponse {
@@ -52,13 +60,18 @@ async function settle() { for (let i = 0; i < 35; i++) { await Promise.resolve()
 async function edit(element: TestNode, value: unknown) { element.props['onUpdate:modelValue'](value); await settle(); }
 async function click(text: string) { const button = node('button', text); expect(button.props.disabled).not.toBe(true); button.props.onClick({}); await settle(); }
 async function submit() { node('form').props.onSubmit({ preventDefault() {} }); await settle(); }
-async function mount() { root = new TestNode('root'); app = renderer.createApp({ setup: () => () => h(component, { onNavigate: navigate }) }); app.provide(Vue.ssrContextKey, {}); app.mount(root); await settle(); }
+async function mount(props: { compact?: boolean; active?: boolean } = {}) {
+  advisorProps = Vue.reactive({ compact: false, active: true, ...props }); advisorInstance = null;
+  root = new TestNode('root'); app = renderer.createApp({ setup: () => () => h(component, {
+    ...advisorProps, onNavigate: navigate, onBusy: busy, ref: (instance: any) => { advisorInstance = instance; },
+  }) }); app.provide(Vue.ssrContextKey, {}); app.mount(root); await settle();
+}
 function deferred() { let resolve!: (value: Response) => void; const promise = new Promise<Response>(res => { resolve = res; }); return { promise, resolve }; }
 
 beforeEach(() => {
   class TestDocument {}
   vi.stubGlobal('Document', TestDocument); vi.stubGlobal('document', new TestDocument());
-  navigate.mockReset(); fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock);
+  navigate.mockReset(); busy.mockReset(); fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock);
   config = { defaultMode: 'offline', onlineAvailable: false, onlineProvider: null, maxQuestionLength: 300, disclosure: '不发送问题原文、用户或会话明细。', supportedQuestions: [
     { id: 'overview', label: '运营表现如何？', question: '当前范围运营表现如何？' },
     { id: 'stations', label: '哪些电站需要关注？', question: '哪些电站需要关注？' },
@@ -77,6 +90,170 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); app = undefined; vi.unstubAllGlobals(); });
 
 describe('operations advisor component and HTTP contract', () => {
+  it('retains at most ten completed compact exchanges with their own scope and no historical actions', async () => {
+    await mount({ compact: true }); await edit(control('参谋城市'), 'DL');
+    for (let index = 1; index <= 11; index++) {
+      await edit(node('textarea'), `历史问题 ${String(index).padStart(2, '0')}`); await submit();
+    }
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(9);
+    await edit(node('textarea'), '新问题草稿'); await edit(control('参谋城市'), ''); await edit(control('参谋开始日期'), '2026-05-20');
+    const historyItems = nodes().filter(item => item.props['aria-label'] === '历史问答');
+    expect(historyItems).toHaveLength(10);
+    expect(historyItems[0].textContent).toContain('历史问题 02'); expect(historyItems[9].textContent).toContain('历史问题 11');
+    for (const item of historyItems) {
+      expect(item.textContent).toContain('大连市 · 2026-05-25 至 2026-06-01');
+      expect(nodes(item).some(child => child.kind === 'button')).toBe(false);
+      expect(nodes(item).find(child => child.kind === 'details')?.props.open).not.toBe(true);
+    }
+    expect(posts()).toHaveLength(11);
+    expect(JSON.parse(posts()[10][1].body)).toEqual({ question: '历史问题 11', datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-25', endDate: '2026-06-01', mode: 'offline', consent: false });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it('shows a pending question bubble and emits busy only while receiving an answer', async () => {
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); expect(busy).not.toHaveBeenCalled();
+    await click('运营表现如何？'); await submit();
+    const bubble = nodes().find(item => String(item.props.class).includes('advisor-pending-question'))!;
+    expect(bubble.textContent).toBe('当前范围运营表现如何？'); expect(busy.mock.calls).toEqual([[true]]);
+    expect(node('textarea').value).toBe(''); expect(posts()[0][1].signal.aborted).toBe(false);
+    expect(nodes().some(item => String(item.props.class).includes('advisor-typing-dots'))).toBe(true);
+    pending.resolve(await response(answer(JSON.parse(posts()[0][1].body)))); await settle();
+    expect(busy.mock.calls).toEqual([[true], [false]]);
+    expect(nodes().some(item => String(item.props.class).includes('advisor-pending-question'))).toBe(false);
+    expect(root.textContent).toContain('120 次充电会话'); expect(node('button', '发送').props.disabled).toBe(true);
+    await submit(); expect(posts()).toHaveLength(1);
+  });
+  it('sends with Enter while allowing Shift+Enter and Chinese input composition', async () => {
+    await mount({ compact: true }); await click('运营表现如何？'); const textarea = node('textarea');
+    const preventDefault = vi.fn();
+    textarea.props.onKeydown({ key: 'Enter', shiftKey: true, preventDefault });
+    textarea.props.onKeydown({ key: 'Enter', isComposing: true, preventDefault });
+    textarea.props.onKeydown({ key: 'Enter', keyCode: 229, preventDefault });
+    textarea.props.onCompositionstart({}); textarea.props.onKeydown({ key: 'Enter', preventDefault });
+    await settle(); expect(posts()).toHaveLength(0); expect(preventDefault).not.toHaveBeenCalled();
+    textarea.props.onCompositionend({}); textarea.props.onKeydown({ key: 'Enter', preventDefault }); await settle();
+    expect(preventDefault).toHaveBeenCalledOnce(); expect(posts()).toHaveLength(1);
+  });
+  it.each(['offline', 'online'] as const)('keeps a pending %s answer while drafting the next chat question', async mode => {
+    config.onlineAvailable = true;
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); await click('运营表现如何？');
+    await edit(control('参谋答复方式'), mode);
+    if (mode === 'online') await edit(control('允许本次发送问题意图和聚合统计'), true);
+    await submit(); const [url, options] = posts()[0]; const firstQuestion = JSON.parse(options.body);
+    expect(url).toBe('/api/v1/intelligence/advisor');
+    expect(firstQuestion).toMatchObject({ question: '当前范围运营表现如何？', mode, consent: mode === 'online' });
+    await edit(node('textarea'), '哪些电站需要关注？');
+    expect(options.signal.aborted).toBe(false);
+    expect(root.textContent).toContain('当前范围运营表现如何？');
+    expect(root.textContent).not.toContain('已停止接收');
+    expect(busy.mock.calls).toEqual([[true]]);
+    await submit(); expect(posts()).toHaveLength(1);
+    pending.resolve(await response(answer(firstQuestion))); await settle();
+    expect(root.textContent).toContain('120 次充电会话');
+    expect(node('textarea').value).toBe('哪些电站需要关注？');
+    expect(busy.mock.calls).toEqual([[true], [false]]);
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(0);
+    expect(nodes().some(item => String(item.props.class).includes('advisor-pending-question'))).toBe(false);
+    if (mode === 'online') {
+      expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+      expect(node('button', '发送').props.disabled).toBe(true);
+      await edit(control('允许本次发送问题意图和聚合统计'), true);
+      await edit(node('textarea'), '哪些电站需要优先关注？');
+      expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+      expect(node('button', '发送').props.disabled).toBe(true);
+      await edit(control('允许本次发送问题意图和聚合统计'), true);
+    }
+    const nextQuestion = node('textarea').value;
+    reply = body => response(answer(body)); await submit();
+    expect(posts()).toHaveLength(2);
+    expect(JSON.parse(posts()[1][1].body)).toMatchObject({ question: nextQuestion, mode, consent: mode === 'online' });
+    const historyItems = nodes().filter(item => item.props['aria-label'] === '历史问答');
+    expect(historyItems).toHaveLength(1);
+    expect(historyItems[0].textContent).toContain('当前范围运营表现如何？');
+    expect(nodes().filter(item => item.kind === 'h3' && item.textContent === '当前范围运营表现如何？')).toHaveLength(1);
+    expect(nodes().filter(item => item.kind === 'h3' && item.textContent === nextQuestion)).toHaveLength(1);
+  });
+  it.each([
+    ['参谋城市', 'DL'], ['参谋开始日期', '2026-05-20'],
+    ['参谋结束日期', '2026-05-30'], ['参谋答复方式', 'online'],
+  ])('still invalidates pending chat when %s changes', async (label, value) => {
+    config.onlineAvailable = true;
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); await click('运营表现如何？'); await submit();
+    const options = posts()[0][1];
+    await edit(node('textarea'), '下一问草稿'); await edit(control(label), value);
+    expect(options.signal.aborted).toBe(true);
+    expect(node('textarea').value).toBe('下一问草稿');
+    pending.resolve(await response(answer(JSON.parse(options.body)))); await settle();
+    expect(root.textContent).not.toContain('120 次充电会话');
+    expect(nodes().filter(item => item.props['aria-label'] === '历史问答')).toHaveLength(0);
+    expect(busy.mock.calls).toEqual([[true], [false]]);
+  });
+  it('follows new messages only when the reader is near the conversation bottom', async () => {
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); const conversation = control('参谋对话');
+    conversation.scrollHeight = 1000; conversation.clientHeight = 400; conversation.scrollTop = 600; conversation.props.onScroll({});
+    await click('运营表现如何？'); await submit(); expect(conversation.scrollTop).toBe(1000);
+    conversation.scrollTop = 200; conversation.props.onScroll({});
+    pending.resolve(await response(answer(JSON.parse(posts()[0][1].body)))); await settle(); expect(conversation.scrollTop).toBe(200);
+    conversation.scrollTop = 600; conversation.props.onScroll({});
+    reply = body => response(answer(body)); await edit(node('textarea'), '另一个问题'); await submit();
+    expect(conversation.scrollTop).toBe(212);
+    conversation.props.onScroll({});
+    const anotherPending = deferred(); reply = () => anotherPending.promise;
+    await edit(node('textarea'), '继续提问'); await submit();
+    expect(conversation.scrollTop).toBe(1000);
+  });
+  it('reveals the start of a completed answer and keeps limitations collapsed', async () => {
+    await mount({ compact: true }); const conversation = control('参谋对话');
+    conversation.scrollHeight = 1600; conversation.clientHeight = 400;
+    await click('运营表现如何？'); await submit();
+    expect(conversation.scrollTop).toBe(212);
+    const limitations = nodes().find(item => item.kind === 'details' && String(item.props.class).includes('advisor-compact-limits'))!;
+    expect(limitations.props.open).not.toBe(true); expect(limitations.textContent).toContain('模拟历史数据，不能解释因果。');
+    expect(root.scrollTop).toBe(0);
+  });
+  it('does not initialize or submit while inactive and initializes once opened', async () => {
+    await mount({ compact: true, active: false }); expect(fetchMock).not.toHaveBeenCalled();
+    await edit(node('textarea'), '运营表现如何？'); await submit(); expect(fetchMock).not.toHaveBeenCalled();
+    advisorProps.active = true; await settle(); expect(fetchMock).toHaveBeenCalledTimes(3);
+    await submit(); expect(posts()).toHaveLength(1);
+  });
+  it('renders compact chat with collapsed settings and evidence while retaining scope controls', async () => {
+    await mount({ compact: true });
+    expect(root.textContent).toContain('你好，我是你的运营参谋');
+    expect(nodes().some(item => item.kind === 'h2')).toBe(false);
+    const settings = nodes().find(item => item.kind === 'details' && String(item.props.class).includes('advisor-settings'))!;
+    expect(settings.props.open).toBe(false);
+    expect(control('参谋开始日期')).toBeDefined(); expect(control('参谋结束日期')).toBeDefined();
+    await click('运营表现如何？'); await edit(control('参谋城市'), 'DL'); await submit();
+    expect(JSON.parse(posts()[0][1].body)).toMatchObject({ cityId: 'DL', publishedBatchId: 'B1' });
+    const evidence = nodes().find(item => item.kind === 'details' && String(item.props.class).includes('advisor-compact-evidence'))!;
+    expect(evidence.props.open).not.toBe(true); expect(evidence.textContent).toContain('查看 1 项数据依据');
+    expect(root.textContent).toContain('120 次充电会话'); expect(node('button', '发送')).toBeDefined();
+  });
+  it('pauses pending chat on close, revokes consent and ignores late replies', async () => {
+    config.onlineAvailable = true;
+    const pending = deferred(); reply = () => pending.promise;
+    await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
+    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit(); const options = posts()[0][1];
+    advisorProps.active = false; await settle(); expect(options.signal.aborted).toBe(true);
+    pending.resolve(await response(answer(JSON.parse(options.body)))); await settle();
+    expect(root.textContent).not.toContain('120 次充电会话');
+    advisorProps.active = true; await settle(); expect(node('button', '发送').props.disabled).toBe(true);
+    expect(posts()).toHaveLength(1);
+  });
+  it('preserves a completed reply across pause and reopening without additional requests', async () => {
+    config.onlineAvailable = true;
+    await mount({ compact: true }); await click('运营表现如何？'); await edit(control('参谋答复方式'), 'online');
+    await edit(control('允许本次发送问题意图和聚合统计'), true); await submit();
+    await edit(control('允许本次发送问题意图和聚合统计'), true); expect(control('允许本次发送问题意图和聚合统计').checked).toBe(true);
+    advisorInstance!.pause(); await settle(); expect(control('允许本次发送问题意图和聚合统计').checked).toBe(false);
+    advisorProps.active = false; await settle(); advisorProps.active = true; await settle();
+    expect(root.textContent).toContain('120 次充电会话'); expect(posts()).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
   it('loads four editable examples and posts an offline question pinned to the published date range', async () => {
     await mount(); expect(posts()).toHaveLength(0);
     expect(nodes().filter(item => item.kind === 'button' && item.textContent.endsWith('？'))).toHaveLength(4);

@@ -27,7 +27,7 @@ vi.mock("./components/Chart.vue", () => ({ default: { render: () => h("chart-stu
 vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { props: ['initialSection', 'initialScope'], setup: (props: any) => () => h('dashboard-stub', { section: props.initialSection, scope: props.initialScope }) } }));
 vi.mock("./components/ForecastPanel.vue", () => ({ default: { render: () => h("forecast-stub") } }));
 vi.mock("./components/ManagementInsights.vue", () => ({ default: { props: ['initialTarget'], setup: (props: any) => () => h('insights-stub', { target: props.initialTarget }) } }));
-vi.mock("./components/OperationsAdvisor.vue", () => ({ default: {
+vi.mock("./components/AdvisorSidebar.vue", () => ({ default: {
   emits: ['navigate'], setup: (_: unknown, { emit }: any) => () => h('advisor-stub', [
     h('button', { onClick: () => emit('navigate', 'advanced', { datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-01', endDate: '2026-05-08' }) }, '查看多维运营分析'),
     h('button', { onClick: () => emit('navigate', 'anomalies') }, '查看充电异常筛查'),
@@ -183,15 +183,18 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); vi.unstubAllGlobals(); });
 
 describe("slim recommendation experience", () => {
-  it('keeps the advisor inside intelligent analysis and navigates only on explicit evidence-page clicks', async () => {
-    await mount(); expect(nodes().some(item => item.kind === 'advisor-stub')).toBe(false);
-    await click('智能分析'); await click('AI运营参谋'); expect(find('advisor-stub')).toBeTruthy();
-    expect(nodes().some(item => item.kind === 'dashboard-stub')).toBe(false);
+  it('keeps the pet available globally without a duplicate analysis tab, and preserves scoped navigation', async () => {
+    await mount(); expect(find('advisor-stub')).toBeTruthy();
+    const previousDashboard = find('dashboard-stub');
     await click('查看多维运营分析'); expect(find('dashboard-stub').props.section).toBe('space');
+    // The pet can navigate while already on the dashboard: it must reload the answer's scope.
+    expect(find('dashboard-stub')).not.toBe(previousDashboard);
     expect(find('dashboard-stub').props.scope).toEqual({ datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-01', endDate: '2026-05-08' });
-    await click('智能分析'); await click('AI运营参谋'); await click('查看充电异常筛查');
+    await click('智能分析'); expect(find('advisor-stub')).toBeTruthy();
+    expect(nodes().filter(item => item.kind === 'button').some(item => item.textContent === 'AI运营参谋')).toBe(false);
+    await click('查看充电异常筛查');
     expect(find('insights-stub').props.target).toBe('anomalies');
-    expect(root.textContent).not.toContain('桌宠');
+    await click('智能找站'); expect(find('advisor-stub')).toBeTruthy();
   });
   it("opens a route directly from a recommendation and preserves the plain reward badge", async () => {
     await mount();
