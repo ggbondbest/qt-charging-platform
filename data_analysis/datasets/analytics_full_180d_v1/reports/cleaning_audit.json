@@ -1,0 +1,4414 @@
+{
+  "audit_version": "cleaning-audit-1.0.0",
+  "correction_samples": [
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "0104a65b92aa6cb186a5cb106bdac99dbb059274aad8fda43f54bf8c4ceb0292",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "01b35ee0c17912d7b22a23d7d7490f62e6978db850a3968bc7473ef3bf88d80e",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "01b5ba218fa85877b880aa78e00ea54ceb758fc66848d271869ee4016750cd8d",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-03.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "01cb1e527b2db0ae1c0e8c025c8f7615858d7672e4635d2683aa94fceba7da69",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "0215e3e1017c13fe73ca2a11cfc7c6e976048eb2d8639529fd917590bbbdfc28",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-03.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "02ba7d46a665b6b204ab3ff9730300c7322e0a0d60beee8e3df545fe9af2aac9",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2025-12.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "03bb4e787390323444094f34eee50782046ddceaedd0cc79a25a29dea57b0fdf",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-04.csv.gz",
+      "table": "charging_sessions"
+    },
+    {
+      "changes": [
+        {
+          "after": "COMPLETED",
+          "before": " completed ",
+          "field": "status"
+        }
+      ],
+      "raw_record_sha256": "04feac0af1bb49797dae4e4beb32c75df7b3485f57a16cd3ffaee75b89c89f1e",
+      "rule_ids": [
+        "N001",
+        "N004"
+      ],
+      "source_file": "raw/charging_sessions/part-2026-03.csv.gz",
+      "table": "charging_sessions"
+    }
+  ],
+  "issue_samples": [
+    {
+      "_raw_record_sha256": "0057c628b307fc5d384a937e54e1fd81e32d82a4b50778848425d1c04c7b31c0",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00018420",
+      "source_file": "raw/charging_sessions/part-2025-12.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "014f59d7f628173bbb12b0ab175c59dee2173fc77b0eee1fa0d24a80fd7ae420",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00038721",
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "01cb38cf1a4d6d3e8f4493c971126ba9efbe68e2ea548d16259175af3dd46b40",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00100648",
+      "source_file": "raw/charging_sessions/part-2026-04.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "01f156e92f78a0dda6ce407dde93166cbb9f433aa54fb67286f7abe3c72e442a",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00059749",
+      "source_file": "raw/charging_sessions/part-2026-02.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "032c2cf0d00c0e42aa467a0acc8ced7f274fef48536c9783e8040b889a706b77",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00079849",
+      "source_file": "raw/charging_sessions/part-2026-03.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "03da9c2058d77ca9a888c14f396b184a5a42397f846bb4c1ecc7d8b50e12c9d2",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00086146",
+      "source_file": "raw/charging_sessions/part-2026-04.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "047f89ddf89bc9392c628d9a19400fba0e6108823b7c6dc5a8150b26ca9bbec7",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00037245",
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "049787415e7359f7cf448f99e26d9e046b870879bed247d1a8c48fa5ea55e2f7",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00035335",
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "04c4d8c11f932e73b258cec5bfc316b43553f398f3385f2f3c99ebd73dd224ef",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00094667",
+      "source_file": "raw/charging_sessions/part-2026-04.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "0541f2251a6a42d9d268a2fd32c6d85d10a9a7597916acd29957d8e535083779",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00020899",
+      "source_file": "raw/charging_sessions/part-2025-12.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "069c98edeb7d98fd5bb30071a2c11db6fa2a52243a618e1762a231f23332fd63",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00115369",
+      "source_file": "raw/charging_sessions/part-2026-05.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    },
+    {
+      "_raw_record_sha256": "06efed52350100e789edb17b1cbc74b975550ede6267a13564b0a57ae6e3f7df",
+      "action": "DISCARD_DUPLICATE_COPY",
+      "rejection_reason": "DUPLICATE_SESSION_ID",
+      "session_id": "SES-00040100",
+      "source_file": "raw/charging_sessions/part-2026-01.csv.gz",
+      "text_error_fields": [],
+      "type_error_fields": []
+    }
+  ],
+  "limitations": [
+    "Optional missing values are preserved; no key/amount/energy imputation or unit guessing.",
+    "Business outliers are not blindly clipped or deleted; only explicit contract violations are rejected.",
+    "Encoding detection catches replacement characters/prohibited controls, not every possible mojibake string.",
+    "Only charging sessions are repaired/quarantined as a recoverable batch; invalid other-table data fails closed.",
+    "Sample limits are 8 corrected and 12 rejected rows; full rejected rows remain in Parquet."
+  ],
+  "lineage": {
+    "dataset_id": "charging_full_180d_v2",
+    "pipeline_run_id": "spark-6ed381b125034f9e95d726a74befb121",
+    "raw_identity": "manifest/shard checksums plus original field-JSON SHA256; fingerprint is not a unique physical row offset",
+    "source_layer_modified": false,
+    "source_manifest_sha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95"
+  },
+  "row_conservation": {
+    "duplicate_copies": 502,
+    "input": 5832840,
+    "passed": true,
+    "quarantined": 1415,
+    "retained": 5830923
+  },
+  "rule_version": "cleaning-rules-1.0.0",
+  "rules_sha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982",
+  "six_dimensions": {
+    "accuracy": {
+      "rate": null,
+      "reason": "No independent real-world ground truth. Synthetic reference reconciliation proves computational agreement, not factual accuracy.",
+      "status": "NOT_MEASURED"
+    },
+    "completeness": {
+      "after": {
+        "assessed": 13516071,
+        "passed": 13516071,
+        "rate": 1.0
+      },
+      "before": {
+        "assessed": 13558245,
+        "passed": 13557775,
+        "rate": 0.9999653347464956
+      },
+      "scope": "declared primary keys and required charging-session fields; optional nulls are not scored as errors"
+    },
+    "consistency": {
+      "after": {
+        "assessed": 121539,
+        "passed": 121539,
+        "rate": 1.0
+      },
+      "before": {
+        "assessed": 123456,
+        "passed": 122041,
+        "rate": 0.9885384266459305
+      },
+      "scope": "session business checks after deterministic standardization, before quarantine; one first-failure reason per row"
+    },
+    "timeliness": {
+      "after": {
+        "assessed": 3888000,
+        "passed": 3888000,
+        "rate": 1.0
+      },
+      "before": {
+        "assessed": 3888000,
+        "passed": 3888000,
+        "rate": 1.0
+      },
+      "limitation": "In-window events do not prove complete cadence or current live-device state.",
+      "period_end_exclusive": "2026-05-29T16:00:00Z",
+      "period_start": "2025-11-30T16:00:00Z",
+      "scope": "historical charger telemetry against declared batch window, not current wall-clock age"
+    },
+    "uniqueness": {
+      "after": {
+        "assessed": 5830923,
+        "passed": 5830923,
+        "rate": 1.0
+      },
+      "before": {
+        "assessed": 5832370,
+        "passed": 5831868,
+        "rate": 0.999913928643073
+      },
+      "scope": "excess copies per declared primary key, excluding missing keys; raw keys before versus retained normalized keys after"
+    },
+    "validity": {
+      "after": {
+        "assessed": 5830923,
+        "passed": 5830923,
+        "rate": 1.0
+      },
+      "before": {
+        "assessed": 5832840,
+        "passed": 5832840,
+        "rate": 1.0
+      },
+      "scope": "explicit type/lexical/encoding checks; not an exhaustive business truth test"
+    }
+  },
+  "tables": {
+    "anomaly_labels": {
+      "after": {
+        "field_profiles": {
+          "anomaly_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "label_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:25:00",
+              "min": "2025-11-30 16:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "severity": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "label_id"
+          ],
+          "distinct_key_count": 4865,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 4865,
+        "required_fields": [
+          "label_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 4865,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "anomaly_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "label_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:25:00",
+              "min": "2025-11-30 16:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "severity": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "label_id"
+          ],
+          "distinct_key_count": 4865,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 4865,
+        "required_fields": [
+          "label_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 4865,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 4865,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 4865
+      }
+    },
+    "battery_samples": {
+      "after": {
+        "field_profiles": {
+          "charge_current_a": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 305.63,
+              "min": 0.03
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_cell_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 4.1179,
+              "min": 3.29
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 51.2,
+              "min": 18.3
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "min_cell_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 4.0819,
+              "min": 3.254
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "min_temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 48.7,
+              "min": 15.8
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "pack_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 393.59,
+              "min": 314.11
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 99.984,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "session_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 1217829,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2435658,
+        "required_fields": [
+          "recorded_at",
+          "session_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 1217829,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "charge_current_a": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 305.63,
+              "min": 0.03
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_cell_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 4.1179,
+              "min": 3.29
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 51.2,
+              "min": 18.3
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "min_cell_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 4.0819,
+              "min": 3.254
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "min_temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 48.7,
+              "min": 15.8
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "pack_voltage_v": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 393.59,
+              "min": 314.11
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 99.984,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "session_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 1217829,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2435658,
+        "required_fields": [
+          "recorded_at",
+          "session_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 1217829,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 1217829,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 1217829
+      }
+    },
+    "calendar": {
+      "after": {
+        "field_profiles": {
+          "business_date": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29",
+              "min": "2025-12-01"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "demand_multiplier": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1.8157,
+              "min": 0.7232
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "is_weekend": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "scenario_event": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "city_id",
+            "business_date"
+          ],
+          "distinct_key_count": 900,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 1800,
+        "required_fields": [
+          "business_date",
+          "city_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 900,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "business_date": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29",
+              "min": "2025-12-01"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "demand_multiplier": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1.8157,
+              "min": 0.7232
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "is_weekend": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "scenario_event": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "city_id",
+            "business_date"
+          ],
+          "distinct_key_count": 900,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 1800,
+        "required_fields": [
+          "business_date",
+          "city_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 900,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 900,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 900
+      }
+    },
+    "campaigns": {
+      "after": {
+        "field_profiles": {
+          "budget_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 150000,
+              "min": 150000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "campaign_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "discount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 300
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ends_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 16:00:00",
+              "min": "2025-12-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "starts_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-04-29 16:00:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "campaign_id"
+          ],
+          "distinct_key_count": 30,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 30,
+        "required_fields": [
+          "campaign_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 30,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "budget_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 150000,
+              "min": 150000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "campaign_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "discount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 300
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ends_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 16:00:00",
+              "min": "2025-12-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "starts_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-04-29 16:00:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "campaign_id"
+          ],
+          "distinct_key_count": 30,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 30,
+        "required_fields": [
+          "campaign_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 30,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 30,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 30
+      }
+    },
+    "charger_telemetry": {
+      "after": {
+        "event_window": {
+          "first_observed_at_utc": "2025-11-30 16:00:00",
+          "last_observed_at_utc": "2026-05-29 15:55:00",
+          "missing_or_unparseable_timestamp_rows": 0,
+          "outside_batch_window_rows": 0
+        },
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8000,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 884,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8422,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "interval_seconds": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 300
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "meter_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 128327437,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "online": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "power_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 96.0,
+              "min": 0.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 2241132,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "state": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "charger_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 3888000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 7776000,
+        "required_fields": [
+          "charger_id",
+          "recorded_at"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 3888000,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "event_window": {
+          "first_observed_at_utc": "2025-11-30 16:00:00",
+          "last_observed_at_utc": "2026-05-29 15:55:00",
+          "missing_or_unparseable_timestamp_rows": 0,
+          "outside_batch_window_rows": 0
+        },
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8000,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 884,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8422,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "interval_seconds": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 300
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "meter_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 128327437,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "online": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "power_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 96.0,
+              "min": 0.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 2241132,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "state": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "charger_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 3888000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 7776000,
+        "required_fields": [
+          "charger_id",
+          "recorded_at"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 3888000,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 3888000,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 3888000
+      }
+    },
+    "chargers": {
+      "after": {
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "commissioned_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2023-12-01 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "connector_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "manufacturer": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "model": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rated_power_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 120.0,
+              "min": 7.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "charger_id"
+          ],
+          "distinct_key_count": 75,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 75,
+        "required_fields": [
+          "charger_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 75,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "commissioned_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2023-12-01 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "connector_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "manufacturer": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "model": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rated_power_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 120.0,
+              "min": 7.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "charger_id"
+          ],
+          "distinct_key_count": 75,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 75,
+        "required_fields": [
+          "charger_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 75,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 75,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 75
+      }
+    },
+    "charging_attempts": {
+      "after": {
+        "field_profiles": {
+          "attempt_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "attempted_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 36687,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "failure_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 121539,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "outcome": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "queue_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 132560,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reservation_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 150885,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 47615,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "attempt_id"
+          ],
+          "distinct_key_count": 169154,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 169154,
+        "required_fields": [
+          "attempt_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 169154,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "attempt_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "attempted_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 36687,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "failure_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 121539,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "outcome": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "queue_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 132560,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reservation_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 150885,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 47615,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "attempt_id"
+          ],
+          "distinct_key_count": 169154,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 169154,
+        "required_fields": [
+          "attempt_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 169154,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 169154,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 169154
+      }
+    },
+    "charging_sessions": {
+      "after": {
+        "field_profiles": {
+          "attempt_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "campaign_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 106493,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "discount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "electricity_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8474,
+              "min": 10
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "end_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 9.2317
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ended_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:00:00",
+              "min": "2025-11-30 16:25:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 72955,
+              "min": 125
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8003,
+              "min": 10
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 79358,
+              "min": 136
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "parking_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1840,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "service_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 2180,
+              "min": 4
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "start_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 84.9978,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "stop_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "target_mode": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "target_value": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 77573.0,
+              "min": 500.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "total_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 10647,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "unplugged_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:50:00",
+              "min": "2025-11-30 16:35:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "session_id"
+          ],
+          "distinct_key_count": 121539,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2673858,
+        "required_fields": [
+          "attempt_id",
+          "charger_id",
+          "discount_cents",
+          "electricity_fee_cents",
+          "end_soc_pct",
+          "ended_at",
+          "energy_wh",
+          "grid_cost_cents",
+          "grid_energy_wh",
+          "parking_fee_cents",
+          "service_fee_cents",
+          "session_id",
+          "start_soc_pct",
+          "started_at",
+          "station_id",
+          "status",
+          "target_mode",
+          "target_value",
+          "total_fee_cents",
+          "unplugged_at",
+          "user_id",
+          "vehicle_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 121539,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "attempt_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "campaign_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 108193,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "discount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 300,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "electricity_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8474,
+              "min": 10
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "end_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 9.2317
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ended_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:00:00",
+              "min": "2025-11-30 16:25:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 72955,
+              "min": 125
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8003,
+              "min": 10
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_energy_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 79358,
+              "min": 136
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "parking_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 1840,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "service_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 2180,
+              "min": 4
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 470,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "start_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 84.9978,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "stop_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "target_mode": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "target_value": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 77573.0,
+              "min": 500.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "total_fee_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 10647,
+              "min": -100
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "unplugged_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:50:00",
+              "min": "2025-11-30 16:35:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 434,
+          "N002": 0,
+          "N003": 0,
+          "N004": 434,
+          "N005": 0
+        },
+        "normalized_cells": 434,
+        "normalized_enum_rows": 434,
+        "normalized_rows": 434,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "session_id"
+          ],
+          "distinct_key_count": 122484,
+          "duplicate_excess_rows": 502,
+          "missing_key_rows": 470
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2716032,
+        "required_fields": [
+          "attempt_id",
+          "charger_id",
+          "discount_cents",
+          "electricity_fee_cents",
+          "end_soc_pct",
+          "ended_at",
+          "energy_wh",
+          "grid_cost_cents",
+          "grid_energy_wh",
+          "parking_fee_cents",
+          "service_fee_cents",
+          "session_id",
+          "start_soc_pct",
+          "started_at",
+          "station_id",
+          "status",
+          "target_mode",
+          "target_value",
+          "total_fee_cents",
+          "unplugged_at",
+          "user_id",
+          "vehicle_id"
+        ],
+        "required_missing_cells": 470,
+        "row_count": 123456,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 502,
+        "input": 123456,
+        "passed": true,
+        "quarantined": 1415,
+        "retained": 121539
+      }
+    },
+    "cities": {
+      "after": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "latitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 41.8057,
+              "min": 22.5431
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "longitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 123.4315,
+              "min": 114.0579
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "timezone": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "city_id"
+          ],
+          "distinct_key_count": 5,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 5,
+        "required_fields": [
+          "city_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 5,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "city_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "latitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 41.8057,
+              "min": 22.5431
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "longitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 123.4315,
+              "min": 114.0579
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "timezone": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "city_id"
+          ],
+          "distinct_key_count": 5,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 5,
+        "required_fields": [
+          "city_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 5,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 5,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 5
+      }
+    },
+    "corruption_log": {
+      "after": {
+        "field_profiles": {
+          "corruption_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "corruption_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "expected_action": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "record_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "table_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "corruption_id"
+          ],
+          "distinct_key_count": 2351,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2351,
+        "required_fields": [
+          "corruption_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 2351,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "corruption_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "corruption_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "expected_action": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "record_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "table_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "corruption_id"
+          ],
+          "distinct_key_count": 2351,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 2351,
+        "required_fields": [
+          "corruption_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 2351,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 2351,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 2351
+      }
+    },
+    "maintenance_events": {
+      "after": {
+        "field_profiles": {
+          "event_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:45:00",
+              "min": "2025-12-01 01:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "event_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "note": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ticket_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "event_id"
+          ],
+          "distinct_key_count": 1671,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 1671,
+        "required_fields": [
+          "event_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 1671,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "event_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:45:00",
+              "min": "2025-12-01 01:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "event_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "note": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ticket_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "event_id"
+          ],
+          "distinct_key_count": 1671,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 1671,
+        "required_fields": [
+          "event_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 1671,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 1671,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 1671
+      }
+    },
+    "maintenance_tickets": {
+      "after": {
+        "field_profiles": {
+          "accepted_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:40:00",
+              "min": "2025-12-01 01:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "fault_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "labor_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 29960,
+              "min": 8076
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "parts_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 49909,
+              "min": 144
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reported_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:35:00",
+              "min": "2025-12-01 01:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "restored_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 1,
+            "observed_range": {
+              "max": "2026-05-29 15:30:00",
+              "min": "2025-12-01 05:50:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "severity": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ticket_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "work_started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:45:00",
+              "min": "2025-12-01 01:15:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "ticket_id"
+          ],
+          "distinct_key_count": 418,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 418,
+        "required_fields": [
+          "ticket_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 418,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "accepted_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:40:00",
+              "min": "2025-12-01 01:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "fault_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "labor_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 29960,
+              "min": 8076
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "parts_cost_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 49909,
+              "min": 144
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reported_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:35:00",
+              "min": "2025-12-01 01:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "restored_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 1,
+            "observed_range": {
+              "max": "2026-05-29 15:30:00",
+              "min": "2025-12-01 05:50:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "severity": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ticket_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "work_started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:45:00",
+              "min": "2025-12-01 01:15:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "ticket_id"
+          ],
+          "distinct_key_count": 418,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 418,
+        "required_fields": [
+          "ticket_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 418,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 418,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 418
+      }
+    },
+    "operating_costs": {
+      "after": {
+        "field_profiles": {
+          "business_date": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29",
+              "min": "2025-12-01"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "labor_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8000,
+              "min": 8000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "network_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 600,
+              "min": 600
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rent_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 16000,
+              "min": 12000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "station_id",
+            "business_date"
+          ],
+          "distinct_key_count": 4500,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 9000,
+        "required_fields": [
+          "business_date",
+          "station_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 4500,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "business_date": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29",
+              "min": "2025-12-01"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "labor_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8000,
+              "min": 8000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "network_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 600,
+              "min": 600
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rent_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 16000,
+              "min": 12000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "station_id",
+            "business_date"
+          ],
+          "distinct_key_count": 4500,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 9000,
+        "required_fields": [
+          "business_date",
+          "station_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 4500,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 4500,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 4500
+      }
+    },
+    "payments": {
+      "after": {
+        "field_profiles": {
+          "amount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 10647,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "failure_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 120800,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "occurred_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 16:40:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "payment_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "transaction_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "payment_id"
+          ],
+          "distinct_key_count": 135130,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 135130,
+        "required_fields": [
+          "payment_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 135130,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "amount_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 10647,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "failure_reason": {
+            "blank_text_rows": 0,
+            "missing_rows": 120800,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "occurred_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 16:40:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "payment_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "transaction_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "payment_id"
+          ],
+          "distinct_key_count": 135130,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 135130,
+        "required_fields": [
+          "payment_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 135130,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 135130,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 135130
+      }
+    },
+    "queue_entries": {
+      "after": {
+        "field_profiles": {
+          "called_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 10143,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:35:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "joined_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:30:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "position_at_join": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8,
+              "min": 1
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "queue_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "resolved_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:25:00",
+              "min": "2025-11-30 16:40:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 14180,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "queue_id"
+          ],
+          "distinct_key_count": 36594,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 36594,
+        "required_fields": [
+          "queue_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 36594,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "called_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 10143,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:35:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "joined_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:30:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "position_at_join": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8,
+              "min": 1
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "queue_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "resolved_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:25:00",
+              "min": "2025-11-30 16:40:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 14180,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "queue_id"
+          ],
+          "distinct_key_count": 36594,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 36594,
+        "required_fields": [
+          "queue_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 36594,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 36594,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 36594
+      }
+    },
+    "reservations": {
+      "after": {
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "created_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "expires_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:20:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reservation_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "resolved_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:20:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 3215,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "reservation_id"
+          ],
+          "distinct_key_count": 18269,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 18269,
+        "required_fields": [
+          "reservation_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 18269,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "charger_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "created_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:10:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "expires_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:20:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "reservation_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "resolved_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 14:15:00",
+              "min": "2025-11-30 16:20:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 3215,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "status": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "reservation_id"
+          ],
+          "distinct_key_count": 18269,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 18269,
+        "required_fields": [
+          "reservation_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 18269,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 18269,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 18269
+      }
+    },
+    "reviews": {
+      "after": {
+        "field_profiles": {
+          "comment": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "created_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 17:15:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "issue_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rating": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 5,
+              "min": 1
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "review_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "review_id"
+          ],
+          "distinct_key_count": 26594,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 26594,
+        "required_fields": [
+          "review_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 26594,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "comment": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "created_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:55:00",
+              "min": "2025-11-30 17:15:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "issue_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rating": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 5,
+              "min": 1
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "review_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "session_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "review_id"
+          ],
+          "distinct_key_count": 26594,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 26594,
+        "required_fields": [
+          "review_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 26594,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 26594,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 26594
+      }
+    },
+    "stations": {
+      "after": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "latitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 41.8557,
+              "min": 22.4931
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "longitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 123.4665,
+              "min": 114.0229
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "opened_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2023-12-01 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rent_daily_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 16000,
+              "min": 12000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "site_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "transformer_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 360.0,
+              "min": 360.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "station_id"
+          ],
+          "distinct_key_count": 25,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 25,
+        "required_fields": [
+          "station_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 25,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "latitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 41.8557,
+              "min": 22.4931
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "longitude": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 123.4665,
+              "min": 114.0229
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "opened_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2023-12-01 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rent_daily_cents": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 16000,
+              "min": 12000
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "site_type": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "station_name": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "transformer_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 360.0,
+              "min": 360.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "station_id"
+          ],
+          "distinct_key_count": 25,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 25,
+        "required_fields": [
+          "station_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 25,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 25,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 25
+      }
+    },
+    "tariffs": {
+      "after": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 117,
+              "min": 54
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 105,
+              "min": 42
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "hour": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 23,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "period": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "service_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 30,
+              "min": 30
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "tariff_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "tariff_id"
+          ],
+          "distinct_key_count": 120,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 120,
+        "required_fields": [
+          "tariff_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 120,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "energy_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 117,
+              "min": 54
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "grid_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 105,
+              "min": 42
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "hour": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 23,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "period": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "service_price_cents_per_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 30,
+              "min": 30
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "tariff_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "tariff_id"
+          ],
+          "distinct_key_count": 120,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 120,
+        "required_fields": [
+          "tariff_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 120,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 120,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 120
+      }
+    },
+    "users": {
+      "after": {
+        "field_profiles": {
+          "acquisition_channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "home_city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "membership": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "registered_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2025-11-29 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "segment": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "user_id"
+          ],
+          "distinct_key_count": 6000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 6000,
+        "required_fields": [
+          "user_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 6000,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "acquisition_channel": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "home_city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "membership": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "registered_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2025-11-29 16:00:00",
+              "min": "2023-12-01 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "segment": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "user_id"
+          ],
+          "distinct_key_count": 6000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 6000,
+        "required_fields": [
+          "user_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 6000,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 6000,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 6000
+      }
+    },
+    "vehicle_energy_intervals": {
+      "after": {
+        "field_profiles": {
+          "driving_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 6246207,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "end_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 90.476,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ended_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "external_charge_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 6220000,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "interval_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "start_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 11:45:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "interval_id"
+          ],
+          "distinct_key_count": 169254,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 169254,
+        "required_fields": [
+          "interval_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 169254,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "driving_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 6246207,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "end_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 90.476,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "ended_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 13:55:00",
+              "min": "2025-11-30 16:05:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "external_charge_wh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 6220000,
+              "min": 0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "interval_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "start_soc_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "started_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 11:45:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "interval_id"
+          ],
+          "distinct_key_count": 169254,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 169254,
+        "required_fields": [
+          "interval_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 169254,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 169254,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 169254
+      }
+    },
+    "vehicles": {
+      "after": {
+        "field_profiles": {
+          "battery_capacity_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 90.0,
+              "min": 40.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_charge_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 150.0,
+              "min": 50.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_class": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "vehicle_id"
+          ],
+          "distinct_key_count": 6000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 6000,
+        "required_fields": [
+          "vehicle_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 6000,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "battery_capacity_kwh": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 90.0,
+              "min": 40.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "max_charge_kw": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 150.0,
+              "min": 50.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "user_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_class": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "vehicle_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "vehicle_id"
+          ],
+          "distinct_key_count": 6000,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 6000,
+        "required_fields": [
+          "vehicle_id"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 6000,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 6000,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 6000
+      }
+    },
+    "weather_hourly": {
+      "after": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "humidity_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rainfall_mm": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8.0,
+              "min": 0.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:00:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 35.1,
+              "min": -24.2
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "weather": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "primary_key": {
+          "columns": [
+            "city_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 21600,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 43200,
+        "required_fields": [
+          "city_id",
+          "recorded_at"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 21600,
+        "type_assessment": "retained schema plus finite-number checks; original lexical checks occur before retention",
+        "type_invalid_rows": 0
+      },
+      "before": {
+        "field_profiles": {
+          "city_id": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          },
+          "humidity_pct": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 100.0,
+              "min": 8.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "rainfall_mm": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 8.0,
+              "min": 0.0
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "recorded_at": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": "2026-05-29 15:00:00",
+              "min": "2025-11-30 16:00:00"
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "temperature_c": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "observed_range": {
+              "max": 35.1,
+              "min": -24.2
+            },
+            "type_or_encoding_invalid_rows": 0
+          },
+          "weather": {
+            "blank_text_rows": 0,
+            "missing_rows": 0,
+            "type_or_encoding_invalid_rows": 0
+          }
+        },
+        "normalization_action_rows": {
+          "N001": 0,
+          "N002": 0,
+          "N003": 0,
+          "N004": 0,
+          "N005": 0
+        },
+        "normalized_cells": 0,
+        "normalized_enum_rows": 0,
+        "normalized_rows": 0,
+        "normalized_type_invalid_rows": 0,
+        "primary_key": {
+          "columns": [
+            "city_id",
+            "recorded_at"
+          ],
+          "distinct_key_count": 21600,
+          "duplicate_excess_rows": 0,
+          "missing_key_rows": 0
+        },
+        "range_basis": "successfully parsed normalized finite/date/time values, not raw text distribution; before can include later business-rule rejects",
+        "required_cell_count": 43200,
+        "required_fields": [
+          "city_id",
+          "recorded_at"
+        ],
+        "required_missing_cells": 0,
+        "row_count": 21600,
+        "type_invalid_rows": 0
+      },
+      "row_conservation": {
+        "duplicate_copies": 0,
+        "input": 21600,
+        "passed": true,
+        "quarantined": 0,
+        "retained": 21600
+      }
+    }
+  },
+  "workflow": [
+    "PROFILE_RAW",
+    "ASSESS_SIX_DIMENSIONS",
+    "APPLY_VERSIONED_RULES",
+    "QUARANTINE_AND_DEDUP",
+    "VERIFY_CONSERVATION",
+    "REPORT"
+  ]
+}

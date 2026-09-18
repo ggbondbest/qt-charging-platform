@@ -1,0 +1,61 @@
+{
+  "dataset_id": "charging_full_180d_v2",
+  "processed_output": "data_analysis/outputs/spark_full_180d_v2_final",
+  "generator_version": "2.0.0",
+  "schema_version": "1.1.0",
+  "manifest_sha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "validation_date": "2026-09-12",
+  "result": "PASSED",
+  "scope": "Real local-file PySpark processing plus independent post-computation reference reconciliation; HDFS connectivity not tested",
+  "runtime": {
+    "python": "3.12.14",
+    "pyspark": "3.5.6",
+    "java_major": 17,
+    "spark_master": "local[2]",
+    "driver_memory": "3g",
+    "shuffle_partitions": 8
+  },
+  "raw_tables": 23,
+  "raw_rows": 5832840,
+  "all_raw_manifest_counts_verified": true,
+  "vehicle_energy_interval_rows": 169254,
+  "off_network_energy_included_in_platform_sales": false,
+  "clean_sessions": 121539,
+  "normalized_session_status_rows": 434,
+  "rejected_session_rows": 1917,
+  "invalid_session_copies_quarantined": 1415,
+  "valid_session_duplicates_removed": 502,
+  "rejected_rows_note": "Rejected output contains both illegal copies and removed duplicate copies. Status normalization does not remove rows.",
+  "rejection_reasons": {
+    "MISSING_SESSION_ID": 470,
+    "UNKNOWN_STATION_ID": 461,
+    "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+    "DUPLICATE_SESSION_ID": 502
+  },
+  "station_hourly_rows": 108000,
+  "station_daily_rows": 4500,
+  "all_summary_keys_and_fields_verified": true,
+  "missing_or_duplicate_summary_keys": 0,
+  "different_integer_or_dimension_field_values": 0,
+  "different_mean_power_kw_values": 0,
+  "mean_power_kw_absolute_tolerance": 1e-9,
+  "reference_aggregates_used_as_calculation_input": false,
+  "integration_tests": {
+    "module": "data_analysis.tests.test_spark_pipeline",
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "elapsed_seconds": 31.792,
+    "includes_schema_1_1_off_network_energy_exclusion": true
+  },
+  "timings_seconds": {
+    "full_pipeline_including_process_startup": 50.92,
+    "full_verifier_including_process_startup": 12.09,
+    "reference_comparison_inside_verifier": 4.481
+  },
+  "sizes_bytes_at_validation": {
+    "dataset_directory_files": 70429445,
+    "spark_output_directory_files_including_reports": 73878960
+  },
+  "measurement_note": "One development-machine run, not a performance guarantee. Byte sizes sum file contents, not filesystem allocated blocks. Spark output is ignored by Git and can be regenerated."
+}

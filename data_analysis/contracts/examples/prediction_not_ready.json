@@ -1,0 +1,34 @@
+{
+  "method": "POST",
+  "path": "/api/v1/predict/load",
+  "body": {
+    "datasetId": "charging_sample_7d_v2",
+    "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+    "stationId": "ST-BJ-01",
+    "modelId": "not-yet-published",
+    "referenceTime": "2025-12-02T00:00:00Z",
+    "horizonHours": 6
+  },
+  "httpStatus": 503,
+  "response": {
+    "code": "MODEL_NOT_READY",
+    "message": "模型尚未训练或发布，当前不提供预测结果",
+    "data": {
+      "implementedPrediction": false,
+      "models": [],
+      "supportedTargets": [
+        "load",
+        "availability"
+      ],
+      "status": "MODEL_NOT_READY"
+    },
+    "meta": {
+      "datasetId": "charging_sample_7d_v2",
+      "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+      "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+      "schemaVersion": "1.0.0",
+      "generatedAt": "2026-09-12T13:59:53.987019Z",
+      "requestId": "ecd109a3592443a98124090a1f9aacb2"
+    }
+  }
+}

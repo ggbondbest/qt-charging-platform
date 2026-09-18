@@ -6,7 +6,9 @@
 - [命名与代码风格](docs/design/naming_and_code_style.md)
 - [Qt 6.2.4 兼容规范](docs/development/qt_6_2_4_compatibility.md)
 
-当前第一阶段只实现 Qt 用户端、Qt PC 服务端和 SQLite 数据库。Web 大屏与机器学习模块不在当前开发范围内。
+第一阶段为 Qt 用户端、Qt PC 服务端和 SQLite 数据库；第二阶段在独立的 `data_analysis/`
+中开展模拟数据、Spark/HDFS、大屏与机器学习工作。数据接口与分工见该目录 README，
+不得为了分析数据生成而修改或覆盖一期业务数据库。
 
 当前公共模型、协议与 Schema 是候选 v1。五人确认、Ubuntu 22.04 + Qt 6.2.4 严格 CI
 和手机号登录最小闭环完成前，只允许 mock UI、数据库准备及基于候选接口的隔离开发；

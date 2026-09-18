@@ -1,0 +1,114 @@
+{
+  "reportVersion": "mysql-migration-1.0.0",
+  "verifiedOn": "2026-09-14",
+  "status": "LOCAL_MYSQL_VERIFIED",
+  "scope": "Second-phase analytics serving only; first-phase Qt/SQLite unchanged",
+  "runtime": {
+    "python": "3.12.14",
+    "mysqlServer": "8.4.11",
+    "pymysql": "1.2.0",
+    "spark": "3.5.6"
+  },
+  "tests": {
+    "mysqlSuites": {
+      "command": "RUN_MYSQL_TESTS=1 python -m unittest data_analysis.tests.test_mysql_publishing data_analysis.tests.test_mysql_api data_analysis.tests.test_mysql_verification -q",
+      "total": 38,
+      "passed": 38,
+      "skipped": 0,
+      "realMysqlTests": 22,
+      "guardAndAdapterTests": 16,
+      "checks": [
+        "fresh-schema publication, exact row counts and rollback on failure",
+        "minimum importer privileges and SELECT-only API account",
+        "reject accounts with DELETE permission even when UPDATE is denied",
+        "reject incomplete publication and unsafe database names",
+        "MySQL/SQLite HTTP response contract and aggregate equivalence",
+        "request snapshot consistency, integer precision and exact identifiers",
+        "safe errors without credentials and no silent SQLite fallback"
+      ]
+    },
+    "defaultDiscovery": {
+      "command": "python -m unittest discover -s data_analysis/tests -q",
+      "discovered": 264,
+      "passed": 201,
+      "skipped": 63,
+      "failed": 0,
+      "skipExplanation": "41 opt-in Spark tests and 22 opt-in MySQL tests; the 22 MySQL tests were run separately above. Full Spark test suites were not rerun in this local migration verification."
+    }
+  },
+  "full180DayPublication": {
+    "input": "data_analysis/datasets/analytics_full_180d_v1",
+    "source": "SIMULATED",
+    "datasetId": "charging_full_180d_v2",
+    "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+    "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+    "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+    "servingManifestSha256": "7e0e50665fa803e9e2f9150c77e93538d942ead96504aa0a9f572d4e6a783350",
+    "importedTables": {
+      "cities": 5,
+      "city_daily": 900,
+      "ml_features_hourly": 107425,
+      "station_cohorts_daily": 4401,
+      "station_hourly_metrics": 108000,
+      "station_metrics_daily": 4500,
+      "station_service_daily": 4429,
+      "station_snapshot": 25,
+      "user_activity_daily": 119371
+    },
+    "servingTableRows": 349056,
+    "validatedTargetRows": 107425,
+    "targetLabelsImported": false,
+    "singleTransactionCommitted": true,
+    "checkedApiRequests": 59,
+    "readonlyAccountVerified": true,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "logicalContentSha256": "9d114b2e7e05a87579dbe58cd048e75f6f518d649d9e54463bef06947eba3054",
+    "totals": {
+      "energy_wh": 2932585304,
+      "grid_cost_cents": 250563990,
+      "completed_sessions": 121539,
+      "paid_cents": 346152638,
+      "refund_cents": 2733012,
+      "operating_cost_cents": 101700000,
+      "maintenance_cost_cents": 18494611,
+      "net_paid_cents": 343419626
+    }
+  },
+  "freshSparkToMysqlPipeline": {
+    "input": "data_analysis/datasets/charging_sample_7d_v2",
+    "command": "python -m data_analysis.scripts.run_acceptance --input data_analysis/datasets/charging_sample_7d_v2 --output data_analysis/outputs/acceptance_mysql_20260914_run1 --driver-memory 3g",
+    "status": "LOCAL_DATA_READY",
+    "storageBackend": "mysql",
+    "newDirtyInjectionEnabled": false,
+    "dirtyDataNote": "This run cleaned the sample's existing dirty records; it did not add a new injection pass.",
+    "inputTables": 23,
+    "inputRows": 203973,
+    "cleanSessions": 4619,
+    "rejectedSessions": 86,
+    "rowsConserved": true,
+    "sourceFilesUnchanged": true,
+    "pipelineRunId": "spark-a1b5337654eb47b99fdd639cc2b08b65",
+    "publishedBatchId": "analytics-d9c7ac2ee1c74c639a815b23aa7c5063",
+    "sourceManifestSha256": "fac612b1fca3289d7bae176ceb009dfac1e037176c1e42635fef7d96be8adf29",
+    "servingManifestSha256": "614cf77b0dbd5697ae75c81ba1ecadc2bbfa5e12575d21db69fb3ebad9a01404",
+    "checkedApiRequests": 59,
+    "readonlyAccountVerified": true,
+    "sqlApiTotalsMatch": true,
+    "readOnlyDatabaseUnchanged": true,
+    "logicalContentSha256": "a81a17d6ae24068f4fb821a6bdebd8a32caed74594664ec8f8545cdec7515fbe"
+  },
+  "verificationBoundaries": {
+    "mysqlWasRealServerNotMock": true,
+    "publicApiContractChanged": false,
+    "existingRawDatasetChanged": false,
+    "existingOrUserDatabasesModified": false,
+    "defaultDeploymentUsesMysql": true,
+    "sqliteRetainedForExplicitOfflineCompatibility": true,
+    "remoteCi": "Not yet run when this local record was written; consult this PR's checks for the current result",
+    "windowsAndSchoolLinuxMysql": "NOT_VERIFIED",
+    "hdfs": "NOT_VERIFIED",
+    "realPredictionsImplemented": false,
+    "note": "This is a local verification summary, not a claim of end-to-end webpage/ML or school deployment acceptance. Temporary test credentials and database files are not committed."
+  }
+}

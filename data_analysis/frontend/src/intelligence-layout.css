@@ -1,0 +1,125 @@
+/* Prediction workspaces: content-first panels, isolated from other pages. */
+.intelligence-workspace.intelligence-section {
+  padding: 32px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: none;
+}
+.intelligence-workspace .intelligence-header { align-items: center; margin-bottom: 28px; }
+.intelligence-workspace .intelligence-header h2 { font-size: 25px; font-weight: 600; letter-spacing: -.6px; }
+.intelligence-workspace .intelligence-header p { margin-top: 9px; font-size: 13px; line-height: 1.7; }
+.intelligence-workspace .model-readiness,
+.intelligence-workspace .insights-data-label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.intelligence-workspace .model-readiness i { width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; }
+.intelligence-workspace .model-readiness.ready i { background: #2563eb; }
+.intelligence-workspace .intelligence-form { padding: 0; background: none; border-radius: 0; gap: 14px; }
+.intelligence-workspace .intelligence-form label { min-width: 0; font-size: 11px; font-weight: 500; color: #59616e; gap: 9px; }
+.intelligence-workspace .intelligence-form input,
+.intelligence-workspace .intelligence-form select { min-width: 0; height: 44px; font-size: 12px; background-color: #fff; border-color: #dce1e8; border-radius: 9px; }
+.intelligence-workspace .intelligence-form .button { min-height: 44px; white-space: nowrap; border-radius: 9px; padding-inline: 20px; }
+.intelligence-workspace .intelligence-form .primary { background: #171a20; color: #fff; border-color: #171a20; }
+.intelligence-workspace .intelligence-form .primary:hover:not(:disabled) { background: #303743; }
+.intelligence-workspace .intelligence-form .secondary { background: #f4f6fa; color: #343b47; border-color: transparent; }
+.intelligence-workspace .forecast-controls { display: grid; grid-template-columns: minmax(120px,.8fr) minmax(175px,1.7fr) minmax(125px,.8fr) minmax(190px,1.3fr) auto; }
+.intelligence-workspace .forecast-context { margin-top: 14px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+.intelligence-workspace .intelligence-output { grid-template-columns: minmax(0,1fr) 240px; gap: 30px; margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--line); }
+.intelligence-workspace .forecast-chart { min-width: 0; }
+.intelligence-workspace .forecast-chart > .chart { height: 320px; }
+.intelligence-workspace .forecast-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.intelligence-workspace .forecast-result-heading h3 { font-size: 14px; }
+.intelligence-workspace .forecast-result-heading span { color: var(--muted); font-size: 11px; }
+.intelligence-workspace .intelligence-summary { background: #f6f8fb; border-radius: 14px; padding: 24px; }
+.intelligence-workspace .intelligence-summary > small { color: #6b7280; font-size: 11px; }
+.intelligence-workspace .intelligence-summary > strong { font-size: 40px; line-height: 1.15; font-weight: 500; letter-spacing: -1.5px; color: #171a20; margin-block: 14px; font-variant-numeric: tabular-nums; }
+.intelligence-workspace .intelligence-summary strong small { font-size: 15px; font-weight: 400; color: #6b7280; letter-spacing: 0; }
+.intelligence-workspace .intelligence-summary dt { margin-top: 20px; font-size: 10px; }
+.intelligence-workspace .intelligence-summary dd { font-size: 12px; }
+.intelligence-workspace .forecast-probability { display: inline-block; color: #2563eb; font-size: 11px; margin-bottom: 3px; }
+.intelligence-workspace .intelligence-empty { min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 44px 20px; }
+.intelligence-workspace .forecast-placeholder { min-height: 325px; margin-top: 24px; background: #f8f9fc; border: 1px solid #edf0f5; border-radius: 14px; }
+.intelligence-workspace .intelligence-placeholder-icon { width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid #e5e9f1; border-radius: 14px; background: white; margin-bottom: 8px; }
+.intelligence-workspace .intelligence-placeholder-icon svg { margin: 0; color: #64748b; opacity: 1; }
+.intelligence-workspace .intelligence-empty h3 { color: #4b5563; font-size: 15px; font-weight: 500; }
+.intelligence-workspace .intelligence-empty p { font-size: 12px; line-height: 1.7; }
+.intelligence-workspace .intelligence-evidence { margin-top: 28px; border-top: 1px solid var(--line); }
+.intelligence-workspace .intelligence-evidence > summary { padding: 19px 0 0; font-size: 12px; color: #343b47; cursor: pointer; }
+.intelligence-workspace .intelligence-evidence > summary > span { color: var(--muted); font-size: 11px; margin-left: 12px; }
+.intelligence-workspace .intelligence-evidence-body { padding-top: 18px; }
+.intelligence-workspace .intelligence-evidence-body p { color: #6b7280; font-size: 12px; line-height: 1.85; margin: 0 0 12px; overflow-wrap: anywhere; }
+.intelligence-workspace .intelligence-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 1px; margin: 18px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--line); }
+.intelligence-workspace .intelligence-metrics > span { padding: 19px; background: #fafbfd; border-radius: 0; display: flex; flex-direction: column; gap: 9px; }
+.intelligence-workspace .intelligence-metrics small { color: #6b7280; font-size: 10px; }
+.intelligence-workspace .intelligence-metrics b { font-size: 23px; font-weight: 500; color: #343b47; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.intelligence-workspace .intelligence-raw-record summary { cursor: pointer; font-size: 11px; color: var(--muted); }
+.intelligence-workspace .intelligence-raw-record pre { max-height: 300px; overflow: auto; padding: 18px; font-size: 10px; background: #f6f8fb; border-radius: 10px; }
+.intelligence-workspace .intelligence-inline-error { background: #fff5f3; color: #a03a2f; font-size: 12px; line-height: 1.7; }
+.intelligence-workspace .insights-switch { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 20px; background: #f1f3f6; border-radius: 10px; }
+.intelligence-workspace .insights-switch button { border: none; color: #6b7280; padding: 10px 20px; font-size: 12px; border-radius: 7px; }
+.intelligence-workspace .insights-switch button.active { background: #fff; color: #171a20; box-shadow: 0 1px 4px #171a2010; }
+.intelligence-workspace .insights-purpose { margin-bottom: 26px; max-width: 840px; }
+.intelligence-workspace .insights-purpose p { font-size: 13px; color: #414956; line-height: 1.8; }
+.intelligence-workspace .insights-purpose > span { display: block; font-size: 11px; color: #6b7280; margin-top: 7px; }
+.intelligence-workspace .insights-query { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: end; max-width: 680px; }
+.intelligence-workspace .insights-query label.wide { min-width: 0; }
+.intelligence-workspace .insights-grid { margin-top: 30px; grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); gap: 28px; align-items: start; }
+.intelligence-workspace .insights-list-panel { min-width: 0; }
+.intelligence-workspace .insights-list-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 0 0 16px; }
+.intelligence-workspace .insights-list-heading h3 { font-size: 14px; }
+.intelligence-workspace .insights-list-heading span { font-size: 10px; color: #6b7280; }
+.intelligence-workspace .insights-table-wrap { max-height: 580px; border: 1px solid #e5e7eb; border-radius: 12px; scrollbar-width: thin; }
+.intelligence-workspace .insights-table th { background: #f7f8fa; font-size: 10px; }
+.intelligence-workspace .insights-table td,.intelligence-workspace .insights-table th { padding: 14px 16px; border-bottom: 1px solid #edf0f4; }
+.intelligence-workspace .insights-table tbody tr:last-child td { border-bottom: 0; }
+.intelligence-workspace .insights-table tr.selected td { background: #eff4ff; }
+.intelligence-workspace .insights-table tr:not(.selected):hover td { background: #f8faff; }
+.intelligence-workspace .insights-table button { color: #343b47; padding: 0; font-size: 11px; }
+.intelligence-workspace .insights-table tr.selected button { color: #2563eb; }
+.intelligence-workspace .insights-number { font-variant-numeric: tabular-nums; font-size: 11px; }
+.intelligence-workspace .insights-risk { display: inline-block; color: #64748b; background: #f0f2f5; padding: 4px 8px; border-radius: 5px; font-size: 10px; }
+.intelligence-workspace .insights-risk.high { color: #9a551f; background: #fbf2e7; }
+.intelligence-workspace .insights-list-note { margin-top: 13px; color: #6b7280; font-size: 10px; line-height: 1.7; }
+.intelligence-workspace .insights-detail { background: #f7f8fa; border-radius: 14px; padding: 25px; }
+.intelligence-workspace .insights-detail-heading > small { color: #6b7280; font-size: 10px; }
+.intelligence-workspace .insights-detail-heading h3 { margin-top: 8px; margin-bottom: 0; font-size: 16px; font-weight: 500; letter-spacing: -.2px; }
+.intelligence-workspace .insights-score { display: flex; flex-direction: column; gap: 6px; padding: 23px 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 22px; }
+.intelligence-workspace .insights-score > span,.intelligence-workspace .insights-score > small { font-size: 10px; color: #6b7280; }
+.intelligence-workspace .insights-score > strong { font-size: 42px; color: #171a20; font-weight: 500; letter-spacing: -1.6px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.intelligence-workspace .insights-detail dl { grid-template-columns: minmax(0,1fr) minmax(0,.8fr); gap: 14px 20px; font-size: 11px; margin: 0; }
+.intelligence-workspace .insights-detail dd { text-align: right; font-variant-numeric: tabular-nums; }
+.intelligence-workspace .insights-facts { border-top: 1px solid #e5e7eb; margin-top: 22px; padding-top: 18px; }
+.intelligence-workspace .insights-facts summary { cursor: pointer; font-size: 11px; font-weight: 500; }
+.intelligence-workspace .insights-facts ul { padding-left: 16px; color: #4b5563; font-size: 11px; line-height: 1.9; margin-top: 12px; }
+.intelligence-workspace .insights-facts p { font-size: 10px; color: #6b7280; line-height: 1.8; }
+.intelligence-workspace .intelligence-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1200px) {
+  .intelligence-workspace .forecast-controls { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .intelligence-workspace .forecast-controls .station-field { grid-column: span 2; }
+}
+@media (max-width: 850px) {
+  .intelligence-workspace .intelligence-output { grid-template-columns: minmax(0,1fr); gap: 20px; }
+  .intelligence-workspace .intelligence-summary dl { display: grid; grid-template-columns: 1fr 2fr; align-items: baseline; column-gap: 16px; }
+  .intelligence-workspace .intelligence-summary dt { margin: 10px 0; }
+  .intelligence-workspace .insights-grid { grid-template-columns: minmax(0,1fr); gap: 24px; }
+  .intelligence-workspace .insights-table-wrap { max-height: 360px; }
+}
+@media (max-width: 600px) {
+  .intelligence-workspace.intelligence-section { padding: 20px 16px; border-radius: 14px; }
+  .intelligence-workspace .intelligence-header { align-items: flex-start; gap: 12px; margin-bottom: 24px; }
+  .intelligence-workspace .intelligence-header h2 { font-size: 21px; }
+  .intelligence-workspace .intelligence-header p { font-size: 12px; }
+  .intelligence-workspace .forecast-controls { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px 12px; }
+  .intelligence-workspace .forecast-controls .station-field { grid-column: span 1; }
+  .intelligence-workspace .forecast-controls .reference-field,
+  .intelligence-workspace .forecast-controls > button { grid-column: 1/-1; }
+  .intelligence-workspace .forecast-chart > .chart { height: 280px; }
+  .intelligence-workspace .intelligence-evidence > summary > span { display: none; }
+  .intelligence-workspace .intelligence-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .intelligence-workspace .intelligence-metrics > span { padding: 14px; }
+  .intelligence-workspace .insights-switch { display: flex; }
+  .intelligence-workspace .insights-switch button { padding: 10px 12px; flex: 1; }
+  .intelligence-workspace .insights-query { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .intelligence-workspace .insights-query label { grid-column: 1/-1; }
+  .intelligence-workspace .insights-table td,.intelligence-workspace .insights-table th { padding: 12px 10px; }
+  .intelligence-workspace .insights-detail { padding: 20px; }
+}

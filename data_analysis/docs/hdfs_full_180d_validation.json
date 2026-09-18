@@ -1,0 +1,135 @@
+{
+  "reportVersion": "hdfs-full-validation-1.0.0",
+  "verifiedOn": "2026-09-14",
+  "status": "VERIFIED_HDFS",
+  "scope": "Real HDFS storage and single-machine Spark processing validation for the 180-day full batch; this is not a multi-node Spark computation claim.",
+  "execution": {
+    "executionCommit": "10da4cc",
+    "documentationBaseCommit": "10da4cc",
+    "repositoryBranchAtExecution": "feature/data-hdfs-full-validation",
+    "workingDirectory": "/mnt/hgfs/qt-charging-platform",
+    "operator": "bit@master"
+  },
+  "runtime": {
+    "python": "3.11.15",
+    "java": "OpenJDK 17.0.20",
+    "spark": "3.5.6",
+    "sparkMaster": "local[2]",
+    "successfulDriverMemory": "2g",
+    "hadoopDaemonVersion": "3.2.1",
+    "hadoopClientVersionObservedBySpark": "3.3.4",
+    "nameNode": "hdfs://master:9000",
+    "filesystemClass": "org.apache.hadoop.hdfs.DistributedFileSystem"
+  },
+  "dataset": {
+    "datasetId": "charging_full_180d_v2",
+    "schemaVersion": "1.1.0",
+    "source": "SIMULATED",
+    "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+    "rawUri": "hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2",
+    "processedUri": "hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02",
+    "analysisUri": "hdfs://master:9000/user/bit/charging_phase2/analysis/charging_full_180d_v2_20260914_02",
+    "exportUri": "hdfs://master:9000/user/bit/charging_phase2/export/charging_full_180d_v2_20260914_02"
+  },
+  "pipeline": {
+    "pipelineRunId": "spark-a9939dc1085e433a83bfc49219a61b13",
+    "command": "python -m data_analysis.spark_jobs.pipeline --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2 --output hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02 --master local[2] --shuffle-partitions 8 --driver-memory 2g",
+    "processedSuccessMarker": true,
+    "processedRunningMarker": false,
+    "inputTables": 23,
+    "cleanSessionRows": 121539,
+    "rejectedSessionRows": 1917,
+    "rejectionReasons": {
+      "MISSING_SESSION_ID": 470,
+      "UNKNOWN_STATION_ID": 461,
+      "INVALID_NONNEGATIVE_TOTAL_FEE_CENTS": 484,
+      "DUPLICATE_SESSION_ID": 502
+    },
+    "normalizedRows": 434,
+    "normalizedCells": 434,
+    "normalizationActionRows": {
+      "N001": 434,
+      "N002": 0,
+      "N003": 0,
+      "N004": 434,
+      "N005": 0
+    },
+    "stationHourlyRows": 108000,
+    "stationDailyRows": 4500,
+    "rawFileChecksumsVerified": true,
+    "manifestRowCountsVerified": true,
+    "referenceAggregatesUsedAsInput": false,
+    "cleaningAudit": {
+      "auditVersion": "cleaning-audit-1.0.0",
+      "ruleVersion": "cleaning-rules-1.0.0",
+      "rulesSha256": "e5702cc4a541b37d421e961d893eee8fbee2b1e82fe79a6c540066613d19f982",
+      "auditSha256": "8c386f38fb88903809d3fa3b46994e7130613a4cdd8b4a27a9e759aabad3083b",
+      "rulesFileSha256": "9cb996178f60bae106b65c2677bb7886e85b40fec8a928b55b1fa86fcc706830",
+      "rowConservationPassed": true
+    }
+  },
+  "acceptanceAnalysis": {
+    "command": "python -m data_analysis.spark_jobs.acceptance_analysis --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02 --output hdfs://master:9000/user/bit/charging_phase2/analysis/charging_full_180d_v2_20260914_02 --master local[2] --shuffle-partitions 8 --driver-memory 2g",
+    "semanticDimensions": 11,
+    "comparisons": 3,
+    "resultTables": 15
+  },
+  "export": {
+    "command": "PYSPARK_SUBMIT_ARGS='--driver-memory 2g pyspark-shell' python -m data_analysis.spark_jobs.export --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02 --output hdfs://master:9000/user/bit/charging_phase2/export/charging_full_180d_v2_20260914_02 --master local[2] --shuffle-partitions 8",
+    "successMarker": true,
+    "publishedBatchId": "analytics-57a8358bed184068b7cd61e98caa70db",
+    "tableRows": {
+      "cities": 5,
+      "station_snapshot": 25,
+      "station_hourly_metrics": 108000,
+      "station_metrics_daily": 4500,
+      "city_daily": 900,
+      "user_activity_daily": 119371,
+      "station_cohorts_daily": 4401,
+      "station_service_daily": 4429,
+      "ml_features_hourly": 107425,
+      "ml_targets_hourly": 107425
+    }
+  },
+  "hdfsVerification": {
+    "command": "python -m data_analysis.scripts.verify_hdfs --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02 --export hdfs://master:9000/user/bit/charging_phase2/export/charging_full_180d_v2_20260914_02 --report data_analysis/outputs/hdfs_full_180d_20260914_02_verification.json --master local[2]",
+    "status": "VERIFIED_HDFS",
+    "rawFileHashesVerified": true,
+    "processedParquetRows": 108000,
+    "exportVerified": true,
+    "storage": {
+      "raw": {"fileCount": 127, "directoryCount": 29, "contentBytes": 70775264},
+      "processed": {"fileCount": 92, "directoryCount": 32, "contentBytes": 73721108},
+      "export": {"fileCount": 53, "directoryCount": 23, "contentBytes": 37998255}
+    }
+  },
+  "referenceReconciliation": {
+    "command": "python -m data_analysis.spark_jobs.verify_aggregates --input hdfs://master:9000/user/bit/charging_phase2/raw/charging_full_180d_v2 --processed hdfs://master:9000/user/bit/charging_phase2/processed/charging_full_180d_v2_20260914_02 --report data_analysis/outputs/hdfs_full_180d_20260914_02_reference_verification --master local[2]",
+    "status": "PASSED",
+    "verification": "all primary keys and all summary fields compared",
+    "referenceUsedOnlyForPostComputationVerification": true,
+    "stationHourly": {
+      "rows": 108000,
+      "keyColumns": ["station_id", "recorded_at"],
+      "differentRowsPerField": 0,
+      "floatingTolerance": 1e-09
+    },
+    "stationDaily": {
+      "rows": 4500,
+      "keyColumns": ["station_id", "business_date"],
+      "differentRowsPerField": 0,
+      "floatingTolerance": 0
+    }
+  },
+  "evidence": {
+    "terminalEvidence": "Recorded during the 2026-09-14 master-session execution",
+    "localHdfsVerificationReport": "data_analysis/outputs/hdfs_full_180d_20260914_02_verification.json",
+    "localReferenceReportDirectory": "data_analysis/outputs/hdfs_full_180d_20260914_02_reference_verification",
+    "localExportDirectory": "data_analysis/outputs/hdfs_full_180d_20260914_02_export",
+    "localExportSuccessMarker": true
+  },
+  "handoff": {
+    "exportDownloadCompleted": true,
+    "nextConsumer": "Publish the downloaded completed export to a newly authorized MySQL batch, then let FastAPI and the web client read that published batch."
+  }
+}
