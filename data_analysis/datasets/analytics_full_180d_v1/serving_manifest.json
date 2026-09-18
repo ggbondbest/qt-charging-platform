@@ -1,0 +1,1509 @@
+{
+  "businessTimezone": "Asia/Shanghai",
+  "datasetId": "charging_full_180d_v2",
+  "definitions": {
+    "chargingUtilization": "CHARGING samples / all samples of complete hours; includes maintenance in denominator",
+    "cohorts": "final outcomes in this batch grouped by creation/join date; not historical as-of status",
+    "completedSessions": "charging ended; includes unpaid finished sessions",
+    "dates": "Asia/Shanghai, start inclusive and end exclusive",
+    "energy": "integer Wh",
+    "mlFeatures": "known information from 24 complete hours before reference_time; no future weather or labels",
+    "mlTargets": "separate future labels; NEVER import into serving/API database",
+    "money": "integer CNY cents",
+    "netPaid": "successful payment receipts minus refunds on transaction business date",
+    "simulation": "business records and illustrative locations are simulated; weather provenance follows raw manifest",
+    "snapshot": "latest state in batch, separate from date-filtered period metrics",
+    "timestamps": "UTC ISO8601 Z; hourly records label interval START"
+  },
+  "endDate": "2026-05-30",
+  "featureVersion": "history24-v1",
+  "generatedAt": "2026-09-13T12:02:06.302082Z",
+  "mlHistoryHours": 24,
+  "mlSplits": {
+    "end": "2026-05-29",
+    "start": "2025-12-02",
+    "trainEnd": "2026-03-30",
+    "usable": true,
+    "validationEnd": "2026-04-29"
+  },
+  "periodEndExclusive": "2026-05-29T16:00:00Z",
+  "periodStart": "2025-11-30T16:00:00Z",
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "publishedBatchId": "analytics-298aa3ee1401461fb06ea2bb96930dcf",
+  "qualityReportPath": "quality_report.json",
+  "qualityReportSha256": "9a9eb6aaed6ef4ede66535eae1415e0651e932728c5dc98f65fa293b3b1586df",
+  "schemaVersion": "1.0.0",
+  "source": "SIMULATED",
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "startDate": "2025-12-01",
+  "storageProfile": "PORTABLE_CSV_GZIP",
+  "tables": {
+    "cities": {
+      "columns": [
+        {
+          "name": "city_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_name",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "latitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "longitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "timezone",
+          "nullable": true,
+          "type": "string"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 207,
+          "path": "csv/cities/part-00000-b48c4f16-8401-4934-860e-feb657d413d4-c000.csv.gz",
+          "sha256": "6d7863b2809c0288e71689492788e6f3eb1954ca0f83091d03cf0440a10d53a9"
+        }
+      ],
+      "primaryKey": [
+        "city_id"
+      ],
+      "rows": 5
+    },
+    "city_daily": {
+      "columns": [
+        {
+          "name": "city_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "business_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "name": "station_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "energy_wh",
+          "nullable": true,
+          "type": "integer",
+          "unit": "Wh"
+        },
+        {
+          "name": "grid_cost_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "completed_sessions",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "paid_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "refund_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "operating_cost_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "maintenance_cost_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "net_paid_cents",
+          "nullable": true,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "started_sessions",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "available_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "charging_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reserved_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "occupied_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "maintenance_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "offline_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "expected_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "missing_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "observed_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "incomplete_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_charging_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "charging_utilization",
+          "nullable": true,
+          "type": "number",
+          "unit": "ratio_0_1"
+        },
+        {
+          "name": "is_complete",
+          "nullable": true,
+          "type": "boolean"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 39399,
+          "path": "csv/city_daily/part-00000-d2ff69d5-3949-4b40-b914-4b48a60b0759-c000.csv.gz",
+          "sha256": "32be37965ec5d8f8f590efa9da104b0514869c3f578f68a29ade64101204cc18"
+        }
+      ],
+      "primaryKey": [
+        "city_id",
+        "business_date"
+      ],
+      "rows": 900
+    },
+    "ml_features_hourly": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "reference_time",
+          "nullable": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "business_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "feature_version",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "history_start_at",
+          "nullable": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "history_end_at",
+          "nullable": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "history_complete",
+          "nullable": true,
+          "type": "boolean"
+        },
+        {
+          "name": "hour_of_day",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "day_of_week",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "is_weekend",
+          "nullable": true,
+          "type": "boolean"
+        },
+        {
+          "name": "is_public_holiday",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "name": "is_adjusted_workday",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "name": "capacity",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "rated_capacity_kw",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "last_available_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "lag_power_kw_h01",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h02",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h03",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h04",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h05",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h06",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h07",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h08",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h09",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h10",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h11",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h12",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h13",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h14",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h15",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h16",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h17",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h18",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h19",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h20",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h21",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h22",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h23",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "lag_power_kw_h24",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "rolling_mean_kw_3h",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "rolling_mean_kw_6h",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "rolling_mean_kw_24h",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "rolling_std_kw_24h",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "rolling_max_kw_24h",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 2059043,
+          "path": "csv/ml_features_hourly/part-00000-d355f5b9-ff1e-49a3-933b-2a150470d4e7-c000.csv.gz",
+          "sha256": "20cc5a7781c33d9c14f7af252d4b02e3cd73a7702a5da5e5c7ded1697e567c22"
+        },
+        {
+          "bytes": 2290579,
+          "path": "csv/ml_features_hourly/part-00001-d355f5b9-ff1e-49a3-933b-2a150470d4e7-c000.csv.gz",
+          "sha256": "e10cc5d4aa7b4d6c88e2d07104c37a1f5bf5b017305e2f9b73d5dd28a665cf4e"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "reference_time"
+      ],
+      "rows": 107425
+    },
+    "ml_targets_hourly": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "reference_time",
+          "nullable": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "feature_version",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "label_available_count_h01",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h02",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h03",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h04",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h05",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h06",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h07",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h08",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h09",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h10",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h11",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h12",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h13",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h14",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h15",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h16",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h17",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h18",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h19",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h20",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h21",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h22",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h23",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_available_count_h24",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "label_power_kw_h01",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h02",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h03",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h04",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h05",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h06",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h07",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h08",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h09",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h10",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h11",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h12",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h13",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h14",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h15",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h16",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h17",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h18",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h19",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h20",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h21",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h22",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h23",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "label_power_kw_h24",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "split_1h",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "split_6h",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "split_24h",
+          "nullable": false,
+          "type": "string"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 655415,
+          "path": "csv/ml_targets_hourly/part-00000-52e660dc-6e95-4fe2-86cd-67cbddc3e119-c000.csv.gz",
+          "sha256": "5de719fe163547304e56a2e2d3b66b594d7273685e017451b239a091af1debda"
+        },
+        {
+          "bytes": 645310,
+          "path": "csv/ml_targets_hourly/part-00001-52e660dc-6e95-4fe2-86cd-67cbddc3e119-c000.csv.gz",
+          "sha256": "5523c3b481da605c8a36e7e0752ba9eb1a99e810d6ba2cbc5c425b7f030afb00"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "reference_time"
+      ],
+      "rows": 107425
+    },
+    "station_cohorts_daily": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "business_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "name": "reservations_created_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reservation_confirmed_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reservation_cancelled_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reservation_expired_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reservation_other_status_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queues_joined_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_served_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_abandoned_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_call_expired_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_waiting_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_other_status_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "outcome_semantics",
+          "nullable": false,
+          "type": "string"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 32519,
+          "path": "csv/station_cohorts_daily/part-00000-e12ed228-2825-4c5b-b479-c041171e440b-c000.csv.gz",
+          "sha256": "fd6c6e42642b095795844f7a727fd50f4d6333f8bd85e57b37c4fdf1c92a49ee"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "business_date"
+      ],
+      "rows": 4401
+    },
+    "station_hourly_metrics": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "recorded_at",
+          "nullable": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "energy_wh",
+          "nullable": true,
+          "type": "integer",
+          "unit": "Wh"
+        },
+        {
+          "name": "mean_power_kw",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "available_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "charging_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "reserved_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "occupied_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "maintenance_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "offline_samples",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "sample_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "capacity",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "end_available_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "business_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "has_observation",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "name": "expected_sample_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "missing_sample_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "is_complete",
+          "nullable": false,
+          "type": "boolean"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 480388,
+          "path": "csv/station_hourly_metrics/part-00000-ab478aa3-f309-403b-9ec6-3a5a0783bfa6-c000.csv.gz",
+          "sha256": "d965708fa2f85b553dfdea5de048e8560d3d1b48ad7cf8e867019fbf3a7feded"
+        },
+        {
+          "bytes": 773239,
+          "path": "csv/station_hourly_metrics/part-00001-ab478aa3-f309-403b-9ec6-3a5a0783bfa6-c000.csv.gz",
+          "sha256": "22598c8652da7b9080d98986cb3768245ba1fbe2d115c1f898e58bc0d4e7647c"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "recorded_at"
+      ],
+      "rows": 108000
+    },
+    "station_metrics_daily": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "business_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "name": "energy_wh",
+          "nullable": false,
+          "type": "integer",
+          "unit": "Wh"
+        },
+        {
+          "name": "grid_cost_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "completed_sessions",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "paid_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "refund_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "operating_cost_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "maintenance_cost_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "net_paid_cents",
+          "nullable": false,
+          "type": "integer",
+          "unit": "CNY_cents"
+        },
+        {
+          "name": "started_sessions",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "available_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "charging_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reserved_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "occupied_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "maintenance_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "offline_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "expected_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "missing_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "observed_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "incomplete_hours",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_charging_samples",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "complete_sample_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "charging_utilization",
+          "nullable": true,
+          "type": "number",
+          "unit": "ratio_0_1"
+        },
+        {
+          "name": "is_complete",
+          "nullable": true,
+          "type": "boolean"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 155116,
+          "path": "csv/station_metrics_daily/part-00000-69f0ce6f-3482-492b-b601-91b94a3bf73e-c000.csv.gz",
+          "sha256": "691227acbecd570526e0a37e8f5c7877f7e33a3b756a36ffcd25a535c21c6999"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "business_date"
+      ],
+      "rows": 4500
+    },
+    "station_service_daily": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "business_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "name": "queues_resolved_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_wait_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "queue_wait_seconds_sum",
+          "nullable": true,
+          "type": "integer",
+          "unit": "seconds"
+        },
+        {
+          "name": "queue_sojourn_seconds_sum",
+          "nullable": true,
+          "type": "integer",
+          "unit": "seconds"
+        },
+        {
+          "name": "queue_invalid_timing_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "repairs_restored_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "repair_resolution_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "repair_resolution_seconds_sum",
+          "nullable": true,
+          "type": "integer",
+          "unit": "seconds"
+        },
+        {
+          "name": "repair_work_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "repair_work_seconds_sum",
+          "nullable": true,
+          "type": "integer",
+          "unit": "seconds"
+        },
+        {
+          "name": "repair_invalid_timing_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "rating_count",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "rating_sum",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "invalid_rating_count",
+          "nullable": true,
+          "type": "integer"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 41389,
+          "path": "csv/station_service_daily/part-00000-9869148a-1d39-4ba3-a6e4-f030a32145eb-c000.csv.gz",
+          "sha256": "30572003a65e5e08744118e0b45a8a39837c0ee5c2879593d989ca306c9fb220"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "business_date"
+      ],
+      "rows": 4429
+    },
+    "station_snapshot": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "station_name",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "city_name",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "site_type",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "latitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "longitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "city_latitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "city_longitude",
+          "nullable": true,
+          "type": "number"
+        },
+        {
+          "name": "capacity",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "rated_capacity_kw",
+          "nullable": false,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "transformer_kw",
+          "nullable": true,
+          "type": "number",
+          "unit": "kW"
+        },
+        {
+          "name": "snapshot_at",
+          "nullable": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "data_as_of",
+          "nullable": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "observed_pile_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "available_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "charging_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "reserved_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "occupied_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "maintenance_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "offline_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "unknown_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "is_current",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "name": "is_complete",
+          "nullable": false,
+          "type": "boolean"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 892,
+          "path": "csv/station_snapshot/part-00000-dd2939cd-87bb-448d-a5a9-4dd7c5666e5c-c000.csv.gz",
+          "sha256": "aecf6650622e0a49740c7a375d6c657986c3b4ad6090e6ce3e25ab49219e3365"
+        }
+      ],
+      "primaryKey": [
+        "station_id"
+      ],
+      "rows": 25
+    },
+    "user_activity_daily": {
+      "columns": [
+        {
+          "name": "station_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "city_id",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "name": "business_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "name": "user_id",
+          "nullable": false,
+          "type": "string"
+        },
+        {
+          "name": "session_count",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "name": "first_started_at",
+          "nullable": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "last_started_at",
+          "nullable": true,
+          "type": "timestamp"
+        }
+      ],
+      "files": [
+        {
+          "bytes": 582514,
+          "path": "csv/user_activity_daily/part-00000-99b983f6-36c1-4289-815d-a73c26edb27c-c000.csv.gz",
+          "sha256": "5970707cf4a0e013d24e89ea9ec9438bf85b249be93f7b9f2f651a056038574f"
+        },
+        {
+          "bytes": 578086,
+          "path": "csv/user_activity_daily/part-00001-99b983f6-36c1-4289-815d-a73c26edb27c-c000.csv.gz",
+          "sha256": "e5679c120b9c08aaea3db45bc1fdd2894770c569a3437c7bce1eacb5693bc1b3"
+        }
+      ],
+      "primaryKey": [
+        "station_id",
+        "business_date",
+        "user_id"
+      ],
+      "rows": 119371
+    }
+  }
+}

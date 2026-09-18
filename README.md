@@ -19,10 +19,23 @@ SQLite
 首阶段暂不开发 Web 大数据大屏和机器学习子系统。必须先完成用户端、管理端、数据库与
 “预约 → 充电 → 计费 → 结算”闭环。
 
+## 第二阶段：运营分析与智能找桩
+
+第二阶段在独立的 [data_analysis](data_analysis/README.md) 中开发：已提供五城市、180 天、
+23 类关联数据：有来源依据的模拟充电、带署名的气象背景、Python 生成校验与 PySpark 清洗统计；不改动一期 Qt 业务。
+现已整合 Vue 多维运营大屏、小时负荷/空闲桩预测、到站推荐、异常/流失分析和有证据的 AI运营参谋。
+演示业务使用隔离 MySQL，保留后端兼容能力，不再额外展示冗余行程页。
+**运行完整第二阶段项目请先看 [统一交付指南](data_analysis/delivery/README.md)**，统一入口为 `python -m data_analysis.delivery.cli serve`。
+功能取舍、数据边界和四分钟演示路径见 [最终交付与验收](data_analysis/docs/final_delivery.md)。
+全部运营数据和资金均为模拟；模型实际训练，不代表真实充电设备验证。
+自动 CI 保留第二阶段原 9 项检查，并增加完整模型/MySQL、Vue和Python静态检查；新参谋与高级分析纳入回归，说明见 [最终检查清单](data_analysis/docs/final_delivery.md#验证与ci覆盖)。
+第一阶段 Ubuntu/Qt 自动工作流已移除，Qt 6.2.4 兼容要求、测试代码和下面的手工验收命令仍保留。
+一期历史文档中“必须通过 Qt CI”的描述是原阶段流程，不再代表当前 PR 的自动合并检查。
+
 ## 已建立的基线
 
 - CMake + C++17 的 `charging_client`、`charging_server`、`charging_common` target。
-- Qt 6.2.4 兼容基线；Ubuntu CI 严格限定 Framework 版本为 6.2.4。
+- Qt 6.2.4 兼容基线；第一阶段手工验收仍严格限定 Framework 版本为 6.2.4。
 - 公共 User/Station/Charger/Reservation/Order 等候选模型、状态和 JSON 转换。
 - TCP 4 字节大端长度帧、JSON v1 envelope、稳定动作名与错误码。
 - SQLite schema v1：8 张表、外键、CHECK、索引、活动业务唯一约束和可重复 seed。
@@ -33,7 +46,7 @@ SQLite
   15 分钟预约过期和整数安全计费。
 - 预约、取消、开始、停止和支付的 SQLite 多表事务；重复停止/支付不会
   重复累计或扣款。
-- QtTest、数据库完整性验证、Ubuntu 22.04 / Qt 6.2.4 GitHub Actions。
+- QtTest、数据库完整性验证及保留的 Ubuntu 22.04 / Qt 6.2.4 手工验收流程。
 - 五人分工、分支、Commit、PR、Code Review、命名和 Qt 兼容规范。
 
 ## 环境基线

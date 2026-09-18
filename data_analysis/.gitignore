@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+outputs/
+spark-warehouse/
+metastore_db/
+derby.log
+artifacts/
+*.parquet
+*.crc
+# Only the validated 180-day handoff includes cleaned/quarantined Parquet.
+# Other intermediate runs and model artifacts remain ignored.
+!datasets/analytics_full_180d_v1/clean/**/*.parquet
+!datasets/analytics_full_180d_v1/rejected/**/*.parquet
+!datasets/cleaning_challenge_v1/clean/**/*.parquet
+!datasets/cleaning_challenge_v1/quarantine/**/*.parquet
+*.pkl
+*.joblib
+*.pt
+*.onnx

@@ -1,0 +1,196 @@
+{
+  "attribution": "Weather data by Open-Meteo.com; ERA5 reanalysis from ECMWF/Copernicus Climate Change Service (C3S).",
+  "business_timezone": "Asia/Shanghai",
+  "cache_bytes": 123789,
+  "cache_sha256": "9893d56fb66250cface851c23fde478a5575e1319ce85490ac94efd29c26d33b",
+  "changes_from_api": [
+    "Selected five city-center point series and four hourly variables",
+    "Converted Asia/Shanghai hourly timestamps to UTC",
+    "Renamed fields to the local six-column cache contract and compressed as CSV gzip",
+    "No synthetic values, missing-value fill, temporal interpolation or manual regional adjustments"
+  ],
+  "cities": [
+    "DL",
+    "SY",
+    "BJ",
+    "SH",
+    "SZ"
+  ],
+  "display_credit_url": "https://open-meteo.com/",
+  "documentation_url": "https://open-meteo.com/en/docs/historical-weather-api",
+  "endpoint": "https://archive-api.open-meteo.com/v1/archive",
+  "era5_dataset_doi": "https://doi.org/10.24381/cds.adbb2d47",
+  "field_semantics": {
+    "humidity_pct": "ERA5 2 m relative humidity at indicated hour, percent",
+    "rainfall_mm": "Legacy column name: API precipitation, total precipitation INCLUDING snow water-equivalent during preceding hour, not rain-only",
+    "temperature_c": "ERA5 2 m air temperature at indicated hour, degrees Celsius",
+    "weather": "Original integer WMO weather_code computed by Open-Meteo from reanalysis; not the simulator CLEAR/RAIN/SNOW enum"
+  },
+  "fields": [
+    "city_id",
+    "recorded_at",
+    "temperature_c",
+    "humidity_pct",
+    "weather",
+    "rainfall_mm"
+  ],
+  "hours_per_city": 4320,
+  "license": {
+    "api_terms_url": "https://open-meteo.com/en/terms",
+    "api_use": "Free API used for non-commercial educational content; commercial API access is subject to provider terms",
+    "name": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "provider_license_url": "https://open-meteo.com/en/licence",
+    "url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "limitations": [
+    "Reanalysis combines observations and a physical model; this is not a local station measurement, charging-site sensor or verified microclimate record.",
+    "One requested city-center point is shared as city background; returned grid coordinates may differ from requested coordinates.",
+    "Precipitation is the preceding-hour total. Summing it by its timestamp has a one-hour boundary convention, not a forward-hour rainfall measurement.",
+    "WMO weather_code is inferred from reanalysis variables and is not an independently observed weather-station label.",
+    "The cache provides weather context only; generated charging demand, regional behavior, costs and outcomes remain simulated.",
+    "Future observed/reanalysis weather must not be supplied as a known-future forecasting feature unless explicitly running an oracle evaluation.",
+    "Keep Open-Meteo attribution and a licence link with distributed data; display the provider credit link near weather values on webpages."
+  ],
+  "local_end_date_inclusive": "2026-05-29",
+  "local_start_date": "2025-12-01",
+  "model": "era5",
+  "nominal_model_grid": "ERA5 0.25 degrees (approximately 25 km); API selects/downscales a land grid point",
+  "period_end_exclusive": "2026-05-29T16:00:00Z",
+  "period_start": "2025-11-30T16:00:00Z",
+  "requests": [
+    {
+      "city_id": "DL",
+      "request_parameters": {
+        "end_date": "2026-05-29",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code",
+        "latitude": 38.914,
+        "longitude": 121.6147,
+        "models": "era5",
+        "precipitation_unit": "mm",
+        "start_date": "2025-12-01",
+        "temperature_unit": "celsius",
+        "timeformat": "iso8601",
+        "timezone": "Asia/Shanghai"
+      },
+      "request_url": "https://archive-api.open-meteo.com/v1/archive?latitude=38.914&longitude=121.6147&start_date=2025-12-01&end_date=2026-05-29&hourly=temperature_2m%2Crelative_humidity_2m%2Cprecipitation%2Cweather_code&models=era5&timezone=Asia%2FShanghai&temperature_unit=celsius&precipitation_unit=mm&timeformat=iso8601",
+      "response_bytes": 145666,
+      "response_sha256": "0e4faa1b07b26cd0133c3d5ec481a100df64dab4a5785a8adc20e6460bfca6b8",
+      "returned_elevation_m": 26.0,
+      "returned_grid_latitude": 39.0,
+      "returned_grid_longitude": 121.75,
+      "returned_timezone": "Asia/Shanghai",
+      "row_count": 4320,
+      "utc_offset_seconds": 28800
+    },
+    {
+      "city_id": "SY",
+      "request_parameters": {
+        "end_date": "2026-05-29",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code",
+        "latitude": 41.8057,
+        "longitude": 123.4315,
+        "models": "era5",
+        "precipitation_unit": "mm",
+        "start_date": "2025-12-01",
+        "temperature_unit": "celsius",
+        "timeformat": "iso8601",
+        "timezone": "Asia/Shanghai"
+      },
+      "request_url": "https://archive-api.open-meteo.com/v1/archive?latitude=41.8057&longitude=123.4315&start_date=2025-12-01&end_date=2026-05-29&hourly=temperature_2m%2Crelative_humidity_2m%2Cprecipitation%2Cweather_code&models=era5&timezone=Asia%2FShanghai&temperature_unit=celsius&precipitation_unit=mm&timeformat=iso8601",
+      "response_bytes": 147448,
+      "response_sha256": "2bd3c32594e2394a400e1143a41ce7834581c3c1de798fa903c7e81de46b791c",
+      "returned_elevation_m": 50.0,
+      "returned_grid_latitude": 41.75,
+      "returned_grid_longitude": 123.5,
+      "returned_timezone": "Asia/Shanghai",
+      "row_count": 4320,
+      "utc_offset_seconds": 28800
+    },
+    {
+      "city_id": "BJ",
+      "request_parameters": {
+        "end_date": "2026-05-29",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code",
+        "latitude": 39.9042,
+        "longitude": 116.4074,
+        "models": "era5",
+        "precipitation_unit": "mm",
+        "start_date": "2025-12-01",
+        "temperature_unit": "celsius",
+        "timeformat": "iso8601",
+        "timezone": "Asia/Shanghai"
+      },
+      "request_url": "https://archive-api.open-meteo.com/v1/archive?latitude=39.9042&longitude=116.4074&start_date=2025-12-01&end_date=2026-05-29&hourly=temperature_2m%2Crelative_humidity_2m%2Cprecipitation%2Cweather_code&models=era5&timezone=Asia%2FShanghai&temperature_unit=celsius&precipitation_unit=mm&timeformat=iso8601",
+      "response_bytes": 146318,
+      "response_sha256": "161103aaaee66b509560d6b9b30fedfd76008dc1e89855ad42ab7903a7df6451",
+      "returned_elevation_m": 47.0,
+      "returned_grid_latitude": 40.0,
+      "returned_grid_longitude": 116.5,
+      "returned_timezone": "Asia/Shanghai",
+      "row_count": 4320,
+      "utc_offset_seconds": 28800
+    },
+    {
+      "city_id": "SH",
+      "request_parameters": {
+        "end_date": "2026-05-29",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code",
+        "latitude": 31.2304,
+        "longitude": 121.4737,
+        "models": "era5",
+        "precipitation_unit": "mm",
+        "start_date": "2025-12-01",
+        "temperature_unit": "celsius",
+        "timeformat": "iso8601",
+        "timezone": "Asia/Shanghai"
+      },
+      "request_url": "https://archive-api.open-meteo.com/v1/archive?latitude=31.2304&longitude=121.4737&start_date=2025-12-01&end_date=2026-05-29&hourly=temperature_2m%2Crelative_humidity_2m%2Cprecipitation%2Cweather_code&models=era5&timezone=Asia%2FShanghai&temperature_unit=celsius&precipitation_unit=mm&timeformat=iso8601",
+      "response_bytes": 146211,
+      "response_sha256": "aec3604ffd1a7656b220e97a53fc56e25339c1f08e37c875544b174211c1cb29",
+      "returned_elevation_m": 5.0,
+      "returned_grid_latitude": 31.25,
+      "returned_grid_longitude": 121.5,
+      "returned_timezone": "Asia/Shanghai",
+      "row_count": 4320,
+      "utc_offset_seconds": 28800
+    },
+    {
+      "city_id": "SZ",
+      "request_parameters": {
+        "end_date": "2026-05-29",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code",
+        "latitude": 22.5431,
+        "longitude": 114.0579,
+        "models": "era5",
+        "precipitation_unit": "mm",
+        "start_date": "2025-12-01",
+        "temperature_unit": "celsius",
+        "timeformat": "iso8601",
+        "timezone": "Asia/Shanghai"
+      },
+      "request_url": "https://archive-api.open-meteo.com/v1/archive?latitude=22.5431&longitude=114.0579&start_date=2025-12-01&end_date=2026-05-29&hourly=temperature_2m%2Crelative_humidity_2m%2Cprecipitation%2Cweather_code&models=era5&timezone=Asia%2FShanghai&temperature_unit=celsius&precipitation_unit=mm&timeformat=iso8601",
+      "response_bytes": 147984,
+      "response_sha256": "26e73106ee5e47b5b95642bc7d1794e3b6bd528f5b2e74aa9e5ffa9f2afc1421",
+      "returned_elevation_m": 13.0,
+      "returned_grid_latitude": 22.5,
+      "returned_grid_longitude": 114.0,
+      "returned_timezone": "Asia/Shanghai",
+      "row_count": 4320,
+      "utc_offset_seconds": 28800
+    }
+  ],
+  "retrieved_at": "2026-09-12T09:34:56Z",
+  "row_count": 21600,
+  "schema_version": "1.0.0",
+  "source": "OPEN_METEO_ERA5_REANALYSIS",
+  "timestamp_timezone": "UTC",
+  "uncompressed_csv_bytes": 818061,
+  "uncompressed_csv_sha256": "36912bd9c3cabed6be283e3d29f8f9430608b8e9f36564ace7b30f7f1bb11954",
+  "validation": {
+    "complete_hourly_grid": true,
+    "duplicate_city_hours": 0,
+    "hours_converted_from_local_to_utc": true,
+    "null_values": 0,
+    "synthetic_fill_rows": 0
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "method": "GET",
+  "path": "/api/v1/datasets",
+  "query": {},
+  "httpStatus": 200,
+  "response": {
+    "code": "OK",
+    "message": "成功",
+    "data": {
+      "items": [
+        {
+          "datasetId": "charging_sample_7d_v2",
+          "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+          "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+          "schemaVersion": "1.0.0",
+          "source": "SIMULATED",
+          "startDate": "2025-12-01",
+          "endDate": "2025-12-08",
+          "generatedAt": "2026-09-12T13:59:53.987019Z",
+          "sourceManifestSha256": "fac612b1fca3289d7bae176ceb009dfac1e037176c1e42635fef7d96be8adf29"
+        }
+      ],
+      "page": 1,
+      "pageSize": 20,
+      "total": 1,
+      "hasNext": false
+    },
+    "meta": {
+      "requestId": "6ba0456a183a42d8b82c8f952158bff2",
+      "datasetId": "charging_sample_7d_v2",
+      "schemaVersion": "1.0.0",
+      "pipelineRunId": "spark-109d317486184d24bd58d8d8bb3c7c79",
+      "publishedBatchId": "analytics-76be09e255f94277aa2613b4edc8d8f3",
+      "generatedAt": "2026-09-12T13:59:53.987019Z"
+    }
+  }
+}

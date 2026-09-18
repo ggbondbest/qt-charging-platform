@@ -1,0 +1,1664 @@
+{
+  "analyses": {
+    "comparison_city_hour": {
+      "dimensions": [
+        "city",
+        "start_hour"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 7511,
+          "path": "csv/comparison_city_hour/part-00000-77c5e8ec-ca11-4d4b-ac85-4a8156fdce6a-c000.csv.gz",
+          "sha256": "0ab4bfc92059a8d0f57d474a183a326b4adebe149ad52cf92d2ace24006d1ddd"
+        }
+      ],
+      "groupColumns": [
+        "city_id",
+        "city_name",
+        "start_hour"
+      ],
+      "rows": 120,
+      "schema": [
+        {
+          "name": "city_id",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "city_name",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "start_hour",
+          "nullable": true,
+          "sparkType": "int"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "comparison_city_payment_channel": {
+      "dimensions": [
+        "city",
+        "payment_channel"
+      ],
+      "fact": "payments",
+      "files": [
+        {
+          "bytes": 1044,
+          "path": "csv/comparison_city_payment_channel/part-00000-496f84e7-af5d-495b-bdaf-806107d37abb-c000.csv.gz",
+          "sha256": "dd4628700f5da745776f73dbb1c6179680f3b9940958a4d8102775d9b74e7f90"
+        }
+      ],
+      "groupColumns": [
+        "city_id",
+        "city_name",
+        "payment_channel"
+      ],
+      "rows": 20,
+      "schema": [
+        {
+          "name": "city_id",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "city_name",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "payment_channel",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "all payment/refund records, including invalid/failed records",
+          "name": "transaction_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "transaction_type=PAYMENT; refund requests excluded",
+          "name": "payment_request_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful PAYMENT with valid amount and timestamp",
+          "name": "successful_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful REFUND with valid amount and timestamp",
+          "name": "successful_refund_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "PAYMENT status=FAILED; not unique failed orders",
+          "name": "failed_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "unknown kind/status, missing/negative amount or missing occurred_at",
+          "name": "invalid_transaction_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "sum of valid successful PAYMENT amounts by transaction time",
+          "name": "paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sum of valid successful REFUND amounts by transaction time",
+          "name": "refund_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "paid_cents-refund_cents; may be negative, not profit",
+          "name": "net_paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "successful_payment_count / payment_request_count; null if no payment requests",
+          "name": "payment_success_rate",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "fraction 0..1"
+        }
+      ],
+      "timeSemantics": "Shanghai occurred_at transaction date: only successful PAYMENT/REFUND amounts enter cash receipts/refunds; failed requests are counted separately"
+    },
+    "comparison_site_day_type": {
+      "dimensions": [
+        "site_type",
+        "day_type"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 889,
+          "path": "csv/comparison_site_day_type/part-00000-5f61e685-7b22-4ed3-be46-130774242824-c000.csv.gz",
+          "sha256": "eb40523e7b6e267fbcf2b3b7a376ff5c26c42729b4141681f8f2e078068d9cec"
+        }
+      ],
+      "groupColumns": [
+        "site_type",
+        "day_type"
+      ],
+      "rows": 10,
+      "schema": [
+        {
+          "name": "site_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "day_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "payments_by_business_date": {
+      "dimensions": [
+        "business_date"
+      ],
+      "fact": "payments",
+      "files": [
+        {
+          "bytes": 5711,
+          "path": "csv/payments_by_business_date/part-00000-f2cff067-d567-4ba7-9391-4d683d020c28-c000.csv.gz",
+          "sha256": "a75b45541ea3ab5376e937c11ecf9ec24c2951823926904dbb2828b7841f9fd5"
+        }
+      ],
+      "groupColumns": [
+        "business_date"
+      ],
+      "rows": 180,
+      "schema": [
+        {
+          "name": "business_date",
+          "nullable": true,
+          "sparkType": "date"
+        },
+        {
+          "definition": "all payment/refund records, including invalid/failed records",
+          "name": "transaction_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "transaction_type=PAYMENT; refund requests excluded",
+          "name": "payment_request_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful PAYMENT with valid amount and timestamp",
+          "name": "successful_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful REFUND with valid amount and timestamp",
+          "name": "successful_refund_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "PAYMENT status=FAILED; not unique failed orders",
+          "name": "failed_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "unknown kind/status, missing/negative amount or missing occurred_at",
+          "name": "invalid_transaction_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "sum of valid successful PAYMENT amounts by transaction time",
+          "name": "paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sum of valid successful REFUND amounts by transaction time",
+          "name": "refund_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "paid_cents-refund_cents; may be negative, not profit",
+          "name": "net_paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "successful_payment_count / payment_request_count; null if no payment requests",
+          "name": "payment_success_rate",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "fraction 0..1"
+        }
+      ],
+      "timeSemantics": "Shanghai occurred_at transaction date: only successful PAYMENT/REFUND amounts enter cash receipts/refunds; failed requests are counted separately"
+    },
+    "payments_by_channel": {
+      "dimensions": [
+        "payment_channel"
+      ],
+      "fact": "payments",
+      "files": [
+        {
+          "bytes": 340,
+          "path": "csv/payments_by_channel/part-00000-0c463792-5955-4569-9c16-502284bf22a8-c000.csv.gz",
+          "sha256": "f125230d3d2ef766aed7b624d33e6bcc3e5a83876aabf5cb3392d61cb7baf3ff"
+        }
+      ],
+      "groupColumns": [
+        "payment_channel"
+      ],
+      "rows": 4,
+      "schema": [
+        {
+          "name": "payment_channel",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "all payment/refund records, including invalid/failed records",
+          "name": "transaction_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "transaction_type=PAYMENT; refund requests excluded",
+          "name": "payment_request_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful PAYMENT with valid amount and timestamp",
+          "name": "successful_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "successful REFUND with valid amount and timestamp",
+          "name": "successful_refund_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "PAYMENT status=FAILED; not unique failed orders",
+          "name": "failed_payment_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "requests"
+        },
+        {
+          "definition": "unknown kind/status, missing/negative amount or missing occurred_at",
+          "name": "invalid_transaction_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "records"
+        },
+        {
+          "definition": "sum of valid successful PAYMENT amounts by transaction time",
+          "name": "paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sum of valid successful REFUND amounts by transaction time",
+          "name": "refund_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "paid_cents-refund_cents; may be negative, not profit",
+          "name": "net_paid_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "successful_payment_count / payment_request_count; null if no payment requests",
+          "name": "payment_success_rate",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "fraction 0..1"
+        }
+      ],
+      "timeSemantics": "Shanghai occurred_at transaction date: only successful PAYMENT/REFUND amounts enter cash receipts/refunds; failed requests are counted separately"
+    },
+    "repairs_by_fault_type": {
+      "dimensions": [
+        "fault_type"
+      ],
+      "fact": "repairs",
+      "files": [
+        {
+          "bytes": 262,
+          "path": "csv/repairs_by_fault_type/part-00000-b7c7f80c-d8ea-4bc9-a37f-33ead2d4cacd-c000.csv.gz",
+          "sha256": "a05e49e9020c7db4f579d2904a030b51e39902f1c8e556d217f750a602c0f4b5"
+        }
+      ],
+      "groupColumns": [
+        "fault_type"
+      ],
+      "rows": 4,
+      "schema": [
+        {
+          "name": "fault_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "all tickets in this reported-at cohort",
+          "name": "reported_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "tickets"
+        },
+        {
+          "definition": "non-null restored_at >= reported_at",
+          "name": "restored_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "tickets"
+        },
+        {
+          "definition": "restored_at is null at batch completion",
+          "name": "unresolved_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "tickets"
+        },
+        {
+          "definition": "missing reported_at or restored_at earlier than reported_at",
+          "name": "invalid_timing_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "tickets"
+        },
+        {
+          "definition": "sum reported_at→restored_at over restored_count",
+          "name": "resolution_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "labor+parts of restored tickets in reported cohort; not a daily cashflow series",
+          "name": "repair_cost_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "resolution_seconds_sum / restored_count; null if no restored tickets",
+          "name": "mean_resolution_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/ticket"
+        }
+      ],
+      "timeSemantics": "reported_at cohort with final outcomes observed in the completed batch; repair duration/cost include only valid restored tickets, not historical as-of status"
+    },
+    "sessions_by_business_date": {
+      "dimensions": [
+        "business_date"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 10572,
+          "path": "csv/sessions_by_business_date/part-00000-c0715aaa-5b83-4879-a5d9-d7850b822de3-c000.csv.gz",
+          "sha256": "3571496a204adbc1f5efe25e848ec89bad0789caaa659486db9d9b862a17aaef"
+        }
+      ],
+      "groupColumns": [
+        "business_date"
+      ],
+      "rows": 180,
+      "schema": [
+        {
+          "name": "business_date",
+          "nullable": true,
+          "sparkType": "date"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_city": {
+      "dimensions": [
+        "city"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 553,
+          "path": "csv/sessions_by_city/part-00000-b24cbc4a-ea1f-4c4b-91ae-6eac8fc9a5e9-c000.csv.gz",
+          "sha256": "eefbb9e59be70413dd0c73aae55c8c45df4a00684ad83156f89aaf7c407dd2da"
+        }
+      ],
+      "groupColumns": [
+        "city_id",
+        "city_name"
+      ],
+      "rows": 5,
+      "schema": [
+        {
+          "name": "city_id",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "name": "city_name",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_connector_type": {
+      "dimensions": [
+        "connector_type"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 291,
+          "path": "csv/sessions_by_connector_type/part-00000-c8bb40b8-97d0-47e8-9020-f3bc21d757b4-c000.csv.gz",
+          "sha256": "5821a6297996687b1195c0fe29641b75bda2a077cedc81d7594089b903ac38af"
+        }
+      ],
+      "groupColumns": [
+        "connector_type"
+      ],
+      "rows": 2,
+      "schema": [
+        {
+          "name": "connector_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_day_type": {
+      "dimensions": [
+        "day_type"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 301,
+          "path": "csv/sessions_by_day_type/part-00000-13eb9ac3-5bc2-4fc7-8d42-fe6f887151a5-c000.csv.gz",
+          "sha256": "50318536498369c57b9ad1d88e3bdfb1579ef653ab082bdfec0f966fc0294088"
+        }
+      ],
+      "groupColumns": [
+        "day_type"
+      ],
+      "rows": 2,
+      "schema": [
+        {
+          "name": "day_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_site_type": {
+      "dimensions": [
+        "site_type"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 530,
+          "path": "csv/sessions_by_site_type/part-00000-ffa65b3a-3975-42c8-97c2-c11f2f8d1ded-c000.csv.gz",
+          "sha256": "29ca6a04f4756b4759928b94cfb5b7956f6d61cc502bebcdd70a5f2bf405b1be"
+        }
+      ],
+      "groupColumns": [
+        "site_type"
+      ],
+      "rows": 5,
+      "schema": [
+        {
+          "name": "site_type",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_start_hour": {
+      "dimensions": [
+        "start_hour"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 1669,
+          "path": "csv/sessions_by_start_hour/part-00000-11efd261-5b85-4cbc-9347-770886da441a-c000.csv.gz",
+          "sha256": "4600530bb3511fc3369b6ccc7d56ea26e7a6856c250413bcb5d61fb9f9c24965"
+        }
+      ],
+      "groupColumns": [
+        "start_hour"
+      ],
+      "rows": 24,
+      "schema": [
+        {
+          "name": "start_hour",
+          "nullable": true,
+          "sparkType": "int"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_station": {
+      "dimensions": [
+        "station"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 2045,
+          "path": "csv/sessions_by_station/part-00000-43791a1d-1e34-4cbf-9316-d52a6ef62264-c000.csv.gz",
+          "sha256": "a2e2d28ca55aeaa3b2f482179ef37dc29f16e8c0c72aa5e81c31a41ada669674"
+        }
+      ],
+      "groupColumns": [
+        "station_id",
+        "station_name"
+      ],
+      "rows": 25,
+      "schema": [
+        {
+          "name": "station_id",
+          "nullable": true,
+          "sparkType": "string"
+        },
+        {
+          "name": "station_name",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_user_segment": {
+      "dimensions": [
+        "user_segment"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 454,
+          "path": "csv/sessions_by_user_segment/part-00000-9134150c-11e5-4f79-a48f-e730939a04cf-c000.csv.gz",
+          "sha256": "6161443b82f275aebd95a502254ed7dffa00b0187169893e2dcdaf7a32aa968a"
+        }
+      ],
+      "groupColumns": [
+        "user_segment"
+      ],
+      "rows": 4,
+      "schema": [
+        {
+          "name": "user_segment",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    },
+    "sessions_by_vehicle_class": {
+      "dimensions": [
+        "vehicle_class"
+      ],
+      "fact": "sessions",
+      "files": [
+        {
+          "bytes": 458,
+          "path": "csv/sessions_by_vehicle_class/part-00000-68b3defd-e9b6-4c28-87ae-cc9ea0352eff-c000.csv.gz",
+          "sha256": "e66df295848b3e60331b8c213598e21492a4e32ee2c97b9540ae7d49064a9f4b"
+        }
+      ],
+      "groupColumns": [
+        "vehicle_class"
+      ],
+      "rows": 4,
+      "schema": [
+        {
+          "name": "vehicle_class",
+          "nullable": false,
+          "sparkType": "string"
+        },
+        {
+          "definition": "number of clean sessions in this group",
+          "name": "session_count",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "COUNT DISTINCT user_id within this group; do not sum across overlapping groups",
+          "name": "distinct_users",
+          "nullable": false,
+          "sparkType": "bigint",
+          "unit": "users"
+        },
+        {
+          "definition": "sum of whole-session delivered energy",
+          "name": "energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of whole-session grid energy",
+          "name": "grid_energy_wh",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "Wh"
+        },
+        {
+          "definition": "sum of session total_fee_cents; bills are NOT cash receipts",
+          "name": "billed_cents",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "CNY cents"
+        },
+        {
+          "definition": "sessions with nonnegative ended_at-started_at",
+          "name": "active_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over active_duration_count",
+          "name": "active_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "sessions with nonnegative unplugged_at-started_at",
+          "name": "connected_duration_count",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "sessions"
+        },
+        {
+          "definition": "sum over connected_duration_count; connection includes occupied parking",
+          "name": "connected_seconds_sum",
+          "nullable": true,
+          "sparkType": "bigint",
+          "unit": "seconds"
+        },
+        {
+          "definition": "energy_wh / session_count",
+          "name": "mean_energy_wh",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "Wh/session"
+        },
+        {
+          "definition": "active_seconds_sum / active_duration_count; empty denominator is null",
+          "name": "mean_active_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        },
+        {
+          "definition": "connected_seconds_sum / connected_duration_count; empty denominator is null",
+          "name": "mean_connected_seconds",
+          "nullable": true,
+          "sparkType": "double",
+          "unit": "seconds/session"
+        }
+      ],
+      "timeSemantics": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+    }
+  },
+  "analysisVersion": "1.0.0",
+  "businessTimezone": "Asia/Shanghai",
+  "comparisonCount": 3,
+  "datasetId": "charging_full_180d_v2",
+  "dimensionDefinitions": {
+    "business_date": [
+      "business_date"
+    ],
+    "city": [
+      "city_id",
+      "city_name"
+    ],
+    "connector_type": [
+      "connector_type"
+    ],
+    "day_type": [
+      "day_type"
+    ],
+    "fault_type": [
+      "fault_type"
+    ],
+    "payment_channel": [
+      "payment_channel"
+    ],
+    "site_type": [
+      "site_type"
+    ],
+    "start_hour": [
+      "start_hour"
+    ],
+    "station": [
+      "station_id",
+      "station_name"
+    ],
+    "user_segment": [
+      "user_segment"
+    ],
+    "vehicle_class": [
+      "vehicle_class"
+    ]
+  },
+  "engine": "PySpark",
+  "generatedAt": "2026-09-13T12:01:41.786282Z",
+  "note": "SIMULATED acceptance statistics; session-cohort bills are not cash revenue; no training or causal claims",
+  "pipelineRunId": "spark-6ed381b125034f9e95d726a74befb121",
+  "previewLimit": 12,
+  "referenceAggregatesUsedAsInput": false,
+  "semanticDimensionCount": 11,
+  "source": "SIMULATED",
+  "sourceManifestSha256": "1f03e37c644ec928f8de0511b614b316bcc35632056891173d2377b2733ccb95",
+  "sparkVersion": "3.5.6",
+  "timeSemantics": {
+    "day_type": "MON_FRI versus SAT_SUN using literal weekdays; public holidays and adjusted working days are NOT reclassified",
+    "payments": "Shanghai occurred_at transaction date: only successful PAYMENT/REFUND amounts enter cash receipts/refunds; failed requests are counted separately",
+    "repairs": "reported_at cohort with final outcomes observed in the completed batch; repair duration/cost include only valid restored tickets, not historical as-of status",
+    "sessions": "Shanghai started_at date/hour cohort: whole-session energy, bill and duration are attributed to its START, not interval-day energy or payment receipts"
+  }
+}
