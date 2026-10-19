@@ -12,7 +12,7 @@ class Settings:
     model_dir: Path = ROOT / "outputs" / "chargepilot"
     load_dir: Path = ROOT / "outputs" / "ml_load"
     mysql: dict = field(default_factory=dict)
-    admin_token: str = ""
+    admin_token: str = ""  # Legacy constructor compatibility; simulation console no longer uses a token.
     tencent_key: str = ""
     tencent_secret: str = ""
     allowed_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
@@ -26,18 +26,16 @@ class Settings:
         password = os.getenv("CHARGEPILOT_MYSQL_PASSWORD", "")
         if not user or not password:
             raise ValueError("Set CHARGEPILOT_MYSQL_USER and CHARGEPILOT_MYSQL_PASSWORD; no default credentials")
-        token = os.getenv("CHARGEPILOT_ADMIN_TOKEN", "")
-        if token and len(token) < 16:
-            raise ValueError("CHARGEPILOT_ADMIN_TOKEN must contain at least 16 characters")
         return cls(
             model_dir=Path(os.getenv("CHARGEPILOT_MODEL_DIR", str(ROOT / "outputs" / "chargepilot"))),
             load_dir=Path(os.getenv("CHARGEPILOT_LOAD_DIR", str(ROOT / "outputs" / "ml_load"))),
             mysql={"host": os.getenv("CHARGEPILOT_MYSQL_HOST", "127.0.0.1"),
                    "port": int(os.getenv("CHARGEPILOT_MYSQL_PORT", "3306")),
                    "user": user, "password": password, "database": database},
-            admin_token=token,
-            tencent_key=os.getenv("TENCENT_MAP_API_KEY", ""),
-            tencent_secret=os.getenv("TENCENT_MAP_SECRET_KEY", ""),
+            # The shared map configuration belongs to the native client.
+            # Explicit legacy server environment settings remain opt-in only.
+            tencent_key=os.getenv("TENCENT_MAP_API_KEY", "").strip(),
+            tencent_secret=os.getenv("TENCENT_MAP_SECRET_KEY", "").strip(),
             allowed_origins=tuple(filter(None, os.getenv("CHARGEPILOT_CORS_ORIGINS",
                 "http://localhost:5173,http://127.0.0.1:5173").split(","))),
         )

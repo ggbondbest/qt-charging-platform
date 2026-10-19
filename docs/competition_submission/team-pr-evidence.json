@@ -1,0 +1,267 @@
+[
+  {
+    "name": "牛俊凯",
+    "login": "ggbondbest",
+    "deliveredContent": [
+      "队长；协议与后端架构、核心交易事务、客户端与管理端联调；第二阶段模拟数据/Spark/MySQL/API、模型与Vue统一交付和AI参谋；本次参赛整合与工程验收。",
+      "整合PR包含队友原始贡献；本清单说明承担的接口、后端和集成工作，不将合并内容全部归为队长个人创作。"
+    ],
+    "mergedPRs": [
+      {
+        "number": 6,
+        "title": "feat(charging): implement transactional charging workflow",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/6",
+        "deliveredContent": "充电启动/停止/支付事务闭环"
+      },
+      {
+        "number": 20,
+        "title": "feat(protocol): 冻结用户端八个接口契约与公共请求校验",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/20",
+        "deliveredContent": "冻结用户接口契约和公共输入校验"
+      },
+      {
+        "number": 22,
+        "title": "feat(server): 服务端 TCP 与 SQLite 工作线程隔离",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/22",
+        "deliveredContent": "TCP与SQLite工作线程隔离"
+      },
+      {
+        "number": 26,
+        "title": "feat: 完成管理端 Service、真实认证与异步通道",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/26",
+        "deliveredContent": "管理端Service、真实认证和异步通道"
+      },
+      {
+        "number": 46,
+        "title": "feat(client): 交付 QML 真实 TCP 全流程与统一数据联调",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/46",
+        "deliveredContent": "QML真实TCP全流程联调"
+      },
+      {
+        "number": 55,
+        "title": "feat: 虚拟排队自动叫号、报障维修追踪与目标充电",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/55",
+        "deliveredContent": "虚拟排队、维修追踪、目标充电"
+      },
+      {
+        "number": 61,
+        "title": "feat(analysis): 第二阶段 23 类仿真数据、行为校准与 Spark 清洗基础",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/61",
+        "deliveredContent": "23类仿真数据、行为校准和Spark清洗基础"
+      },
+      {
+        "number": 65,
+        "title": "feat(analysis): 第二阶段查询库迁移至 MySQL",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/65",
+        "deliveredContent": "统计查询库迁移至MySQL"
+      },
+      {
+        "number": 73,
+        "title": "feat: 统一运营大屏、预测模型与智能找桩交付项目",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/73",
+        "deliveredContent": "整合队友负荷/空闲/前端成果，统一运营大屏和智能找桩"
+      },
+      {
+        "number": 80,
+        "title": "feat(delivery): 最终集成多维分析、现有预测与 AI 运营参谋",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/80",
+        "deliveredContent": "最终集成多维分析、预测和AI参谋，保留PR79作者提交"
+      },
+      {
+        "number": 82,
+        "title": "feat(advisor): 完善统计入库、分析能力与稳定 RAG 对话",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/82",
+        "deliveredContent": "统计入库与RAG稳定性、证据引用"
+      }
+    ]
+  },
+  {
+    "name": "韩旭彤",
+    "login": "HanaShirosaki09",
+    "deliveredContent": [
+      "客户端充电/钱包/订单/个人中心与QML迁移、壳路由和动态交互；机器学习负荷预测、站点偏好排序；AI运营参谋原始模块。",
+      "AI运营参谋原实现由队长在已合并PR #80中保留作者提交整合；#80的PR作者为ggbondbest，不将集成PR误列为本成员独立提交。"
+    ],
+    "mergedPRs": [
+      {
+        "number": 5,
+        "title": "feat(client): add wallet, order history, charging and settlement UI",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/5",
+        "deliveredContent": "钱包、订单、充电与结算六页面及服务Mock"
+      },
+      {
+        "number": 16,
+        "title": "feat(client): integrate member-3 pages into HomeShell with stack routing, recharge/settlement fixes, mobile default size",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/16",
+        "deliveredContent": "HomeShell栈路由整合、充值/结算闭环"
+      },
+      {
+        "number": 33,
+        "title": "feat(client): QML UI stack, motion tokens with pull-to-refresh, mock …",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/33",
+        "deliveredContent": "QML UI栈、运动反馈及下拉刷新"
+      },
+      {
+        "number": 56,
+        "title": "Feat/points settlement earn",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/56",
+        "deliveredContent": "支付后积分获得展示"
+      },
+      {
+        "number": 66,
+        "title": "feat(ml): load forecasting line — per-horizon GBDT h01/h06/h24 (v0.4)",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/66",
+        "deliveredContent": "负荷预测全链路、按时距模型、时间切分/泄漏审计/留出评测"
+      },
+      {
+        "number": 67,
+        "title": "feat(ml): 站点推荐线 learning-to-rank(gbdt-rank-incity-v1)",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/67",
+        "deliveredContent": "同城五站pointwise学习排序，严格point-in-time特征与离线评测"
+      }
+    ]
+  },
+  {
+    "name": "罗夕",
+    "login": "worldcarrot1",
+    "deliveredContent": [
+      "客户端找站、站点详情、预约、导航和腾讯地图、设置/收藏/消息；会员经验/任务/商城；空闲电桩预测及可验证研究探索。",
+      "已交付模型为PR #70空闲桩预测；关闭的设备健康、变压器/选址研究分支不计入本清单的运行功能。"
+    ],
+    "mergedPRs": [
+      {
+        "number": 9,
+        "title": "feat(client): add global nav shell and station search page",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/9",
+        "deliveredContent": "导航壳及站点搜索"
+      },
+      {
+        "number": 12,
+        "title": "feat(client): 充电桩预约交互与预约记录页面（任务 #17）",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/12",
+        "deliveredContent": "预约交互和记录"
+      },
+      {
+        "number": 24,
+        "title": "feat(client): 腾讯地图全链路接入与可视化迭代（9.4–9.5 概述）（导航功能尚未完善）",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/24",
+        "deliveredContent": "腾讯地图定位/地图/导航链路"
+      },
+      {
+        "number": 36,
+        "title": "Feature/client qml station",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/36",
+        "deliveredContent": "station域QML迁移"
+      },
+      {
+        "number": 49,
+        "title": "feat(client/qml): station 域六组批量指令全量落地——车辆闸撤除/漏斗顶栏/地图真链路/电价区间/八维标签",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/49",
+        "deliveredContent": "站点筛选、地图链路和预约交互完善"
+      },
+      {
+        "number": 53,
+        "title": "feat(qml): 我的页经验等级系统 + 每日任务（青铜→黑金五档，客户端 ProgressService）",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/53",
+        "deliveredContent": "客户端经验等级、每日任务"
+      },
+      {
+        "number": 54,
+        "title": "feat(qml): 会员中心批——等级独立大卡 + 每日任务并入等级页 + 积分商城",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/54",
+        "deliveredContent": "会员中心和积分商城"
+      },
+      {
+        "number": 70,
+        "title": "feat(ml): 空闲桩可用性预测线（B 线基础交付，绑 analytics-298aa3ee…）",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/70",
+        "deliveredContent": "未来小时末空闲桩数分布、层级先验、校准与契约测试"
+      }
+    ]
+  },
+  {
+    "name": "田丽秀",
+    "login": "ntoprevd",
+    "deliveredContent": [
+      "Qt原生管理端页面与服务契约接入、实时监测和异常详情；Linux/HDFS/Spark、MySQL与统一服务部署验证和可复核验收记录。",
+      "实际验证为Spark local[2]读写真实HDFS，未宣称多节点Spark计算；HDFS验证批次与统一网页/模型发布批次分别记录。"
+    ],
+    "mergedPRs": [
+      {
+        "number": 14,
+        "title": "ui(server): add PC admin mock UI shell and management pages",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/14",
+        "deliveredContent": "管理端登录壳、Dashboard及四管理页初版"
+      },
+      {
+        "number": 28,
+        "title": "feat(server): complete PC admin UI and service integration",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/28",
+        "deliveredContent": "接异步AdminRequestGateway，真实查询/分页/状态反馈/受契约支持写操作"
+      },
+      {
+        "number": 42,
+        "title": "feat(admin): finalize contract-aligned management UI",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/42",
+        "deliveredContent": "管理列表、详情、分页和自动刷新收口"
+      },
+      {
+        "number": 57,
+        "title": "feat(admin): 补齐电桩实时监测、异常恢复与订单费用详情",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/57",
+        "deliveredContent": "实时充电监测、异常恢复、订单费用明细"
+      },
+      {
+        "number": 68,
+        "title": "docs(data-analysis): record HDFS sample validation",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/68",
+        "deliveredContent": "7日样例HDFS清洗/导出/核对真实验证"
+      },
+      {
+        "number": 71,
+        "title": "docs(data-analysis): record full HDFS validation",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/71",
+        "deliveredContent": "180日真实HDFS验证，独立聚合对账零差异"
+      },
+      {
+        "number": 75,
+        "title": "docs: record Linux HDFS and integrated validation",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/75",
+        "deliveredContent": "Linux MySQL只读账号、四模型训练和统一网页实际部署验收"
+      }
+    ]
+  },
+  {
+    "name": "赵妍",
+    "login": "Diana366",
+    "deliveredContent": [
+      "SQLite数据库查询/索引/备份恢复与跨端一致性验证；Vue可视化运营大屏初稿及模型接口预留。"
+    ],
+    "mergedPRs": [
+      {
+        "number": 19,
+        "title": "feat(database): 新增管理查询、统计及数据库备份恢复功能",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/19",
+        "deliveredContent": "站点/电桩/用户/订单管理查询、充值幂等、日志、Dashboard统计、SQLite备份恢复"
+      },
+      {
+        "number": 31,
+        "title": "perf(database): 完善管理查询索引与契约测试",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/31",
+        "deliveredContent": "管理索引、EXPLAIN校验、稳定分页、LIKE通配符转义、DTO一致性测试"
+      },
+      {
+        "number": 35,
+        "title": "test(database): 验证客户端与管理端数据一致性",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/35",
+        "deliveredContent": "客户端充电支付后订单/余额/电桩与管理Repository一致性端到端测试"
+      },
+      {
+        "number": 72,
+        "title": "feat(frontend): 新增充能智析可视化大屏初稿",
+        "url": "https://github.com/ggbondbest/qt-charging-platform/pull/72",
+        "deliveredContent": "Vue3+Vite+ECharts大屏、地图/排行/设备状态、主题和智能分析接口预留"
+      }
+    ]
+  }
+]

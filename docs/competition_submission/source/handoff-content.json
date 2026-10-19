@@ -1,0 +1,437 @@
+[
+  {
+    "file": "03_部署文档.docx",
+    "title": "充能智析｜部署文档",
+    "pages": [
+      [
+        {
+          "type": "title",
+          "text": "部署文档"
+        },
+        {
+          "type": "subtitle",
+          "text": "充能智析 电动汽车充电平台与智能运营系统"
+        },
+        {
+          "type": "p",
+          "text": "2026“仓颉杯”综合系统赛道 · 三带一对（队） · 2026-10-19"
+        },
+        {
+          "type": "h1",
+          "text": "1. 评审包适用环境"
+        },
+        {
+          "type": "p",
+          "text": "本次交付为 macOS 15 或更新版本、Apple Silicon（M 系列芯片）的本地评审包。源码采用 Qt 跨平台开发，但本次二进制不能直接用于 Windows、Linux 或 Intel Mac；这些系统需要使用对应平台的 Qt 和工具链重新构建、部署并验收。"
+        },
+        {
+          "type": "p",
+          "text": "包内包含 Qt 客户端与管理端、Qt/QML/WebEngine 运行库、Python CPU 运行环境、MySQL、Vue 生产静态文件、已准备的历史统计与策略演示库、模型工件，以及已填写的 services.local.json。日常运行无需另装 Node.js、Python、Qt 或 MySQL。"
+        },
+        {
+          "type": "h1",
+          "text": "2. 解压与启动"
+        },
+        {
+          "type": "bullet",
+          "text": "将“04_可运行程序包”中的程序压缩包完整解压到本机可写目录。不要在压缩包预览中直接运行，不要拆开 .app 内部目录。建议保留至少 8 GB 可用空间，内存建议 8 GB 以上；这是演示建议，不是压力测试结论。"
+        },
+        {
+          "type": "bullet",
+          "text": "双击“充能智析.app”。终端排错入口为同目录的“启动评审.command”。启动器会依次准备独立演示数据，打开管理端，启动本地分析服务，再打开用户客户端。首次需复制数据库，请等待启动完成。"
+        },
+        {
+          "type": "bullet",
+          "text": "应用使用本机临时空闲端口，网页由 Qt 自动嵌入。无需单独运行 Node、网页脚本或 MySQL，也无需手动填写网页地址。"
+        },
+        {
+          "type": "bullet",
+          "text": "本包为本地临时签名构建，未做 Apple 公证。若系统阻止打开，请在确认来源后，使用“系统设置 → 隐私与安全性 → 仍要打开”；不要关闭全局安全检查。"
+        },
+        {
+          "type": "h1",
+          "text": "3. 演示账户"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "角色",
+            "登录方式"
+          ],
+          "rows": [
+            [
+              "管理端",
+              "用户名 admin，演示密码 123456。"
+            ],
+            [
+              "用户客户端",
+              "演示手机号 13800138000，按页面流程登录；可注册新的演示手机号。演示用户初始余额为 100 元，新注册用户初始余额为 0。"
+            ]
+          ],
+          "widths": [
+            3,
+            14
+          ]
+        },
+        {
+          "type": "p",
+          "text": "全部充电、支付和充值为软件模拟，不会控制真实充电桩或发生真实扣款。"
+        }
+      ],
+      [
+        {
+          "type": "h1",
+          "text": "4. 建议验收流程"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "步骤",
+            "观察结果"
+          ],
+          "rows": [
+            [
+              "用户业务",
+              "找站 → 查看详情/地图 → 预约 → 开始充电 → 停止 → 模拟支付。"
+            ],
+            [
+              "运营中心：当前模拟业务",
+              "支付后等待下一次轮询，核对新增订单、已付金额、电量与设备状态；源数据为同一 Qt SQLite。"
+            ],
+            [
+              "原生管理页",
+              "查看电桩、电站、用户、订单、充值、日志和排队维修，检查筛选、详情与左下角管理员退出。"
+            ],
+            [
+              "运营中心：历史分析",
+              "切换到独立 180 天模拟批次，查看运营统计、负荷与空闲概率预测、异常与流失风险。"
+            ],
+            [
+              "策略实验和 AI 参谋",
+              "观察独立回放实验与推荐解释；AI 参谋可依据历史上下文回答，外部模型需要网络和有效额度。"
+            ],
+            [
+              "大屏与退出",
+              "进入大屏，Esc 返回；退出管理端后本启动器关闭客户端与自有 API/MySQL。"
+            ]
+          ],
+          "widths": [
+            4,
+            13
+          ]
+        },
+        {
+          "type": "p",
+          "text": "当前业务、历史统计、策略回放使用不同数据与时钟，页面已分别标识。新增 Qt 订单不会改变历史 180 天统计；实验推荐也不会自动在 Qt 创建预约。"
+        },
+        {
+          "type": "h1",
+          "text": "5. 数据位置与重复运行"
+        },
+        {
+          "type": "p",
+          "text": "程序在 ~/Library/Application Support/ChargingPlatformReview/<实例标识>/ 保存运行数据。实例标识由应用位置生成，目录中包含 business.sqlite3、mysql、服务配置及独立偏好设置。首次从包内演示种子复制；再次从同一位置启动会保留本次演示业务。"
+        },
+        {
+          "type": "p",
+          "text": "移动应用到新路径会使用新的实例目录。需要全新演示时，先完整退出程序，再备份并移走相应实例目录；不要操作自己的其他充电业务数据库。包内种子与模型不需要重新训练。"
+        },
+        {
+          "type": "p",
+          "text": "同一实例只允许一个启动器持有数据目录锁。完整退出后再启动；不要在运行时复制、编辑或删除 MySQL 数据文件。"
+        }
+      ],
+      [
+        {
+          "type": "h1",
+          "text": "6. 常见问题"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "现象",
+            "处理"
+          ],
+          "rows": [
+            [
+              "无法启动或提示系统不支持",
+              "确认 Apple Silicon 与 macOS 15+，完整重新解压；Windows/Intel Mac 不能使用此二进制。"
+            ],
+            [
+              "首次启动较慢",
+              "等待演示数据复制及模型加载；确认磁盘空间和目录可写。可从启动评审.command 查看脱敏状态。"
+            ],
+            [
+              "地图空白/路线失败",
+              "检查网络、腾讯 Key 产品权限和白名单；WebService 与 JavaScript Key 可分别填写，启用签名时还需 SK。"
+            ],
+            [
+              "AI 参谋在线不可用",
+              "核对 ai.baseUrl、model 与 apiKey，检查余额、模型授权和网络；保存配置后完全退出并重启。"
+            ],
+            [
+              "历史模块未就绪",
+              "确认解压完整及包内模型、MySQL 种子存在；勿改写内部目录。仅 Qt 当前模式不具备完整历史能力。"
+            ],
+            [
+              "提示已运行",
+              "使用已打开窗口；先退出当前启动器再启动同一包。"
+            ]
+          ],
+          "widths": [
+            4.4,
+            12.6
+          ]
+        },
+        {
+          "type": "h1",
+          "text": "7. 源码部署与复现入口"
+        },
+        {
+          "type": "p",
+          "text": "仓库：https://github.com/ggbondbest/qt-charging-platform。提交版本与 PR 地址见“06_源码入口”。源码快速配置见 docs/services_configuration.md，Qt 构建见根 README，托管服务见 docs/competition_integration.md，历史训练与发布见 data_analysis/delivery/README.md。"
+        },
+        {
+          "type": "p",
+          "text": "源码方式先安装对应 Qt 与 Python 依赖，再执行 npm ci / npm run build 生成静态网页，使用 CMake 构建 Qt。完整历史模式还需按指南准备 MySQL 两库和四类模型；仅复制配置文件不会创建这些运行数据。评审包已完成此准备。"
+        },
+        {
+          "type": "h1",
+          "text": "8. 发布与分发边界"
+        },
+        {
+          "type": "p",
+          "text": "评审包按团队要求携带可用的私人 API 配置，限交评审使用；公开 PR 仅提供空白模板、加载逻辑和打包脚本。不要将本包、真实 services.local.json 或运行数据库上传公开仓库。包中第三方组件许可证见 .app/Contents/Resources/ThirdPartyLicenses 及对应运行库目录，资源与授权细节见随附资源说明。"
+        },
+        {
+          "type": "p",
+          "text": "本次已在本机完成源码与打包验证；目标评审电脑仍应按第 4 节走一遍演示。Windows/Linux 构建和真实硬件接入不属于本次已验证交付。"
+        }
+      ]
+    ]
+  },
+  {
+    "file": "04_环境配置说明.docx",
+    "title": "充能智析｜环境配置说明",
+    "pages": [
+      [
+        {
+          "type": "title",
+          "text": "环境配置说明"
+        },
+        {
+          "type": "subtitle",
+          "text": "统一配置、运行依赖与数据职责"
+        },
+        {
+          "type": "p",
+          "text": "适用：macOS Apple Silicon 评审包及源码部署 · 2026-10-19"
+        },
+        {
+          "type": "h1",
+          "text": "1. 配置一次，两端分别读取"
+        },
+        {
+          "type": "p",
+          "text": "统一文件为 config/services.local.json。客户端只读取 tencentMap，用于腾讯地图展示、地址定位与路线；服务端只读取 ai，用于在线运营参谋。服务端默认不使用客户端地图 Key。地图配置不需要 Node 或 Python 启动脚本，客户端 C++ 原生读取。"
+        },
+        {
+          "type": "p",
+          "text": "评审包已携带用户填写的完整文件。其位置为：充能智析.app/Contents/Resources/project/config/services.local.json。Finder 中右键应用 → 显示包内容，可查看该路径。不要公开展示文件全文。修改包内文件会改变本地签名完整性；交付方更新配置后应重新打包签名。"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "字段",
+            "说明"
+          ],
+          "rows": [
+            [
+              "version",
+              "当前必须为数字 1。"
+            ],
+            [
+              "ai.enabled",
+              "\"auto\"：填 Key 后启用；false：明确关闭在线 AI。"
+            ],
+            [
+              "ai.apiKey",
+              "外部模型服务 Key，仅后端使用。"
+            ],
+            [
+              "ai.baseUrl / model / providerLabel",
+              "兼容 Chat Completions 的 HTTPS API 根地址、账户可用模型、展示名称。baseUrl 不含末尾 /chat/completions。"
+            ],
+            [
+              "tencentMap.webServiceKey",
+              "腾讯 WebService Key，供地址和路线查询。"
+            ],
+            [
+              "tencentMap.jsKey",
+              "可选地图 JavaScript Key，留空时复用 WebService Key；需具备相应产品权限。"
+            ],
+            [
+              "tencentMap.secretKey",
+              "仅启用 SN 签名校验时填写对应 SK。"
+            ]
+          ],
+          "widths": [
+            5.8,
+            11.2
+          ]
+        },
+        {
+          "type": "p",
+          "text": "JSON 使用英文双引号，不能含注释或末尾多余逗号。修改后完整重启管理端及其托管服务、客户端；无需重建网页。公开示例 config/services.example.json 中真实密钥为空。"
+        }
+      ],
+      [
+        {
+          "type": "h1",
+          "text": "2. 源码启动的配置优先级"
+        },
+        {
+          "type": "p",
+          "text": "客户端默认从二进制目录及其上级寻找 config/services.local.json，随后查找编译时记录的源码根目录；支持 Qt Creator 外置构建目录。Python 服务默认按仓库根目录寻找同名文件。二者都可通过 CHARGING_SERVICES_CONFIG 显式指定路径；路径错误不会静默回退。"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "范围",
+            "覆盖规则"
+          ],
+          "rows": [
+            [
+              "AI",
+              "同名进程环境变量 → 统一文件 ai → 原 AI 专用 .env.local；显式空值可能关闭对应配置。"
+            ],
+            [
+              "WebService / SK",
+              "非空 TENCENT_MAP_API_KEY / TENCENT_MAP_SECRET_KEY → 旧 CHARGING_TENCENT_MAP_KEY / SECRET → 文件字段。"
+            ],
+            [
+              "JavaScript Key",
+              "TENCENT_MAP_JS_KEY → 文件 jsKey → 最终 WebService Key。仅 JS Key 不会启用 WebService 请求。"
+            ],
+            [
+              "评审包",
+              "启动器主动清理外部开发环境变量，固定使用包内配置与独立本机服务，避免误连原有数据库。"
+            ]
+          ],
+          "widths": [
+            4.2,
+            12.8
+          ]
+        },
+        {
+          "type": "h1",
+          "text": "3. 运行依赖与网络"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "组件",
+            "本次评审包 / 源码要求"
+          ],
+          "rows": [
+            [
+              "系统与架构",
+              "macOS 15+、arm64；在 macOS 15.6 本机验证。"
+            ],
+            [
+              "Qt",
+              "包内 Qt 6.12.0，含 QML、Widgets、WebEngine、Charts、SQLite 驱动；源码基线 Qt 6.2.4 已单独验证。"
+            ],
+            [
+              "Python 与机器学习",
+              "包内 Python 3.12 CPU 环境；FastAPI、scikit-learn 1.7.2、joblib 1.5.2 等依赖随包。无 GPU 需求。"
+            ],
+            [
+              "数据库",
+              "Qt 当前业务 SQLite；独立 MySQL 8.4 历史库与策略库。包内携带已准备演示种子。"
+            ],
+            [
+              "前端",
+              "Vue 3 / TypeScript / ECharts 生产文件随包；Node 仅开发构建需要，建议源码开发使用 Node 24。"
+            ],
+            [
+              "网络",
+              "本机 TCP/HTTP/MySQL 绑定回环地址，端口自动选择；在线 AI、腾讯地图及历史底图需要外网。"
+            ]
+          ],
+          "widths": [
+            4.2,
+            12.8
+          ]
+        },
+        {
+          "type": "p",
+          "text": "Spark/HDFS 属于历史数据离线生成与验证链路，不是评审包日常运行依赖。断网时本地业务、已发布历史统计和本地模型可运行；在线回答与互联网地图可能不可用。"
+        }
+      ],
+      [
+        {
+          "type": "h1",
+          "text": "4. 数据与模型配置的边界"
+        },
+        {
+          "type": "p",
+          "text": "统一 AI/地图配置与数据库连接配置各司其职。源码完整模式使用私有 runtime/dashboard-service.json 指向 Python、环境变量文件和已存在的 MySQL 数据目录；管理端托管服务只检查与启动，不自动建库、发布历史数据或训练。评审包启动器已为独立演示数据生成这部分配置。"
+        },
+        {
+          "type": "table",
+          "headers": [
+            "数据源",
+            "含义"
+          ],
+          "rows": [
+            [
+              "Qt SQLite",
+              "当前模拟业务唯一权威。Vue 只读一致快照，业务写入仍经 Qt 服务处理。"
+            ],
+            [
+              "历史 MySQL + CPU 模型",
+              "180 天模拟数据的已发布批次，负荷/空闲/风险/到站模型仅对该数据口径适用。"
+            ],
+            [
+              "ChargePilot 独立库",
+              "策略回放、推荐和模拟控制台；不会创建 Qt 预约或控制真实设备。"
+            ]
+          ],
+          "widths": [
+            4.6,
+            12.4
+          ]
+        },
+        {
+          "type": "h1",
+          "text": "5. 密钥与验证说明"
+        },
+        {
+          "type": "p",
+          "text": "真实 services.local.json 被 Git 忽略，公开分支仅有空白模板。打包工具仅在显式 --include-private-config 时复制本地配置；评审包按用户要求启用了此选项。配置不编入 Vue 静态文件，AI Key 和腾讯 SK 不返回网页；客户端地图 JavaScript Key 按地图产品机制用于地图请求。"
+        },
+        {
+          "type": "p",
+          "text": "本轮自动验收使用临时无 Key 配置，验证本地数据、模型与进程生命周期；不会用自动测试消耗线上模型额度。项目负责人已确认实际 AI 参谋与地图配置在本机可用。此确认不代表所有评审网络、地域、账户额度及 Key 白名单永久有效。"
+        },
+        {
+          "type": "p",
+          "text": "检查在线 AI 能力可在运行服务的 /api/v1/intelligence/advisor 查看 onlineAvailable，接口不返回 Key。该状态仅说明配置能力，不证明在线请求成功；实际问答、地址和路线功能仍需在演示设备验证。"
+        },
+        {
+          "type": "h1",
+          "text": "6. 版本与依赖记录"
+        },
+        {
+          "type": "p",
+          "text": "精确源码版本见“06_源码入口”，运行包组件与平台见 package-manifest.json；包内保留 Python wheel 元数据、Qt/Chromium/MySQL 等许可证。requirements、package-lock.json 与 CMake 配置随仓库保存，详细验证记录见 docs/competition_validation.md。"
+        },
+        {
+          "type": "p",
+          "text": "本次没有构建或验收 Windows/Linux/Intel Mac 安装包；Qt 跨平台能力指源码和框架支持，不能将本次 macOS 程序直接复制到其它系统运行。"
+        }
+      ]
+    ]
+  }
+]

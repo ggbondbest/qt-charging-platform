@@ -1,0 +1,6 @@
+# Qt SQLite + Vue runtime only (Python 3.11/3.12); no MySQL, training, or GPU dependencies.
+# Same HTTP stack as requirements-api.txt. For TestClient/tests install requirements-api.txt.
+fastapi==0.141.1
+starlette==1.6.0
+pydantic==2.13.5
+uvicorn==0.52.4

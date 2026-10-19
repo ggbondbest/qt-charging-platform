@@ -20,6 +20,9 @@ Testing/
 .qt/
 
 # Runtime data and logs
+/runtime/
+__pycache__/
+*.py[cod]
 *.db
 *.db-*
 *.sqlite
@@ -32,6 +35,7 @@ Testing/
 !.env.example
 config/config.ini
 config/*.local.ini
+config/*.local.json
 *.pem
 *.key
 
@@ -42,3 +46,10 @@ Thumbs.db
 .vscode/
 *~
 *.swp
+
+# Private review bundles may include configured credentials
+/packages/
+/dist/
+*.app/
+*.dmg
+*.zip

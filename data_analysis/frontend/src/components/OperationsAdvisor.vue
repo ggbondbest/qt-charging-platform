@@ -195,6 +195,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
       <span class="advisor-mode-label"><i aria-hidden="true"/>{{ mode === 'online' ? '在线辅助' : '本地证据问答' }}</span>
     </div>
     <div v-else class="advisor-greeting"><p>运营参谋</p><span>{{ capabilities?.onlineAvailable ? '结合当前统计和知识来源，与你一起分析。' : '在线模型尚未配置，当前可查询本地统计。' }}</span></div>
+    <p class="advisor-source-boundary">来源：已发布历史聚合、模型报告与知识库。参谋未读取 Qt 当前订单；回答不构成当前设备安全诊断。</p>
 
     <div v-if="capabilities" class="advisor-examples" aria-label="运营问题示例">
       <button v-for="item in capabilities.supportedQuestions.slice(0, 4)" :key="item.id" type="button" @click="question = item.question"><Icon name="arrow" :size="15"/><span>{{ item.label }}</span></button>
@@ -281,6 +282,7 @@ onBeforeUnmount(() => { alive = false; sequence++; setupSequence++; controller?.
 </template>
 
 <style scoped>
+.advisor-source-boundary { color:#758195; background:#f7f9fc; padding:10px 12px; border-radius:8px; font-size:11px; line-height:1.7; margin-bottom:18px; }
 .advisor-workspace { max-width: 1080px; margin-inline: auto; }
 .advisor-heading { display: flex; justify-content: space-between; gap: 24px; }
 .advisor-eyebrow { color: #8b929e; font-size: 10px; letter-spacing: 1.9px; margin-bottom: 11px; }

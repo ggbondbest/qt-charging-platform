@@ -10,6 +10,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QUuid>
 
 namespace charging::server {
@@ -798,74 +799,85 @@ DatabaseMaintenanceResult DatabaseMaintenance::restore(const QString& backupPath
     if (destinationPath.trimmed().isEmpty()) {
         return failure(QStringLiteral("Restore destination must not be empty"));
     }
-
-    // Strict path: the backup already carries the current schema. Otherwise it
-    // may be an older supported version (user_version 1..4). Migrate a
-    // temporary copy by applying
-    // schema.sql — the original backup file is never modified — and only then
-    // validate and restore the migrated copy.
-    QString sourcePath = QFileInfo(backupPath).absoluteFilePath();
-    const DatabaseMaintenanceResult currentValidation = validate(sourcePath);
-    QString migratedPath;
-    if (!currentValidation.ok) {
-        const DatabaseMaintenanceResult legacyShape =
-            validateMigratableRestoreSource(sourcePath);
-        if (!legacyShape.ok) {
-            return legacyShape;
-        }
-        migratedPath = QStringLiteral("%1.migrate-%2")
-                           .arg(sourcePath, QUuid::createUuid().toString(QUuid::WithoutBraces));
-        if (!QFile::copy(sourcePath, migratedPath)) {
-            return failure(QStringLiteral("Unable to copy backup for migration: %1")
-                               .arg(migratedPath));
-        }
-        QString migrationError;
-        {
-            DatabaseConnection migration;
-            if (migration.open(migratedPath, false, &migrationError)) {
-                migration.close();  // last connection checkpoints and drops WAL sidecars
-            }
-        }
-        if (!migrationError.isEmpty()) {
-            QFile::remove(migratedPath);
-            return failure(QStringLiteral("Unable to migrate legacy backup: %1")
-                               .arg(migrationError));
-        }
-        const DatabaseMaintenanceResult migratedValidation = validate(migratedPath);
-        if (!migratedValidation.ok) {
-            QFile::remove(migratedPath);
-            return failure(QStringLiteral("Legacy backup did not become a valid database "
-                                          "after migration: %1")
-                               .arg(migratedValidation.errorMessage));
-        }
-        sourcePath = migratedPath;
-    }
-
     const QString destination = QFileInfo(destinationPath).absoluteFilePath();
-    auto cleanupMigratedCopy = [&migratedPath]() {
-        if (!migratedPath.isEmpty()) {
-            QFile::remove(migratedPath);
-            QFile::remove(migratedPath + QStringLiteral("-wal"));
-            QFile::remove(migratedPath + QStringLiteral("-shm"));
-        }
-    };
     if (isOpenDatabasePath(destination)) {
-        cleanupMigratedCopy();
         return failure(QStringLiteral("Close the destination database before restoring it"));
     }
     QString errorMessage;
     if (!rejectExistingSidecars(destination, &errorMessage)) {
-        cleanupMigratedCopy();
-        return failure(errorMessage);
-    }
-    if (!ensureParentDirectory(destination, &errorMessage)) {
-        cleanupMigratedCopy();
         return failure(errorMessage);
     }
 
-    const DatabaseMaintenanceResult copied = copyAtomically(sourcePath, destination);
-    cleanupMigratedCopy();
-    return copied;
+    const QString sourcePath = QFileInfo(backupPath).absoluteFilePath();
+    if (!QFileInfo(sourcePath).isFile() || QFileInfo(sourcePath).size() == 0) {
+        return failure(QStringLiteral("Database backup does not exist or is empty: %1").arg(sourcePath));
+    }
+    // A raw file copy can omit committed WAL rows and retains a WAL header
+    // without its sidecars. Snapshot every source, including current v5 files,
+    // before validation or migration. The original remains read-only; the
+    // temporary directory also cleans sidecars on every error path.
+    QTemporaryDir snapshotDirectory;
+    if (!snapshotDirectory.isValid()) {
+        return failure(QStringLiteral("Unable to create temporary restore directory"));
+    }
+    const QString snapshotPath = snapshotDirectory.filePath(QStringLiteral("restore.sqlite"));
+    const QString snapshotConnection = QStringLiteral("restore-snapshot-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    QString snapshotError;
+    {
+        auto source = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), snapshotConnection);
+        source.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY;QSQLITE_BUSY_TIMEOUT=5000"));
+        source.setDatabaseName(sourcePath);
+        if (!source.open()) {
+            snapshotError = source.lastError().text();
+        } else {
+            QSqlQuery snapshot(source);
+            if (!snapshot.exec(QStringLiteral("VACUUM INTO %1").arg(sqlStringLiteral(snapshotPath))))
+                snapshotError = snapshot.lastError().text();
+            snapshot.finish();
+            source.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(snapshotConnection);
+    if (!snapshotError.isEmpty()) {
+        return failure(QStringLiteral("Unable to create backup snapshot for restore: %1").arg(snapshotError));
+    }
+
+    const DatabaseMaintenanceResult currentValidation = validate(snapshotPath);
+    if (!currentValidation.ok) {
+        const DatabaseMaintenanceResult legacyShape = validateMigratableRestoreSource(snapshotPath);
+        if (!legacyShape.ok) return legacyShape;
+        QString migrationError;
+        {
+            DatabaseConnection migration;
+            if (migration.open(snapshotPath, false, &migrationError)) {
+                // initializeSchema enables WAL. Finalize only this private
+                // migration copy as a single-file backup before atomic copy;
+                // merely closing a WAL connection does not reset its header.
+                {
+                    QSqlQuery standalone(migration.database());
+                    if (!standalone.exec(QStringLiteral("PRAGMA journal_mode=DELETE"))
+                        || !standalone.next()
+                        || standalone.value(0).toString().compare(QStringLiteral("delete"), Qt::CaseInsensitive) != 0)
+                        migrationError = QStringLiteral("Unable to finalize standalone migration copy: %1")
+                                             .arg(standalone.lastError().text());
+                }
+                migration.close();
+            }
+        }
+        if (!migrationError.isEmpty()) {
+            return failure(QStringLiteral("Unable to migrate legacy backup: %1").arg(migrationError));
+        }
+        const DatabaseMaintenanceResult migratedValidation = validate(snapshotPath);
+        if (!migratedValidation.ok) {
+            return failure(QStringLiteral("Legacy backup did not become a valid database after migration: %1")
+                               .arg(migratedValidation.errorMessage));
+        }
+    }
+    if (!ensureParentDirectory(destination, &errorMessage)) {
+        return failure(errorMessage);
+    }
+    return copyAtomically(snapshotPath, destination);
 }
 
 } // namespace charging::server

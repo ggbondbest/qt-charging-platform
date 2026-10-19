@@ -1,13 +1,13 @@
 """Isolated Vue demo API. Analytics v1 and first-stage Qt are not mutated.
 
 Run with the factory via chargepilot.cli, or uvicorn ...app:create_app --factory.
-Operational APIs are authenticated; payment is explicitly simulated, never money.
+User operations require a session; the simulation console opens directly.
+Payment is explicitly simulated, never money.
 """
 from __future__ import annotations
 import asyncio
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-import hmac
 import json
 import logging
 from pathlib import Path
@@ -27,6 +27,7 @@ from .store import ChargePilotStore, DomainError
 from .ranking import RecommendationService
 from .routing import RoutePlanner
 from .load_adapter import LoadAdapter
+from data_analysis.mysql_support import connect
 
 
 class StrictModel(BaseModel):
@@ -96,15 +97,66 @@ class WindowLimiter:
             queue.append(now)
 
 
-def create_app(settings=None, *, predictor=None, store=None, routing=None, load_adapter=None):
+def require_existing_store(store, catalog, cities):
+    """Validate prepared operational data without DDL, migrations or seeding."""
+    columns = {
+        "cp_state": "id,payload",
+        "cp_cities": "city_id,payload",
+        "cp_stations": "station_id,city_id,payload,background_busy,background_release",
+        "cp_users": "user_id,name,token_hash,points,created_at,expires_wall",
+        "cp_recommendations": "recommendation_id,user_id,payload,expires_at,eligibility",
+        "cp_trips": "trip_id,sequence,user_id,station_id,recommendation_id,status,payload",
+        "cp_events": "event_id,trip_id,type,status,created_at,details",
+        "cp_payments": "trip_id,user_id,amount_cents,paid_at",
+        "cp_ledger": "trip_id,user_id,station_id,points,amount_cents,created_at,business_date",
+    }
+    connection = None
+    try:
+        connection = connect(store.settings, dict_rows=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT")
+            for table, projection in columns.items():
+                cursor.execute(f"SELECT {projection} FROM {table} LIMIT 0")
+            cursor.execute("SELECT payload FROM cp_state WHERE id=1")
+            row = cursor.fetchone()
+            state = json.loads(row["payload"]) if row and isinstance(row["payload"], (str, bytes)) else (row or {}).get("payload")
+            if not isinstance(state, dict) or not {
+                "time", "wall", "speed", "paused", "config", "baselineInitialized", "queueSequence"
+            } <= state.keys() or state["baselineInitialized"] is not True:
+                raise ValueError("missing prepared replay state")
+            for table, expected, identity in (("cp_cities", cities, "cityId"), ("cp_stations", catalog, "stationId")):
+                cursor.execute(f"SELECT payload FROM {table}")
+                actual = [json.loads(row["payload"]) if isinstance(row["payload"], (str, bytes)) else row["payload"]
+                          for row in cursor.fetchall()]
+                if {item[identity]: item for item in actual} != {item[identity]: item for item in expected}:
+                    raise ValueError("prepared catalog differs from model")
+    except Exception:
+        raise DomainError("OPERATIONAL_STORE_NOT_PREPARED",
+                          "策略演示库的表结构、站点目录或初始基线未准备完成，请先执行独立数据准备流程", 503) from None
+    finally:
+        if connection is not None:
+            try:
+                connection.rollback()
+            finally:
+                connection.close()
+
+
+def create_app(settings=None, *, predictor=None, store=None, routing=None, load_adapter=None,
+               initialize_store=True):
     settings = settings or Settings.from_env()
     if predictor is None:
         from .ml.predict import ArrivalPredictor
         predictor = ArrivalPredictor(settings.model_dir)
     store = store or ChargePilotStore(settings.mysql)
-    store.initialize(predictor.catalog, predictor.cities)
+    if initialize_store:
+        store.initialize(predictor.catalog, predictor.cities)
+    else:
+        require_existing_store(store, predictor.catalog, predictor.cities)
     initial = store.admin()
     if not initial.get("baselineInitialized", False):
+        if not initialize_store:
+            raise DomainError("OPERATIONAL_STORE_NOT_PREPARED", "策略演示库缺少已准备的初始基线", 503)
         store.set_baseline(predictor.snapshot(initial["clock"]["time"]))
     routing = routing or RoutePlanner(settings.tencent_key, settings.tencent_secret)
     if load_adapter is None:
@@ -148,7 +200,7 @@ def create_app(settings=None, *, predictor=None, store=None, routing=None, load_
     app.state.store, app.state.predictor = store, predictor
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.allowed_origins),
         allow_credentials=False, allow_methods=["GET", "POST", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "X-Admin-Token"])
+        allow_headers=["Content-Type", "Authorization"])
 
     @app.middleware("http")
     async def safe_headers(request, call_next):
@@ -185,12 +237,6 @@ def create_app(settings=None, *, predictor=None, store=None, routing=None, load_
         if not authorization or not authorization.startswith("Bearer ") or len(authorization) > 512:
             raise DomainError("UNAUTHORIZED", "请先创建演示会话", 401)
         return store.authenticate(authorization[7:])
-
-    def administrator(x_admin_token: Annotated[str | None, Header()] = None):
-        if not settings.admin_token:
-            raise DomainError("ADMIN_DISABLED", "管理员功能未配置；设置CHARGEPILOT_ADMIN_TOKEN后启动", 503)
-        if not x_admin_token or not hmac.compare_digest(x_admin_token, settings.admin_token):
-            raise DomainError("FORBIDDEN", "管理员凭证无效", 403)
 
     prefix = "/api/v1/chargepilot"
     provenance = {"dataSource": "SIMULATED", "description": "既有五城市模拟数据清洗结果；没有冒充ACN实测数据",
@@ -274,30 +320,30 @@ def create_app(settings=None, *, predictor=None, store=None, routing=None, load_
             return envelope({"status": "STALE", "message": "实验结果对应旧模型，请重新计算"})
         return envelope(report)
 
-    @app.get(prefix+"/admin", dependencies=[Depends(administrator)])
+    @app.get(prefix+"/admin")
     def admin():
         return envelope(store.admin())
 
-    @app.patch(prefix+"/admin/config", dependencies=[Depends(administrator)])
+    @app.patch(prefix+"/admin/config")
     def configure(payload: dict):
         return envelope(store.configure(payload))
 
-    @app.post(prefix+"/admin/clock", dependencies=[Depends(administrator)])
+    @app.post(prefix+"/admin/clock")
     def clock(payload: ClockInput):
         if payload.action == "advance" and payload.seconds is None:
             raise DomainError("INVALID_REQUEST", "advance需要seconds", 422)
         return envelope(store.control_clock(payload.model_dump(exclude_none=True)))
 
-    @app.post(prefix+"/admin/stations/{station_id}/background", dependencies=[Depends(administrator)])
+    @app.post(prefix+"/admin/stations/{station_id}/background")
     def background(station_id: str, payload: Background):
         return envelope(store.set_background(station_id, payload.busyCount, payload.releaseAfterSeconds))
 
-    @app.get(prefix+"/admin/feedback", dependencies=[Depends(administrator)])
+    @app.get(prefix+"/admin/feedback")
     def feedback():
         return envelope({"records": store.feedback(), "dataSource": "SIMULATED_OPERATIONAL_FEEDBACK",
                          "note": "用于后续独立离线训练；当前不会自动改变已评估模型。"})
 
-    @app.post(prefix+"/admin/experiments", dependencies=[Depends(administrator)], status_code=202)
+    @app.post(prefix+"/admin/experiments", status_code=202)
     def start_experiment(payload: ExperimentInput):
         from .experiment import run_experiment
         frozen_config = store.admin()["config"]

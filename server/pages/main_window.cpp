@@ -1,12 +1,12 @@
 #include "main_window.h"
 #include "workflow_management_page.h"
+#include "intelligence_center_page.h"
 
 #include "admin_login_page.h"
 #include "admin_request_gateway.h"
 #include "activity_records_page.h"
 #include "charger_management_page.h"
 #include "server_runtime.h"
-#include "dashboard_page.h"
 #include "order_management_page.h"
 #include "management_page_widgets.h"
 #include "station_management_page.h"
@@ -15,10 +15,12 @@
 #include <QAction>
 #include <QButtonGroup>
 #include <QColor>
+#include <QEvent>
 #include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QPalette>
@@ -26,6 +28,7 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -119,6 +122,61 @@ protected:
 
 private:
     int iconType_ = 0;
+};
+
+// Keep the whole account row one focusable button, including its avatar. This
+// avoids dead click targets and gives keyboard users the same menu as a mouse.
+class SidebarAccountButton final : public QPushButton
+{
+public:
+    explicit SidebarAccountButton(QWidget* parent) : QPushButton(tr("管理员"), parent)
+    {
+        setObjectName(QStringLiteral("sidebarAccountButton"));
+        setAccessibleName(tr("管理员会话菜单"));
+        setAccessibleDescription(tr("按 Enter 或空格打开退出登录菜单"));
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::StrongFocus);
+        setMinimumSize(168, 56);
+    }
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter
+            || event->key() == Qt::Key_Down || event->key() == Qt::Key_Up) {
+            click();
+            event->accept();
+            return;
+        }
+        QPushButton::keyPressEvent(event);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF row = QRectF(rect()).adjusted(1, 1, -1, -1);
+        painter.setPen(hasFocus() ? QPen(QColor("#2878f0"), 1.5) : Qt::NoPen);
+        painter.setBrush(isDown() || underMouse() ? QColor("#edf4ff") : QColor("#f6f8fc"));
+        painter.drawRoundedRect(row, 9, 9);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor("#2878f0"));
+        const QRectF avatar(14, (height() - 34) / 2.0, 34, 34);
+        painter.drawEllipse(avatar);
+        QFont font = painter.font();
+        font.setPixelSize(14);
+        font.setWeight(QFont::DemiBold);
+        painter.setFont(font);
+        painter.setPen(Qt::white);
+        painter.drawText(avatar, Qt::AlignCenter, QStringLiteral("A"));
+        painter.setPen(QColor("#243653"));
+        painter.drawText(QRectF(60, 0, width() - 88, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
+        painter.setPen(QPen(QColor("#718098"), 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const qreal x = width() - 20;
+        const qreal y = height() / 2.0;
+        painter.drawLine(QPointF(x - 4, y + 2), QPointF(x, y - 2));
+        painter.drawLine(QPointF(x, y - 2), QPointF(x + 4, y + 2));
+    }
 };
 
 // Qt's scroll optimization can leave stale backing-store pixels on VMware's
@@ -223,7 +281,14 @@ MainWindow::MainWindow(ServerRuntime* server, QWidget* parent)
     // competing with normal filtering and detail actions.
     autoRefreshTimer_.setInterval(10000);
     connect(&autoRefreshTimer_, &QTimer::timeout, this, &MainWindow::refreshActivePage);
+    auto* exitFullScreen = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    connect(exitFullScreen, &QShortcut::activated, this, &MainWindow::exitDashboardFullScreen);
     showLoginPage();
+}
+
+void MainWindow::setDashboardServiceManager(DashboardServiceManager* manager)
+{
+    intelligenceCenterPage_->setServiceManager(manager);
 }
 
 QWidget* MainWindow::createManagementPage()
@@ -276,12 +341,6 @@ QWidget* MainWindow::createManagementPage()
         " background: #f2f5f9; color: #8995a7; border-color: #e4e9f1; }"
         "QDialogButtonBox QPushButton { background: #ffffff; color: #2878f0; border: 1px solid #dfe6f0;"
         " border-radius: 8px; min-height: 36px; min-width: 70px; padding: 0 14px; }"
-        "QPushButton#sessionButton { background: transparent; border: none; border-radius: 8px;"
-        " color: #34435b; min-height: 38px; padding: 0 10px; font-size: 14px; font-weight: 600; }"
-        "QPushButton#sessionButton:hover { background: #f7f9fc; }"
-        "QPushButton#sessionButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center;"
-        " width: 0; height: 0; margin-right: 3px; border-left: 4px solid transparent;"
-        " border-right: 4px solid transparent; border-top: 5px solid #718098; }"
         "QTableWidget { background: white; color: #1d2c46; alternate-background-color: #f8fafd;"
         " border: none; gridline-color: #edf1f7;"
         " selection-background-color: #eaf3ff; selection-color: #1d2c46; font-size: 14px; }"
@@ -307,72 +366,88 @@ QWidget* MainWindow::createManagementPage()
     sidebar_ = new QFrame(managementPage);
     sidebar_->setObjectName(QStringLiteral("sidebar"));
     auto* sidebarLayout = new QVBoxLayout(sidebar_);
-    sidebarLayout->setContentsMargins(10, 30, 8, 22);
+    sidebarLayout->setContentsMargins(10, 24, 8, 14);
+    sidebarLayout->setSpacing(6);
 
-    const QList<QString> navigationTitles = {tr("运营概览"), tr("电桩管理"),
+    const QList<QString> navigationTitles = {tr("运营中心"), tr("电桩管理"),
                                              tr("电站管理"), tr("用户管理"), tr("订单管理"),
                                              tr("充值记录"), tr("操作日志"), tr("排队与维修")};
     auto* navigationGroup = new QButtonGroup(managementPage);
+    navigationGroup_ = navigationGroup;
     navigationGroup->setExclusive(true);
     const int navigationCount = navigationTitles.size();
     for (int index = 0; index < navigationCount; ++index) {
         auto* button = new NavigationButton(navigationTitles.at(index), index, sidebar_);
+        button->setObjectName(QStringLiteral("managementNav%1").arg(index));
         button->setAccessibleName(navigationTitles.at(index));
         navigationGroup->addButton(button, index);
         sidebarLayout->addWidget(button);
     }
     sidebarLayout->addStretch();
+    auto* accountDivider = new QFrame(sidebar_);
+    accountDivider->setObjectName(QStringLiteral("sidebarAccountDivider"));
+    accountDivider->setFixedHeight(1);
+    accountDivider->setStyleSheet(QStringLiteral("background: #e7edf5; border: none;"));
+    sidebarLayout->addWidget(accountDivider);
+    sidebarLayout->addSpacing(6);
+    auto* accountButton = new SidebarAccountButton(sidebar_);
+    sidebarLayout->addWidget(accountButton);
+    sessionMenu_ = new QMenu(accountButton);
+    sessionMenu_->setObjectName(QStringLiteral("sidebarAccountMenu"));
+    sessionMenu_->setStyleSheet(QStringLiteral(
+        "QMenu { background: #ffffff; border: 1px solid #e1e7f0; border-radius: 8px; padding: 5px; }"
+        "QMenu::item { color: #34435b; min-height: 34px; padding: 0 24px 0 12px; border-radius: 6px; }"
+        "QMenu::item:selected { background: #edf4ff; color: #2878f0; }"));
+    auto* signOutAction = sessionMenu_->addAction(tr("退出登录"));
+    signOutAction->setObjectName(QStringLiteral("sidebarLogoutAction"));
+    // Revoke the shared management session before returning to the login page.
+    connect(signOutAction, &QAction::triggered, adminGateway_, &AdminRequestGateway::logout);
+    connect(accountButton, &QPushButton::clicked, this, [this, accountButton, signOutAction] {
+        if (sessionMenu_->isVisible()) {
+            sessionMenu_->hide();
+            return;
+        }
+        sessionMenu_->setMinimumWidth(accountButton->width());
+        sessionMenu_->ensurePolished();
+        const QPoint above = accountButton->mapToGlobal(QPoint(0, -sessionMenu_->sizeHint().height() - 8));
+        accountButton->setDown(true);
+        sessionMenu_->popup(above);
+        sessionMenu_->setActiveAction(signOutAction);
+    });
+    connect(sessionMenu_, &QMenu::aboutToHide, accountButton, [accountButton] {
+        accountButton->setDown(false);
+    });
 
     auto* contentWidget = new QWidget(managementPage);
     contentWidget->setObjectName(QStringLiteral("contentWidget"));
     auto* contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setContentsMargins(31, 24, 31, 30);
-    contentLayout->setSpacing(18);
+    contentLayout_ = contentLayout;
+    contentLayout->setContentsMargins(24, 24, 24, 24);
+    contentLayout->setSpacing(16);
 
     auto* topBar = new QWidget(contentWidget);
+    topBar_ = topBar;
+    topBar->setObjectName(QStringLiteral("managementHeader"));
     auto* topBarLayout = new QHBoxLayout(topBar);
     topBarLayout->setContentsMargins(0, 0, 0, 0);
-    pageTitleLabel_ = new QLabel(tr("运营概览"), topBar);
+    pageTitleLabel_ = new QLabel(tr("运营中心"), topBar);
+    pageTitleLabel_->setObjectName(QStringLiteral("managementPageTitle"));
     pageTitleLabel_->setStyleSheet(QStringLiteral("color: #1d2c46;"));
     QFont titleFont = pageTitleLabel_->font();
     titleFont.setBold(true);
     titleFont.setPixelSize(24);
     pageTitleLabel_->setFont(titleFont);
-    auto* titleLayout = new QVBoxLayout();
-    titleLayout->setSpacing(2);
-    pageSubtitleLabel_ = new QLabel(tr("全局数据实时监控，掌握运营核心指标"), topBar);
-    pageSubtitleLabel_->setStyleSheet(QStringLiteral("color: #77849a; font-size: 13px;"));
-    pageSubtitleLabel_->setWordWrap(true);
-    titleLayout->addWidget(pageTitleLabel_);
-    titleLayout->addWidget(pageSubtitleLabel_);
-    auto* userBadge = new QLabel(tr("A"), topBar);
-    userBadge->setAlignment(Qt::AlignCenter);
-    userBadge->setFixedSize(34, 34);
-    userBadge->setStyleSheet(QStringLiteral(
-        "background: #2878d4; color: white; border-radius: 17px; font-size: 14px; font-weight: 600;"));
-    auto* userMenuButton = new QPushButton(tr("管理员"), topBar);
-    userMenuButton->setObjectName(QStringLiteral("sessionButton"));
-    userMenuButton->setAccessibleName(tr("管理员会话菜单"));
-    auto* sessionMenu = new QMenu(userMenuButton);
-    sessionMenu->setStyleSheet(QStringLiteral(
-        "QMenu { background: #ffffff; border: 1px solid #e1e7f0; border-radius: 8px; padding: 5px; }"
-        "QMenu::item { color: #34435b; min-height: 34px; padding: 0 24px 0 12px; border-radius: 6px; }"
-        "QMenu::item:selected { background: #f7f9fc; }"));
-    auto* signOutAction = sessionMenu->addAction(tr("退出登录"));
-    // Revoke the shared management session before returning to the login page.
-    connect(signOutAction, &QAction::triggered, adminGateway_, &AdminRequestGateway::logout);
-    userMenuButton->setMenu(sessionMenu);
-    topBarLayout->addLayout(titleLayout, 1);
-    topBarLayout->addWidget(userBadge);
-    topBarLayout->addWidget(userMenuButton);
+    topBarLayout->addWidget(pageTitleLabel_, 1);
     contentLayout->addWidget(topBar);
 
     pageStackedWidget_ = new QStackedWidget(contentWidget);
-    auto* dashboardScrollArea = new ManagementScrollArea(pageStackedWidget_);
-    dashboardPage_ = new DashboardPage(dashboardScrollArea);
-    dashboardPage_->setAdminGateway(adminGateway_);
-    dashboardScrollArea->setContentWidget(dashboardPage_);
-    pageStackedWidget_->addWidget(dashboardScrollArea);
+    pageStackedWidget_->setObjectName(QStringLiteral("managementPages"));
+    // Vue owns the unified overview and analytics experience, including its
+    // own scrolling. There is no second native overview or duplicate entry.
+    intelligenceCenterPage_ = new IntelligenceCenterPage(pageStackedWidget_);
+    pageStackedWidget_->addWidget(intelligenceCenterPage_);
+    connect(intelligenceCenterPage_, &IntelligenceCenterPage::fullScreenRequested,
+            this, &MainWindow::setDashboardFullScreen);
     auto* chargerScrollArea = new ManagementScrollArea(pageStackedWidget_);
     chargerManagementPage_ = new ChargerManagementPage(chargerScrollArea);
     chargerManagementPage_->setAdminGateway(adminGateway_);
@@ -407,34 +482,17 @@ QWidget* MainWindow::createManagementPage()
     pageStackedWidget_->addWidget(workflowPage_);
     contentLayout->addWidget(pageStackedWidget_, 1);
 
-    const QList<QString> navigationDescriptions = {
-        tr("全局数据实时监控，掌握运营核心指标"),
-        tr("查询设备状态，完成受控的运营操作"),
-        tr("查看站点聚合状态并维护基础信息"),
-        tr("查询账户状态，处理受控的冻结与解冻"),
-        tr("筛选订单，查看关键计量与状态信息"),
-        tr("查询用户余额变更与充值渠道处理状态"),
-        tr("查询服务端记录的安全审计元数据"),
-        tr("查看各站队列与叫号，核实报障并跟踪模拟维修"),
-    };
-    const auto showPage = [this, navigationGroup, navigationTitles, navigationDescriptions](int index) {
+    const auto showPage = [this, navigationGroup, navigationTitles](int index) {
         Q_ASSERT(index >= 0 && index < navigationTitles.size());
+        if (index != 0) exitDashboardFullScreen();
         pageStackedWidget_->setCurrentIndex(index);
+        updateManagementChrome();
         pageTitleLabel_->setText(navigationTitles.at(index));
-        pageSubtitleLabel_->setText(navigationDescriptions.at(index));
         navigationGroup->button(index)->setChecked(true);
         refreshActivePage();
     };
     connect(navigationGroup, &QButtonGroup::idClicked, this,
             [showPage](int index) { showPage(index); });
-    connect(dashboardPage_, &DashboardPage::exceptionListRequested, this, [this, showPage]() {
-        chargerManagementPage_->showExceptionRecords();
-        showPage(1);
-    });
-    connect(dashboardPage_, &DashboardPage::latestOrdersRequested, this, [this, showPage]() {
-        orderManagementPage_->showLatestOrders();
-        showPage(4);
-    });
     connect(stationManagementPage_, &StationManagementPage::stationChargersRequested, this,
             [this, showPage](const QString& stationId) {
                 chargerManagementPage_->showStationRecords(stationId);
@@ -445,6 +503,7 @@ QWidget* MainWindow::createManagementPage()
 
     rootLayout->addWidget(sidebar_);
     rootLayout->addWidget(contentWidget, 1);
+    updateManagementChrome();
     updateSidebarWidth();
     return managementPage;
 }
@@ -453,17 +512,22 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
     updateSidebarWidth();
+    updateManagementChrome();
 }
 
 void MainWindow::showManagementShell()
 {
+    pageStackedWidget_->setCurrentIndex(0);
+    navigationGroup_->button(0)->setChecked(true);
+    updateManagementChrome();
     rootStackedWidget_->setCurrentIndex(1);
-    dashboardPage_->refresh();
     autoRefreshTimer_.start();
 }
 
 void MainWindow::showLoginPage()
 {
+    exitDashboardFullScreen();
+    if (sessionMenu_) sessionMenu_->hide();
     autoRefreshTimer_.stop();
     rootStackedWidget_->setCurrentIndex(0);
     loginPage_->resetForm();
@@ -475,7 +539,7 @@ void MainWindow::refreshActivePage()
         return;
     }
     switch (pageStackedWidget_->currentIndex()) {
-    case 0: dashboardPage_->refreshCurrent(); break;
+    case 0: break; // Vue retains its navigation and refreshes its own data.
     case 1: chargerManagementPage_->refreshData(); break;
     case 2: stationManagementPage_->refreshData(); break;
     case 3: userManagementPage_->refreshData(); break;
@@ -503,8 +567,55 @@ void MainWindow::updateSidebarWidth()
 
     // Keep the navigation readable on compact windows while allowing it to
     // proportionally breathe on large desktop displays.
-    const int width = qBound(220, qRound(this->width() * 0.16), 360);
+    const int width = qBound(196, qRound(this->width() * 0.15), 248);
     sidebar_->setFixedWidth(width);
+}
+
+void MainWindow::updateManagementChrome()
+{
+    if (!topBar_ || !contentLayout_ || !pageStackedWidget_) return;
+    const bool webPage = pageStackedWidget_->currentIndex() == 0;
+    topBar_->setVisible(!webPage && !dashboardFullScreen_);
+    sidebar_->setVisible(!dashboardFullScreen_);
+    const int margin = width() < 1280 ? 16 : 24;
+    contentLayout_->setContentsMargins(webPage || dashboardFullScreen_ ? QMargins() : QMargins(margin, 20, margin, 20));
+    contentLayout_->setSpacing(webPage || dashboardFullScreen_ ? 0 : 16);
+    if (dashboardFullScreen_ && sessionMenu_) sessionMenu_->hide();
+}
+
+void MainWindow::setDashboardFullScreen(bool enabled)
+{
+    if (dashboardFullScreen_ == enabled) return;
+    if (enabled && (rootStackedWidget_->currentIndex() != 1 || pageStackedWidget_->currentIndex() != 0)) {
+        intelligenceCenterPage_->exitFullScreen();
+        return;
+    }
+    dashboardFullScreen_ = enabled;
+    if (enabled) {
+        previousWindowGeometry_ = saveGeometry();
+        previousWindowState_ = windowState();
+        updateManagementChrome();
+        showFullScreen();
+    } else {
+        setWindowState(previousWindowState_);
+        restoreGeometry(previousWindowGeometry_);
+        updateManagementChrome();
+    }
+}
+
+void MainWindow::exitDashboardFullScreen()
+{
+    if (!dashboardFullScreen_) return;
+    intelligenceCenterPage_->exitFullScreen();
+    // Also restore when a renderer has already exited or terminated.
+    setDashboardFullScreen(false);
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange && dashboardFullScreen_ && !isFullScreen())
+        exitDashboardFullScreen();
 }
 
 } // namespace charging::server

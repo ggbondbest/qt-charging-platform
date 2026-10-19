@@ -127,7 +127,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(18);
 
-    auto* metricsLayout = new QHBoxLayout();
+    auto* metricsLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Metrics);
     metricsLayout->setSpacing(16);
     metricsLayout->addWidget(createManagementMetricCard(
         tr("电站总数"), tr("328"), tr(" 座"), tr("较昨日  +12 (+3.80%)  ↑"), QColor("#347cf6"), 2, this));
@@ -140,7 +140,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(metricsLayout);
 
     auto* toolbar = createCompactCard(this);
-    auto* toolbarLayout = new QHBoxLayout(toolbar);
+    auto* toolbarLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls, toolbar);
     toolbarLayout->setContentsMargins(18, 12, 18, 12);
     toolbarLayout->setSpacing(12);
     keywordLineEdit_ = new QLineEdit(toolbar);
@@ -161,17 +161,15 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     feedbackLabel_ = createTextLabel(tr("显示全部 328 座电站"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
     feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setWordWrap(true);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     toolbarLayout->addWidget(statusComboBox_);
     toolbarLayout->addWidget(feedbackLabel_);
-    toolbarLayout->addStretch();
-    toolbarLayout->addWidget(resetButton);
-    toolbarLayout->addWidget(queryButton);
-    toolbarLayout->addWidget(addButton);
+    toolbarLayout->addWidget(createManagementActionGroup({resetButton, queryButton, addButton}, toolbar));
     layout->addWidget(toolbar);
 
-    auto* contentLayout = new QHBoxLayout();
+    auto* contentLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::ListAndDetail);
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
     tableCard->setMinimumWidth(kManagementTableMinimumWidth);
@@ -182,6 +180,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    configureManagementResponsiveTable(tableWidget_);
     tableWidget_->setObjectName(QStringLiteral("stationManagementTable"));
     tableWidget_->setColumnCount(8);
     tableWidget_->setHorizontalHeaderLabels(
@@ -198,14 +197,15 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
+    tableWidget_->setColumnWidth(2, 260);
     tableWidget_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
     tableWidget_->setColumnWidth(6, 84);
     tableWidget_->setColumnWidth(7, 132);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
-    tableLayout->addWidget(statePanel_);
+    tableLayout->addWidget(statePanel_, 1);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -223,7 +223,6 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("电站详情"), this);
-    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     detailNameLabel_ = createTextLabel(QString(), QStringLiteral("color:#1d2c46; font-size:17px; font-weight:700;"), detailCard);
     detailLayout->addWidget(detailNameLabel_);
@@ -265,6 +264,7 @@ StationManagementPage::StationManagementPage(QWidget* parent) : QWidget(parent)
     toggleStatusButton_->setObjectName(QStringLiteral("secondaryButton"));
     detailLayout->addWidget(editButton_);
     detailLayout->addWidget(toggleStatusButton_);
+    configureManagementDetailWrapping(detailCard);
     contentLayout->addWidget(detailCard);
     layout->addLayout(contentLayout, 1);
 

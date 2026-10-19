@@ -4,6 +4,8 @@
 #include <QDate>
 #include <QDateTime>
 #include <QFrame>
+#include <QLayout>
+#include <QList>
 #include <QString>
 
 class QFrame;
@@ -11,17 +13,47 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QTableWidgetItem;
+class QTableWidget;
 class QWidget;
 
 namespace charging::server {
 
-// All six management pages share one desktop content grid: a flexible list area
-// and a fixed-width detail panel.  Keeping these values together prevents pages
-// from gradually drifting into visually incompatible layouts.
-inline constexpr int kManagementPageMinimumWidth = 1180;
-inline constexpr int kManagementTableMinimumWidth = 820;
+// Only the table's own viewport scrolls horizontally. Pages and detail cards
+// reflow within the available management-shell width.
+inline constexpr int kManagementPageMinimumWidth = 0;
+inline constexpr int kManagementTableMinimumWidth = 0;
 inline constexpr int kManagementDetailWidth = 312;
 inline constexpr int kManagementStatusColumnWidth = 80;
+
+class ManagementResponsiveLayout final : public QLayout
+{
+public:
+    enum class Mode { Controls, Metrics, ListAndDetail };
+    explicit ManagementResponsiveLayout(Mode mode, QWidget* parent = nullptr);
+    ~ManagementResponsiveLayout() override;
+    void addWidget(QWidget* widget, int stretch = 0);
+    void addItem(QLayoutItem* item) override;
+    int count() const override;
+    QLayoutItem* itemAt(int index) const override;
+    QLayoutItem* takeAt(int index) override;
+    QSize sizeHint() const override;
+    QSize minimumSize() const override;
+    Qt::Orientations expandingDirections() const override;
+    bool hasHeightForWidth() const override;
+    int heightForWidth(int width) const override;
+    void setGeometry(const QRect& rect) override;
+
+private:
+    struct Entry { QLayoutItem* item; int stretch; };
+    int arrange(const QRect& rect, bool apply) const;
+    Mode mode_;
+    QList<Entry> entries_;
+};
+
+QWidget* createManagementFilterField(const QString& label, QWidget* field, QWidget* parent);
+QWidget* createManagementActionGroup(const QList<QWidget*>& controls, QWidget* parent);
+void configureManagementResponsiveTable(QTableWidget* table);
+void configureManagementDetailWrapping(QWidget* card);
 
 // List pages must keep their card geometry while data is loading, empty, or
 // temporarily unavailable.  This compact panel deliberately lives inside the

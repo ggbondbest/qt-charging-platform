@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="680" viewBox="0 0 2400 680">
+<rect width="100%" height="100%" fill="white"/>
+<rect x="50" y="90" width="500" height="180" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="300.0" y="166.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">用户 TCP 操作</text>
+<text x="300.0" y="220.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">预约到模拟支付</text>
+<rect x="650" y="90" width="500" height="180" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="900.0" y="166.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">Qt 事务提交</text>
+<text x="900.0" y="220.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">更新订单与账本</text>
+<rect x="1250" y="90" width="500" height="180" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1500.0" y="166.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">只读一致快照</text>
+<text x="1500.0" y="220.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">汇总及明细同一时刻</text>
+<rect x="1850" y="90" width="500" height="180" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="2100.0" y="166.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">Vue 轮询展示</text>
+<text x="2100.0" y="220.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">成功后更新时间</text>
+<line x1="550" y1="180" x2="650" y2="180" stroke="#4B6381" stroke-width="4"/><polygon points="650,180 633.7919521576518,187.82937961400214 633.7919521576518,172.17062038599786" fill="#4B6381"/>
+<line x1="1150" y1="180" x2="1250" y2="180" stroke="#4B6381" stroke-width="4"/><polygon points="1250,180 1233.7919521576518,187.82937961400214 1233.7919521576518,172.17062038599786" fill="#4B6381"/>
+<line x1="1750" y1="180" x2="1850" y2="180" stroke="#4B6381" stroke-width="4"/><polygon points="1850,180 1833.7919521576518,187.82937961400214 1833.7919521576518,172.17062038599786" fill="#4B6381"/>
+<rect x="60" y="415" width="1090" height="155" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="605.0" y="479.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">失败分支</text>
+<text x="605.0" y="533.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">保留最后成功数据 明确离线 不伪装为零</text>
+<rect x="1250" y="415" width="1090" height="155" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="1795.0" y="479.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">历史分支</text>
+<text x="1795.0" y="533.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">独立发布批次 不吸收 Qt 新增订单</text>
+<line x1="2100" y1="270" x2="2100" y2="415" stroke="#4B6381" stroke-width="4"/><polygon points="2100,415 2092.170620385998,398.7919521576518 2107.829379614002,398.7919521576518" fill="#4B6381"/>
+<text x="2260" y="350.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">切换历史页</text>
+<line x1="2100" y1="325" x2="605" y2="415" stroke="#4B6381" stroke-width="4"/><polygon points="605,415 620.7082753538226,406.2107972256587 621.6492395915906,421.8412587308047" fill="#4B6381"/>
+<text x="1050" y="350.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">请求失败时</text>
+</svg>

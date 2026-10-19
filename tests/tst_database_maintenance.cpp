@@ -28,6 +28,8 @@ private slots:
     void upgradesLegacyAdminIndexesWithoutLosingData();
     void restoresLegacyBackupThenMigratesOnFirstOpen();
     void restoresRealPreExpansionV2Backup();
+    void restoresCommittedWalSnapshot_data();
+    void restoresCommittedWalSnapshot();
     void rejectsLegacyBackupWithInvalidUniqueIndex();
     void rejectsFutureSchemaVersionWithoutChangingIt();
 };
@@ -486,6 +488,53 @@ void DatabaseMaintenanceTest::restoresRealPreExpansionV2Backup()
         original.close();
     }
     QSqlDatabase::removeDatabase(originalConnection);
+}
+
+void DatabaseMaintenanceTest::restoresCommittedWalSnapshot_data()
+{
+    QTest::addColumn<int>("schemaVersion");
+    QTest::newRow("legacy-v4") << 4;
+    QTest::newRow("current-v5") << 5;
+}
+
+void DatabaseMaintenanceTest::restoresCommittedWalSnapshot()
+{
+    QFETCH(int, schemaVersion);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString sourcePath = directory.filePath(QStringLiteral("legacy-wal.sqlite"));
+    const QString restoredPath = directory.filePath(QStringLiteral("restored.sqlite"));
+    DatabaseConnection source;
+    QString error;
+    QVERIFY2(source.open(sourcePath, true, &error), qPrintable(error));
+    QSqlQuery query(source.database());
+    QVERIFY(query.exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)")));
+    query.finish();
+    QVERIFY(query.exec(QStringLiteral("PRAGMA user_version=%1").arg(schemaVersion)));
+    QVERIFY(query.exec(QStringLiteral(
+        "INSERT INTO users(phone,nickname) VALUES('13900006666','wal-snapshot-user')")));
+    query.finish();
+    const auto contents = [](const QString& path) {
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    };
+    const QByteArray originalMain = contents(sourcePath);
+    const QByteArray originalWal = contents(sourcePath + QStringLiteral("-wal"));
+    QVERIFY(!originalMain.isEmpty() && !originalWal.isEmpty());
+    const auto result = DatabaseMaintenance::restore(sourcePath, restoredPath);
+    QVERIFY2(result.ok, qPrintable(result.errorMessage));
+    QCOMPARE(contents(sourcePath), originalMain);
+    QCOMPARE(contents(sourcePath + QStringLiteral("-wal")), originalWal);
+    QVERIFY(query.exec(QStringLiteral("PRAGMA user_version")));
+    QVERIFY(query.next());
+    QCOMPARE(query.value(0).toInt(), schemaVersion);
+    query.finish();
+    DatabaseConnection restored;
+    QVERIFY2(restored.open(restoredPath, false, &error), qPrintable(error));
+    QSqlQuery count(restored.database());
+    QVERIFY(count.exec(QStringLiteral("SELECT COUNT(*) FROM users WHERE phone='13900006666'")));
+    QVERIFY(count.next());
+    QCOMPARE(count.value(0).toInt(), 1);
 }
 
 void DatabaseMaintenanceTest::rejectsLegacyBackupWithInvalidUniqueIndex()

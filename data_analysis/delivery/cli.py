@@ -36,19 +36,48 @@ def train():
     print("All four model families trained and verified. Next: publish MySQL analytics, configure operational DB, build Vue.")
 
 
+def port_number(value):
+    port = int(value)
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return port
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("train", help="train/validate arrival, PR66 load, availability and management insights")
-    sub.add_parser("check", help="check both MySQL schemas, exact batch and all models")
+    check = sub.add_parser("check", help="check both MySQL schemas, exact batch and all models")
     serve = sub.add_parser("serve", help="serve analytics, intelligence, ChargePilot and built Vue on one port")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--port", type=port_number, default=8000)
+    for command in (check, serve):
+        command.add_argument("--qt-live-only", action="store_true",
+                             help="Qt SQLite + Vue only; historical MySQL/ML are explicitly disabled")
+        command.add_argument("--qt-database", type=Path,
+                             help="same SQLite file as charging-server --database; overrides QT_SQLITE_PATH")
     args = parser.parse_args()
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
         os.environ.setdefault(name, "2")
     if args.command == "train":
         train()
+        return
+    if args.qt_database is not None:
+        os.environ["QT_SQLITE_PATH"] = str(args.qt_database.expanduser().resolve())
+    if args.qt_live_only:
+        if args.command == "serve":
+            import uvicorn
+            uvicorn.run("data_analysis.delivery.app:create_qt_live_app", factory=True,
+                        host=args.host, port=args.port)
+            return
+        from .qt_live_adapter import QtLiveAdapter, QtLiveError
+        try:
+            result = QtLiveAdapter().health()
+        except QtLiveError as exc:
+            print(json.dumps({"status": "UNAVAILABLE", "code": exc.code,
+                              "message": exc.message}, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from None
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     if args.command == "serve":
         import uvicorn
@@ -63,11 +92,19 @@ def main():
         registry = app.state.models.registry(snapshot.metadata)
     missing = [name for name in ("load", "availability", "insights", "arrival")
                if registry[name]["status"] != "READY"]
-    print(json.dumps({"status": "READY" if not missing else "INCOMPLETE", "missingModels": missing,
+    qt_live = {"status": "NOT_CONFIGURED"}
+    if os.getenv("QT_SQLITE_PATH"):
+        from .qt_live_adapter import QtLiveAdapter, QtLiveError
+        try:
+            qt_live = QtLiveAdapter().health()
+        except QtLiveError as exc:
+            qt_live = {"status": "UNAVAILABLE", "code": exc.code, "message": exc.message}
+    print(json.dumps({"status": "READY" if not missing and qt_live["status"] != "UNAVAILABLE" else "INCOMPLETE", "missingModels": missing,
                       "datasetId": registry["datasetId"], "publishedBatchId": registry["publishedBatchId"],
                       "analytics": "MySQL", "operations": "isolated MySQL",
-                      "clock": app.state.operational_app.state.store.clock()}, ensure_ascii=False, indent=2))
-    if missing:
+                      "clock": app.state.operational_app.state.store.clock(),
+                      "qtLive": qt_live}, ensure_ascii=False, indent=2))
+    if missing or qt_live["status"] == "UNAVAILABLE":
         raise SystemExit(1)
 
 

@@ -3812,6 +3812,1056 @@
         "title": "PublishedModel",
         "type": "object"
       },
+      "QtAbnormalCharger": {
+        "additionalProperties": false,
+        "properties": {
+          "activeException": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtActiveException"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargerCode": {
+            "title": "Chargercode",
+            "type": "string"
+          },
+          "qtChargerId": {
+            "title": "Qtchargerid",
+            "type": "integer"
+          },
+          "qtStationCode": {
+            "title": "Qtstationcode",
+            "type": "string"
+          },
+          "qtStationId": {
+            "title": "Qtstationid",
+            "type": "integer"
+          },
+          "stationName": {
+            "title": "Stationname",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "AVAILABLE",
+              "RESERVED",
+              "CHARGING",
+              "FAULT",
+              "OFFLINE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qtChargerId",
+          "chargerCode",
+          "qtStationId",
+          "qtStationCode",
+          "stationName",
+          "status",
+          "updatedAt",
+          "activeException"
+        ],
+        "title": "QtAbnormalCharger",
+        "type": "object"
+      },
+      "QtAbnormalChargers": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QtAbnormalCharger"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "QtAbnormalChargers",
+        "type": "object"
+      },
+      "QtActiveException": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "SIMULATED_FAULT",
+              "SIMULATED_OFFLINE"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "occurredAt": {
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "qtExceptionId": {
+            "title": "Qtexceptionid",
+            "type": "integer"
+          },
+          "safeSummary": {
+            "title": "Safesummary",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "WARNING",
+              "CRITICAL"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ACKNOWLEDGED",
+              "RECOVERING"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qtExceptionId",
+          "code",
+          "severity",
+          "status",
+          "safeSummary",
+          "occurredAt"
+        ],
+        "title": "QtActiveException",
+        "type": "object"
+      },
+      "QtChargerCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "AVAILABLE": {
+            "title": "Available",
+            "type": "integer"
+          },
+          "CHARGING": {
+            "title": "Charging",
+            "type": "integer"
+          },
+          "FAULT": {
+            "title": "Fault",
+            "type": "integer"
+          },
+          "OFFLINE": {
+            "title": "Offline",
+            "type": "integer"
+          },
+          "RESERVED": {
+            "title": "Reserved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "AVAILABLE",
+          "RESERVED",
+          "CHARGING",
+          "FAULT",
+          "OFFLINE"
+        ],
+        "title": "QtChargerCounts",
+        "type": "object"
+      },
+      "QtEnvelope_QtHealth_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[QtHealth]",
+        "type": "object"
+      },
+      "QtEnvelope_QtOrderPage_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtOrderPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[QtOrderPage]",
+        "type": "object"
+      },
+      "QtEnvelope_QtSnapshot_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[QtSnapshot]",
+        "type": "object"
+      },
+      "QtEnvelope_QtStationPage_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtStationPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[QtStationPage]",
+        "type": "object"
+      },
+      "QtEnvelope_QtSummarySnapshot_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QtSummarySnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[QtSummarySnapshot]",
+        "type": "object"
+      },
+      "QtEnvelope_dict_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/QtMeta"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta"
+        ],
+        "title": "QtEnvelope[dict]",
+        "type": "object"
+      },
+      "QtHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "title": "Asof",
+            "type": "string"
+          },
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "readOnly": {
+            "const": true,
+            "default": true,
+            "title": "Readonly",
+            "type": "boolean"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "status": {
+            "const": "ready",
+            "default": "ready",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asOf"
+        ],
+        "title": "QtHealth",
+        "type": "object"
+      },
+      "QtLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "orders": {
+            "title": "Orders",
+            "type": "integer"
+          },
+          "stations": {
+            "title": "Stations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stations",
+          "orders"
+        ],
+        "title": "QtLimits",
+        "type": "object"
+      },
+      "QtMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "mergedWithHistory": {
+            "const": false,
+            "default": false,
+            "title": "Mergedwithhistory",
+            "type": "boolean"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "scope": {
+            "const": "CURRENT_QT_BUSINESS",
+            "default": "CURRENT_QT_BUSINESS",
+            "title": "Scope",
+            "type": "string"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "title": "QtMeta",
+        "type": "object"
+      },
+      "QtOrder": {
+        "additionalProperties": false,
+        "properties": {
+          "amountCents": {
+            "title": "Amountcents",
+            "type": "integer"
+          },
+          "chargerCode": {
+            "title": "Chargercode",
+            "type": "string"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "energyWh": {
+            "title": "Energywh",
+            "type": "integer"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "qtOrderId": {
+            "title": "Qtorderid",
+            "type": "integer"
+          },
+          "qtStationCode": {
+            "title": "Qtstationcode",
+            "type": "string"
+          },
+          "qtStationId": {
+            "title": "Qtstationid",
+            "type": "integer"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "stationName": {
+            "title": "Stationname",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RESERVED",
+              "CHARGING",
+              "WAITING_PAYMENT",
+              "COMPLETED",
+              "CANCELLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stoppedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stoppedat"
+          }
+        },
+        "required": [
+          "qtOrderId",
+          "qtStationId",
+          "qtStationCode",
+          "stationName",
+          "chargerCode",
+          "status",
+          "amountCents",
+          "energyWh",
+          "createdAt",
+          "startedAt",
+          "stoppedAt",
+          "paidAt"
+        ],
+        "title": "QtOrder",
+        "type": "object"
+      },
+      "QtOrderCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "CANCELLED": {
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "CHARGING": {
+            "title": "Charging",
+            "type": "integer"
+          },
+          "COMPLETED": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "RESERVED": {
+            "title": "Reserved",
+            "type": "integer"
+          },
+          "WAITING_PAYMENT": {
+            "title": "Waiting Payment",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "RESERVED",
+          "CHARGING",
+          "WAITING_PAYMENT",
+          "COMPLETED",
+          "CANCELLED"
+        ],
+        "title": "QtOrderCounts",
+        "type": "object"
+      },
+      "QtOrderPage": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "title": "Asof",
+            "type": "string"
+          },
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/QtOrder"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "orders",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "QtOrderPage",
+        "type": "object"
+      },
+      "QtOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "abnormalChargers": {
+            "$ref": "#/components/schemas/QtAbnormalChargers"
+          },
+          "revenueTrend": {
+            "items": {
+              "$ref": "#/components/schemas/QtRevenuePoint"
+            },
+            "title": "Revenuetrend",
+            "type": "array"
+          },
+          "timeZone": {
+            "const": "Asia/Shanghai",
+            "default": "Asia/Shanghai",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          },
+          "trendDays": {
+            "enum": [
+              7,
+              30
+            ],
+            "title": "Trenddays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "today",
+          "trendDays",
+          "revenueTrend",
+          "abnormalChargers"
+        ],
+        "title": "QtOverview",
+        "type": "object"
+      },
+      "QtRevenuePoint": {
+        "additionalProperties": false,
+        "properties": {
+          "completedEnergyWh": {
+            "title": "Completedenergywh",
+            "type": "integer"
+          },
+          "completedOrderCount": {
+            "title": "Completedordercount",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "revenueCents": {
+            "title": "Revenuecents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "revenueCents",
+          "completedOrderCount",
+          "completedEnergyWh"
+        ],
+        "title": "QtRevenuePoint",
+        "type": "object"
+      },
+      "QtSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "title": "Asof",
+            "type": "string"
+          },
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/QtLimits"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/QtOrder"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "overview": {
+            "$ref": "#/components/schemas/QtOverview"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/QtStation"
+            },
+            "title": "Stations",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/QtSummary"
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/QtTruncated"
+          }
+        },
+        "required": [
+          "asOf",
+          "summary",
+          "overview",
+          "stations",
+          "orders",
+          "limits",
+          "truncated"
+        ],
+        "title": "QtSnapshot",
+        "type": "object"
+      },
+      "QtStation": {
+        "additionalProperties": false,
+        "properties": {
+          "chargerStatusCounts": {
+            "$ref": "#/components/schemas/QtChargerCounts"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "District"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "priceCentsPerKwh": {
+            "title": "Pricecentsperkwh",
+            "type": "integer"
+          },
+          "qtStationCode": {
+            "title": "Qtstationcode",
+            "type": "string"
+          },
+          "qtStationId": {
+            "title": "Qtstationid",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "totalChargers": {
+            "title": "Totalchargers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qtStationId",
+          "qtStationCode",
+          "name",
+          "city",
+          "district",
+          "status",
+          "priceCentsPerKwh",
+          "totalChargers",
+          "chargerStatusCounts"
+        ],
+        "title": "QtStation",
+        "type": "object"
+      },
+      "QtStationPage": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "title": "Asof",
+            "type": "string"
+          },
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/QtStation"
+            },
+            "title": "Stations",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "stations",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "QtStationPage",
+        "type": "object"
+      },
+      "QtSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "activeOrders": {
+            "title": "Activeorders",
+            "type": "integer"
+          },
+          "activeStations": {
+            "title": "Activestations",
+            "type": "integer"
+          },
+          "chargerStatusCounts": {
+            "$ref": "#/components/schemas/QtChargerCounts"
+          },
+          "chargingOrders": {
+            "title": "Chargingorders",
+            "type": "integer"
+          },
+          "completedEnergyWh": {
+            "title": "Completedenergywh",
+            "type": "integer"
+          },
+          "completedOrders": {
+            "title": "Completedorders",
+            "type": "integer"
+          },
+          "monthRevenueCents": {
+            "title": "Monthrevenuecents",
+            "type": "integer"
+          },
+          "onlineChargers": {
+            "title": "Onlinechargers",
+            "type": "integer"
+          },
+          "onlineRatio": {
+            "title": "Onlineratio",
+            "type": "number"
+          },
+          "orderStatusCounts": {
+            "$ref": "#/components/schemas/QtOrderCounts"
+          },
+          "paidAmountCents": {
+            "title": "Paidamountcents",
+            "type": "integer"
+          },
+          "todayCompletedEnergyWh": {
+            "title": "Todaycompletedenergywh",
+            "type": "integer"
+          },
+          "todayCompletedOrders": {
+            "title": "Todaycompletedorders",
+            "type": "integer"
+          },
+          "todayOrders": {
+            "title": "Todayorders",
+            "type": "integer"
+          },
+          "todayRevenueCents": {
+            "title": "Todayrevenuecents",
+            "type": "integer"
+          },
+          "totalChargers": {
+            "title": "Totalchargers",
+            "type": "integer"
+          },
+          "totalOrders": {
+            "title": "Totalorders",
+            "type": "integer"
+          },
+          "totalStations": {
+            "title": "Totalstations",
+            "type": "integer"
+          },
+          "totalUsers": {
+            "title": "Totalusers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalUsers",
+          "totalStations",
+          "activeStations",
+          "totalChargers",
+          "chargerStatusCounts",
+          "totalOrders",
+          "orderStatusCounts",
+          "chargingOrders",
+          "completedOrders",
+          "paidAmountCents",
+          "completedEnergyWh",
+          "activeOrders",
+          "onlineChargers",
+          "onlineRatio",
+          "todayOrders",
+          "todayCompletedOrders",
+          "todayRevenueCents",
+          "monthRevenueCents",
+          "todayCompletedEnergyWh"
+        ],
+        "title": "QtSummary",
+        "type": "object"
+      },
+      "QtSummarySnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "title": "Asof",
+            "type": "string"
+          },
+          "dataSource": {
+            "const": "qt-sqlite",
+            "default": "qt-sqlite",
+            "title": "Datasource",
+            "type": "string"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/QtSummary"
+          }
+        },
+        "required": [
+          "asOf",
+          "summary"
+        ],
+        "title": "QtSummarySnapshot",
+        "type": "object"
+      },
+      "QtTruncated": {
+        "additionalProperties": false,
+        "properties": {
+          "orders": {
+            "title": "Orders",
+            "type": "boolean"
+          },
+          "stations": {
+            "title": "Stations",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stations",
+          "orders"
+        ],
+        "title": "QtTruncated",
+        "type": "object"
+      },
       "QualitySummary": {
         "additionalProperties": false,
         "properties": {
@@ -5104,7 +6154,7 @@
     }
   },
   "info": {
-    "description": "已发布统计批次、CPU机器学习和独立MySQL业务演示。所有运营数据均为模拟；预测不保证实际库存。",
+    "description": "Qt当前模拟业务只读快照、历史统计批次、CPU机器学习和独立MySQL策略演示。三类数据保持隔离；历史预测不保证Qt库存。",
     "title": "充能智析 · 运营分析与智能找桩",
     "version": "1.0.0"
   },
@@ -7424,6 +8474,324 @@
           }
         },
         "summary": "Predict Load"
+      }
+    },
+    "/api/v1/qt-live/health": {
+      "get": {
+        "operationId": "health_api_v1_qt_live_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_QtHealth_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid pagination or status"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Qt SQLite unavailable; no fabricated zeros"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "Qt current simulated business"
+        ]
+      }
+    },
+    "/api/v1/qt-live/orders": {
+      "get": {
+        "operationId": "orders_api_v1_qt_live_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "RESERVED",
+                    "CHARGING",
+                    "WAITING_PAYMENT",
+                    "COMPLETED",
+                    "CANCELLED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_QtOrderPage_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid pagination or status"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Qt SQLite unavailable; no fabricated zeros"
+          }
+        },
+        "summary": "Orders",
+        "tags": [
+          "Qt current simulated business"
+        ]
+      }
+    },
+    "/api/v1/qt-live/snapshot": {
+      "get": {
+        "operationId": "snapshot_api_v1_qt_live_snapshot_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stationLimit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Stationlimit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "orderLimit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Orderlimit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trendDays",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 7,
+              "title": "Trenddays",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_QtSnapshot_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid pagination or status"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Qt SQLite unavailable; no fabricated zeros"
+          }
+        },
+        "summary": "Snapshot",
+        "tags": [
+          "Qt current simulated business"
+        ]
+      }
+    },
+    "/api/v1/qt-live/stations": {
+      "get": {
+        "operationId": "stations_api_v1_qt_live_stations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_QtStationPage_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid pagination or status"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Qt SQLite unavailable; no fabricated zeros"
+          }
+        },
+        "summary": "Stations",
+        "tags": [
+          "Qt current simulated business"
+        ]
+      }
+    },
+    "/api/v1/qt-live/summary": {
+      "get": {
+        "operationId": "summary_api_v1_qt_live_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_QtSummarySnapshot_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Invalid pagination or status"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QtEnvelope_dict_"
+                }
+              }
+            },
+            "description": "Qt SQLite unavailable; no fabricated zeros"
+          }
+        },
+        "summary": "Summary",
+        "tags": [
+          "Qt current simulated business"
+        ]
       }
     },
     "/api/v1/stations": {

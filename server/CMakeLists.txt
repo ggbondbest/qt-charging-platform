@@ -2,6 +2,7 @@ add_subdirectory(database)
 add_subdirectory(repositories)
 add_subdirectory(services)
 add_subdirectory(network)
+add_subdirectory(app)
 add_subdirectory(pages)
 
 add_executable(charging_server
@@ -12,6 +13,7 @@ target_link_libraries(charging_server PRIVATE
     ChargingPlatform::ServerPages
     ChargingPlatform::ServerCore
     ChargingPlatform::ServerServices
+    ChargingPlatform::DashboardService
     ChargingPlatform::ProjectOptions
     Qt6::Sql
     Qt6::Widgets

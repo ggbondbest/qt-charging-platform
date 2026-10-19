@@ -30,7 +30,7 @@ struct LatLng
 // 接口失败分类：页面兜底文案与提示按类型区分（密钥无效 / 网络不通 / 限流）。
 enum class MapError {
     None,
-    NoApiKey,     // 环境变量未提供非空 key（不发起任何请求）
+    NoApiKey,     // 环境变量及本地配置均未提供非空 key（不发起任何请求）
     Network,      // DNS/连接/SSL 等传输层失败
     Timeout,      // 请求超时无响应
     RateLimited,  // 短时限流（status 120、HTTP 429）
@@ -73,8 +73,8 @@ struct RouteResult
 // 腾讯地图 WebService 请求工具类（成员 2，任务 #17 地图接入）。
 //
 // 设计口径（队友操作指引）：
-// - 密钥只读取环境变量 TENCENT_MAP_API_KEY / 旧名 CHARGING_TENCENT_MAP_KEY；
-//   不读取仓库或用户目录中的配置文件，不内置共享 Key，不自动选择演示密钥。
+// - 密钥默认读取 config/services.local.json 的 tencentMap；非空环境变量
+//   TENCENT_MAP_API_KEY / 旧名 CHARGING_TENCENT_MAP_KEY 优先，不内置共享 Key。
 //   生产请求端点固定为 https://apis.map.qq.com/ws，配置文件不能重定向凭证。
 //   若控制台开启签名校验，另配 TENCENT_MAP_SECRET_KEY（旧名
 //   CHARGING_TENCENT_MAP_SECRET，SK），本类自动
@@ -100,12 +100,12 @@ public:
     // 兼容旧名 CHARGING_TENCENT_MAP_KEY。
     static QString apiKeyFromEnvironment();
     // 兼容存在性查询：任一环境变量名已定义即为真，含空值。
-    // 不再参与配置来源选择：不论返回值为何，环境都是唯一 Key 来源。
+    // 实际加载遵循非空环境变量优先、地图配置文件回退。
     static bool environmentKeyAuthoritative();
-    // 仅保留源码兼容；不读文件，始终返回空字符串。
+    // 读取指定文件的 tencentMap.webServiceKey；端点文件接口始终返回空。
     static QString apiKeyFromConfigFile(const QString& configPath = QString());
     static QString baseUrlFromConfigFile(const QString& configPath = QString());
-    // 兼容旧调用方：忽略 configPath，分别返回环境 Key 和固定官方端点。
+    // 合并环境与配置文件 Key；请求端点始终固定为腾讯官方地址。
     static QString resolveApiKey(const QString& configPath = QString());
     static QString resolveBaseUrl(const QString& configPath = QString());
     bool hasUsableKey() const;              // 构造时缓存；false = 未配置，禁止联网请求

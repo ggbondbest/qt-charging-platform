@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "ai": {
+    "enabled": "auto",
+    "apiKey": "",
+    "baseUrl": "https://aiping.cn/api/v1",
+    "model": "DeepSeek-V4.1-Flash",
+    "providerLabel": "AIPing"
+  },
+  "tencentMap": {
+    "webServiceKey": "",
+    "jsKey": "",
+    "secretKey": ""
+  }
+}

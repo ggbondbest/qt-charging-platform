@@ -15,7 +15,7 @@ const city = ref(''); const start = ref(''); const end = ref('');
 const snapshot = ref<RecordData>(); const loading = ref(false); const error = ref('');
 const sequence = ref(0); let controller: AbortController | undefined;
 const refreshing = ref(false);
-const props = withDefaults(defineProps<{ presentation?: boolean; initialSection?: 'overview' | 'space'; initialScope?: DashboardScope }>(), { presentation: false, initialSection: 'overview' });
+const props = withDefaults(defineProps<{ presentation?: boolean; compact?: boolean; initialSection?: 'overview' | 'space'; initialScope?: DashboardScope }>(), { presentation: false, compact: false, initialSection: 'overview' });
 const section = ref<string>(props.initialSection);
 const sections = [
   { id: 'overview', label: '运营总览', description: '网络、经营与服务指标' },
@@ -96,10 +96,10 @@ async function initialize() {
 onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; controller?.abort(); });
 </script>
 <template>
-  <div class="analytics-page" :class="{ 'analytics-presentation': presentation }">
+  <div class="analytics-page" :class="{ 'analytics-presentation': presentation, 'analytics-compact': compact }">
     <section class="analytics-heading">
-      <div><div class="eyebrow">NETWORK INTELLIGENCE</div><h1>运营总览</h1><p>从网络全貌，到时空需求、人群结构与服务效率。</p></div>
-      <div class="analytics-heading-note"><button class="button secondary" :aria-pressed="presentation" @click="emit('update:presentation', !presentation)"><Icon name="chart" :size="16"/>{{ presentation ? '退出大屏模式' : '大屏模式' }}</button><small>{{ presentation ? '移到顶部显示导航 · 历史模拟数据' : '历史模拟数据 · 已发布批次' }}</small></div>
+      <div><div v-if="!compact" class="eyebrow">NETWORK INTELLIGENCE</div><h1 v-if="!compact">历史运营分析</h1><p>已发布历史模拟批次 · 不包含 Qt 当前业务</p></div>
+      <div class="analytics-heading-note"><button class="button secondary" :aria-pressed="presentation" @click="emit('update:presentation', !presentation)"><Icon name="chart" :size="16"/>{{ presentation ? '退出大屏模式' : '大屏模式' }}</button><small v-if="presentation">Esc 返回窗口</small></div>
     </section>
     <section v-show="!presentation" class="analytics-filter" aria-label="统计范围筛选">
       <label>城市范围<select v-model="city" aria-label="统计城市" :disabled="!dataset || loading"><option value="">全部城市</option><option v-for="item in cities" :key="item.cityId" :value="item.cityId">{{ item.cityName }}</option></select></label>
@@ -145,3 +145,11 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence.value++; 
     </template>
   </div>
 </template>
+
+<style scoped>
+.analytics-page.analytics-compact { padding-top:18px; }
+.analytics-compact .analytics-heading { margin-bottom:16px; gap:16px; }
+.analytics-compact .analytics-heading p { font-size:12px; }
+.analytics-presentation .analytics-heading p { display:block; }
+@media(max-width:640px) { .analytics-compact .analytics-heading { align-items:center; }.analytics-compact .analytics-heading-note { flex-shrink:0; } }
+</style>

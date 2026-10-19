@@ -30,6 +30,8 @@ endif()
 # configuration instead of silently producing only the retired Widgets client.
 option(CHARGING_BUILD_QML "Build the production QML client" ON)
 option(CHARGING_BUILD_WIDGETS_CLIENT "Build the legacy Widgets client for regression only" OFF)
+option(CHARGING_EMBED_WEB_DASHBOARD
+    "Embed the Vue operations center in Qt (requires Qt WebEngineWidgets)" ON)
 set(CHARGING_HAS_QML OFF)
 if(CHARGING_BUILD_QML)
     find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
@@ -41,6 +43,14 @@ endif()
 # CHARGING_PLATFORM_STRICT_QT_VERSION on and therefore compiles with exactly 6.2.4.
 find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
     COMPONENTS ${_charging_qt_components})
+
+if(CHARGING_EMBED_WEB_DASHBOARD)
+    find_package(Qt6 ${CHARGING_PLATFORM_QT_BASELINE_VERSION} REQUIRED
+        COMPONENTS WebEngineWidgets)
+    message(STATUS "ChargingPlatform: embedded Vue dashboard enabled")
+else()
+    message(STATUS "ChargingPlatform: Vue dashboard uses the external browser only")
+endif()
 
 if(CHARGING_PLATFORM_STRICT_QT_VERSION
    AND NOT "${Qt6_VERSION}" VERSION_EQUAL "${CHARGING_PLATFORM_QT_BASELINE_VERSION}")

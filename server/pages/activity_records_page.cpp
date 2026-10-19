@@ -101,7 +101,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(18);
 
-    auto* metricsLayout = new QHBoxLayout();
+    auto* metricsLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Metrics);
     metricsLayout->setSpacing(16);
     if (isRecharge) {
         metricsLayout->addWidget(createManagementMetricCard(tr("今日充值笔数"), tr("286"), tr(" 笔"),
@@ -125,7 +125,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     layout->addLayout(metricsLayout);
 
     auto* toolbar = createCompactCard(this);
-    auto* toolbarLayout = new QHBoxLayout(toolbar);
+    auto* toolbarLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls, toolbar);
     toolbarLayout->setContentsMargins(18, 12, 18, 12);
     toolbarLayout->setSpacing(10);
     keywordLineEdit_ = new QLineEdit(toolbar);
@@ -172,6 +172,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     feedbackLabel_ = createTextLabel(tr("正在显示本地 Mock 数据"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
     feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setWordWrap(true);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     if (!isRecharge) {
@@ -184,13 +185,11 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     }
     toolbarLayout->addWidget(dateRangeComboBox_);
     toolbarLayout->addWidget(feedbackLabel_);
-    toolbarLayout->addStretch();
-    toolbarLayout->addWidget(resetButton);
-    toolbarLayout->addWidget(queryButton);
-    toolbarLayout->addWidget(refreshButton);
+    toolbarLayout->addWidget(createManagementActionGroup(
+        {resetButton, queryButton, refreshButton}, toolbar));
     layout->addWidget(toolbar);
 
-    auto* bodyLayout = new QHBoxLayout();
+    auto* bodyLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::ListAndDetail);
     bodyLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
     tableCard->setMinimumWidth(kManagementTableMinimumWidth);
@@ -201,6 +200,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    configureManagementResponsiveTable(tableWidget_);
     tableWidget_->setObjectName(isRecharge ? QStringLiteral("rechargeRecordsTable")
                                            : QStringLiteral("operationLogTable"));
     tableWidget_->setColumnCount(6);
@@ -228,7 +228,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     tableWidget_->setColumnWidth(actionColumn, 72);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
-    tableLayout->addWidget(statePanel_);
+    tableLayout->addWidget(statePanel_, 1);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -246,7 +246,6 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     bodyLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(isRecharge ? tr("充值详情") : tr("日志详情"), this);
-    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     detailTitleLabel_ = createTextLabel(QString(), QStringLiteral("color:#273751; font-size:15px; font-weight:700;"), detailCard);
     detailMetaLabel_ = createTextLabel(QString(), QStringLiteral("color:#718098; font-size:13px;"), detailCard);
@@ -261,6 +260,7 @@ ActivityRecordsPage::ActivityRecordsPage(ActivityRecordsMode mode, QWidget* pare
     detailLayout->addWidget(divider);
     detailLayout->addWidget(detailContentLabel_);
     detailLayout->addStretch();
+    configureManagementDetailWrapping(detailCard);
     bodyLayout->addWidget(detailCard);
     layout->addLayout(bodyLayout, 1);
 

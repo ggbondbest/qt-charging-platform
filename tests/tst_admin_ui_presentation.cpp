@@ -2,10 +2,11 @@
 #include "admin_request_gateway.h"
 #include "main_window.h"
 #include "server_runtime.h"
+#include "dashboard_service_manager.h"
 
 #include <QApplication>
+#include <QAbstractItemView>
 #include <QComboBox>
-#include <QChartView>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -17,6 +18,7 @@
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -99,6 +101,11 @@ private slots:
                               QHostAddress::LocalHost, 0));
         QTRY_COMPARE(listening.size(), 1);
         MainWindow window(&runtime);
+        DashboardServiceManager::Options dashboardOptions;
+        dashboardOptions.autoStart = false;
+        DashboardServiceManager dashboardService(dashboardOptions);
+        dashboardService.start(QString());
+        window.setDashboardServiceManager(&dashboardService);
         window.resize(1600, 990);
         window.show();
         auto* username = window.findChild<QLineEdit*>(QStringLiteral("usernameLineEdit"));
@@ -109,7 +116,7 @@ private slots:
         password->setText(QStringLiteral("123456"));
         login->click();
         QTRY_VERIFY(window.adminGateway()->isAuthenticated());
-        auto* dashboard = window.findChild<QWidget*>(QStringLiteral("dashboardPage"));
+        auto* dashboard = window.findChild<QWidget*>(QStringLiteral("intelligenceCenterPage"));
         QVERIFY(dashboard != nullptr);
         QTRY_VERIFY(dashboard->isVisible());
         for (auto* area : window.findChildren<QScrollArea*>()) {
@@ -121,11 +128,9 @@ private slots:
             QCOMPARE(table->palette().color(QPalette::AlternateBase), QColor("#f8fafd"));
             QCOMPARE(table->palette().color(QPalette::Text), QColor("#1d2c46"));
         }
-        for (auto* chart : dashboard->findChildren<QChartView*>()) {
-            QCOMPARE(chart->backgroundBrush().color(), QColor("#ffffff"));
-            const QColor margin = chart->grab().toImage().pixelColor(2, 2);
-            QVERIFY(margin.red() > 220 && margin.green() > 220 && margin.blue() > 220);
-        }
+        QVERIFY(!window.findChild<QWidget*>(QStringLiteral("dashboardPage")));
+        QVERIFY(!window.findChild<QWidget*>(QStringLiteral("managementHeader"))->isVisible());
+        QVERIFY(!dashboard->findChild<QLineEdit*>());
         for (auto* combo : window.findChildren<QComboBox*>()) {
             if (combo->isEnabled()) {
                 QCOMPARE(combo->palette().color(QPalette::Text), QColor("#1d2c46"));
@@ -135,10 +140,12 @@ private slots:
         savePreview(&window, QStringLiteral("admin-dashboard-1600"));
         const QList<QPair<QString, QString>> otherPages = {
             {QStringLiteral("电桩管理"), QStringLiteral("chargerManagementPage")},
+            {QStringLiteral("电站管理"), QStringLiteral("stationManagementPage")},
             {QStringLiteral("用户管理"), QStringLiteral("userManagementPage")},
             {QStringLiteral("订单管理"), QStringLiteral("orderManagementPage")},
             {QStringLiteral("充值记录"), QStringLiteral("rechargeRecordsPage")},
             {QStringLiteral("操作日志"), QStringLiteral("operationLogPage")},
+            {QStringLiteral("排队与维修"), QStringLiteral("workflowManagementPage")},
         };
         for (const auto& page : otherPages) {
             for (auto* button : window.findChildren<QPushButton*>()) {
@@ -157,7 +164,35 @@ private slots:
                 QVERIFY(table->columnWidth(1) >= 140);
                 QVERIFY(!table->wordWrap());
             }
-            savePreview(&window, QStringLiteral("admin-") + page.second + QStringLiteral("-1600"));
+            for (int width : {1600, 1450, 1280, 1024}) {
+                window.resize(width, width == 1024 ? 720 : 900);
+                QTest::qWait(80);
+                const QString context = QStringLiteral("%1 at %2px").arg(page.second).arg(width);
+                auto* pages = window.findChild<QStackedWidget*>(QStringLiteral("managementPages"));
+                QVERIFY2(widget->width() <= pages->width(), qPrintable(context));
+                for (auto* area : window.findChildren<QScrollArea*>()) {
+                    if (!area->isVisible()) continue;
+                    QVERIFY2(area->horizontalScrollBar()->maximum() == 0, qPrintable(context));
+                    QVERIFY2(area->widget()->width() <= area->viewport()->width(), qPrintable(context));
+                }
+                // Filters and detail actions may move below the fold, but must
+                // stay within the page width. Tables own their column scrolling.
+                for (auto* control : widget->findChildren<QWidget*>()) {
+                    if (!control->isVisible() ||
+                        !(qobject_cast<QLineEdit*>(control) || qobject_cast<QComboBox*>(control)
+                          || qobject_cast<QPushButton*>(control))) continue;
+                    bool insideTable = false;
+                    for (auto* ancestor = control->parentWidget(); ancestor && ancestor != widget;
+                         ancestor = ancestor->parentWidget()) {
+                        if (qobject_cast<QAbstractItemView*>(ancestor)) { insideTable = true; break; }
+                    }
+                    if (insideTable) continue;
+                    const QRect bounds(control->mapTo(widget, QPoint()), control->size());
+                    QVERIFY2(bounds.left() >= 0 && bounds.right() < widget->width(),
+                             qPrintable(context + QStringLiteral(" control: ") + control->objectName()));
+                }
+                savePreview(&window, QStringLiteral("admin-") + page.second + QStringLiteral("-%1").arg(width));
+            }
         }
         for (auto* button : window.findChildren<QPushButton*>()) {
             if (button->text() == QStringLiteral("电站管理")) {
@@ -173,14 +208,9 @@ private slots:
         window.resize(1024, 720);
         QTest::qWait(100);
         QCOMPARE(window.size(), QSize(1024, 720));
-        bool visibleHorizontalScrollbar = false;
         for (auto* area : window.findChildren<QScrollArea*>()) {
-            if (area->isVisible() && area->horizontalScrollBar()->maximum() > 0) {
-                QVERIFY(area->horizontalScrollBar()->isVisible());
-                visibleHorizontalScrollbar = true;
-            }
+            if (area->isVisible()) QCOMPARE(area->horizontalScrollBar()->maximum(), 0);
         }
-        QVERIFY(visibleHorizontalScrollbar);
         savePreview(&window, QStringLiteral("admin-stations-1024"));
         for (const QString& action : {QStringLiteral("新增电站"), QStringLiteral("编辑电站")}) {
             QPushButton* actionButton = nullptr;

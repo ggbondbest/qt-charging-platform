@@ -32,7 +32,7 @@ for city in 大连市 沈阳市 北京市 上海市 深圳市; do
     counts="$(sqlite3 -batch -bail "${city_test_database}" \
         "SELECT COUNT(DISTINCT s.id) || '|' || COUNT(c.id)
          FROM stations s JOIN chargers c ON c.station_id=s.id
-         WHERE s.address LIKE '${city}%';")"
+         WHERE s.city='${city}' AND s.address LIKE '${city}%' AND length(s.district)>0;")"
     if [[ "${counts}" != "5|15" ]]; then
         printf 'Unexpected counts for %s: %s (expected 5|15).\n' "${city}" "${counts}" >&2
         exit 1
@@ -47,7 +47,7 @@ mixed_station_count="$(sqlite3 -batch -bail "${city_test_database}" \
 # Existing operator edits and business balance survive another seeded startup.
 sqlite3 -batch -bail "${city_test_database}" \
     "UPDATE users SET balance_cents=54321 WHERE id=1;
-     UPDATE stations SET name='保留管理员编辑',price_cents_per_kwh=199,status='INACTIVE'
+     UPDATE stations SET name='保留管理员编辑',price_cents_per_kwh=199,status='INACTIVE',city='自定义城市',district='自定义区域'
      WHERE code='STA-CITY-SY-001';
      UPDATE chargers SET status='FAULT',total_charge_count=42
      WHERE code='CHG-CITY-SY-001-A1';" > /dev/null
@@ -56,9 +56,9 @@ for sql_file in seed.sql city_demo_seed.sql; do
 done
 preserved="$(sqlite3 -batch -bail "${city_test_database}" \
     "SELECT (SELECT balance_cents FROM users WHERE id=1) || '|' ||
-      (SELECT name || '|' || price_cents_per_kwh || '|' || status FROM stations WHERE code='STA-CITY-SY-001') || '|' ||
+      (SELECT name || '|' || price_cents_per_kwh || '|' || status || '|' || city || '|' || district FROM stations WHERE code='STA-CITY-SY-001') || '|' ||
       (SELECT status || '|' || total_charge_count FROM chargers WHERE code='CHG-CITY-SY-001-A1');")"
-[[ "${preserved}" == "54321|保留管理员编辑|199|INACTIVE|FAULT|42" ]]
+[[ "${preserved}" == "54321|保留管理员编辑|199|INACTIVE|自定义城市|自定义区域|FAULT|42" ]]
 
 integrity="$(sqlite3 -batch -bail "${city_test_database}" 'PRAGMA integrity_check;')"
 [[ "${integrity}" == "ok" ]]

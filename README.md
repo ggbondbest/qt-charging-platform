@@ -1,10 +1,22 @@
 # 电动汽车充电桩应用管理平台 · 充能智析
 
-从充电业务到运营决策的两阶段实训项目：第一阶段使用 **Qt 6.2.4** 实现用户端、PC 管理端与充电业务闭环；第二阶段使用 **PySpark、MySQL、FastAPI、Vue 3 与机器学习**，把多源模拟数据转化为可解释的运营指标、预测和决策参考。
+从充电业务到运营决策的一体化演示项目：**Qt 6.2.4** 实现用户端、PC 管理端与充电业务闭环；**FastAPI 只读适配层**让 Vue 查询同一 SQLite 的当前订单与设备状态；**PySpark、MySQL 与机器学习**提供独立历史场景的运营分析和预测。
 
 本仓库保留两阶段完整代码、数据集、自动化测试和交付说明。它是教学演示系统，充电设备、资金交易及运营业务均为模拟，不代表真实充电网络的生产系统。
 
-[第二阶段启动指南](data_analysis/delivery/README.md) · [数据集说明](data_analysis/README.md) · [最终演示与验收](data_analysis/docs/final_delivery.md) · [CI 运行记录](https://github.com/ggbondbest/qt-charging-platform/actions/workflows/data-analysis.yml)
+[赛事整合启动与验收](docs/competition_integration.md) · [历史分析与模型启动指南](data_analysis/delivery/README.md) · [数据集说明](data_analysis/README.md) · [历史分析演示与验收](data_analysis/docs/final_delivery.md) · [CI 运行记录](https://github.com/ggbondbest/qt-charging-platform/actions)
+
+## 本次整合
+
+- Qt 管理端统一使用“运营中心”入口，当前模拟业务与历史运营分析分区展示；网页铺满内容区域，支持全屏，服务自动启动。
+- Vue 默认进入“当前模拟业务”，读取 Qt 数据库的一致只读快照，每 7.5 秒刷新；后台和切页暂停，断连保留并标记最后成功快照。
+- Qt 用户端保留原有找站、预约、充电和支付流程，启动时自动读取本地腾讯地图配置。
+- 既有 ML 用于历史运营分析、历史策略演示与运营参谋；历史模型不直接给 Qt 当前电站预测。
+
+先按 [整合指南](docs/competition_integration.md) 安装 Python 依赖并构建 Qt 和 Vue，之后直接运行 Qt 管理端即可：管理端会自动启动本地网页服务并连接它正在使用的 SQLite，退出时收回自己启动的服务。Node.js 只用于前端构建，日常运行无需启动 Node.js 或 Vite。
+默认只需 Qt + SQLite + FastAPI；历史分析与模型可通过本机配置启用完整模式。需要同时启动客户端时，仍可使用 `python scripts/launch_demo.py --demo-seed`（完整模式加 `--full`）。
+
+AI 与腾讯地图可在同一份 `config/services.local.json` 填写 Key：用户客户端直接读取 `tencentMap`，管理端的AI服务只读取 `ai`。配置保存后重启对应程序即可，客户端无需额外启动脚本，网页无需重新构建。首次从 [配置模板](config/services.example.json) 复制，详细用法见 [统一密钥配置](docs/services_configuration.md)。本地配置已被 Git 忽略。
 
 ![充能智析运营总览：跨城市经营指标、电站地图和设备状态](docs/assets/final-delivery/vue-overview.png)
 
@@ -17,7 +29,7 @@
 | QML 用户端 | 手机号登录与自动注册、五城市找站、地址定位与路线、预约/取消、动态充电、订单结算、余额与充值记录 |
 | 充电服务 | 预约 → 开始充电 → 计费 → 停止 → 待支付 → 支付完成；服务端状态机、事务、费率快照与整数计费 |
 | 扩展业务 | 指定电桩 FIFO 排队与自动叫号、报障与维修时间轴、按金额/电量/时长目标自动停止 |
-| PC 管理端 | 管理员认证、运营概览、电站/电桩管理、用户冻结与解冻、订单、充值、操作日志、排队与维修 |
+| PC 管理端 | 管理员认证、统一运营中心、电站/电桩管理、用户冻结与解冻、订单、充值、操作日志、排队与维修 |
 | 通信与存储 | 真实 TCP + JSON、请求编号与会话隔离、异步管理请求、独立业务工作线程；SQLite Schema v5、20 张表 |
 
 同一服务端持有业务数据库。用户端不直连数据库，页面不直接写 SQL；重复支付、预约到期、叫号超时等规则由服务端统一处理。
@@ -41,7 +53,7 @@
 | 智能找站 | 地图设置出发点，结合到站可用概率、等待、价格、距离和负荷均衡推荐电站；显示理由、积分标签与路线预览 |
 | 智能分析 | 1/6/24 小时负荷与空闲桩预测、未来 14 天未回访风险、结束会话异常复核；展示当前模型与基线指标 |
 | AI 运营参谋 | 全站聊天入口；支持本地统计问答，可选在线检索聚合、模型报告和项目知识，生成带来源引用的回答 |
-| 模拟控制台 | 管理员令牌验证、历史回放时钟、最近站与智能推荐配对实验 |
+| 模拟控制台 | 直接进入、历史回放时钟、最近站与智能推荐配对实验 |
 
 时空与效率、用户与服务是运营总览内的分析工作区。网页聚焦分析与决策，不重复展示一期的充电、支付和行程操作。
 
@@ -54,6 +66,9 @@ flowchart LR
         Admin[PC 管理页面] -->|异步请求| S
         S --> Repo[Repository]
         Repo --> SQLite[(SQLite)]
+        Admin -->|可选 WebEngine / 浏览器| Vue
+        SQLite -->|只读事务| Live[Qt Live 适配层]
+        Live -->|当前模拟业务| Vue
     end
     subgraph Analytics[第二阶段 独立分析系统]
         Raw[模拟业务数据与气象背景] --> Spark[PySpark 清洗与多维统计]
@@ -69,7 +84,7 @@ flowchart LR
     end
 ```
 
-两阶段可以独立启动。第二阶段使用可复现的数据批次，**不是从 Qt 的 SQLite 实时同步数据**；其只读统计库与模拟业务库也相互隔离。HDFS 用于数据存储和处理验收，网页与现有模型训练不要求先启动 Hadoop。
+当前业务按请求只读查询 Qt SQLite，不复制、不回写；历史分析继续使用可复现的独立批次。Qt 当前订单、历史统计库和 ChargePilot 回放库的身份、时间与金额口径保持隔离。HDFS 用于数据存储和处理验收，网页与现有模型训练不要求先启动 Hadoop。
 
 ## 数据与分析特色
 
@@ -127,7 +142,7 @@ python -m data_analysis.delivery.cli train
 
 - 设置 `ANALYTICS_MYSQL_HOST/PORT/DATABASE/USER/PASSWORD`，使用导入账号发布到**尚不存在的新统计库**。发布器不覆盖旧库。
 - 服务改用只拥有 `SELECT` 权限的统计账号；另建独立业务库，设置 `CHARGEPILOT_MYSQL_HOST/PORT/DATABASE/USER/PASSWORD`。
-- 需要模拟控制台时，设置至少 16 字符的随机 `CHARGEPILOT_ADMIN_TOKEN`。它不是一期的管理员密码；未设置时管理接口禁用。
+- 模拟控制台直接进入，不需要额外管理员令牌；Qt 管理端仍使用原有管理员登录。
 
 首次发布命令（先配好导入账号，已有可用环境不要重复发布）：
 
@@ -204,7 +219,7 @@ bash scripts/verify_delivery.sh
 
 演示管理员为 `admin / 123456`；演示用户 `13800138000` 初始余额为 100 元，新手机号注册余额为 0。`--demo-seed` 加载五城 25 站 / 75 桩演示目录，不代表真实商业电站。保留已有业务库，需要全新演示时选择新的 SQLite 文件名。
 
-一期地址定位和路线需要自己的腾讯地图 Key，可设置 `TENCENT_MAP_API_KEY`；启用签名时另设 `TENCENT_MAP_SECRET_KEY`。接口权限、网络和底图需在运行环境验证，不能用 Mock 页面代替真实 TCP 联调。操作步骤见 [一期验收与地图配置](docs/development/delivery_acceptance.md)、[排队/维修/目标充电说明](docs/development/queue-repair-targets.md)。历史验收文档中的临时分支、PR 顺序和旧 Qt CI 条件不再作为本次发布入口。
+客户端地址定位和路线需要自己的腾讯地图 Key，填写 `config/services.local.json` 的 `tencentMap.webServiceKey`；启用签名时另填 `secretKey`。原 `TENCENT_MAP_API_KEY` / `TENCENT_MAP_SECRET_KEY` 环境变量仍兼容。接口权限、网络和底图需在运行环境验证，不能用 Mock 页面代替真实 TCP 联调。操作步骤见 [统一密钥配置](docs/services_configuration.md)、[一期验收与地图配置](docs/development/delivery_acceptance.md)、[排队/维修/目标充电说明](docs/development/queue-repair-targets.md)。历史验收文档中的临时分支、PR 顺序和旧 Qt CI 条件不再作为本次发布入口。
 
 ## 仓库结构
 
@@ -245,7 +260,7 @@ docs/            一期需求、架构、协议与协作记录
 | ML 与 MySQL 集成 ×1 | 实际 CPU 训练、预测、集成接口、参谋回归与配对仿真 |
 | Vue ×1 | 前端测试、类型检查与构建 |
 
-AI 在线协议在 CI 中使用测试传输，不要求真实 Key 或付费调用。CI 配置和历史通过记录不等于本次检查已通过，应查看当前提交的运行结果。一期 Qt 自动工作流已移除，测试代码和 `verify_delivery.sh` 手工验证入口仍保留。
+AI 在线协议在 CI 中使用测试传输，不要求真实 Key 或付费调用。CI 配置和历史通过记录不等于本次检查已通过，应查看当前提交的运行结果。一期旧 Qt 自动工作流已移除；本次新增 `Qt and Vue integration` 工作流验证 Qt 6.2.4、Vue、只读适配及自动启动链路，另保留 `verify_delivery.sh` 手工入口。
 
 - 统计数据采用固定历史批次；日期筛选的结束日不包含当天，设备快照不冒充实时库存。
 - 地图底图需联网，默认到站时间为情景估计；外部真实路线不可用时明确提示，不伪造导航成功。
@@ -257,6 +272,9 @@ AI 在线协议在 CI 中使用测试传输，不要求真实 Key 或付费调�
 
 | 想了解什么 | 从这里开始 |
 | --- | --- |
+| 赛事材料、团队分工与资源说明 | [参赛文档源](docs/competition_submission/README.md) |
+| AI 与客户端地图快速配置 | [统一配置](docs/services_configuration.md) |
+| macOS 评审程序打包 | [打包说明](packaging/README.md) |
 | 第二阶段完整安装与运行 | [统一交付指南](data_analysis/delivery/README.md) |
 | 最终范围、验证及演示顺序 | [最终交付与验收](data_analysis/docs/final_delivery.md) |
 | 数据准备和清洗如何展示 | [清洗与准备验收](data_analysis/docs/cleaning_acceptance.md) |

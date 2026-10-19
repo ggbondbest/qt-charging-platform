@@ -68,10 +68,12 @@ const QByteArray kGeocodeJson = R"({
 class MapGeoServiceTest final : public QObject
 {
     Q_OBJECT
+    QTemporaryDir isolatedConfig_;
 
 private slots:
     void init()
     {
+        qputenv("CHARGING_SERVICES_CONFIG", isolatedConfig_.filePath("missing.json").toUtf8());
         // 默认无 key 无 SK（用例内按需覆盖，cleanup 统一清除，防泄漏）。
         // 两个环境变量名都要清：新名 TENCENT_MAP_API_KEY + 旧兼容名。
         qputenv("TENCENT_MAP_API_KEY", "");
@@ -89,9 +91,9 @@ private slots:
 
     void noKeyFailsAsyncWithoutAnyNetwork();
     void envPrefersNewNameOverLegacy();
-    // Local configuration files must never supply credentials or redirect their requests.
-    void configFileCannotSupplyKeyOrEndpoint();
-    void environmentIsOnlyProductionConfiguration();
+    // Shared configuration supplies keys but cannot redirect their requests.
+    void configFileSuppliesMapKeyWithoutRedirectingEndpoint();
+    void environmentOverridesSharedConfiguration();
     // —— 契约用例（查询形态/签名）与结果解析用例：每条自带假服务器 ——
     void matrixParsesMultipleDestinations();
     void requestQueryMatchesTencentContract();
@@ -119,7 +121,7 @@ private slots:
     void routeRoundsFractionalMinutesUp();
 };
 
-// ---- 密钥口径用例：环境唯一、配置文件死透、无 key 零联网 ----
+// ---- 密钥口径用例：共享文件、环境兼容、无 key 零联网 ----
 
 void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
 {
@@ -138,7 +140,7 @@ void MapGeoServiceTest::noKeyFailsAsyncWithoutAnyNetwork()
     QVERIFY(matrixFailed.wait(2000));
     QCOMPARE(matrixFailed.at(0).at(0).toULongLong(), id);
     QCOMPARE(matrixFailed.at(0).at(1).value<MapError>(), MapError::NoApiKey);
-    QCOMPARE(matrixFailed.at(0).at(2).toString(), QStringLiteral("未配置地图密钥"));
+    QVERIFY(matrixFailed.at(0).at(2).toString().contains(QStringLiteral("config/services.local.json")));
 
     const quint64 routeId = service.requestDrivingRoute({22.541, 113.943}, {22.55, 113.95});
     QVERIFY(routeId > 0);
@@ -162,65 +164,52 @@ void MapGeoServiceTest::envPrefersNewNameOverLegacy()
     QVERIFY(MapGeoService::apiKeyFromEnvironment().isEmpty());
 }
 
-void MapGeoServiceTest::configFileCannotSupplyKeyOrEndpoint()
+void MapGeoServiceTest::configFileSuppliesMapKeyWithoutRedirectingEndpoint()
 {
-    // Even undefined environment variables do not enable a credential-file fallback.
-    qunsetenv("TENCENT_MAP_API_KEY");
-    qunsetenv("CHARGING_TENCENT_MAP_KEY");
-    QVERIFY(!MapGeoService::environmentKeyAuthoritative());
-
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const QString path = dir.filePath("map_services.json");
-    QFile f(path);
-    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    f.write(R"({"tencentMapKey":"cfg-file-key","baseUrl":"https://example.test/ws/"})");
-    f.close();
-
-    QVERIFY(MapGeoService::apiKeyFromConfigFile(path).isEmpty());
+    const QString path = dir.filePath("services.local.json");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(R"({"version":1,"ai":false,"tencentMap":{"webServiceKey":"cfg-file-key","secretKey":"cfg-sk"}})");
+    file.close();
+    qputenv("CHARGING_SERVICES_CONFIG", path.toUtf8());
+    QCOMPARE(MapGeoService::apiKeyFromConfigFile(path), QStringLiteral("cfg-file-key"));
+    QCOMPARE(MapGeoService::resolveApiKey(), QStringLiteral("cfg-file-key"));
     QVERIFY(MapGeoService::baseUrlFromConfigFile(path).isEmpty());
-    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());
-    QVERIFY(MapGeoService::resolveApiKey().isEmpty());
     QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
-    QCOMPARE(MapGeoService::resolveBaseUrl(), QStringLiteral("https://apis.map.qq.com/ws"));
-    // 不存在的路径同样返回空：函数对入参完全无感——文件读取通道死透的证据。
-    QVERIFY(MapGeoService::apiKeyFromConfigFile(dir.filePath("missing.json")).isEmpty());
 
     FakeTencentServer server;
     QVERIFY(server.start());
+    server.setJsonResponse(kMatrixJson);
     MapGeoService service;
-    QVERIFY(!service.hasUsableKey());
+    QVERIFY(service.hasUsableKey());
     service.setEndpointBaseForTesting(server.endpointBase());
-    QSignalSpy failed(&service, &MapGeoService::forwardGeocodeFailed);
-    const quint64 requestId = service.requestForwardGeocode(QStringLiteral("大连市 软件园路"));
-    QCOMPARE(failed.size(), 0); // no-key failure remains asynchronous
-    QTRY_COMPARE(failed.size(), 1);
-    QCOMPARE(failed.first().at(0).toULongLong(), requestId);
-    QCOMPARE(failed.first().at(1).value<MapError>(), MapError::NoApiKey);
-    QCOMPARE(server.connectionCount(), 0);
+    QSignalSpy succeeded(&service, &MapGeoService::distanceMatrixSucceeded);
+    service.requestDistanceMatrix({{22.55, 113.95}});
+    QTRY_COMPARE(succeeded.size(), 1);
+    const QByteArray signedBytes = QByteArrayLiteral(
+        "/ws/distance/v1/matrix/?from=22.541000,113.943000&key=cfg-file-key"
+        "&mode=driving&to=22.550000,113.950000cfg-sk");
+    const QString signature = QString::fromLatin1(QCryptographicHash::hash(signedBytes, QCryptographicHash::Md5).toHex());
+    QVERIFY(server.lastRequestTarget().contains(QStringLiteral("key=cfg-file-key")));
+    QVERIFY(server.lastRequestTarget().contains(QStringLiteral("sig=") + signature));
 }
 
-void MapGeoServiceTest::environmentIsOnlyProductionConfiguration()
+void MapGeoServiceTest::environmentOverridesSharedConfiguration()
 {
-    // File contents are ignored both with empty and nonempty environment keys.
-    qputenv("TENCENT_MAP_API_KEY", "");
     QTemporaryDir dir;
-    QVERIFY(dir.isValid());
-    const QString path = dir.filePath("map_services.json");
-    QFile f(path);
-    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    f.write(R"({"tencentMapKey":"cfg-file-key","baseUrl":"https://example.test/ws"})");
-    f.close();
-
-    QVERIFY(MapGeoService::environmentKeyAuthoritative());
-    QVERIFY(MapGeoService::resolveApiKey(path).isEmpty());
-    QVERIFY(!MapGeoService{}.hasUsableKey());
-
+    const QString path = dir.filePath("services.local.json");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(R"({"version":1,"tencentMap":{"webServiceKey":"cfg-file-key"}})");
+    file.close();
+    QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("cfg-file-key"));
     qputenv("CHARGING_TENCENT_MAP_KEY", "env-wins");
     QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("env-wins"));
     qputenv("TENCENT_MAP_API_KEY", "preferred-env-key");
     QCOMPARE(MapGeoService::resolveApiKey(path), QStringLiteral("preferred-env-key"));
-    QVERIFY(MapGeoService::apiKeyFromConfigFile(path).isEmpty());
+    QCOMPARE(MapGeoService::apiKeyFromConfigFile(path), QStringLiteral("cfg-file-key"));
     QVERIFY(MapGeoService::baseUrlFromConfigFile(path).isEmpty());
     QCOMPARE(MapGeoService::resolveBaseUrl(path), QStringLiteral("https://apis.map.qq.com/ws"));
 }
@@ -619,7 +608,7 @@ void MapGeoServiceTest::qmlSurfaceNoKeyFailsAsync()
     QTRY_COMPARE_WITH_TIMEOUT(geoError.count(), 1, 2000);
     QTRY_COMPARE_WITH_TIMEOUT(staticError.count(), 1, 2000);
     QTRY_COMPARE_WITH_TIMEOUT(routeError.count(), 1, 2000);
-    QCOMPARE(ipError.at(0).at(1).toString(), QStringLiteral("未配置地图密钥"));
+    QVERIFY(ipError.at(0).at(1).toString().contains(QStringLiteral("config/services.local.json")));
     // 无 key = 零网络触达 + 跳转 URL 不可得（页面隐藏"跳转导航"按钮）。
     QCOMPARE(server.connectionCount(), 0);
     QVERIFY(service.navigationUriUrl(22.541, 113.943, QStringLiteral("起点"),

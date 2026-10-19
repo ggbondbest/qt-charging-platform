@@ -24,11 +24,12 @@ vi.mock("./components/WorkspaceTabs.vue", () => ({
   },
 }));
 vi.mock("./components/Chart.vue", () => ({ default: { render: () => h("chart-stub") } }));
+vi.mock("./components/QtLivePanel.vue", () => ({ default: { props: ['active'], setup: (props: any) => () => h('qt-live-stub', { active: props.active }) } }));
 vi.mock("./components/AnalyticsDashboard.vue", () => ({ default: { props: ['initialSection', 'initialScope'], setup: (props: any) => () => h('dashboard-stub', { section: props.initialSection, scope: props.initialScope }) } }));
 vi.mock("./components/ForecastPanel.vue", () => ({ default: { render: () => h("forecast-stub") } }));
 vi.mock("./components/ManagementInsights.vue", () => ({ default: { props: ['initialTarget'], setup: (props: any) => () => h('insights-stub', { target: props.initialTarget }) } }));
 vi.mock("./components/AdvisorSidebar.vue", () => ({ default: {
-  emits: ['navigate'], setup: (_: unknown, { emit }: any) => () => h('advisor-stub', [
+  props: { docked: Boolean }, emits: ['navigate'], setup: (props: any, { emit }: any) => () => h('advisor-stub', { docked: props.docked }, [
     h('button', { onClick: () => emit('navigate', 'advanced', { datasetId: 'D1', publishedBatchId: 'B1', cityId: 'DL', startDate: '2026-05-01', endDate: '2026-05-08' }) }, '查看多维运营分析'),
     h('button', { onClick: () => emit('navigate', 'anomalies') }, '查看充电异常筛查'),
   ]),
@@ -49,6 +50,7 @@ class TestNode {
   parent: TestNode | null = null;
   children: TestNode[] = [];
   props: Record<string, any> = {};
+  style: Record<string, any> = {};
   text = "";
   value: any;
   selected = false;
@@ -148,6 +150,7 @@ const paths = () => vi.mocked(request).mock.calls.map(([path]) => path);
 
 beforeEach(() => {
   vi.stubGlobal("window", {
+    location: { search: '' },
     scrollTo: vi.fn(), setInterval: vi.fn(() => 1), clearInterval: vi.fn(),
     setTimeout: vi.fn(() => 2), clearTimeout: vi.fn(),
   });
@@ -183,8 +186,37 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); vi.unstubAllGlobals(); });
 
 describe("slim recommendation experience", () => {
-  it('keeps the pet available globally without a duplicate analysis tab, and preserves scoped navigation', async () => {
-    await mount(); expect(find('advisor-stub')).toBeTruthy();
+  it('opens Qt live independently of MySQL and pauses it on historical pages', async () => {
+    await mount();
+    expect(find('qt-live-stub').props.active).toBe(true);
+    expect(paths()).toEqual([]);
+    expect(nodes().some(node => node.kind === 'advisor-stub')).toBe(false);
+    await click('历史运营分析');
+    expect(find('qt-live-stub').props.active).toBe(false);
+    expect(paths()).toEqual([]);
+    vi.mocked(request).mockRejectedValue(new Error('MySQL 未启动'));
+    await click('智能找站实验');
+    expect(root.textContent).toContain('MySQL 未启动');
+    await click('当前模拟业务');
+    expect(find('qt-live-stub').props.active).toBe(true);
+    expect(root.textContent).not.toContain('MySQL 未启动');
+  });
+  it('offers compact operator navigation without duplicate branding or footer', async () => {
+    window.location.search = '?embedded=operator';
+    await mount();
+    expect(nodes().find(node => node.props['aria-label'] === '智能运营中心分区')).toBeTruthy();
+    expect(nodes().some(node => node.props['aria-label'] === '充能智析首页')).toBe(false);
+    expect(nodes().some(node => node.kind === 'footer')).toBe(false);
+    expect(find('qt-live-stub').props.active).toBe(true);
+    await click('历史运营分析');
+    expect(nodes().filter(node => node.kind === 'advisor-stub')).toHaveLength(1);
+    expect(find('advisor-stub').props.docked).toBe(true);
+    expect(find('advisor-stub').parent?.props['aria-label']).toBe('智能运营中心分区');
+  });
+  it('keeps the historical advisor available without a duplicate analysis tab, and preserves scoped navigation', async () => {
+    await mount();
+    await click('历史运营分析');
+    expect(find('advisor-stub')).toBeTruthy();
     const previousDashboard = find('dashboard-stub');
     await click('查看多维运营分析'); expect(find('dashboard-stub').props.section).toBe('space');
     // The pet can navigate while already on the dashboard: it must reload the answer's scope.
@@ -230,14 +262,12 @@ describe("slim recommendation experience", () => {
     expect(paths().filter(path => path === "/route")).toHaveLength(1);
   });
 
-  it("retains admin replay controls and paired experiments without resource or transaction forms", async () => {
+  it("loads replay controls automatically without asking for an admin token", async () => {
     await mount();
     await click("模拟控制台");
-    const tokenInput = nodes().find(node => node.props["aria-label"] === "管理员令牌")!;
-    tokenInput.props["onUpdate:modelValue"]("test-admin-token");
-    await settle();
-    await click("连接控制台");
-    expect(vi.mocked(request).mock.calls.find(([path]) => path === "/admin")?.[1]).toMatchObject({ admin: "test-admin-token" });
+    expect(vi.mocked(request).mock.calls.find(([path]) => path === "/admin")?.[1]).toEqual({ method: 'GET', body: undefined });
+    expect(root.textContent).not.toMatch(/管理员身份验证|管理员令牌|先连接/);
+    expect(nodes().some(node => node.props.type === 'password')).toBe(false);
     expect(root.textContent).toContain("模拟时钟");
     expect(root.textContent).toContain("运行配对实验");
     expect(find("button", "推进时钟")).toBeTruthy();
@@ -252,5 +282,20 @@ describe("slim recommendation experience", () => {
     expect(root.textContent).toContain("到站空闲与等待预测");
     await click("策略对比");
     expect(root.textContent).toContain("最近站 vs. 智能推荐");
+  });
+  it('shows control-room failure and permits retry without requesting a token', async () => {
+    await mount();
+    const implementation = vi.mocked(request).getMockImplementation()!;
+    vi.mocked(request).mockImplementation(async (path, options) => {
+      if (path === '/admin') throw new Error('回放数据库未就绪');
+      return implementation(path, options);
+    });
+    await click('模拟控制台');
+    expect(root.textContent).toContain('回放数据库未就绪');
+    expect(root.textContent).toContain('模拟控制台暂不可用');
+    vi.mocked(request).mockImplementation(implementation);
+    await click('刷新状态');
+    expect(root.textContent).toContain('模拟时钟');
+    expect(root.textContent).not.toContain('回放数据库未就绪');
   });
 });

@@ -1,4 +1,5 @@
 #include "map_bridge.h"
+#include "services/map/map_service_config.h"
 
 #include <QJsonDocument>
 #include <QUrl>
@@ -183,8 +184,7 @@ QString MapBridge::mapHtml(const QVariantList& markers) const
 
 QString MapBridge::html(const QVariantList& markers, const QVariantList& points) const
 {
-    QString key = qEnvironmentVariable("TENCENT_MAP_JS_KEY").trimmed();
-    if (key.isEmpty()) key = MapGeoService::apiKeyFromEnvironment();
+    const QString key = loadMapServiceConfig().javaScriptKey;
     if (key.isEmpty()) return QString();
     QUrl script(QStringLiteral("https://map.qq.com/api/js"));
     QUrlQuery query;
@@ -206,7 +206,7 @@ QString MapBridge::html(const QVariantList& markers, const QVariantList& points)
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body,#map{width:100%;height:100%;margin:0}#error{position:absolute;top:0;background:white;color:#b42318;font:14px sans-serif;padding:8px;z-index:10}</style>
 </head><body><div id="map"></div><div id="error">正在加载腾讯地图…</div>
-<script src="%1" onerror="document.getElementById('error').textContent='腾讯底图加载失败，请检查网络和 TENCENT_MAP_JS_KEY 授权'"></script>
+<script src="%1" onerror="document.getElementById('error').textContent='腾讯底图加载失败，请检查网络和腾讯地图 JavaScript Key 授权'"></script>
 <script>try{var d=%2;var center=new qq.maps.LatLng(d.latitude,d.longitude);
 var map=new qq.maps.Map(document.getElementById('map'),{center:center,zoom:12,mapTypeControl:false});
 function endpointMarker(position,caption,color){

@@ -2,13 +2,13 @@
 import { nextTick, ref } from 'vue';
 import OperationsAdvisor from './OperationsAdvisor.vue';
 import Icon from './Icon.vue';
-import character from '../assets/whale-girl.png';
+import character from '../assets/charging-assistant.svg';
 import { containPanelWheel } from '../panelScroll';
-// Original character: MeteorNOX/DeepSeek-Balance-Whale-Widget (MIT).
-// Attribution is retained in assets/whale-girl.LICENSE.txt, as in PR #79.
+// Project-drawn SVG replaces the upstream artwork; see assets/PROVENANCE.md.
 import type { AdvisorTarget } from '../advisor';
 import type { DashboardScope } from '../dashboardScope';
 
+withDefaults(defineProps<{ docked?: boolean }>(), { docked: false });
 const emit = defineEmits<{ navigate: [target: AdvisorTarget, scope: DashboardScope] }>();
 const open = ref(false);
 const visited = ref(false);
@@ -35,7 +35,7 @@ function navigate(target: AdvisorTarget, scope: DashboardScope) {
 </script>
 
 <template>
-  <div class="advisor-companion">
+  <div class="advisor-companion" :class="{ 'is-docked': docked }">
     <section v-if="visited" v-show="open" id="advisor-conversation" ref="panel" class="companion-panel"
       role="dialog" aria-labelledby="companion-title" :aria-hidden="!open" :inert="!open" tabindex="-1"
       @keydown.esc.stop.prevent="close" @wheel="containPanelWheel">
@@ -50,8 +50,8 @@ function navigate(target: AdvisorTarget, scope: DashboardScope) {
     <button ref="launcher" type="button" class="companion-launcher" :class="{ 'is-open': open, 'is-thinking': thinking }"
       :aria-label="open ? '收起运营参谋对话' : '打开运营参谋对话'" :aria-expanded="open"
       :aria-controls="visited ? 'advisor-conversation' : undefined" @click="toggle">
-      <span class="companion-label">{{ thinking ? '正在看数据…' : open ? '收起对话' : '问问运营参谋' }}<span aria-hidden="true">{{ open ? '−' : '↗' }}</span></span>
-      <img :src="character" alt="蓝发小助手" width="96" height="96" draggable="false"/>
+      <span class="companion-label">{{ docked ? (thinking ? '分析中…' : 'AI 参谋') : thinking ? '正在看数据…' : open ? '收起对话' : '问问运营参谋' }}<span v-if="!docked" aria-hidden="true">{{ open ? '−' : '↗' }}</span></span>
+      <img :src="character" alt="充电小助手" width="96" height="96" draggable="false"/>
       <span class="companion-shadow" aria-hidden="true"/>
     </button>
   </div>
@@ -78,6 +78,12 @@ function navigate(target: AdvisorTarget, scope: DashboardScope) {
 .companion-close { display:grid; place-items:center; width:32px; height:32px; border:1px solid #e5e9f0; border-radius:50%; color:#758195; background:#fff; flex-shrink:0; }.companion-close:hover { background:#f1f4f9; color:#29374b; }
 .companion-content { flex:1; min-height:0; overflow:hidden; }
 .companion-launcher:focus-visible,.companion-close:focus-visible { outline:2px solid #3564d8; outline-offset:4px; }
+.advisor-companion.is-docked { position:static; display:flex; align-items:center; flex-shrink:0; margin-left:auto; }
+.is-docked .companion-launcher { height:36px; padding:2px 9px 2px 3px; gap:5px; border:1px solid #e3e9f3; border-radius:9px; background:#f6f8fd; }
+.is-docked .companion-launcher>img { width:30px; height:30px; order:-1; filter:none; }
+.is-docked .companion-label { padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; font-size:12px; }
+.is-docked .companion-shadow { display:none; }
+.is-docked .companion-panel { position:fixed; top:68px; right:16px; bottom:auto; width:min(440px,calc(100vw - 32px)); height:min(720px,calc(100vh - 84px)); height:min(720px,calc(100dvh - 84px)); }
 @keyframes companion-appear { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } }
 @keyframes companion-think { 0%,100% { transform:translateY(0) rotate(2deg); } 50% { transform:translateY(-4px) rotate(-2deg); } }
 @media(max-width:600px) { .advisor-companion { right:12px; bottom:max(10px,env(safe-area-inset-bottom)); }.companion-launcher>img { width:76px; height:76px; }.companion-label { padding:9px 12px; font-size:11px; }.companion-panel { bottom:94px; width:calc(100vw - 24px); height:calc(100vh - 120px); height:calc(100dvh - 120px - env(safe-area-inset-bottom)); border-radius:18px; }.companion-header { padding:13px 16px; }.companion-shadow { width:54px; right:12px; } }

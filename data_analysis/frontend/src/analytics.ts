@@ -13,6 +13,8 @@ export class AnalyticsError extends Error {
 }
 export async function publishedRequest<T>(path: string, params: RecordData = {}, options: { signal?: AbortSignal; method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<PublishedEnvelope<T>> {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null).map(([key, value]) => [key, String(value)]));
+  // Chromium 87 (Qt 6.2) has URLSearchParams but no size property.
+  const queryString = query.toString();
   const controller = new AbortController();
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
@@ -20,7 +22,7 @@ export async function publishedRequest<T>(path: string, params: RecordData = {},
   let expired = false;
   const timer = setTimeout(() => { expired = true; controller.abort(); }, options.timeoutMs ?? 60000);
   try {
-    const response = await fetch(`/api/v1${path}${query.size ? `?${query}` : ''}`, {
+    const response = await fetch(`/api/v1${path}${queryString ? `?${queryString}` : ''}`, {
       method: options.method || 'GET', signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

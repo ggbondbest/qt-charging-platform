@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="充电助手">
+  <defs><linearGradient id="body" x2=".85" y2="1"><stop stop-color="#1b9fff"/><stop offset="1" stop-color="#2561d5"/></linearGradient></defs>
+  <rect x="20" y="12" width="56" height="72" rx="19" fill="url(#body)"/>
+  <rect x="27" y="24" width="42" height="30" rx="11" fill="#eef8ff"/>
+  <circle cx="38" cy="37" r="3.5" fill="#214b80"/><circle cx="58" cy="37" r="3.5" fill="#214b80"/>
+  <path d="M41 45q7 6 14 0" stroke="#214b80" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+  <path d="m50 58-10 13h8l-2 9 12-14h-8z" fill="#fff"/>
+  <path d="M20 58H14q-7 0-7-8V36m0 0h6m-3-5v10M76 56h4q9 0 9-10V36" fill="none" stroke="#4388df" stroke-width="5" stroke-linecap="round"/>
+  <path d="M85 29v7m8-7v7" stroke="#4388df" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

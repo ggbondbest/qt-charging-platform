@@ -180,7 +180,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(18);
 
-    auto* metricsLayout = new QHBoxLayout();
+    auto* metricsLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Metrics);
     metricsLayout->setSpacing(16);
     metricsLayout->addWidget(createManagementMetricCard(
         tr("今日订单"), tr("1,248"), tr(" 笔"), tr("较昨日  +156 (+14.28%)  ↑"), QColor("#347cf6"), 1, this));
@@ -196,7 +196,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     auto* toolbarLayout = new QVBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(18, 12, 18, 12);
     toolbarLayout->setSpacing(9);
-    auto* firstLine = new QHBoxLayout();
+    auto* firstLine = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls);
     firstLine->setSpacing(10);
     orderNumberLineEdit_ = new QLineEdit(toolbar);
     orderNumberLineEdit_->setPlaceholderText(tr("订单号、用户或手机号"));
@@ -215,18 +215,13 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
         comboBox->setMinimumWidth(132);
         configureManagementComboBox(comboBox);
     }
-    firstLine->addWidget(createTextLabel(tr("订单号"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    firstLine->addWidget(orderNumberLineEdit_);
-    firstLine->addWidget(createTextLabel(tr("用户"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    firstLine->addWidget(userLineEdit_);
-    firstLine->addWidget(createTextLabel(tr("手机号"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    firstLine->addWidget(phoneLineEdit_);
-    firstLine->addWidget(createTextLabel(tr("电站"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    firstLine->addWidget(stationComboBox_);
-    firstLine->addWidget(createTextLabel(tr("电桩"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    firstLine->addWidget(chargerComboBox_);
+    firstLine->addWidget(createManagementFilterField(tr("订单号"), orderNumberLineEdit_, toolbar));
+    firstLine->addWidget(createManagementFilterField(tr("用户"), userLineEdit_, toolbar));
+    firstLine->addWidget(createManagementFilterField(tr("手机号"), phoneLineEdit_, toolbar));
+    firstLine->addWidget(createManagementFilterField(tr("电站"), stationComboBox_, toolbar));
+    firstLine->addWidget(createManagementFilterField(tr("电桩"), chargerComboBox_, toolbar));
     toolbarLayout->addLayout(firstLine);
-    auto* secondLine = new QHBoxLayout();
+    auto* secondLine = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls);
     secondLine->setSpacing(10);
     statusComboBox_ = new QComboBox(toolbar);
     statusComboBox_->addItem(tr("全部状态"));
@@ -255,20 +250,16 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     refreshListButton->setObjectName(QStringLiteral("secondaryButton"));
     feedbackLabel_ = createTextLabel(tr("显示全部 12,845 笔订单"), QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
     feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setWordWrap(true);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
-    secondLine->addWidget(createTextLabel(tr("订单状态"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    secondLine->addWidget(statusComboBox_);
-    secondLine->addWidget(createTextLabel(tr("时间范围"), QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), toolbar));
-    secondLine->addWidget(dateRangeComboBox_);
+    secondLine->addWidget(createManagementFilterField(tr("订单状态"), statusComboBox_, toolbar));
+    secondLine->addWidget(createManagementFilterField(tr("时间范围"), dateRangeComboBox_, toolbar));
     secondLine->addWidget(feedbackLabel_);
-    secondLine->addStretch();
-    secondLine->addWidget(resetButton);
-    secondLine->addWidget(queryButton);
-    secondLine->addWidget(refreshListButton);
+    secondLine->addWidget(createManagementActionGroup({resetButton, queryButton, refreshListButton}, toolbar));
     toolbarLayout->addLayout(secondLine);
     layout->addWidget(toolbar);
 
-    auto* contentLayout = new QHBoxLayout();
+    auto* contentLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::ListAndDetail);
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
     tableCard->setMinimumWidth(kManagementTableMinimumWidth);
@@ -279,6 +270,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    configureManagementResponsiveTable(tableWidget_);
     tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
         {tr("订单号"), tr("用户"), tr("电站"), tr("电桩"), tr("开始时间"), tr("充电时长"),
@@ -294,14 +286,15 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
     tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    tableWidget_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
+    tableWidget_->setColumnWidth(2, 160);
     tableWidget_->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
     tableWidget_->setColumnWidth(8, kManagementStatusColumnWidth);
     tableWidget_->setColumnWidth(9, 72);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
-    tableLayout->addWidget(statePanel_);
+    tableLayout->addWidget(statePanel_, 1);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -319,7 +312,6 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("订单详情"), this);
-    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* titleRow = new QHBoxLayout();
     detailOrderNumberLabel_ = createTextLabel(QString(), QStringLiteral("color:#273751; font-size:14px; font-weight:700;"), detailCard);
@@ -387,6 +379,7 @@ OrderManagementPage::OrderManagementPage(QWidget* parent) : QWidget(parent)
     refreshButton_->setObjectName(QStringLiteral("secondaryButton"));
     refreshButton_->setAccessibleName(tr("刷新当前订单的本地 Mock 详情"));
     detailLayout->addWidget(refreshButton_);
+    configureManagementDetailWrapping(detailCard);
     contentLayout->addWidget(detailCard);
     layout->addLayout(contentLayout, 1);
 

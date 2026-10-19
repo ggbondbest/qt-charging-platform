@@ -1,0 +1,848 @@
+{
+  "generatedAt": "2026-10-19",
+  "repository": "https://github.com/ggbondbest/qt-charging-platform",
+  "coverage": {
+    "prs": 83,
+    "states": {
+      "MERGED": 74,
+      "CLOSED": 9
+    },
+    "range": "#1–#83",
+    "allFileListsComplete": true,
+    "note": "作者/文件/PR正文核验；PR数量不是贡献比例。统计截至抓取时，本次参赛PR尚未发布。"
+  },
+  "people": [
+    {
+      "name": "牛俊凯",
+      "login": "ggbondbest",
+      "roleBasedOnChanges": "队长；协议与后端架构、核心交易事务、客户端与管理端联调；第二阶段模拟数据/Spark/MySQL/API、模型与Vue统一交付和AI参谋；本次参赛整合与工程验收。",
+      "representativePRs": [
+        {
+          "number": 6,
+          "title": "feat(charging): implement transactional charging workflow",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/6",
+          "state": "MERGED",
+          "contribution": "充电启动/停止/支付事务闭环"
+        },
+        {
+          "number": 20,
+          "title": "feat(protocol): 冻结用户端八个接口契约与公共请求校验",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/20",
+          "state": "MERGED",
+          "contribution": "冻结用户接口契约和公共输入校验"
+        },
+        {
+          "number": 22,
+          "title": "feat(server): 服务端 TCP 与 SQLite 工作线程隔离",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/22",
+          "state": "MERGED",
+          "contribution": "TCP与SQLite工作线程隔离"
+        },
+        {
+          "number": 26,
+          "title": "feat: 完成管理端 Service、真实认证与异步通道",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/26",
+          "state": "MERGED",
+          "contribution": "管理端Service、真实认证和异步通道"
+        },
+        {
+          "number": 46,
+          "title": "feat(client): 交付 QML 真实 TCP 全流程与统一数据联调",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/46",
+          "state": "MERGED",
+          "contribution": "QML真实TCP全流程联调"
+        },
+        {
+          "number": 55,
+          "title": "feat: 虚拟排队自动叫号、报障维修追踪与目标充电",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/55",
+          "state": "MERGED",
+          "contribution": "虚拟排队、维修追踪、目标充电"
+        },
+        {
+          "number": 61,
+          "title": "feat(analysis): 第二阶段 23 类仿真数据、行为校准与 Spark 清洗基础",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/61",
+          "state": "MERGED",
+          "contribution": "23类仿真数据、行为校准和Spark清洗基础"
+        },
+        {
+          "number": 65,
+          "title": "feat(analysis): 第二阶段查询库迁移至 MySQL",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/65",
+          "state": "MERGED",
+          "contribution": "统计查询库迁移至MySQL"
+        },
+        {
+          "number": 73,
+          "title": "feat: 统一运营大屏、预测模型与智能找桩交付项目",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/73",
+          "state": "MERGED",
+          "contribution": "整合队友负荷/空闲/前端成果，统一运营大屏和智能找桩"
+        },
+        {
+          "number": 80,
+          "title": "feat(delivery): 最终集成多维分析、现有预测与 AI 运营参谋",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/80",
+          "state": "MERGED",
+          "contribution": "最终集成多维分析、预测和AI参谋，保留PR79作者提交"
+        },
+        {
+          "number": 82,
+          "title": "feat(advisor): 完善统计入库、分析能力与稳定 RAG 对话",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/82",
+          "state": "MERGED",
+          "contribution": "统计入库与RAG稳定性、证据引用"
+        }
+      ],
+      "allAuthoredPRs": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        20,
+        21,
+        22,
+        26,
+        39,
+        43,
+        44,
+        45,
+        46,
+        47,
+        50,
+        51,
+        52,
+        55,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        73,
+        76,
+        80,
+        81,
+        82,
+        83
+      ],
+      "countsForIndexOnly": {
+        "MERGED": 30,
+        "CLOSED": 1
+      },
+      "caveat": "#60/#83为阶段发布汇总，不能把全部合并内容独占计作个人创作；贡献叙述应认可原PR作者。"
+    },
+    {
+      "name": "韩旭彤",
+      "login": "HanaShirosaki09",
+      "roleBasedOnChanges": "客户端充电/钱包/订单/个人中心与QML迁移、壳路由和动态交互；机器学习负荷预测、站点偏好排序；AI运营参谋原始模块。",
+      "representativePRs": [
+        {
+          "number": 5,
+          "title": "feat(client): add wallet, order history, charging and settlement UI",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/5",
+          "state": "MERGED",
+          "contribution": "钱包、订单、充电与结算六页面及服务Mock"
+        },
+        {
+          "number": 16,
+          "title": "feat(client): integrate member-3 pages into HomeShell with stack routing, recharge/settlement fixes, mobile default size",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/16",
+          "state": "MERGED",
+          "contribution": "HomeShell栈路由整合、充值/结算闭环"
+        },
+        {
+          "number": 33,
+          "title": "feat(client): QML UI stack, motion tokens with pull-to-refresh, mock …",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/33",
+          "state": "MERGED",
+          "contribution": "QML UI栈、运动反馈及下拉刷新"
+        },
+        {
+          "number": 56,
+          "title": "Feat/points settlement earn",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/56",
+          "state": "MERGED",
+          "contribution": "支付后积分获得展示"
+        },
+        {
+          "number": 66,
+          "title": "feat(ml): load forecasting line — per-horizon GBDT h01/h06/h24 (v0.4)",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/66",
+          "state": "MERGED",
+          "contribution": "负荷预测全链路、按时距模型、时间切分/泄漏审计/留出评测"
+        },
+        {
+          "number": 67,
+          "title": "feat(ml): 站点推荐线 learning-to-rank(gbdt-rank-incity-v1)",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/67",
+          "state": "MERGED",
+          "contribution": "同城五站pointwise学习排序，严格point-in-time特征与离线评测"
+        },
+        {
+          "number": 79,
+          "title": "feat(ml): AI 运营参谋——只读检索 agent + 桌宠白名单页面引导",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/79",
+          "state": "CLOSED",
+          "contribution": "只读检索agent、证据引用和桌宠白名单引导，原PR关闭后由#80整合"
+        }
+      ],
+      "allAuthoredPRs": [
+        5,
+        7,
+        8,
+        10,
+        13,
+        16,
+        17,
+        23,
+        25,
+        29,
+        30,
+        32,
+        33,
+        34,
+        37,
+        38,
+        41,
+        48,
+        56,
+        66,
+        67,
+        79
+      ],
+      "countsForIndexOnly": {
+        "CLOSED": 3,
+        "MERGED": 19
+      },
+      "caveat": "#10意外合入后由#13回退，不重复算新增能力；#79关闭不等于未使用，其集成证据见#80。"
+    },
+    {
+      "name": "罗夕",
+      "login": "worldcarrot1",
+      "roleBasedOnChanges": "客户端找站、站点详情、预约、导航和腾讯地图、设置/收藏/消息；会员经验/任务/商城；空闲电桩预测及可验证研究探索。",
+      "representativePRs": [
+        {
+          "number": 9,
+          "title": "feat(client): add global nav shell and station search page",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/9",
+          "state": "MERGED",
+          "contribution": "导航壳及站点搜索"
+        },
+        {
+          "number": 12,
+          "title": "feat(client): 充电桩预约交互与预约记录页面（任务 #17）",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/12",
+          "state": "MERGED",
+          "contribution": "预约交互和记录"
+        },
+        {
+          "number": 24,
+          "title": "feat(client): 腾讯地图全链路接入与可视化迭代（9.4–9.5 概述）（导航功能尚未完善）",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/24",
+          "state": "MERGED",
+          "contribution": "腾讯地图定位/地图/导航链路"
+        },
+        {
+          "number": 36,
+          "title": "Feature/client qml station",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/36",
+          "state": "MERGED",
+          "contribution": "station域QML迁移"
+        },
+        {
+          "number": 49,
+          "title": "feat(client/qml): station 域六组批量指令全量落地——车辆闸撤除/漏斗顶栏/地图真链路/电价区间/八维标签",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/49",
+          "state": "MERGED",
+          "contribution": "站点筛选、地图链路和预约交互完善"
+        },
+        {
+          "number": 53,
+          "title": "feat(qml): 我的页经验等级系统 + 每日任务（青铜→黑金五档，客户端 ProgressService）",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/53",
+          "state": "MERGED",
+          "contribution": "客户端经验等级、每日任务"
+        },
+        {
+          "number": 54,
+          "title": "feat(qml): 会员中心批——等级独立大卡 + 每日任务并入等级页 + 积分商城",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/54",
+          "state": "MERGED",
+          "contribution": "会员中心和积分商城"
+        },
+        {
+          "number": 70,
+          "title": "feat(ml): 空闲桩可用性预测线（B 线基础交付，绑 analytics-298aa3ee…）",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/70",
+          "state": "MERGED",
+          "contribution": "未来小时末空闲桩数分布、层级先验、校准与契约测试"
+        }
+      ],
+      "allAuthoredPRs": [
+        9,
+        11,
+        12,
+        15,
+        18,
+        24,
+        27,
+        36,
+        40,
+        49,
+        53,
+        54,
+        58,
+        59,
+        69,
+        70,
+        74,
+        77,
+        78
+      ],
+      "countsForIndexOnly": {
+        "CLOSED": 5,
+        "MERGED": 14
+      },
+      "caveat": "#74设备健康预测和#77/#78容量/新站选址均CLOSED，不属于当前交付运行功能；论文式研究负结果可以作为探索经历而非上线能力。"
+    },
+    {
+      "name": "田丽秀",
+      "login": "ntoprevd",
+      "roleBasedOnChanges": "Qt原生管理端页面与服务契约接入、实时监测和异常详情；Linux/HDFS/Spark、MySQL与统一服务部署验证和可复核验收记录。",
+      "representativePRs": [
+        {
+          "number": 14,
+          "title": "ui(server): add PC admin mock UI shell and management pages",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/14",
+          "state": "MERGED",
+          "contribution": "管理端登录壳、Dashboard及四管理页初版"
+        },
+        {
+          "number": 28,
+          "title": "feat(server): complete PC admin UI and service integration",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/28",
+          "state": "MERGED",
+          "contribution": "接异步AdminRequestGateway，真实查询/分页/状态反馈/受契约支持写操作"
+        },
+        {
+          "number": 42,
+          "title": "feat(admin): finalize contract-aligned management UI",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/42",
+          "state": "MERGED",
+          "contribution": "管理列表、详情、分页和自动刷新收口"
+        },
+        {
+          "number": 57,
+          "title": "feat(admin): 补齐电桩实时监测、异常恢复与订单费用详情",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/57",
+          "state": "MERGED",
+          "contribution": "实时充电监测、异常恢复、订单费用明细"
+        },
+        {
+          "number": 68,
+          "title": "docs(data-analysis): record HDFS sample validation",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/68",
+          "state": "MERGED",
+          "contribution": "7日样例HDFS清洗/导出/核对真实验证"
+        },
+        {
+          "number": 71,
+          "title": "docs(data-analysis): record full HDFS validation",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/71",
+          "state": "MERGED",
+          "contribution": "180日真实HDFS验证，独立聚合对账零差异"
+        },
+        {
+          "number": 75,
+          "title": "docs: record Linux HDFS and integrated validation",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/75",
+          "state": "MERGED",
+          "contribution": "Linux MySQL只读账号、四模型训练和统一网页实际部署验收"
+        }
+      ],
+      "allAuthoredPRs": [
+        14,
+        28,
+        42,
+        57,
+        68,
+        71,
+        75
+      ],
+      "countsForIndexOnly": {
+        "MERGED": 7
+      },
+      "caveat": "HDFS验证是Spark local[2]读写真实HDFS，不能宣称多节点Spark集群；#71 HDFS批次analytics-57a…与#75网页模型analytics-298…需区分。"
+    },
+    {
+      "name": "赵妍",
+      "login": "Diana366",
+      "roleBasedOnChanges": "SQLite数据库查询/索引/备份恢复与跨端一致性验证；Vue可视化运营大屏初稿及模型接口预留。",
+      "representativePRs": [
+        {
+          "number": 19,
+          "title": "feat(database): 新增管理查询、统计及数据库备份恢复功能",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/19",
+          "state": "MERGED",
+          "contribution": "站点/电桩/用户/订单管理查询、充值幂等、日志、Dashboard统计、SQLite备份恢复"
+        },
+        {
+          "number": 31,
+          "title": "perf(database): 完善管理查询索引与契约测试",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/31",
+          "state": "MERGED",
+          "contribution": "管理索引、EXPLAIN校验、稳定分页、LIKE通配符转义、DTO一致性测试"
+        },
+        {
+          "number": 35,
+          "title": "test(database): 验证客户端与管理端数据一致性",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/35",
+          "state": "MERGED",
+          "contribution": "客户端充电支付后订单/余额/电桩与管理Repository一致性端到端测试"
+        },
+        {
+          "number": 72,
+          "title": "feat(frontend): 新增充能智析可视化大屏初稿",
+          "url": "https://github.com/ggbondbest/qt-charging-platform/pull/72",
+          "state": "MERGED",
+          "contribution": "Vue3+Vite+ECharts大屏、地图/排行/设备状态、主题和智能分析接口预留"
+        }
+      ],
+      "allAuthoredPRs": [
+        19,
+        31,
+        35,
+        72
+      ],
+      "countsForIndexOnly": {
+        "MERGED": 4
+      },
+      "caveat": "#72是前端初稿、含后端不可用时演示回退；当前严格真实来源和集成行为由后续PR及本次代码完善，勿把原接口预留写成已训模型。"
+    }
+  ],
+  "components": [
+    {
+      "name": "Qt Core/Gui/Widgets/Network/Sql/Quick/Qml/QuickControls2",
+      "license": "LGPLv3/GPLv3 or commercial; verify each bundled module",
+      "source": "https://doc.qt.io/qt-6/licensing.html",
+      "evidence": "CMakeLists.txt"
+    },
+    {
+      "name": "Qt Charts",
+      "license": "GPLv3 or commercial, NOT LGPL-only",
+      "source": "https://doc.qt.io/qt-6/qtcharts-index.html",
+      "evidence": "server/pages/CMakeLists.txt:1,51"
+    },
+    {
+      "name": "Qt WebEngine / Chromium",
+      "license": "Qt LGPLv3/GPL options/commercial plus Chromium third-party notices",
+      "source": "https://doc.qt.io/qt-6/qtwebengine-licensing.html",
+      "note": "packaged binaries require exact version notices and source availability arrangements; docs URL currently redirects to upstream snapshot"
+    },
+    {
+      "name": "SQLite",
+      "license": "Public domain",
+      "source": "https://www.sqlite.org/copyright.html"
+    },
+    {
+      "name": "MySQL Community Server",
+      "license": "GPLv2 plus applicable additional permissions; commercial alternative",
+      "source": "https://www.mysql.com/about/legal/licensing/oem/",
+      "note": "Client-library FOSS exception must not be described as a blanket exception for server redistribution"
+    },
+    {
+      "name": "Apache Spark/PySpark 3.5.6 and Hadoop/HDFS",
+      "license": "Apache-2.0",
+      "source": "https://spark.apache.org/",
+      "evidence": "data_analysis/requirements-spark.txt; data_analysis/docs/hdfs_full_180d_validation.json",
+      "note": "Hadoop server3.2.1/client3.3.4 in recorded Linux validation, not bundled runtime necessarily"
+    },
+    {
+      "name": "Tabler icon-derived glyphs",
+      "license": "MIT",
+      "source": "https://tabler.io/icons",
+      "evidence": "client/qml/assets/glyphs/LICENSE-tabler.txt"
+    },
+    {
+      "name": "charging-assistant.svg",
+      "license": "本项目代码绘制，整体许可证待团队确定",
+      "evidence": "data_analysis/frontend/src/assets/PROVENANCE.md",
+      "note": "替换原鲸娘立绘；上游代码MIT不包含assets图片，旧图不随当前源码/运行包/文档分发。历史仍保留既有版本。",
+      "source": "https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget/blob/main/PROVENANCE.md"
+    }
+  ],
+  "frontendDirectDependencies": [
+    {
+      "name": "vue",
+      "version": "3.5.42",
+      "license": "MIT",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "vite",
+      "version": "7.3.6",
+      "license": "MIT",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "typescript",
+      "version": "5.9.3",
+      "license": "Apache-2.0",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "echarts",
+      "version": "6.1.0",
+      "license": "Apache-2.0",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "leaflet",
+      "version": "1.9.4",
+      "license": "BSD-2-Clause",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "vitest",
+      "version": "4.1.12",
+      "license": "MIT",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    },
+    {
+      "name": "@vitejs/plugin-vue",
+      "version": "6.0.9",
+      "license": "MIT",
+      "evidence": "data_analysis/frontend/package-lock.json"
+    }
+  ],
+  "pythonRuntimeDependencies": [
+    {
+      "name": "fastapi",
+      "installedVersion": "0.141.1",
+      "license": "MIT",
+      "upstream": [
+        "Homepage, https://github.com/fastapi/fastapi",
+        "Documentation, https://fastapi.tiangolo.com/",
+        "Repository, https://github.com/fastapi/fastapi"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "starlette",
+      "installedVersion": "1.6.0",
+      "license": "BSD-3-Clause",
+      "upstream": [
+        "Homepage, https://github.com/Kludex/starlette",
+        "Documentation, https://starlette.dev/",
+        "Changelog, https://starlette.dev/release-notes/"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "pydantic",
+      "installedVersion": "2.13.5",
+      "license": "MIT",
+      "upstream": [
+        "Homepage, https://github.com/pydantic/pydantic",
+        "Documentation, https://docs.pydantic.dev",
+        "Funding, https://github.com/sponsors/samuelcolvin"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "uvicorn",
+      "installedVersion": "0.52.4",
+      "license": "BSD-3-Clause",
+      "upstream": [
+        "Changelog, https://uvicorn.dev/release-notes",
+        "Funding, https://github.com/sponsors/encode",
+        "Homepage, https://uvicorn.dev/"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "httpx",
+      "installedVersion": "0.28.1",
+      "license": "BSD-3-Clause",
+      "upstream": [
+        "Changelog, https://github.com/encode/httpx/blob/master/CHANGELOG.md",
+        "Documentation, https://www.python-httpx.org",
+        "Homepage, https://github.com/encode/httpx"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "pymysql",
+      "installedVersion": "1.2.0",
+      "license": "MIT",
+      "upstream": [
+        "Project, https://github.com/PyMySQL/PyMySQL",
+        "Documentation, https://pymysql.readthedocs.io/",
+        "Changelog, https://github.com/PyMySQL/PyMySQL/blob/main/CHANGELOG.md"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "numpy",
+      "installedVersion": "2.3.5",
+      "license": "BSD-3-Clause (upstream plus bundled notices)",
+      "upstream": [
+        "homepage, https://numpy.org",
+        "documentation, https://numpy.org/doc/",
+        "source, https://github.com/numpy/numpy"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "pandas",
+      "installedVersion": "2.3.3",
+      "license": "BSD-3-Clause (upstream plus bundled notices)",
+      "upstream": [
+        "homepage, https://pandas.pydata.org",
+        "documentation, https://pandas.pydata.org/docs/",
+        "repository, https://github.com/pandas-dev/pandas"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "scipy",
+      "installedVersion": "1.18.1",
+      "license": "BSD-3-Clause (upstream plus bundled notices)",
+      "upstream": [
+        "homepage, https://scipy.org/",
+        "documentation, https://docs.scipy.org/doc/scipy/",
+        "source, https://github.com/scipy/scipy"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "scikit-learn",
+      "installedVersion": "1.7.2",
+      "license": "BSD-3-Clause",
+      "upstream": [
+        "homepage, https://scikit-learn.org",
+        "source, https://github.com/scikit-learn/scikit-learn",
+        "download, https://pypi.org/project/scikit-learn/#files"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "joblib",
+      "installedVersion": "1.5.2",
+      "license": "BSD-3-Clause (upstream plus bundled notices)",
+      "upstream": [
+        "Homepage, https://joblib.readthedocs.io",
+        "Source, https://github.com/joblib/joblib"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "pyarrow",
+      "installedVersion": "21.0.0",
+      "license": "Apache-2.0",
+      "upstream": [
+        "Homepage, https://arrow.apache.org/",
+        "Documentation, https://arrow.apache.org/docs/python",
+        "Repository, https://github.com/apache/arrow"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    },
+    {
+      "name": "threadpoolctl",
+      "installedVersion": "3.7.0",
+      "license": "BSD-3-Clause",
+      "upstream": [
+        "homepage, https://github.com/joblib/threadpoolctl"
+      ],
+      "evidence": "requirements files plus local installed distribution metadata; packaging exact set may differ"
+    }
+  ],
+  "models": [
+    {
+      "name": "负荷预测",
+      "algorithm": "HistGradientBoostingRegressor + quantile intervals",
+      "scope": "按预测时距历史完整24h→未来1/6/24h平均功率kW",
+      "evidence": [
+        "data_analysis/ml/load/train.py",
+        "data_analysis/ml/load/intervals.py",
+        "data_analysis/ml/load/EVALUATION.md"
+      ],
+      "origin": "本项目模拟CLEAN训练，非下载基础模型"
+    },
+    {
+      "name": "空闲桩预测",
+      "algorithm": "HistGradientBoostingClassifier全分布 + 站点×小时层级先验",
+      "scope": "未来小时末hh:55整数空闲桩及校准区间",
+      "evidence": [
+        "data_analysis/ml/availability/model.py",
+        "data_analysis/ml/availability/REPORT.md"
+      ]
+    },
+    {
+      "name": "到站/等待模型",
+      "algorithm": "HistGradientBoostingClassifier与Regressor(均值/分位数)",
+      "scope": "5分钟分辨率，到站空闲0–3分布、条件等待均值/P90、成功概率",
+      "evidence": [
+        "data_analysis/chargepilot/ml/train.py",
+        "data_analysis/chargepilot/ml/README.md"
+      ]
+    },
+    {
+      "name": "用户流失/会话异常",
+      "algorithm": "HistGradientBoostingClassifier / IsolationForest结合固定TRAIN参照信号",
+      "scope": "14日未回访风险分数和已完成会话异常筛查；非校准概率/非硬件故障诊断",
+      "evidence": [
+        "data_analysis/ml/churn/delivery.py",
+        "data_analysis/ml/anomaly/delivery.py"
+      ]
+    },
+    {
+      "name": "历史站点偏好排序",
+      "algorithm": "HistGradientBoostingClassifier pointwise ranking",
+      "scope": "离线同城固定5站；不可冒充新注册用户在线个性化",
+      "evidence": [
+        "data_analysis/ml/recommend/README.md",
+        "PR67"
+      ]
+    },
+    {
+      "name": "运营参谋",
+      "algorithm": "本地BM25检索 + 只读受控统计工具 + 外部Chat Completions",
+      "scope": "AIPing在线API，可配置model；示例DeepSeek-V4.1-Flash是API模型标识，未下载/训练其权重",
+      "evidence": [
+        "data_analysis/ml/advisor/config.py",
+        "data_analysis/ml/advisor/README.md",
+        "config/services.example.json"
+      ],
+      "license": "外部商用平台条款；不能给该API模型擅标MIT/Apache权重许可"
+    }
+  ],
+  "datasets": [
+    {
+      "name": "项目自生成23类充电教学模拟业务数据",
+      "scope": "5城市25站，6000虚拟用户/车辆；2025-12-01至2026-05-29，180天；原始5,832,840行，CLEAN5,830,923行、121,539有效会话。所有订单、用户、费用、故障为模拟，非真实运营/支付/电桩",
+      "evidence": [
+        "data_analysis/datasets/analytics_full_180d_v1/README.md",
+        "data_analysis/docs/behavior_evidence.md",
+        "data_analysis/DATA_LAYER.md"
+      ],
+      "license": "团队生成成果；依赖外部校准资料须分别归因，不自动继承某外部数据许可证"
+    },
+    {
+      "name": "UrbanEV",
+      "source": "https://github.com/IntelligentSystemsLab/UrbanEV",
+      "license": "CC0-1.0",
+      "scope": "深圳真实聚合数据用于弱校准/趋势对比，不把其原始记录混入本项目模拟业务库，不宣称本模型在UrbanEV真实数据训练",
+      "evidence": [
+        "data_analysis/config/urban_ev_profile.json",
+        "data_analysis/docs/behavior_evidence.md"
+      ],
+      "citation": "Li et al. 2025, Scientific Data, doi:10.1038/s41597-025-04874-4"
+    },
+    {
+      "name": "Open-Meteo Historical API / ECMWF ERA5",
+      "source": "https://open-meteo.com/en/licence",
+      "license": "CC BY4.0数据；API服务另受使用条款约束",
+      "scope": "五城市中心180日小时再分析天气，共21600行，不是场站传感器实测；不是未来预报；归因Open-Meteo和ECMWF/C3S",
+      "evidence": [
+        "data_analysis/config/weather_reference_provenance.json",
+        "data_analysis/docs/behavior_evidence.md"
+      ],
+      "additionalSources": [
+        "https://open-meteo.com/en/docs/historical-weather-api",
+        "https://doi.org/10.24381/cds.adbb2d47"
+      ]
+    },
+    {
+      "name": "原始用户提供充电参考样本",
+      "license": "来源/使用授权未在仓库充分明确，需团队确认",
+      "scope": "3395会话、105站、85用户；仅本地匿名汇总校准，原始行/用户标识不提交；不可认定来自ACN、国内真实场站或可靠真实年份/币种",
+      "evidence": [
+        "data_analysis/config/reference_profile.json",
+        "data_analysis/docs/reference_dataset_review.md",
+        "data_analysis/docs/behavior_evidence.md"
+      ]
+    },
+    {
+      "name": "公开政策/论文/行业报告",
+      "license": "仅引用结论作情景假设与背景，不整体复制或冒称训练数据",
+      "scope": "中国公共充电行为报告、北京SOC论文、七城EV使用研究、官方节假日与电价政策；模拟费率不是运营商报价",
+      "evidence": [
+        "data_analysis/docs/behavior_evidence.md",
+        "data_analysis/config/calendar_reference.json"
+      ],
+      "sources": [
+        "https://www.enaas.com/info/index/80.html",
+        "https://www.nea.gov.cn/2023-03/20/c_1310703965.htm",
+        "https://www.nature.com/articles/s44333-024-00023-3",
+        "https://ira.lib.polyu.edu.hk/handle/10397/99312"
+      ]
+    },
+    {
+      "name": "当前Qt SQLite / ChargePilot沙盒",
+      "scope": "Qt实时模拟业务来自同一SQLite只读快照；ChargePilot独立MySQL沙盒与180日历史快照分别标注；三源不能混为实时真实运营",
+      "evidence": [
+        "data_analysis/delivery/qt_live_adapter.py",
+        "data_analysis/chargepilot/CONTRACT.md",
+        "docs/competition_integration.md"
+      ]
+    }
+  ],
+  "externalAPIs": [
+    {
+      "name": "腾讯位置服务WebService/JavaScript GL API",
+      "source": "https://lbs.qq.com/",
+      "scope": "客户端地图/定位/编码/路线，需自有key和平台授权/配额；key不在公开仓库/文档",
+      "evidence": "client/services/map/README.md; client/qml/map_bridge.cpp",
+      "license": "腾讯平台服务条款，非开源组件许可证"
+    },
+    {
+      "name": "AIPing Chat Completions",
+      "source": "https://aiping.cn/",
+      "scope": "管理端AI运营参谋，仅发受控检索摘要与问答上下文；API实际模型以评审配置为准",
+      "license": "平台API条款及模型使用限制，代码中的默认型号不是开源权重授权证明"
+    }
+  ],
+  "aiTools": [
+    {
+      "tool": "Claude Code",
+      "evidenceType": "公开PR自述和git提交trailers",
+      "evidence": [
+        "https://github.com/ggbondbest/qt-charging-platform/pull/53",
+        "https://github.com/ggbondbest/qt-charging-platform/pull/54",
+        "https://github.com/ggbondbest/qt-charging-platform/pull/59",
+        "commit d40ad36df567238258b9610a7195646ab46ed3af",
+        "commit 1973c3f4ddb260816124c140ee36a2b2de6397e2"
+      ],
+      "scopeVerified": "部分客户端QML/经验等级/会员/设置修复辅助，不能据此推断所有成员或全部代码均由该工具生成"
+    },
+    {
+      "tool": "OpenAI Codex",
+      "evidenceType": "本次用户授权的实际协作对话/工具执行记录，尚非已合并PR",
+      "scopeVerified": "2026-10-17至19 Qt/Vue整合、SQLite适配、启动托管/配置、安全边界、测试与UI修复、材料整理和包装辅助。人类提出需求、选择方案、检查真实运行效果；成员仍须自行核验并能讲解核心设计。"
+    },
+    {
+      "tool": "AIPing / DeepSeek API",
+      "evidenceType": "运行时产品依赖，不等同开发助手",
+      "scopeVerified": "运营参谋检索结果的解释生成；可关闭走离线工具，不自动执行用户业务写操作。"
+    }
+  ],
+  "priorWorkDisclosure": {
+    "evidence": [
+      "PR60阶段一课程结项发布",
+      "PR83阶段二最终交付发布",
+      "README.md阶段一/二说明"
+    ],
+    "suggestedStatement": "本项目以团队既有课程项目及GitHub版本历史为基础，保留原作者贡献和发布记录。本次参赛新增Qt内嵌Vue运营中心、同SQLite实时只读数据适配/当前运营指标、三源边界与模型服务对齐、管理端自动托管API/MySQL及退出清理、统一且端侧隔离的AI/地图配置、页面响应布局/全屏与地图修复、回归测试/CI、部署与参赛演示材料。不得声称所有代码均为本次竞赛从零开发。",
+    "notClaimed": [
+      "已用仓颉语言实现核心模块",
+      "真实运营用户与支付",
+      "多节点Spark集群",
+      "闭合研究PR模型已经生产上线"
+    ]
+  },
+  "status": "PUBLIC_SOURCE_INDEX_FOR_COMPETITION_DOCUMENTS"
+}

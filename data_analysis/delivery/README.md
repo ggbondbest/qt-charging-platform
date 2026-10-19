@@ -1,6 +1,6 @@
 # 第二阶段统一交付：充能智析
 
-一个 Vue 网页、一个 FastAPI 服务入口。统计和演示业务使用两个隔离的 MySQL 库。
+一个 Vue 网页、一个 FastAPI 服务入口。Qt当前业务读取SQLite；历史统计和策略演示使用两个隔离的MySQL库。
 环境：Python **3.11/3.12**、Node **24**、MySQL **8.4**；CPU即可，不需要GPU。
 全部电站、用户、充电行为和支付都是**模拟演示**。模型实际训练、实际推理，但不代表真实现场验证。
 最终范围、按顺序复现的检查命令和四分钟验收路线见 [最终交付与验收](../docs/final_delivery.md)。
@@ -17,11 +17,12 @@ Vue推荐卡片 → 查看路线；独立MySQL业务库存储访问会话、推�
 
 | 页面 | 可展示内容 |
 | --- | --- |
+| 当前模拟业务 | 同一Qt SQLite的只读一致快照：今日/本月/累计营收、在线率、7/30天趋势、异常电桩、订单和电站状态；不合并历史批次 |
 | 运营总览 | 城市/日期筛选；电量、收入、用户、利用率、资源状态、队列、维修、站型/地区对比、清洗质量；地图和实际图表 |
 | 智能找站 | 五城市25站，点选起点、目标电量、ETA、到站可用概率、条件等待/P90、服务成功率、评分解释、积分标签与路线预览 |
 | 智能分析 | 1/6/24小时负荷与空闲桩预测、用户流失风险、会话异常复核、实际TEST指标 |
 | AI运营参谋 | 全站右下角人物聊天；在线模型检索聚合与项目知识后生成带引用回答，保留本地统计问答 |
-| 模拟控制台 | 管理员令牌验证、回放时钟、最近站/智能推荐配对实验；不修改只读统计批次 |
+| 模拟控制台 | 直接进入，调整回放时钟、运行最近站/智能推荐配对实验；不修改只读统计批次 |
 
 运营总览新增「时空与效率」「用户与服务」两个多维分析工作区：时段热力图、站点效率气泡、
 气象关联、指标相关矩阵、补能行为分布、具体服务流失原因、站型×小时瓶颈联动和四层用户画像。
@@ -34,7 +35,66 @@ Vue推荐卡片 → 查看路线；独立MySQL业务库存储访问会话、推�
 `delivery/` 负责统一启动和模型聚合；`backend/` 负责统计查询；`chargepilot/` 负责找桩/业务闭环；
 `ml/load`、`ml/availability`、`ml/insights.py` 负责各模型，`ml/advisor` 负责已有聚合/报告与项目知识的检索和回答；
 `frontend/` 是唯一网页源代码。
-原 Qt 客户端、TCP和SQLite不改，也不嵌入第二套网页。
+Qt客户端仍通过TCP向Qt Server办理业务，SQLite是当前业务的唯一权威。管理端的智能运营中心
+打开同一Vue页面，默认WebEngine嵌入和自动托管网页服务，保留外部浏览器后备；历史模型不直接绑定Qt预约。
+
+日常使用直接启动Qt管理端即可，由Qt启动Python服务并传入业务库地址。Node.js只在构建Vue时需要。
+一次性环境准备、完整模式本机配置与外部服务模式见 [赛事整合指南](../../docs/competition_integration.md#日常使用只启动-qt-管理端)。
+下面的独立命令用于手动部署与排查；手动启动Qt时加 `--no-dashboard-autostart`，避免同时启动另一份API。
+
+### 1.1 Qt当前业务的独立启动与只读边界
+
+当前业务监控可在没有MySQL、历史模型或训练依赖的环境中单独运行。先构建Vue，启动Qt Server，
+然后让`QT_SQLITE_PATH`或`--qt-database`指向Qt Server的`--database`所用的**同一绝对路径**：
+
+```bash
+python -m pip install -r data_analysis/requirements-qt-live.txt
+export QT_SQLITE_PATH=/absolute/path/to/demo.sqlite3
+python -m data_analysis.delivery.cli check --qt-live-only
+python -m data_analysis.delivery.cli serve --qt-live-only
+```
+
+Windows PowerShell使用`$env:QT_SQLITE_PATH="C:\\absolute\\path\\demo.sqlite3"`。完整历史服务仍按下文准备；
+配置`QT_SQLITE_PATH`后，普通`serve`也提供相同Qt接口。只启动当前业务时，历史API明确返回
+`HISTORICAL_SERVICES_DISABLED`，不会用Qt订单充当历史训练/分析数据。
+
+适配器只打开进程配置的本地文件：SQLite URI `mode=ro`、`PRAGMA query_only=ON`和单个只读事务；
+不接受HTTP传入的路径，不复制数据库、不创建缺失文件、不修改Qt账户或订单。
+每个请求结束或异常后关闭连接。Vue调用一次`/snapshot`获取汇总、趋势、异常电桩、电站、订单的同一事务快照；
+Qt提交后，下次刷新可见新值。`asOf`为读取快照时的UTC时刻，**不表示最后一笔业务发生时间或Qt进程存活证明**。
+请勿将静态数据库备份配置为实时源。
+
+| 接口 | 数据与边界 |
+| --- | --- |
+| `GET /api/v1/qt-live/health` | `status=ready`、`readOnly=true`，验证文件可读和所需表/列存在；不依赖历史服务 |
+| `GET /api/v1/qt-live/snapshot?stationLimit=500&orderLimit=20&trendDays=7` | 同事务的`summary`、`overview`、`stations`、`orders`；趋势支持7/30天；`limits`及`truncated`显式标识列表截断；站点最多500、订单最多100 |
+| `GET /api/v1/qt-live/summary` | 状态计数、用户总数、在途订单、今日订单、在线率、今日/本月/累计营收及完成电量；收入/电量仅计`COMPLETED`，充值/待付/取消不计收入 |
+| `GET /api/v1/qt-live/stations?limit=100&offset=0` | `qtStationId`、`qtStationCode`、站名/城市、源状态、价格、五种电桩状态计数；无联系人信息 |
+| `GET /api/v1/qt-live/orders?limit=20&offset=0&status=COMPLETED` | 最新ID倒序订单摘要，状态可省略；无用户ID、手机号、昵称、账户余额或完整交易号 |
+
+响应沿用`code/message/data/meta`形状，但Qt域有独立类型，不包含历史`datasetId/publishedBatchId`。
+`data`带`dataSource="qt-sqlite"`、`simulated=true`、`asOf`；`meta`带
+`scope="CURRENT_QT_BUSINESS"`、`mergedWithHistory=false`、`simulated=true`、请求编号。
+金额以整数分、电量以整数Wh返回；时间归一化为UTC，不猜测无时区的非法历史值。
+电站ID以`qt`前缀区分，不能映射成历史`ST-*`站点。
+
+原生运营概览已并入当前业务。`summary.totalUsers`只返回人数，不投影用户资料；`activeOrders`为预约、充电中、待支付之和。
+`onlineChargers`等于总桩数减离线数，故障桩仍算在线，与原生管理端一致；`onlineRatio`为0–1比例，无电桩时为0。
+`todayOrders`按`created_at`归属北京时间日期；`todayCompletedOrders`、`todayRevenueCents`、`todayCompletedEnergyWh`
+及`monthRevenueCents`按完成订单的`paid_at`归属北京时间日/月。累计收入继续使用`paidAmountCents`。
+`overview.timeZone="Asia/Shanghai"`、`today`和`revenueTrend`使用同一`asOf`，日趋势包含当天，空日填0；
+每点含`date/revenueCents/completedOrderCount/completedEnergyWh`。无记录是实际零值，不借用历史批次补数。
+`overview.abnormalChargers`返回总数和最近更新的最多5台：故障/离线状态，或存在未恢复异常事件的电桩；
+`activeException`缺失时为null，事件只含受控分类、级别、状态和发生时间，说明由分类生成，不泄露操作人员文本或用户信息。
+
+缺配置、不可读、锁库/查询超时、结构不匹配、非法数据分别返回HTTP503及
+`QT_DATABASE_NOT_CONFIGURED`、`QT_DATABASE_UNAVAILABLE`、`QT_DATABASE_BUSY`、`QT_SCHEMA_MISMATCH`、
+`QT_DATA_INVALID`，`data=null`。分页/状态非法返回HTTP422 `INVALID_ARGUMENT`。
+响应不泄漏物理路径、SQL或底层异常，禁止缓存；不可用不会伪装成全零成功。
+本接口用于本机可信演示，不继承Qt管理员登录身份；默认监听127.0.0.1。
+
+专项验证：`python -m unittest data_analysis.tests.test_qt_live_adapter -v`。
+测试使用临时目录和仓库真实schema，覆盖支付口径、WAL并发一致性、只读、UTC、锁库、隐私与两种启动模式。
 
 ## 2. 首次准备
 
@@ -96,7 +156,6 @@ $env:CHARGEPILOT_MYSQL_PORT="3306"
 $env:CHARGEPILOT_MYSQL_DATABASE="chargepilot_demo"
 $env:CHARGEPILOT_MYSQL_USER="chargepilot_app"
 $env:CHARGEPILOT_MYSQL_PASSWORD="替换为自己的业务密码"
-$env:CHARGEPILOT_ADMIN_TOKEN="替换为至少16位随机管理员令牌"
 cd data_analysis/frontend
 npm ci
 npm test
@@ -133,7 +192,7 @@ AI参谋无需另开服务端口或训练。在线模式由模型规划受控检
 有限纠错不能绝对保证外部API持续可用；实际连通和引用匹配也不保证模型全部语义判断正确，仍需逐项复核。
 
 这是教学局域网演示，不是公网生产服务：统计没有生产账号体系；体验昵称不等于真实用户认证。
-默认只绑定127.0.0.1，不要公开MySQL和管理员令牌。
+默认只绑定127.0.0.1，不要公开MySQL。模拟控制台无需管理员令牌，用户业务接口仍校验会话与资源归属。
 
 ## 3. 模型怎样复用
 

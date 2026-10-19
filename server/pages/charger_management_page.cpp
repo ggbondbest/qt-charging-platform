@@ -105,7 +105,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(18);
 
-    auto* metricsLayout = new QHBoxLayout();
+    auto* metricsLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Metrics);
     metricsLayout->setSpacing(16);
     metricsLayout->addWidget(createManagementMetricCard(
         tr("电桩总数"), tr("1,522"), tr(" 台"), tr("较昨日  +18 (+1.20%)  ↑"),
@@ -120,7 +120,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(metricsLayout);
 
     auto* toolbar = createCompactCard(this);
-    auto* toolbarLayout = new QHBoxLayout(toolbar);
+    auto* toolbarLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls, toolbar);
     toolbarLayout->setContentsMargins(18, 12, 18, 12);
     toolbarLayout->setSpacing(10);
 
@@ -168,6 +168,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     feedbackLabel_ = createTextLabel(tr("显示全部 1,522 台电桩"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
     feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setWordWrap(true);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
 
     toolbarLayout->addWidget(keywordLineEdit_, 1);
@@ -176,13 +177,10 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     toolbarLayout->addWidget(typeComboBox_);
     toolbarLayout->addWidget(powerComboBox_);
     toolbarLayout->addWidget(feedbackLabel_);
-    toolbarLayout->addStretch();
-    toolbarLayout->addWidget(resetButton);
-    toolbarLayout->addWidget(queryButton);
-    toolbarLayout->addWidget(addButton_);
+    toolbarLayout->addWidget(createManagementActionGroup({resetButton, queryButton, addButton_}, toolbar));
     layout->addWidget(toolbar);
 
-    auto* bodyLayout = new QHBoxLayout();
+    auto* bodyLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::ListAndDetail);
     bodyLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
     tableCard->setMinimumWidth(kManagementTableMinimumWidth);
@@ -195,6 +193,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableLayout->addWidget(tableTitleLabel_);
 
     tableWidget_ = new QTableWidget(tableCard);
+    configureManagementResponsiveTable(tableWidget_);
     tableWidget_->setObjectName(QStringLiteral("chargerManagementTable"));
     tableWidget_->setColumnCount(10);
     tableWidget_->setHorizontalHeaderLabels(
@@ -211,10 +210,9 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->verticalHeader()->setDefaultSectionSize(46);
     tableWidget_->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
     tableWidget_->horizontalHeader()->setStretchLastSection(false);
-    tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    // The station name needs a stable readable width.  Keep status and row
-    // actions compact while the remaining columns share the list-card width,
-    // avoiding a blank strip at the right edge.
+    // Operational identifiers and timestamps remain readable on narrow pages;
+    // excess columns scroll within the table instead of squeezing into slivers.
+    tableWidget_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     tableWidget_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
     tableWidget_->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
@@ -224,7 +222,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     tableLayout->addWidget(tableWidget_, 1);
 
     statePanel_ = new ManagementStatePanel(tableCard);
-    tableLayout->addWidget(statePanel_);
+    tableLayout->addWidget(statePanel_, 1);
 
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"),
@@ -248,7 +246,6 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     bodyLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("电桩详情"), this);
-    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* detailTitleRow = new QHBoxLayout();
     detailCodeLabel_ = createTextLabel(QString(),
@@ -330,6 +327,7 @@ ChargerManagementPage::ChargerManagementPage(QWidget* parent) : QWidget(parent)
     detailLayout->addWidget(refreshStatusButton_);
     detailLayout->addWidget(clearAlertButton_);
     detailLayout->addWidget(editButton_);
+    configureManagementDetailWrapping(detailCard);
     bodyLayout->addWidget(detailCard);
     layout->addLayout(bodyLayout, 1);
 

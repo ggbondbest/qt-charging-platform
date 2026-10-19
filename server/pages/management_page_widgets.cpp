@@ -11,6 +11,7 @@
 #include <QPalette>
 #include <QPainter>
 #include <QPushButton>
+#include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTimeZone>
 #include <QVBoxLayout>
@@ -199,6 +200,209 @@ void ManagementStatePanel::setState(ManagementListState state, const QString& de
     }
 }
 
+ManagementResponsiveLayout::ManagementResponsiveLayout(Mode mode, QWidget* parent)
+    : QLayout(parent), mode_(mode)
+{
+    setContentsMargins(0, 0, 0, 0);
+    setSpacing(12);
+}
+
+ManagementResponsiveLayout::~ManagementResponsiveLayout()
+{
+    while (auto* item = takeAt(0)) delete item;
+}
+
+void ManagementResponsiveLayout::addWidget(QWidget* widget, int stretch)
+{
+    addChildWidget(widget);
+    entries_.append({new QWidgetItem(widget), stretch});
+    invalidate();
+}
+
+void ManagementResponsiveLayout::addItem(QLayoutItem* item)
+{
+    entries_.append({item, 0});
+    invalidate();
+}
+
+int ManagementResponsiveLayout::count() const { return entries_.size(); }
+QLayoutItem* ManagementResponsiveLayout::itemAt(int index) const
+{
+    return index >= 0 && index < entries_.size() ? entries_.at(index).item : nullptr;
+}
+QLayoutItem* ManagementResponsiveLayout::takeAt(int index)
+{
+    if (index < 0 || index >= entries_.size()) return nullptr;
+    auto* item = entries_.takeAt(index).item;
+    invalidate();
+    return item;
+}
+
+QSize ManagementResponsiveLayout::sizeHint() const
+{
+    return QSize(1100, heightForWidth(1100));
+}
+
+QSize ManagementResponsiveLayout::minimumSize() const
+{
+    QSize size;
+    for (const auto& entry : entries_) {
+        if (!entry.item->isEmpty()) size = size.expandedTo(entry.item->minimumSize());
+    }
+    const auto margins = contentsMargins();
+    return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+}
+
+Qt::Orientations ManagementResponsiveLayout::expandingDirections() const
+{
+    return mode_ == Mode::ListAndDetail ? Qt::Horizontal | Qt::Vertical : Qt::Horizontal;
+}
+bool ManagementResponsiveLayout::hasHeightForWidth() const { return true; }
+int ManagementResponsiveLayout::heightForWidth(int width) const
+{
+    return arrange(QRect(0, 0, width, 0), false);
+}
+void ManagementResponsiveLayout::setGeometry(const QRect& rect)
+{
+    QLayout::setGeometry(rect);
+    arrange(rect, true);
+}
+
+int ManagementResponsiveLayout::arrange(const QRect& outer, bool apply) const
+{
+    const auto margins = contentsMargins();
+    const QRect rect = outer.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom());
+    const int width = qMax(1, rect.width());
+    const int gap = qMax(0, spacing());
+    QList<Entry> visible;
+    for (const auto& entry : entries_) if (!entry.item->isEmpty()) visible.append(entry);
+    if (visible.isEmpty()) return margins.top() + margins.bottom();
+    const auto itemHeight = [](QLayoutItem* item, int itemWidth) {
+        const int preferred = item->hasHeightForWidth() ? item->heightForWidth(itemWidth) : item->sizeHint().height();
+        return qMax(item->minimumSize().height(), preferred);
+    };
+    int usedHeight = 0;
+    if (mode_ == Mode::ListAndDetail && visible.size() == 2) {
+        auto* table = visible.at(0).item;
+        auto* detail = visible.at(1).item;
+        const int detailWidth = qMax(kManagementDetailWidth, detail->minimumSize().width());
+        if (width >= qMax(1100, table->minimumSize().width() + gap + detailWidth)) {
+            const int tableWidth = width - gap - detailWidth;
+            usedHeight = qMax(itemHeight(table, tableWidth), itemHeight(detail, detailWidth));
+            if (apply) {
+                const int height = qMax(usedHeight, rect.height());
+                table->setGeometry(QRect(rect.x(), rect.y(), tableWidth, height));
+                detail->setGeometry(QRect(rect.x() + tableWidth + gap, rect.y(), detailWidth, height));
+            }
+        } else {
+            const int tableHeight = itemHeight(table, width);
+            const int detailHeight = itemHeight(detail, width);
+            usedHeight = tableHeight + gap + detailHeight;
+            if (apply) {
+                const int expandedTableHeight = tableHeight + qMax(0, rect.height() - usedHeight);
+                table->setGeometry(QRect(rect.x(), rect.y(), width, expandedTableHeight));
+                detail->setGeometry(QRect(rect.x(), rect.y() + expandedTableHeight + gap, width, detailHeight));
+            }
+        }
+    } else if (mode_ == Mode::Metrics) {
+        const int columns = width >= 4 * 250 + 3 * gap ? 4 : (width >= 2 * 250 + gap ? 2 : 1);
+        const int itemWidth = (width - (columns - 1) * gap) / columns;
+        for (int start = 0; start < visible.size(); start += columns) {
+            int rowHeight = 0;
+            for (int offset = 0; offset < columns && start + offset < visible.size(); ++offset)
+                rowHeight = qMax(rowHeight, itemHeight(visible.at(start + offset).item, itemWidth));
+            if (apply) {
+                for (int offset = 0; offset < columns && start + offset < visible.size(); ++offset) {
+                    const int x = rect.x() + offset * (itemWidth + gap);
+                    const int actualWidth = offset == columns - 1 ? rect.right() - x + 1 : itemWidth;
+                    visible.at(start + offset).item->setGeometry(QRect(x, rect.y() + usedHeight, actualWidth, rowHeight));
+                }
+            }
+            usedHeight += rowHeight + gap;
+        }
+        usedHeight -= gap;
+    } else {
+        // Keep label/input groups intact while wrapping controls at their
+        // natural widths. Only explicitly expanding fields take row slack.
+        int start = 0;
+        while (start < visible.size()) {
+            QList<int> widths;
+            int rowWidth = 0;
+            int totalStretch = 0;
+            int end = start;
+            for (; end < visible.size(); ++end) {
+                auto* item = visible.at(end).item;
+                const int preferred = qMin(width, item->sizeHint().expandedTo(item->minimumSize()).boundedTo(item->maximumSize()).width());
+                if (end > start && rowWidth + gap + preferred > width) break;
+                widths.append(preferred);
+                rowWidth += (end > start ? gap : 0) + preferred;
+                totalStretch += visible.at(end).stretch;
+            }
+            int rowHeight = 0;
+            for (int i = start; i < end; ++i) {
+                if (totalStretch > 0) widths[i - start] += (width - rowWidth) * visible.at(i).stretch / totalStretch;
+                rowHeight = qMax(rowHeight, itemHeight(visible.at(i).item, widths.at(i - start)));
+            }
+            if (apply) {
+                int x = rect.x();
+                for (int i = start; i < end; ++i) {
+                    visible.at(i).item->setGeometry(QRect(x, rect.y() + usedHeight, widths.at(i - start), rowHeight));
+                    x += widths.at(i - start) + gap;
+                }
+            }
+            usedHeight += rowHeight + gap;
+            start = end;
+        }
+        usedHeight -= gap;
+    }
+    return usedHeight + margins.top() + margins.bottom();
+}
+
+QWidget* createManagementFilterField(const QString& label, QWidget* field, QWidget* parent)
+{
+    auto* group = new QWidget(parent);
+    auto* layout = new QHBoxLayout(group);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    layout->addWidget(createLabel(label, QStringLiteral("color:#52617a; font-size:13px; font-weight:600;"), group));
+    layout->addWidget(field, 1);
+    return group;
+}
+
+void configureManagementResponsiveTable(QTableWidget* table)
+{
+    table->setMinimumWidth(0);
+    table->setMinimumHeight(320);
+    table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    table->setSizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored);
+    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    table->setWordWrap(false);
+}
+
+QWidget* createManagementActionGroup(const QList<QWidget*>& controls, QWidget* parent)
+{
+    auto* group = new QWidget(parent);
+    group->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    auto* layout = new QHBoxLayout(group);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+    for (auto* control : controls) layout->addWidget(control);
+    return group;
+}
+
+void configureManagementDetailWrapping(QWidget* card)
+{
+    card->setMinimumWidth(0);
+    card->setMaximumWidth(QWIDGETSIZE_MAX);
+    for (auto* label : card->findChildren<QLabel*>()) {
+        // Badges, avatars and chart keys intentionally retain their geometry.
+        if (label->minimumWidth() == label->maximumWidth()) continue;
+        label->setMinimumWidth(0);
+        label->setWordWrap(true);
+        label->setTextFormat(Qt::PlainText);
+    }
+}
+
 QFrame* createManagementMetricCard(const QString& title, const QString& value, const QString& unit,
                                    const QString& hint, const QColor& accent, int iconType,
                                    QWidget* parent)
@@ -219,6 +423,8 @@ QFrame* createManagementMetricCard(const QString& title, const QString& value, c
                                    QStringLiteral("color:#1b2a45; font-size:24px; font-weight:700;"),
                                    card);
     valueLabel->setObjectName(QStringLiteral("managementMetricValue"));
+    valueLabel->setWordWrap(true);
+    valueLabel->setMinimumWidth(0);
     textLayout->addWidget(valueLabel);
     auto* hintLabel = createLabel(hint, QStringLiteral("color:#68758a; font-size:13px;"), card);
     hintLabel->setObjectName(QStringLiteral("managementMetricHint"));
@@ -261,7 +467,7 @@ QFrame* createManagementDetailCard(const QString& title, QWidget* parent)
 {
     auto* card = new QFrame(parent);
     card->setObjectName(QStringLiteral("contentCard"));
-    card->setMinimumWidth(292);
+    card->setMinimumWidth(0);
     auto* layout = new QVBoxLayout(card);
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(14);
@@ -296,6 +502,10 @@ QTableWidgetItem* createManagementTableItem(const QString& text)
 
 void configureManagementComboBox(QComboBox* comboBox)
 {
+    // Loaded station names must not widen the entire page. The popup still
+    // exposes full names; the closed control uses the available field width.
+    comboBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    comboBox->setMinimumContentsLength(8);
     Q_ASSERT(comboBox != nullptr);
     if (comboBox->findChild<QWidget*>(QStringLiteral("managementComboArrow")) == nullptr) {
         new ComboArrow(comboBox);

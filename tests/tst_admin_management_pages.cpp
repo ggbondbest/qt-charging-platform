@@ -85,7 +85,7 @@ private slots:
         QVERIFY(feeHint->text().contains(QStringLiteral("Mock")));
     }
 
-    void chargerPowerFilterUsesSelectedWattsAndFillsTableWidth()
+    void chargerPowerFilterUsesSelectedWattsAndKeepsColumnsReadable()
     {
         ChargerManagementPage page;
         auto* powerFilter = page.findChild<QComboBox*>(QStringLiteral("chargerPowerFilterComboBox"));
@@ -114,10 +114,17 @@ private slots:
                 QCOMPARE(table->item(row, 3)->text(), powerFilter->currentText());
         }
 
-        QCOMPARE(table->horizontalHeader()->sectionResizeMode(1), QHeaderView::Fixed);
+        page.resize(980, 820);
+        page.show();
         QVERIFY(table->columnWidth(1) >= 140);
-        for (const int column : {0, 2, 3, 5, 6, 7, 8})
-            QCOMPARE(table->horizontalHeader()->sectionResizeMode(column), QHeaderView::Stretch);
+        // Narrow windows must retain readable identifiers and timestamps.
+        // Any excess width belongs to the table's own scrolling viewport.
+        for (const int column : {0, 2, 3, 5, 6, 7, 8}) {
+            for (int row = 0; row < table->rowCount(); ++row) {
+                const int textWidth = table->fontMetrics().horizontalAdvance(table->item(row, column)->text());
+                QTRY_VERIFY(table->columnWidth(column) >= textWidth);
+            }
+        }
     }
 
     void chargerPowerFilterKeepsTypeSelectionAndUsesExactServerWatts()

@@ -99,6 +99,10 @@ private slots:
     }
     void legacyContactsAndValidation()
     {
+        // Model a pre-contact-schema record explicitly; current demo seeds have cities.
+        QSqlQuery legacyFixture(db_.database());
+        QVERIFY(legacyFixture.exec("UPDATE stations SET city=NULL,district=NULL,"
+                                   "contact_name=NULL,contact_phone=NULL WHERE id=1"));
         const auto legacy = item(call("stations.get", {{"id", "1"}}));
         QVERIFY(legacy.value("city").isNull());
         QVERIFY(legacy.value("contactPhone").isNull());

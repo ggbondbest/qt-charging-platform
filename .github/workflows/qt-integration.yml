@@ -1,0 +1,73 @@
+name: Qt and Vue integration
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qt-live:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      ML_ADVISOR_ONLINE_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: data_analysis/frontend/package-lock.json
+      - name: Install Qt 6.2.4 baseline and API dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build sqlite3 fonts-noto-cjk \
+            qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite \
+            qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-webengine-dev-tools \
+            libqt6webenginecore6-bin libqt6charts6-dev \
+            qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
+            qml6-module-qtquick-controls qml6-module-qtquick-templates \
+            qml6-module-qtquick-dialogs qml6-module-qtqml qml6-module-qtqml-models \
+            qml6-module-qtqml-workerscript qml6-module-qtwebengine
+          python -m pip install -r data_analysis/requirements-api.txt
+      - name: Vue contract tests and production bundle
+        working-directory: data_analysis/frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Qt production client and embedded management build
+        run: |
+          cmake -S . -B build-delivery -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON -DBUILD_TESTING=ON \
+            -DCHARGING_BUILD_QML=ON -DCHARGING_EMBED_WEB_DASHBOARD=ON
+          cmake --build build-delivery --parallel 2
+          ctest --test-dir build-delivery --output-on-failure
+      - name: Database and real TCP to HTTP integration
+        run: |
+          bash scripts/verify_database.sh
+          python -m unittest data_analysis.tests.test_qt_live_adapter data_analysis.tests.test_runtime_config data_analysis.tests.test_demo_launcher data_analysis.tests.test_client_launcher data_analysis.tests.test_managed_web_service -v
+          python scripts/verify_qt_live.py --build-dir build-delivery --report runtime/verification/qt-live.json
+          python scripts/verify_dashboard_autostart.py --build-dir build-delivery --report runtime/verification/dashboard-autostart.json
+      - name: Build without embedded WebEngine
+        run: |
+          cmake -S . -B build-fallback -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCHARGING_PLATFORM_STRICT_QT_VERSION=ON -DBUILD_TESTING=OFF \
+            -DCHARGING_BUILD_QML=OFF -DCHARGING_EMBED_WEB_DASHBOARD=OFF
+          cmake --build build-fallback --target charging_server --parallel 2
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: qt-live-integration-evidence
+          path: |
+            runtime/verification/
+            build-delivery/Testing/Temporary/LastTest.log
