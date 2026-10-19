@@ -144,7 +144,7 @@ bash scripts/verify_database.sh
 
 `verify_qt_live.py` 每次创建新的临时数据库和独立 Qt/HTTP 进程，走真实 TCP 的登录、预约、充电、停止、支付、重复支付，再校验 HTTP 的计数、金额、电量、无 PII 和历史边界。它不会连接或改写已有用户业务库。此测试证明服务与数据联动，实际 QML 点击和 WebEngine 展示另行验收。
 `verify_dashboard_autostart.py` 则只启动生产 Qt 服务端，验证它自动启动 API、提供已构建的 Vue、读取同一新建数据库，以及 Qt 退出后 API 自动清理；使用临时配置和数据库，不连接 MySQL。
-GitHub Actions 新增 `Qt and Vue integration`，按 Qt 6.2.4 编译生产客户端、嵌入管理端和无 WebEngine 后备，执行只读 API、Qt 测试与跨语言链路。
+按项目负责人要求，Ubuntu CI（含 Qt 自动集成工作流）已移除，保留原有 Windows 数据与 API 契约检查。上面的 Qt、只读 API 与跨语言链路命令仍可在本机手动执行。
 
 建议演示顺序：Qt 用户端找站 → 预约、充电、停止、支付 → Qt 管理端订单 → 运营中心当前业务的新增已付金额和电量 → 历史运营分析与 1/6/24 小时预测 → 策略实验与 TEST/基线 → 断开 FastAPI 展示错误及 Qt 业务仍可用。
 

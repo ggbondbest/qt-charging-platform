@@ -110,7 +110,7 @@ flowchart LR
 | --- | --- | --- |
 | 语言与运行时 | C++17、Qt Framework **6.2.4** | Python **3.11/3.12**、Node.js **24** |
 | 数据库 | SQLite / QSQLITE | MySQL **8.4**，统计库与业务库分离 |
-| 构建与展示 | CMake 3.16+；Ubuntu 22.04 验收 | Vue 3、ECharts、FastAPI；Windows 开发、Linux 验证 |
+| 构建与展示 | CMake 3.16+；本次 macOS 评审 | Vue 3、ECharts、FastAPI；Windows 开发、Linux 验证 |
 | 额外依赖 | QML、Charts、WebEngine | 重跑 Spark 需 Java 17 与 Spark 依赖；HDFS 验收使用 Hadoop 3.x |
 
 完整网页和模型使用 CPU 即可，不需要 GPU。仓库已有原始数据和清洗统计包；新环境仍需准备 MySQL、训练本地模型并构建前端。
@@ -249,18 +249,14 @@ docs/            一期需求、架构、协议与协作记录
 
 ## 验证与交付边界
 
-当前 [GitHub Actions](.github/workflows/data-analysis.yml) 展开为 **12 项检查**：
+当前 [GitHub Actions](.github/workflows/data-analysis.yml) 保留 **2 项 Windows 检查**：
 
-| 检查 | 覆盖范围 |
+| 检查 | 覆盖内容 |
 | --- | --- |
-| Python 静态检查 ×1 | 语法、未定义名称等错误 |
-| 数据生成与交付证据 ×2 | Linux/Windows、生成约束、数据包与质量证据 |
-| API 与契约 ×2 | Linux/Windows、接口结构与批次一致性；Linux 含真实 MySQL |
-| Spark ×5 | 清洗、脏数据解析、统计、ML 特征与数据导出 |
-| ML 与 MySQL 集成 ×1 | 实际 CPU 训练、预测、集成接口、参谋回归与配对仿真 |
-| Vue ×1 | 前端测试、类型检查与构建 |
+| generator (windows-latest) | 可移植回归、已提交模拟数据与清洗交付证据 |
+| API and contracts / windows-latest | 只读 API、发布完整性及公开契约 |
 
-AI 在线协议在 CI 中使用测试传输，不要求真实 Key 或付费调用。CI 配置和历史通过记录不等于本次检查已通过，应查看当前提交的运行结果。一期旧 Qt 自动工作流已移除；本次新增 `Qt and Vue integration` 工作流验证 Qt 6.2.4、Vue、只读适配及自动启动链路，另保留 `verify_delivery.sh` 手工入口。
+按项目负责人要求，Ubuntu 运行器上的 Qt、Python 静态、Spark、ML/MySQL、Vue 和矩阵分支检查已移除。相关源码、测试与本机验证记录仍保留；完整回归可按对应模块指南手动执行。CI 历史记录不代表最新提交已通过，应查看当前运行结果。
 
 - 统计数据采用固定历史批次；日期筛选的结束日不包含当天，设备快照不冒充实时库存。
 - 地图底图需联网，默认到站时间为情景估计；外部真实路线不可用时明确提示，不伪造导航成功。
