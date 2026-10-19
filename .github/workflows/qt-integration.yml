@@ -30,8 +30,8 @@ jobs:
       - name: Install Qt 6.2.4 baseline and API dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build sqlite3 fonts-noto-cjk \
-            qt6-base-dev qt6-base-dev-tools libqt6sql6-sqlite \
+          sudo apt-get install -y ninja-build sqlite3 fonts-noto-cjk libgl1-mesa-dev \
+            qt6-base-dev qt6-base-dev-tools libqt6opengl6-dev libqt6sql6-sqlite \
             qt6-declarative-dev qt6-declarative-dev-tools qt6-webengine-dev qt6-webengine-dev-tools \
             libqt6webenginecore6-bin libqt6charts6-dev \
             qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts \
