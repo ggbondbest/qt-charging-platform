@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from data_analysis.runtime_config import load_ai_environment
+
 
 @dataclass(frozen=True)
 class OnlineSettings:
@@ -47,6 +49,8 @@ def local_settings():
 def online_settings():
     """HTTPS endpoint; operator opt-in is separate from per-question consent."""
     values_by_name = local_settings()
+    values_by_name.update({name: value for name, value in load_ai_environment().items()
+                           if name in ENV_NAMES})
     values_by_name.update({name: os.environ[name] for name in ENV_NAMES if name in os.environ})
     if values_by_name.get("ML_ADVISOR_ONLINE_ENABLED") != "1":
         return None

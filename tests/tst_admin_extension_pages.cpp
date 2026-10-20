@@ -232,6 +232,10 @@ private slots:
     }
     void legacyNullContactsCanBeCompletedInEditForm()
     {
+        // Model a pre-contact-schema record explicitly; current demo seeds have cities.
+        QSqlQuery legacyFixture(fixture_.database());
+        QVERIFY(legacyFixture.exec("UPDATE stations SET city=NULL,district=NULL,"
+                                   "contact_name=NULL,contact_phone=NULL"));
         startServer();
         StationManagementPage page;
         page.setAdminGateway(gateway_.get());

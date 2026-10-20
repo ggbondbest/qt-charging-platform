@@ -4,7 +4,7 @@
 // 测试 tst_station_map_panel 直接构造。
 // 数据流向：页面 → setStations/setRoutePoints（缓存）→ buildMapHtml 把占位符
 // 填入 qrc 模板 :/station/tencent_map.html → QWebEngineView::setHtml 注入内存页；
-// Key 仅读环境变量 CHARGING_TENCENT_MAP_KEY，全程不触 TCP 契约、不落仓库。
+// Key 读取共享地图配置并兼容环境变量，全程不触 TCP 契约、不落日志。
 #pragma once
 
 #include <QVector>
@@ -25,8 +25,8 @@ struct MapStationPoint
 
 // 腾讯地图面板（成员 2，需求 #22：地图入口及无配置降级）。
 //
-// 可用条件：构建时找到 Qt WebEngine，且运行环境注入了腾讯地图 Key
-// （环境变量 CHARGING_TENCENT_MAP_KEY，Key 不得进入仓库）。任一条件不满足时
+// 可用条件：构建时找到 Qt WebEngine，且 tencentMap 配置或环境变量提供 Key。
+// 本地配置文件不得提交。任一条件不满足时
 // 显示可理解的降级提示，主流程（电站列表、预约入口）不受影响。
 class StationMapPanel final : public QWidget
 {
@@ -64,10 +64,10 @@ signals:
     void mapReady();
 
 private:
-    // 渲染工具组：mapKey = 环境变量读取口；tryBuildMapView = 建图/降级总闸
+    // 渲染工具组：mapKey = 共享 JavaScript Key 读取口；tryBuildMapView = 建图/降级总闸
     // （构造与“重试”共用一条路径）；buildMapHtml = 模板占位符填充；
     // showDegraded = 降级态统一落点（销毁视图、收文案进 tooltip）。
-    static QString mapKey(); // 仅从环境读取；不硬编码进仓库
+    static QString mapKey(); // 配置文件与环境兼容，不硬编码
 
     QString buildMapHtml() const;
     void showDegraded(const QString& title, const QString& description);

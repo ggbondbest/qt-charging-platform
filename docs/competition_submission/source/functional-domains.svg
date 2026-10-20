@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1220" viewBox="0 0 2400 1220">
+<rect width="100%" height="100%" fill="white"/>
+<rect x="55" y="70" width="730" height="140" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="420.0" y="155.64" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="46" fill="#172B4D">当前模拟业务</text>
+<rect x="55" y="250" width="730" height="480" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="420.0" y="420.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">Qt SQLite 同库快照</text>
+<text x="420.0" y="476.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">营收 在线率 用户数</text>
+<text x="420.0" y="532.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">充电订单 完成电量</text>
+<text x="420.0" y="588.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">经营趋势 异常摘要</text>
+<rect x="55" y="770" width="730" height="130" rx="18" fill="#FFFFFF" stroke="#9AABC0" stroke-width="3"/>
+<text x="420.0" y="847.24" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="36" fill="#172B4D">用户操作提交后轮询可见</text>
+<rect x="835" y="70" width="730" height="140" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="155.64" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="46" fill="#172B4D">历史运营分析</text>
+<rect x="835" y="250" width="730" height="480" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="420.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">180 天模拟发布批次</text>
+<text x="1200.0" y="476.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">多维统计与对比</text>
+<text x="1200.0" y="532.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">负荷 空闲 风险与异常</text>
+<text x="1200.0" y="588.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">模型报告与受控 AI 解释</text>
+<rect x="835" y="770" width="730" height="130" rx="18" fill="#FFFFFF" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="847.24" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="36" fill="#172B4D">历史批次与来源可追溯</text>
+<rect x="1615" y="70" width="730" height="140" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1980.0" y="155.64" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="46" fill="#172B4D">独立策略实验</text>
+<rect x="1615" y="250" width="730" height="480" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="1980.0" y="420.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">独立 MySQL 回放环境</text>
+<text x="1980.0" y="476.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">预计到达与条件等待</text>
+<text x="1980.0" y="532.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">找站评分与激励情景</text>
+<text x="1980.0" y="588.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">固定请求 种子与指标</text>
+<rect x="1615" y="770" width="730" height="130" rx="18" fill="#FFFFFF" stroke="#9AABC0" stroke-width="3"/>
+<text x="1980.0" y="847.24" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="36" fill="#172B4D">实验结果不写入 Qt 预约</text>
+<rect x="55" y="1000" width="2290" height="145" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="1059.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">统一运营中心按来源分区展示</text>
+<text x="1200.0" y="1113.1" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">当前快照、历史批次与策略情景不混算；失败保留最后成功数据并明确提示</text>
+</svg>

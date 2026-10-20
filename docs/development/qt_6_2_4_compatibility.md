@@ -1,5 +1,7 @@
 # Qt 6.2.4 兼容规范
 
+> 2026-10-19 赛事交付更新：按项目负责人要求，Ubuntu CI 已移除，仅保留现有 Windows 数据与 API 检查。下文 Qt 6.2.4 / C++17 源码兼容基线继续适用，涉及 Ubuntu CI 的历史强制条件不再是本次交付门槛。本次可运行包为 macOS 15+ Apple Silicon，已单独验证。
+
 ## 1. 兼容目标
 
 本项目的唯一 Qt Framework 兼容基线是 **Qt 6.2.4**，语言标准是 **C++17**，最终验收环境是 **Ubuntu 22.04**。不得使用 Qt 6.3 及以上才新增的 API 或 CMake 功能。
@@ -26,9 +28,10 @@ if(CHARGING_PLATFORM_STRICT_QT_VERSION
 endif()
 ```
 
-CI 必须传入 `-DCHARGING_PLATFORM_STRICT_QT_VERSION=ON`。`Charts`、
-`WebEngineWidgets` 等较大模块只在实际功能接入时按 target 查找并链接，避免让骨架项目
-在未使用这些模块时就强制所有成员安装。
+CI 必须传入 `-DCHARGING_PLATFORM_STRICT_QT_VERSION=ON`。当前正式功能已使用
+`Charts` 和 `WebEngineWidgets`：管理端默认内嵌 Vue 智能运营中心，需要安装同版本
+WebEngine。仅构建不含 WebEngine 的服务端后备版本时，须显式设置
+`-DCHARGING_BUILD_QML=OFF -DCHARGING_EMBED_WEB_DASHBOARD=OFF`。
 
 Qt 6.2.4 项目应手动启用 CMake 的 Qt 自动处理能力：
 
@@ -80,7 +83,7 @@ set(CMAKE_AUTORCC ON)
 | `Qt6::Sql` | QSQLITE 数据访问 |
 | `Qt6::Charts` | 后台营收与状态图表 |
 | `Qt6::WebEngineQuick` | 正式 QML 腾讯地图和路线页面 |
-| `Qt6::WebEngineWidgets` | 旧地图页面回归 |
+| `Qt6::WebEngineWidgets` | 管理端 Vue 智能运营中心嵌入、旧地图页面回归 |
 | `Qt6::Test` | 单元测试和集成测试 |
 
 新增 Qt 模块前必须说明用途、Qt 6.2.4 可用性、Ubuntu 安装方式和许可证/部署影响。不得仅为一个简单工具函数引入大型第三方依赖。

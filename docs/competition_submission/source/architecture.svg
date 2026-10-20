@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1280" viewBox="0 0 2400 1280">
+<rect width="100%" height="100%" fill="white"/>
+<rect x="55" y="60" width="600" height="155" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="355.0" y="123.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">Qt 用户客户端</text>
+<text x="355.0" y="179.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">找站 预约 充电 支付</text>
+<rect x="895" y="60" width="610" height="155" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="123.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">Qt 服务端与管理端</text>
+<text x="1200.0" y="179.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">TCP 业务服务 原生管理</text>
+<rect x="1745" y="60" width="600" height="155" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="2045.0" y="123.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">Qt SQLite</text>
+<text x="2045.0" y="179.78" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">当前模拟业务唯一权威</text>
+<line x1="655" y1="137" x2="895" y2="137" stroke="#4B6381" stroke-width="4"/><polygon points="895,137 878.7919521576518,144.82937961400214 878.7919521576518,129.17062038599786" fill="#4B6381"/>
+<text x="775.0" y="110.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">TCP</text>
+<line x1="1505" y1="137" x2="1745" y2="137" stroke="#4B6381" stroke-width="4"/><polygon points="1745,137 1728.7919521576518,144.82937961400214 1728.7919521576518,129.17062038599786" fill="#4B6381"/>
+<text x="1625.0" y="110.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">事务读写</text>
+<rect x="55" y="400" width="600" height="170" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="355.0" y="471.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">Vue 运营中心</text>
+<text x="355.0" y="527.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">QWebEngine 嵌入与全屏</text>
+<rect x="895" y="400" width="610" height="170" rx="18" fill="#EAF2FB" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="471.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">Python FastAPI</text>
+<text x="1200.0" y="525.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">当前快照 历史 API 模型服务</text>
+<rect x="1745" y="400" width="600" height="170" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="2045.0" y="471.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">只读 SQLite 适配器</text>
+<text x="2045.0" y="527.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">单事务 snapshot</text>
+<line x1="655" y1="485" x2="895" y2="485" stroke="#4B6381" stroke-width="4"/><polygon points="895,485 878.7919521576518,492.82937961400216 878.7919521576518,477.17062038599784" fill="#4B6381"/>
+<text x="775.0" y="455.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">同源 HTTP</text>
+<line x1="1505" y1="485" x2="1745" y2="485" stroke="#4B6381" stroke-width="4"/><polygon points="1745,485 1728.7919521576518,492.82937961400216 1728.7919521576518,477.17062038599784" fill="#4B6381"/>
+<text x="1625.0" y="455.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">调用</text>
+<line x1="2045" y1="400" x2="2045" y2="215" stroke="#4B6381" stroke-width="4"/><polygon points="2045,215 2052.829379614002,231.20804784234818 2037.1706203859978,231.20804784234818" fill="#4B6381"/>
+<text x="2150" y="315.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">只读</text>
+<line x1="1200" y1="215" x2="1200" y2="400" stroke="#4B6381" stroke-width="4"/><polygon points="1200,400 1192.1706203859978,383.7919521576518 1207.8293796140022,383.7919521576518" fill="#4B6381"/>
+<text x="1385" y="317.54" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="31" fill="#172B4D">QProcess 自动托管</text>
+<rect x="55" y="790" width="600" height="180" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="355.0" y="866.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">历史统计 MySQL</text>
+<text x="355.0" y="922.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">已发布 180 天模拟批次</text>
+<rect x="895" y="790" width="610" height="180" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="1200.0" y="866.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">可信 CPU 模型工件</text>
+<text x="1200.0" y="920.6" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="40" fill="#172B4D">负荷 空闲 到站 风险与异常</text>
+<rect x="1745" y="790" width="600" height="180" rx="18" fill="#F3F6FA" stroke="#9AABC0" stroke-width="3"/>
+<text x="2045.0" y="866.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">独立策略 MySQL</text>
+<text x="2045.0" y="922.28" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="42" fill="#172B4D">回放时钟 推荐与实验记录</text>
+<line x1="1200" y1="570" x2="355" y2="790" stroke="#4B6381" stroke-width="4"/><polygon points="355,790 368.7124999454679,778.3394963554081 372.657812940632,793.4930849050156" fill="#4B6381"/>
+<line x1="1200" y1="570" x2="1200" y2="790" stroke="#4B6381" stroke-width="4"/><polygon points="1200,790 1192.1706203859978,773.7919521576518 1207.8293796140022,773.7919521576518" fill="#4B6381"/>
+<line x1="1200" y1="570" x2="2045" y2="790" stroke="#4B6381" stroke-width="4"/><polygon points="2045,790 2027.342187059368,793.4930849050156 2031.287500054532,778.3394963554081" fill="#4B6381"/>
+<rect x="55" y="1090" width="850" height="120" rx="18" fill="#FFFFFF" stroke="#9AABC0" stroke-width="3"/>
+<text x="480.0" y="1162.92" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="38" fill="#172B4D">腾讯地图只由客户端配置与调用</text>
+<rect x="1110" y="1090" width="1235" height="120" rx="18" fill="#FFFFFF" stroke="#9AABC0" stroke-width="3"/>
+<text x="1727.5" y="1162.92" text-anchor="middle" font-family="Heiti SC, sans-serif" font-size="38" fill="#172B4D">外部 AI API 由服务端调用 仅发送受控历史上下文</text>
+</svg>

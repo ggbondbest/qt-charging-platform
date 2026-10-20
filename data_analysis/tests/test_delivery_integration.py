@@ -5,10 +5,12 @@ Once opted in, missing dependencies/models are an ERROR, never a silent skip.
 Only UUID-named schemas/users successfully created by this test are removed.
 """
 from dataclasses import replace
+from contextlib import closing
 import importlib.util
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -56,7 +58,7 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
         cls.admin = MySQLSettings(host=os.getenv("MYSQL_TEST_HOST", "127.0.0.1"),
             port=int(os.getenv("MYSQL_TEST_PORT", "3306")), user=os.getenv("MYSQL_TEST_USER", "root"),
             password=os.getenv("MYSQL_TEST_PASSWORD", ""), database=cls.analytics_schema)
-        cls.admin_header = {"X-Admin-Token": "delivery-test-admin-token-only"}
+        cls.admin_header = {}
         cls.tick_observed = threading.Event()
 
         class ObservedStore(ChargePilotStore):
@@ -90,7 +92,7 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
             cls.reader_settings = replace(cls.admin, user=cls.reader, password=cls.reader_password)
             mysql = dict(host=cls.admin.host, port=cls.admin.port, user=cls.admin.user,
                          password=cls.admin.password, database=cls.operations_schema)
-            cls.settings = Settings(mysql=mysql, admin_token=cls.admin_header["X-Admin-Token"],
+            cls.settings = Settings(mysql=mysql,
                                     model_dir=ROOT / "outputs/chargepilot", load_dir=ROOT / "outputs/ml_load")
             with patch.dict(os.environ, {"AVAILABILITY_MODEL_DIR": str(ROOT / "outputs/ml_availability_delivery"),
                                          "INSIGHTS_MODEL_DIR": str(ROOT / "outputs/ml_insights_delivery")}):
@@ -99,6 +101,9 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
             # Exercise actual StaticFiles routing independently of whether this
             # CI job also builds Vue. This is a temporary test asset, not Mock API.
             static_root = Path(cls.temporary.name)
+            from data_analysis.tests.test_qt_live_adapter import seed_database
+            cls.qt_database = static_root / "current-qt.sqlite3"
+            seed_database(cls.qt_database)
             dist = static_root / "frontend/dist"
             dist.mkdir(parents=True)
             (dist / "index.html").write_text("<!doctype html><title>Delivery integration</title><main>delivery-static-probe</main>", encoding="utf8")
@@ -107,7 +112,8 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
                     store=cls.store, load_adapter=cls.provider.load)
             cls.store.control_clock({"action": "configure", "paused": True})
             cls.app = create_app(settings=cls.settings, mysql_settings=cls.reader_settings,
-                                 provider=cls.provider, operational_app=operational)
+                                 provider=cls.provider, operational_app=operational,
+                                 qt_database_path=cls.qt_database)
             cls.tick_observed.clear()
             cls.client = TestClient(cls.app)
             cls.client.__enter__()
@@ -183,6 +189,35 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_qt_payment_updates_current_snapshot_without_changing_historical_batch(self):
+        history_before = self.client.get("/api/v1/dashboard/overview")
+        history_data = self.envelope(history_before)
+        metadata = history_before.json()["meta"]
+        current_before = self.client.get("/api/v1/qt-live/snapshot")
+        self.assertEqual(current_before.status_code, 200, current_before.text)
+        before = current_before.json()["data"]["summary"]
+        # Only this test's own temporary Qt file is changed. The real Qt TCP
+        # payment path is separately exercised by scripts/verify_qt_live.py.
+        with closing(sqlite3.connect(self.qt_database)) as connection, connection:
+            pending = connection.execute("SELECT amount_cents,energy_wh FROM orders WHERE id=3 AND status='WAITING_PAYMENT'").fetchone()
+            self.assertIsNotNone(pending)
+            connection.execute("UPDATE orders SET status='COMPLETED', paid_at='2026-10-17T00:20:00.000Z' WHERE id=3")
+            connection.execute("UPDATE chargers SET status='AVAILABLE' WHERE id=3")
+        current_after = self.client.get("/api/v1/qt-live/snapshot")
+        self.assertEqual(current_after.status_code, 200, current_after.text)
+        payload = current_after.json()
+        after = payload["data"]["summary"]
+        self.assertEqual(after["completedOrders"], before["completedOrders"] + 1)
+        self.assertEqual(after["paidAmountCents"], before["paidAmountCents"] + pending[0])
+        self.assertEqual(after["completedEnergyWh"], before["completedEnergyWh"] + pending[1])
+        self.assertFalse(payload["meta"]["mergedWithHistory"])
+        self.assertEqual(payload["meta"]["scope"], "CURRENT_QT_BUSINESS")
+        self.assertNotIn("publishedBatchId", payload["meta"])
+        history_after = self.client.get("/api/v1/dashboard/overview")
+        self.assertEqual(self.envelope(history_after), history_data)
+        for field in ("datasetId", "publishedBatchId", "pipelineRunId", "schemaVersion", "generatedAt"):
+            self.assertEqual(history_after.json()["meta"][field], metadata[field])
+
     def test_all_models_and_detailed_forecasts_use_true_targets(self):
         for target in ("load", "availability"):
             for horizon in (1, 6, 24):
@@ -243,6 +278,7 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("delivery-static-probe", response.text)
         self.assertEqual(self.client.get("/api/v1/chargepilot/me").status_code, 401)
+        self.assertEqual(self.client.get("/api/v1/chargepilot/admin").status_code, 200)
         bootstrap = self.client.get("/api/v1/chargepilot/bootstrap")
         self.assertEqual(bootstrap.status_code, 200, bootstrap.text)
         self.assertEqual(bootstrap.json()["meta"]["mode"], "REPLAY_DEMO")
@@ -304,12 +340,12 @@ class UnifiedDeliveryIntegration(unittest.TestCase):
     def test_outer_cors_allows_operational_patch_but_not_untrusted_origin(self):
         route = "/api/v1/chargepilot/admin/config"
         headers = {"Origin": "http://127.0.0.1:5173", "Access-Control-Request-Method": "PATCH",
-                   "Access-Control-Request-Headers": "x-admin-token,content-type"}
+                   "Access-Control-Request-Headers": "content-type"}
         allowed = self.client.options(route, headers=headers)
         self.assertEqual(allowed.status_code, 200, allowed.text)
         self.assertEqual(allowed.headers.get("Access-Control-Allow-Origin"), headers["Origin"])
         self.assertIn("PATCH", allowed.headers.get("Access-Control-Allow-Methods", ""))
-        self.assertIn("x-admin-token", allowed.headers.get("Access-Control-Allow-Headers", "").lower())
+        self.assertIn("content-type", allowed.headers.get("Access-Control-Allow-Headers", "").lower())
         rejected = self.client.options(route, headers={**headers, "Origin": "https://unexpected-origin.invalid"})
         self.assertEqual(rejected.status_code, 400, rejected.text)
         self.assertNotIn("Access-Control-Allow-Origin", rejected.headers)

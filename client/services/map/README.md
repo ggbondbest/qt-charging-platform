@@ -4,37 +4,37 @@
 正式客户端使用 QML：页面经 `MapBridge` 提交手动地址定位与驾驶/步行路线请求，
 服务返回真实坐标、路线步骤及折线；服务器站点数据仍通过 TCP 获取。
 
-## 配置：只从客户端运行环境读取
+## 配置：客户端默认读取统一 JSON
+
+将 `config/services.example.json` 复制为 `config/services.local.json`，填写
+`tencentMap.webServiceKey`、可选的 `jsKey` 与 `secretKey`。已存在本地文件时直接编辑，
+不要覆盖已填写内容。Qt 客户端原生读取地图配置，直接启动或 Qt Creator 运行即可，
+无需 Python 启动器；服务端 AI 使用同一文件的 `ai`，两端各自解析所需配置段。
+完整字段说明见 [统一配置说明](../../../docs/services_configuration.md)。
+
+客户端从程序目录及其上级寻找 `config/services.local.json`，随后尝试编译时记录的源码路径，
+因此不依赖当前工作目录。也可设置 `CHARGING_SERVICES_CONFIG` 指定文件；显式路径错误不回退。
+分发时可放在程序或 `.app` 旁的 `config` 目录。配置中的 Key 不编入二进制。
 
 | 环境变量 | 用途 |
 | --- | --- |
-| `TENCENT_MAP_API_KEY` | 地址解析、路线等 WebService 请求的 Key |
-| `TENCENT_MAP_SECRET_KEY` | 控制台启用签名校验时使用的对应 SK |
-| `TENCENT_MAP_JS_KEY` | QML 地图页面使用的 JavaScript Key；未设置时使用 API Key |
+| `TENCENT_MAP_API_KEY` | 覆盖地址解析、路线等 WebService Key |
+| `TENCENT_MAP_SECRET_KEY` | 覆盖启用签名校验时使用的 SK |
+| `TENCENT_MAP_JS_KEY` | 覆盖地图展示用 JavaScript Key |
 
-兼容旧名 `CHARGING_TENCENT_MAP_KEY` 和 `CHARGING_TENCENT_MAP_SECRET`；对应新名
-去除首尾空白后非空时优先使用新名。JS Key 由地图展示层读取，不参与本服务 WebService 签名。
+非空现代环境变量优先，其次兼容旧名 `CHARGING_TENCENT_MAP_KEY` /
+`CHARGING_TENCENT_MAP_SECRET`，最后使用文件字段。JavaScript Key 先读专用环境变量，
+再读文件 `jsKey`，最后复用最终 WebService Key；仅配置 JS Key 不会启用 WebService。
+JS Key 不参与 WebService 签名。
 
-启动客户端前设置，或在 Qt Creator 当前客户端运行配置的环境中添加相同变量：
+修改配置后完全停止并重新运行客户端。所用 Key 需具备对应 WebService / JavaScript 产品权限；
+真实授权、网络及额度需在使用者环境检查。不要提交真实凭证或打印含 Key/SK/sig 的 URL。
+未配置时明确返回 `NoApiKey`。不再读取旧 `map_services.json`。
 
-```bash
-export TENCENT_MAP_API_KEY='自己的地图Key'
-# 仅当这枚 Key 启用了签名校验时，配置对应 SK：
-export TENCENT_MAP_SECRET_KEY='自己的签名SK'
-```
-
-配置在服务创建时读取；修改后应完全停止并重新运行客户端。请确认所用 Key 对相关
-WebService 和 JavaScript 地图接口具备权限。真实授权、网络及额度需在使用者环境检查。
-不要将真实凭证提交到仓库或发到群聊，不要截图完整环境变量或打印带 Key/SK/sig 的 URL。
-
-**不读取 `map_services.json`，不内置演示 Key，不从任何文件补充 Key 或 baseUrl。**
-未配置时明确返回 `NoApiKey`，不会自动取得仓库中的共享凭证。
-生产端点固定为 `https://apis.map.qq.com/ws`；只有 C++ 测试接缝
-`setEndpointBaseForTesting()` 可显式切换到本机假服务器。
-
-旧的 `apiKeyFromConfigFile()` / `baseUrlFromConfigFile()` 仅保留源码兼容，始终返回空，
-不进行文件 I/O。`resolveApiKey(configPath)` 忽略路径并读取环境；
-`resolveBaseUrl(configPath)` 忽略路径并返回固定官方端点。
+`apiKeyFromConfigFile(path)` 读取统一 JSON 的 WebService Key，`resolveApiKey(path)`
+同时应用环境覆盖。文件不能更改请求端点：`baseUrlFromConfigFile()` 返回空，
+`resolveBaseUrl()` 固定返回 `https://apis.map.qq.com/ws`；仅测试接缝
+`setEndpointBaseForTesting()` 可切换到本机假服务。
 
 ## 请求与响应
 
@@ -69,10 +69,10 @@ WebService 和 JavaScript 地图接口具备权限。真实授权、网络及额
 
 ```bash
 ctest --test-dir build-delivery --output-on-failure \
-  -R '^(map_geo_service|qml_map_bridge|map_geocoding_recovery)$'
+  -R '^(map_service_config|map_geo_service|qml_map_bridge|map_geocoding_recovery|station_map_panel)$'
 ```
 
 这些测试只使用测试专用占位 Key 和进程内假 HTTP 服务，验证签名、解析、错误分类、
-重复定位及配置文件读取已禁用，不证明使用者的真实地图服务已经可用。
+重复定位、JSON 自动发现与环境优先级，不证明使用者的真实地图服务已经可用。
 真实地图、连续地址定位、站点点击和业务闭环验收见
 `docs/development/delivery_ui_validation.md` 与 `docs/development/delivery_acceptance.md`。

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 from data_analysis.backend.errors import ApiError
+from data_analysis import runtime_config
 from data_analysis.ml.advisor import config, llm, rag, service
 
 
@@ -25,6 +26,9 @@ class AdvisorCoreTests(unittest.TestCase):
         environment = patch.dict(os.environ, {'ML_ADVISOR_ENV_FILE': str(self.env_path)}, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
+        unified_default = patch.object(runtime_config, "DEFAULT_CONFIG_FILE", Path(self.temp.name) / "services.json")
+        unified_default.start()
+        self.addCleanup(unified_default.stop)
         self.settings = config.OnlineSettings('private-test-key', 'https://aiping.cn/api/v1', 'DeepSeek-V4.1-Flash', 'AIPing')
 
     def configured(self):

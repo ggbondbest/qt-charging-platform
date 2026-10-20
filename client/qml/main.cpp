@@ -28,6 +28,15 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("charging-client"));
     QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatform"));
+    const QString reviewData = qEnvironmentVariable("CHARGING_REVIEW_DATA_DIR").trimmed();
+    if (!reviewData.isEmpty()) {
+        QCoreApplication::setOrganizationName(QStringLiteral("ChargingPlatformReview"));
+        QCoreApplication::setApplicationName(QStringLiteral("charging-review-client"));
+        QApplication::setApplicationDisplayName(QStringLiteral("充能智析 · 用户客户端"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                          QDir(reviewData).filePath(QStringLiteral("preferences")));
+    }
 
     // Basic is the only Controls style guaranteed shipped by the base module.
     QQuickStyle::setStyle(QStringLiteral("Basic"));

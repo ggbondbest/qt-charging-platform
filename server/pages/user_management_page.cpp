@@ -112,7 +112,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(18);
 
-    auto* metricsLayout = new QHBoxLayout();
+    auto* metricsLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Metrics);
     metricsLayout->setSpacing(16);
     metricsLayout->addWidget(createManagementMetricCard(
         tr("用户总数"), tr("36,842"), tr(" 人"), tr("较昨日  +258 (+0.71%)  ↑"), QColor("#347cf6"), 3, this));
@@ -125,7 +125,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     layout->addLayout(metricsLayout);
 
     auto* toolbar = createCompactCard(this);
-    auto* toolbarLayout = new QHBoxLayout(toolbar);
+    auto* toolbarLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls, toolbar);
     toolbarLayout->setContentsMargins(18, 12, 18, 12);
     toolbarLayout->setSpacing(10);
     keywordLineEdit_ = new QLineEdit(toolbar);
@@ -155,20 +155,26 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     feedbackLabel_ = createTextLabel(tr("显示全部 36,842 位用户"),
                                      QStringLiteral("color:#6f7d92; font-size:13px;"), toolbar);
     feedbackLabel_->setFixedWidth(180);
+    feedbackLabel_->setWordWrap(true);
     feedbackLabel_->setToolTip(feedbackLabel_->text());
     toolbarLayout->addWidget(keywordLineEdit_, 1);
     toolbarLayout->addWidget(statusComboBox_);
     toolbarLayout->addWidget(registrationComboBox_);
-    toolbarLayout->addWidget(minimumBalanceLineEdit_);
-    toolbarLayout->addWidget(createTextLabel(tr("~"), QStringLiteral("color:#718098; font-size:15px;"), toolbar));
-    toolbarLayout->addWidget(maximumBalanceLineEdit_);
+    // Keep the two ends of the balance range together when filters wrap.
+    auto* balanceRange = new QWidget(toolbar);
+    balanceRange->setObjectName(QStringLiteral("balanceRangeFilter"));
+    auto* balanceLayout = new QHBoxLayout(balanceRange);
+    balanceLayout->setContentsMargins(0, 0, 0, 0);
+    balanceLayout->setSpacing(8);
+    balanceLayout->addWidget(minimumBalanceLineEdit_);
+    balanceLayout->addWidget(createTextLabel(tr("~"), QStringLiteral("color:#718098; font-size:15px;"), balanceRange));
+    balanceLayout->addWidget(maximumBalanceLineEdit_);
+    toolbarLayout->addWidget(balanceRange);
     toolbarLayout->addWidget(feedbackLabel_);
-    toolbarLayout->addStretch();
-    toolbarLayout->addWidget(resetButton);
-    toolbarLayout->addWidget(queryButton);
+    toolbarLayout->addWidget(createManagementActionGroup({resetButton, queryButton}, toolbar));
     layout->addWidget(toolbar);
 
-    auto* contentLayout = new QHBoxLayout();
+    auto* contentLayout = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::ListAndDetail);
     contentLayout->setSpacing(16);
     auto* tableCard = createCompactCard(this);
     tableCard->setMinimumWidth(kManagementTableMinimumWidth);
@@ -179,6 +185,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
                                        QStringLiteral("color:#1d2c46; font-size:18px; font-weight:700;"), tableCard);
     tableLayout->addWidget(tableTitleLabel_);
     tableWidget_ = new QTableWidget(tableCard);
+    configureManagementResponsiveTable(tableWidget_);
     tableWidget_->setObjectName(QStringLiteral("managementUsersTable"));
     tableWidget_->setColumnCount(8);
     tableWidget_->setHorizontalHeaderLabels(
@@ -202,7 +209,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     tableWidget_->setColumnWidth(7, 64);
     tableLayout->addWidget(tableWidget_, 1);
     statePanel_ = new ManagementStatePanel(tableCard);
-    tableLayout->addWidget(statePanel_);
+    tableLayout->addWidget(statePanel_, 1);
     auto* pagerLayout = new QHBoxLayout();
     pagerLayout->addWidget(createTextLabel(tr("每页 10 条"), QStringLiteral("color:#718098; font-size:13px;"), tableCard));
     pagerLayout->addStretch();
@@ -220,7 +227,6 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     contentLayout->addWidget(tableCard, 1);
 
     auto* detailCard = createManagementDetailCard(tr("用户详情"), this);
-    detailCard->setFixedWidth(kManagementDetailWidth);
     auto* detailLayout = qobject_cast<QVBoxLayout*>(detailCard->layout());
     auto* profileRow = new QHBoxLayout();
     avatarLabel_ = new QLabel(detailCard);
@@ -256,6 +262,7 @@ UserManagementPage::UserManagementPage(QWidget* parent) : QWidget(parent)
     riskButton_->setObjectName(QStringLiteral("secondaryButton"));
     detailLayout->addWidget(freezeButton_);
     detailLayout->addWidget(riskButton_);
+    configureManagementDetailWrapping(detailCard);
     contentLayout->addWidget(detailCard);
     layout->addLayout(contentLayout, 1);
 

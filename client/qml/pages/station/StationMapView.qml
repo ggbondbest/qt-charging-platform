@@ -76,7 +76,7 @@ Rectangle {
         }
         Text {
             width: parent.width; horizontalAlignment: Text.AlignHCenter
-            text: "配置 TENCENT_MAP_API_KEY 后重启客户端即可加载真实地图。\n地图不可用时仍可从下方列表选桩预约。"
+            text: "填写 config/services.local.json 的 tencentMap 后重启客户端即可加载真实地图。\n地图不可用时仍可从下方列表选桩预约。"
             wrapMode: Text.Wrap; font.pixelSize: P.Style.fontSm; color: P.Style.muted
         }
     }

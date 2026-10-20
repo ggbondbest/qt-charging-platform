@@ -63,7 +63,7 @@ python -m data_analysis.delivery.cli train
 模型训练可能需要数分钟至十几分钟，须在展示前完成。它复用已清洗数据；完整旧工件会校验并复用，
 损坏或中断目录应检查或改用新输出位置，不自动覆盖证据。AI参谋没有单独训练步骤。
 
-配置只读 `ANALYTICS_MYSQL_*`、独立业务 `CHARGEPILOT_MYSQL_*` 和管理员令牌后：
+配置只读 `ANALYTICS_MYSQL_*` 和独立业务 `CHARGEPILOT_MYSQL_*` 后（模拟控制台直接进入，无需管理员令牌）：
 
 ```bash
 cd data_analysis/frontend

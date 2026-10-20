@@ -3,6 +3,7 @@
 
 #include <QElapsedTimer>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QtTest>
 
 using namespace charging::client::services::map;
@@ -17,10 +18,12 @@ const QByteArray kBeijing = R"({"status":0,"result":{"location":{"lat":39.9,"lng
 class MapGeocodingRecoveryTest final : public QObject
 {
     Q_OBJECT
+    QTemporaryDir isolatedConfig_;
 private slots:
     void init()
     {
         // Never load real credentials/config or contact Tencent.
+        qputenv("CHARGING_SERVICES_CONFIG", isolatedConfig_.filePath("missing.json").toUtf8());
         qputenv("TENCENT_MAP_API_KEY", "test-only-key");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
         qputenv("TENCENT_MAP_SECRET_KEY", "test-only-secret");

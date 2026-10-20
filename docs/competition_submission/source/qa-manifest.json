@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-19",
+  "renderer": "documents/render_docx.py with bundled LibreOffice and explicit bundled FONTCONFIG_FILE",
+  "files": [
+    {
+      "file": "01_项目文档/01_项目说明.docx",
+      "sha256": "b146449fd1b790efc6fec6bc04c824e0a669bebab13c5f0c0e172bd9afd4ea02",
+      "pages": 5,
+      "renderDirectory": "work/competition-20261019/document-qa/project-final-v2",
+      "visualInspection": "All page PNGs inspected at original resolution; Chinese visible; no clipped text/images or overflow; tables/footers checked",
+      "images": "Self-drawn diagrams only; no third-party character image",
+      "sourceReproduction": "Repository source regenerated identical uncompressed DOCX content and media"
+    },
+    {
+      "file": "01_项目文档/02_系统设计.docx",
+      "sha256": "60c593387fe23c6ec22bc4b737d849324cf946697ba670e7c968cc260000ea3f",
+      "pages": 5,
+      "renderDirectory": "work/competition-20261019/document-qa/design-final",
+      "visualInspection": "All page PNGs inspected at original resolution; Chinese visible; no clipped text/images or overflow; tables/footers checked",
+      "images": "Self-drawn diagrams only; no third-party character image",
+      "sourceReproduction": "Repository source regenerated identical uncompressed DOCX content and media"
+    },
+    {
+      "file": "03_资源与团队/01_开源组件、模型、API与数据集使用说明.docx",
+      "sha256": "70c09009918ce875b0113bb01608fab3dad3fa7f702206893b1fcbccd48f27c3",
+      "pages": 5,
+      "renderDirectory": "work/competition-20261019/document-qa/resources-v1",
+      "visualInspection": "All page PNGs inspected at original resolution; Chinese visible; no clipped text/images or overflow; tables/footers checked",
+      "images": "Self-drawn diagrams only; no third-party character image",
+      "sourceReproduction": "Repository source regenerated identical uncompressed DOCX content and media"
+    },
+    {
+      "file": "03_资源与团队/02_团队分工与既有基础说明.docx",
+      "sha256": "01e882a307619065304998a5fbab1496e170bb23066b12747fcd282cd03c9432",
+      "pages": 3,
+      "renderDirectory": "work/competition-20261019/document-qa/team-v1",
+      "visualInspection": "All page PNGs inspected at original resolution; Chinese visible; no clipped text/images or overflow; tables/footers checked",
+      "images": "Self-drawn diagrams only; no third-party character image",
+      "sourceReproduction": "Repository source regenerated identical uncompressed DOCX content and media"
+    }
+  ]
+}

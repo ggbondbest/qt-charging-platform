@@ -52,7 +52,10 @@ class DeliveryAdvisorTests(unittest.TestCase):
         self.db = self.root / "fixture.sqlite"
         self.meta = fixture(self.db)
         write_bundle(self.root, self.meta)
+        service_config = self.root / "services.json"
+        service_config.write_text('{"version":1}', encoding="utf-8")
         self.env = patch.dict(os.environ, {"ANALYTICS_ADVANCED_BUNDLE": str(self.root), "ML_ADVISOR_ONLINE_ENABLED": "0",
+            "CHARGING_SERVICES_CONFIG": str(service_config),
             "ML_ADVISOR_ENV_FILE": str(self.root / "not-configured.env")})
         self.env.start()
         self.addCleanup(self.env.stop)

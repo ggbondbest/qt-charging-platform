@@ -10,6 +10,8 @@
 
 ## 先接好 AIPing
 
+项目现支持统一的 `config/services.local.json`，优先使用 [统一密钥配置指南](../../../docs/services_configuration.md)。Qt管理端的AI服务只读取其中的 `ai`；同文件的 `tencentMap` 由Qt用户客户端独立读取。以下专用 `.env.local` 方法仍兼容既有部署。
+
 以下步骤在仓库根目录、已有统一服务和数据库配置的环境中执行。
 
 **组员更新已有环境：**拉取本次更新后重新运行 `npm ci`、`npm run build`（在 `data_analysis/frontend` 中），
@@ -57,11 +59,12 @@
    查看网页外发说明，在线模式下主动发送“你好”，再询问“当前范围的充电服务瓶颈是什么？”并核对来源，
    才能检验自己的实际在线链路。
 
-配置加载只读取参谋目录中的 `.env.local`，或进程环境变量 `ML_ADVISOR_ENV_FILE` 指定的文件。
-进程中的同名 `ML_ADVISOR_*` 变量优先于文件：例如进程里仍为 `ML_ADVISOR_ONLINE_ENABLED=0`，
+配置按进程环境变量、统一 `config/services.local.json`、参谋专用 `.env.local` 的顺序取值。
+统一文件可用 `CHARGING_SERVICES_CONFIG` 指定；专用文件仍可用 `ML_ADVISOR_ENV_FILE` 指定。
+统一文件的 `ai.enabled="auto"` 且Key为空时，保留原专用配置。进程中的同名 `ML_ADVISOR_*` 变量优先于文件：例如进程里仍为 `ML_ADVISOR_ONLINE_ENABLED=0`，
 会覆盖文件里的 `1`；已有空 Key 环境变量也会覆盖文件值。遇到仍显示未配置时，先检查这些覆盖项。
 不会读取其他应用的 `OPENAI_*`、`ANTHROPIC_*` 凭据，也不会执行文件中的 shell 表达式。
-文件使用上面的五个 `名称=值` 配置项，允许空行和整行 `#` 注释；重复项、未知项或超过8KiB的文件不会加载。
+旧专用文件使用上面的五个 `名称=值` 配置项，允许空行和整行 `#` 注释；重复项、未知项或超过8KiB的旧文件不会加载。统一文件使用JSON格式，校验失败会报告配置错误，不执行其中的命令文本。
 
 `BASE_URL` 必须为 HTTPS API 根地址，程序去除末尾 `/` 后追加 `/chat/completions`。
 不要填写完整的 `/chat/completions` 地址、Responses API 地址，或含账号密码、查询参数的 URL。

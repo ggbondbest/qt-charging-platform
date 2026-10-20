@@ -54,10 +54,18 @@ describe("API boundary", () => {
       (
         await request<{ status: string }>("/admin/experiments", {
           method: "POST",
-          admin: "unit-test-token",
         })
       ).data.status,
     ).toBe("RUNNING");
+    const headers = vi.mocked(fetch).mock.calls[0]![1]!.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty('X-Admin-Token');
+    expect(headers).not.toHaveProperty('Authorization');
+  });
+  it('keeps the user session Bearer header for recommendation requests', async () => {
+    vi.stubGlobal('window', globalThis);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: {} }))));
+    await request('/recommendations', { method: 'POST', token: 'user-session', body: {} });
+    expect(vi.mocked(fetch).mock.calls[0]![1]!.headers).toMatchObject({ Authorization: 'Bearer user-session' });
   });
   it("translates state conflicts without swallowing rejection", async () => {
     vi.stubGlobal("window", globalThis);

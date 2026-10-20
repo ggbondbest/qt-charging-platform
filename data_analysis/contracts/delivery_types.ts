@@ -56,6 +56,30 @@ export type PredictionPoint = { "timestamp": string; "value": number };
 export type PredictionRequest = { "cityId"?: (string | null); "datasetId"?: (string | null); "horizonHours"?: 1 | 6 | 24; "modelId": string; "publishedBatchId"?: (string | null); "referenceTime": string; "stationId": string };
 export type PredictionResult = { "featureVersion": "history24-v1"; "modelId": string; "modelVersion": string; "points": Array<PredictionPoint>; "schemaVersion": "1.0.0"; "unit": "kW" | "chargers" };
 export type PublishedModel = { "modelId": string; "modelVersion": string; "target": "load" | "availability" };
+export type QtAbnormalCharger = { "activeException": (QtActiveException | null); "chargerCode": string; "qtChargerId": number; "qtStationCode": string; "qtStationId": number; "stationName": string; "status": "AVAILABLE" | "RESERVED" | "CHARGING" | "FAULT" | "OFFLINE"; "updatedAt": string };
+export type QtAbnormalChargers = { "items": Array<QtAbnormalCharger>; "total": number };
+export type QtActiveException = { "code": "SIMULATED_FAULT" | "SIMULATED_OFFLINE"; "occurredAt": string; "qtExceptionId": number; "safeSummary": string; "severity": "WARNING" | "CRITICAL"; "status": "ACTIVE" | "ACKNOWLEDGED" | "RECOVERING" };
+export type QtChargerCounts = { "AVAILABLE": number; "CHARGING": number; "FAULT": number; "OFFLINE": number; "RESERVED": number };
+export type QtEnvelope_QtHealth_ = { "code": string; "data": (QtHealth | null); "message": string; "meta": QtMeta };
+export type QtEnvelope_QtOrderPage_ = { "code": string; "data": (QtOrderPage | null); "message": string; "meta": QtMeta };
+export type QtEnvelope_QtSnapshot_ = { "code": string; "data": (QtSnapshot | null); "message": string; "meta": QtMeta };
+export type QtEnvelope_QtStationPage_ = { "code": string; "data": (QtStationPage | null); "message": string; "meta": QtMeta };
+export type QtEnvelope_QtSummarySnapshot_ = { "code": string; "data": (QtSummarySnapshot | null); "message": string; "meta": QtMeta };
+export type QtEnvelope_dict_ = { "code": string; "data": (Record<string, unknown> | null); "message": string; "meta": QtMeta };
+export type QtHealth = { "asOf": string; "dataSource"?: "qt-sqlite"; "readOnly"?: true; "simulated"?: true; "status"?: "ready" };
+export type QtLimits = { "orders": number; "stations": number };
+export type QtMeta = { "dataSource"?: "qt-sqlite"; "mergedWithHistory"?: false; "requestId": string; "scope"?: "CURRENT_QT_BUSINESS"; "simulated"?: true };
+export type QtOrder = { "amountCents": number; "chargerCode": string; "createdAt": string; "energyWh": number; "paidAt": (string | null); "qtOrderId": number; "qtStationCode": string; "qtStationId": number; "startedAt": (string | null); "stationName": string; "status": "RESERVED" | "CHARGING" | "WAITING_PAYMENT" | "COMPLETED" | "CANCELLED"; "stoppedAt": (string | null) };
+export type QtOrderCounts = { "CANCELLED": number; "CHARGING": number; "COMPLETED": number; "RESERVED": number; "WAITING_PAYMENT": number };
+export type QtOrderPage = { "asOf": string; "dataSource"?: "qt-sqlite"; "limit": number; "offset": number; "orders": Array<QtOrder>; "simulated"?: true; "total": number };
+export type QtOverview = { "abnormalChargers": QtAbnormalChargers; "revenueTrend": Array<QtRevenuePoint>; "timeZone"?: "Asia/Shanghai"; "today": string; "trendDays": 7 | 30 };
+export type QtRevenuePoint = { "completedEnergyWh": number; "completedOrderCount": number; "date": string; "revenueCents": number };
+export type QtSnapshot = { "asOf": string; "dataSource"?: "qt-sqlite"; "limits": QtLimits; "orders": Array<QtOrder>; "overview": QtOverview; "simulated"?: true; "stations": Array<QtStation>; "summary": QtSummary; "truncated": QtTruncated };
+export type QtStation = { "chargerStatusCounts": QtChargerCounts; "city": (string | null); "district": (string | null); "name": string; "priceCentsPerKwh": number; "qtStationCode": string; "qtStationId": number; "status": "ACTIVE" | "INACTIVE"; "totalChargers": number };
+export type QtStationPage = { "asOf": string; "dataSource"?: "qt-sqlite"; "limit": number; "offset": number; "simulated"?: true; "stations": Array<QtStation>; "total": number };
+export type QtSummary = { "activeOrders": number; "activeStations": number; "chargerStatusCounts": QtChargerCounts; "chargingOrders": number; "completedEnergyWh": number; "completedOrders": number; "monthRevenueCents": number; "onlineChargers": number; "onlineRatio": number; "orderStatusCounts": QtOrderCounts; "paidAmountCents": number; "todayCompletedEnergyWh": number; "todayCompletedOrders": number; "todayOrders": number; "todayRevenueCents": number; "totalChargers": number; "totalOrders": number; "totalStations": number; "totalUsers": number };
+export type QtSummarySnapshot = { "asOf": string; "dataSource"?: "qt-sqlite"; "simulated"?: true; "summary": QtSummary };
+export type QtTruncated = { "orders": boolean; "stations": boolean };
 export type QualitySummary = { "cleanRows": (number | null); "cleanSessionRows": (number | null); "normalizationSemantics": string; "normalizedByTable": Array<TableNormalizationCount>; "normalizedRows": (number | null); "rawRows": (number | null); "rejectedRows": (number | null); "rejectionReasons": Array<RejectionReason>; "rejectionSampleLimit": number; "rejectionSamples": Array<RejectionSample>; "tables": Array<TableRowCount> };
 export type RechargeBehavior = { "definition": string; "energy": Array<BehaviorCell>; "firstObservedCount": number; "intervalCount": number; "intervals": Array<BehaviorCell>; "segments": Array<BehaviorSegment>; "sessionCount": number };
 export type RejectionReason = { "reason": string; "rowCount": number };
@@ -216,6 +240,36 @@ export type predictLoadResponse409 = Envelope_dict_;
 export type predictLoadResponse422 = Envelope_dict_;
 export type predictLoadResponse500 = Envelope_dict_;
 export type predictLoadResponse503 = Envelope_ModelCapabilities_;
+
+// GET /api/v1/qt-live/health
+export type health_api_v1_qt_live_health_getQuery = Record<string, unknown>;
+export type health_api_v1_qt_live_health_getResponse200 = QtEnvelope_QtHealth_;
+export type health_api_v1_qt_live_health_getResponse422 = QtEnvelope_dict_;
+export type health_api_v1_qt_live_health_getResponse503 = QtEnvelope_dict_;
+
+// GET /api/v1/qt-live/orders
+export type orders_api_v1_qt_live_orders_getQuery = { "limit"?: number; "offset"?: number; "status"?: ("RESERVED" | "CHARGING" | "WAITING_PAYMENT" | "COMPLETED" | "CANCELLED" | null) };
+export type orders_api_v1_qt_live_orders_getResponse200 = QtEnvelope_QtOrderPage_;
+export type orders_api_v1_qt_live_orders_getResponse422 = QtEnvelope_dict_;
+export type orders_api_v1_qt_live_orders_getResponse503 = QtEnvelope_dict_;
+
+// GET /api/v1/qt-live/snapshot
+export type snapshot_api_v1_qt_live_snapshot_getQuery = { "stationLimit"?: number; "orderLimit"?: number; "trendDays"?: number };
+export type snapshot_api_v1_qt_live_snapshot_getResponse200 = QtEnvelope_QtSnapshot_;
+export type snapshot_api_v1_qt_live_snapshot_getResponse422 = QtEnvelope_dict_;
+export type snapshot_api_v1_qt_live_snapshot_getResponse503 = QtEnvelope_dict_;
+
+// GET /api/v1/qt-live/stations
+export type stations_api_v1_qt_live_stations_getQuery = { "limit"?: number; "offset"?: number };
+export type stations_api_v1_qt_live_stations_getResponse200 = QtEnvelope_QtStationPage_;
+export type stations_api_v1_qt_live_stations_getResponse422 = QtEnvelope_dict_;
+export type stations_api_v1_qt_live_stations_getResponse503 = QtEnvelope_dict_;
+
+// GET /api/v1/qt-live/summary
+export type summary_api_v1_qt_live_summary_getQuery = Record<string, unknown>;
+export type summary_api_v1_qt_live_summary_getResponse200 = QtEnvelope_QtSummarySnapshot_;
+export type summary_api_v1_qt_live_summary_getResponse422 = QtEnvelope_dict_;
+export type summary_api_v1_qt_live_summary_getResponse503 = QtEnvelope_dict_;
 
 // GET /api/v1/stations
 export type listStationsQuery = { "datasetId"?: (string | null); "publishedBatchId"?: (string | null); "cityId"?: (string | null); "stationId"?: (string | null); "startDate"?: (string | null); "endDate"?: (string | null); "page"?: number; "pageSize"?: number; "sortBy"?: string; "sortOrder"?: "asc" | "desc" };

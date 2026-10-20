@@ -4,9 +4,10 @@
 // 经 attachToSplitter 统一分栏口径；测试 tst_station_map_panel 直接构造。
 // 数据流向：页面 → setStations/setRoutePoints（先缓存、可用时才渲染）→
 // buildMapHtml 填 qrc 模板 :/station/tencent_map.html 的占位符 →
-// QWebEngineView::setHtml 注入内存页；Key 运行时读环境变量，全程不触 TCP 契约。
+// QWebEngineView::setHtml 注入内存页；Key 运行时读共享地图配置，全程不触 TCP 契约。
 // 构建宏 CHARGING_PLATFORM_HAS_WEBENGINE 决定真图通道是否存在（无则恒降级）。
 #include "pages/station/station_map_panel.h"
+#include "services/map/map_service_config.h"
 
 #include <QFile>
 #include <QFrame>
@@ -16,6 +17,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSplitter>
+#include <QUrl>
 #include <QtGlobal>
 #include <QVBoxLayout>
 
@@ -23,6 +25,7 @@
 
 #ifdef CHARGING_PLATFORM_HAS_WEBENGINE
 #include <QWebEngineView>
+#include <QWebEnginePage>
 #endif
 
 // AUTORCC 生成的资源初始化函数位于全局命名空间，Q_INIT_RESOURCE 必须在全局作用域调用。
@@ -171,7 +174,7 @@ void StationMapPanel::attachToSplitter(QSplitter* splitter, int listPaneInitial)
 
 QString StationMapPanel::mapKey()
 {
-    return qEnvironmentVariable("CHARGING_TENCENT_MAP_KEY").trimmed();
+    return services::map::loadMapServiceConfig().javaScriptKey;
 }
 
 // 降级统一落点（三条出口共用）：置降级位 → 移除并销毁已建视图（若有）→
@@ -194,16 +197,16 @@ void StationMapPanel::showDegraded(const QString& title, const QString& descript
     degradedBanner_->setVisible(true);
 }
 
-// 建图/降级的唯一总闸（构造与“重试”共用）：判定顺序 = 环境 Key 在前、
+// 建图/降级的唯一总闸（构造与“重试”共用）：判定顺序 = 地图配置在前、
 // 构建宏与实例复用其次、加载结果兜底；三条降级出口全部汇到 showDegraded。
 void StationMapPanel::tryBuildMapView()
 {
-    const QString key = mapKey();
-    if (key.isEmpty()) {
+    const auto config = services::map::loadMapServiceConfig();
+    if (config.javaScriptKey.isEmpty()) {
         showDegraded(tr("未配置地图服务"),
-                     // 规格要求：不得向用户展示原始环境变量字符串。
-                     tr("暂未检测到地图服务配置，站点列表不受影响；"
-                        "完成配置后点击“重试”即可加载地图。"));
+                     config.errorMessage.isEmpty()
+                         ? tr("请填写 config/services.local.json 的 tencentMap，完成后点击“重试”。")
+                         : config.errorMessage);
         return;
     }
 
@@ -214,6 +217,15 @@ void StationMapPanel::tryBuildMapView()
         return;
     }
     auto* view = new QWebEngineView(this);
+    // Browser console errors can contain script URLs with a map key.
+    class QuietMapPage final : public QWebEnginePage {
+    public:
+        explicit QuietMapPage(QObject* parent) : QWebEnginePage(parent) {}
+    protected:
+        void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel, const QString&,
+                                      int, const QString&) override {}
+    };
+    view->setPage(new QuietMapPage(view));
     connect(view, &QWebEngineView::loadFinished, this, [this](bool ok) {
         if (!ok) {
             showDegraded(tr("地图加载失败"),
@@ -250,7 +262,7 @@ void StationMapPanel::tryBuildMapView()
 }
 
 // 地图 HTML 装配单点：qrc 模板读不到直接返回空 HTML（setHtml 收到空串即
-// 空白页）；否则把缓存的站点/路线点位序列化成紧凑 JSON，连同环境 Key 与
+// 空白页）；否则把缓存的站点/路线点位序列化成紧凑 JSON，连同地图 Key 与
 // 默认中心点一起替换进模板的 5 个 %占位符%。
 QString StationMapPanel::buildMapHtml() const
 {
@@ -279,7 +291,7 @@ QString StationMapPanel::buildMapHtml() const
         route.append(pair);
     }
 
-    html.replace(QStringLiteral("%TENCENT_MAP_KEY%"), mapKey());
+    html.replace(QStringLiteral("%TENCENT_MAP_KEY%"), QString::fromLatin1(QUrl::toPercentEncoding(mapKey())));
     html.replace(QStringLiteral("%CENTER_LAT%"), formatCoordinate(kDefaultCenterLatitude));
     html.replace(QStringLiteral("%CENTER_LNG%"), formatCoordinate(kDefaultCenterLongitude));
     html.replace(QStringLiteral("%STATION_POINTS%"),

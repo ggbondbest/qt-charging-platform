@@ -388,8 +388,7 @@ target_link_libraries(test_home_shell PRIVATE
 )
 add_test(NAME home_shell COMMAND test_home_shell)
 set_tests_properties(home_shell PROPERTIES
-    # 2026-09-08 key 入库批："已定义且空"= env 权威无 key → 壳内 MapGeoService
-    # 绝不读 client/config/map_services.json 兜底 key，测试永不发真实请求。
+    # Map configuration isolation is appended below for all client UI tests.
     ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen"
 )
 
@@ -543,7 +542,7 @@ target_include_directories(test_qml_map_bridge PRIVATE ${CMAKE_SOURCE_DIR}/clien
 target_link_libraries(test_qml_map_bridge PRIVATE
     ChargingPlatform::ClientMapServices Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME qml_map_bridge COMMAND test_qml_map_bridge)
-# 空 env 权威无 key：杜绝测试进程读取 git 配置文件密钥。
+# Environment and local map configuration isolation is appended below.
 set_tests_properties(qml_map_bridge PROPERTIES TIMEOUT 30
     ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen")
 
@@ -735,7 +734,49 @@ add_test(NAME qml_workflow_pages COMMAND test_qml_workflow_pages)
 set_tests_properties(qml_workflow_pages PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;TENCENT_MAP_JS_KEY=" TIMEOUT 60)
 set_tests_properties(qml_tcp_delivery PROPERTIES
-    # 2026-09-08 merge 补：本分支 key 三级解析含 git 配置文件兜底，上游此测试写于
-    # 兜底入库之前未加空 env 隔离；并入后按全仓 QML 套件同口径撤防真实外网。
+    # The shared empty map configuration is appended below.
     ENVIRONMENT "TENCENT_MAP_API_KEY=;CHARGING_TENCENT_MAP_KEY=;QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
 endif()
+
+add_executable(test_intelligence_center_page tst_intelligence_center_page.cpp)
+target_link_libraries(test_intelligence_center_page PRIVATE ChargingPlatform::ServerPages Qt6::Test)
+if(CHARGING_EMBED_WEB_DASHBOARD)
+    target_compile_definitions(test_intelligence_center_page PRIVATE CHARGING_EMBED_WEB_DASHBOARD=1)
+    target_link_libraries(test_intelligence_center_page PRIVATE Qt6::WebEngineWidgets)
+endif()
+add_test(NAME intelligence_center_page COMMAND test_intelligence_center_page)
+set_tests_properties(intelligence_center_page PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+add_executable(test_dashboard_service_manager tst_dashboard_service_manager.cpp)
+target_link_libraries(test_dashboard_service_manager PRIVATE ChargingPlatform::DashboardService Qt6::Test)
+add_test(NAME dashboard_service_manager COMMAND test_dashboard_service_manager)
+set_tests_properties(dashboard_service_manager PROPERTIES TIMEOUT 30)
+
+add_executable(test_map_service_config tst_map_service_config.cpp)
+target_link_libraries(test_map_service_config PRIVATE
+    ChargingPlatform::ClientMapServices ChargingPlatform::ProjectOptions Qt6::Test)
+add_test(NAME map_service_config COMMAND test_map_service_config)
+if(TARGET Qt6::WebEngineWidgets)
+    target_link_libraries(test_station_map_panel PRIVATE Qt6::WebEngineWidgets)
+    target_compile_definitions(test_station_map_panel PRIVATE CHARGING_TEST_WEBENGINE=1)
+    if(APPLE)
+        # Qt 6.2 WebEngine requires a Cocoa OpenGL context on macOS. The test
+        # blocks all external browser requests and never shows a window.
+        set_tests_properties(station_map_panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=cocoa")
+    endif()
+endif()
+
+# Every client UI/map test uses an empty generated file, never the operator's
+# local credentials. Individual cases opt into temporary fake keys explicitly.
+set(charging_test_map_config "${CMAKE_CURRENT_BINARY_DIR}/empty-map-services.json")
+file(WRITE "${charging_test_map_config}" "{\"version\":1,\"tencentMap\":{}}\n")
+get_property(charging_test_names DIRECTORY PROPERTY TESTS)
+foreach(charging_test_name IN LISTS charging_test_names)
+    if(charging_test_name MATCHES "^(qml_|map_|home_shell$|station_map_panel$|client_navigation$|station_query_service$|reservation_service$)")
+        set_property(TEST ${charging_test_name} APPEND PROPERTY ENVIRONMENT
+            "CHARGING_SERVICES_CONFIG=${charging_test_map_config}"
+            "TENCENT_MAP_API_KEY=" "CHARGING_TENCENT_MAP_KEY=" "TENCENT_MAP_JS_KEY="
+            "TENCENT_MAP_SECRET_KEY=" "CHARGING_TENCENT_MAP_SECRET=")
+    endif()
+endforeach()

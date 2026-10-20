@@ -34,16 +34,22 @@ import { createRoutePreview } from "./routePreview";
 import AdvisorSidebar from "./components/AdvisorSidebar.vue";
 import { advisorTarget } from "./advisor";
 import type { DashboardScope } from "./dashboardScope";
+import QtLivePanel from "./components/QtLivePanel.vue";
+import { createWorkspaceFullscreen } from "./workspaceFullscreen";
 
-type Tab = "dashboard" | "explore" | "lab" | "admin";
+type Tab = "live" | "dashboard" | "explore" | "lab" | "admin";
+const embedded = typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').get('embedded') === 'operator';
 const tabs: { id: Tab; label: string; icon: string }[] = [
-  { id: "dashboard", label: "运营总览", icon: "chart" },
-  { id: "explore", label: "智能找站", icon: "compass" },
+  { id: "live", label: "当前模拟业务", icon: "signal" },
+  { id: "dashboard", label: "历史运营分析", icon: "chart" },
+  { id: "explore", label: "智能找站实验", icon: "compass" },
   { id: "lab", label: "智能分析", icon: "lab" },
   { id: "admin", label: "模拟控制台", icon: "sliders" },
 ];
-const tab = ref<Tab>("dashboard");
-const dashboardPresentation = ref(false);
+const tab = ref<Tab>("live");
+const workspaceRoot = ref<HTMLElement>();
+const fullscreen = createWorkspaceFullscreen(() => workspaceRoot.value);
+const { active: dashboardPresentation, error: fullscreenError } = fullscreen;
 const dashboardInitialSection = ref<'overview' | 'space'>('overview');
 const dashboardInitialScope = ref<DashboardScope>();
 const dashboardNavigation = ref(0);
@@ -62,7 +68,6 @@ function navigateFromAdvisor(target: unknown, scope: DashboardScope) {
     dashboardInitialScope.value = { ...scope };
     dashboardInitialSection.value = target === 'advanced' ? 'space' : 'overview';
     dashboardNavigation.value++;
-    dashboardPresentation.value = false;
     tab.value = 'dashboard';
   } else {
     if (target === 'anomalies') { insightsInitialTarget.value = 'anomalies'; insightsNavigation.value++; }
@@ -81,7 +86,7 @@ const energyKwh = ref(20);
 const maxEtaMinutes = ref(60);
 const recommendation = ref<Recommendation>();
 const token = ref("");
-const initialLoading = ref(true);
+const initialLoading = ref(false);
 const busyAction = ref("");
 const errorMessage = ref("");
 const toast = ref("");
@@ -92,7 +97,6 @@ const clockTime = ref("");
 const clock = ref<Clock>();
 const latestRefresh = ref("");
 const forecastExpanded = ref("");
-const adminToken = ref("");
 const admin = ref<JsonObject>();
 const adminError = ref("");
 const adminLoading = ref(false);
@@ -244,7 +248,7 @@ async function refreshStations() {
   }
 }
 async function refreshVisible() {
-  if (tab.value === "dashboard" || document.hidden || polling || busyAction.value || initialLoading.value)
+  if (tab.value === "live" || tab.value === "dashboard" || !boot.value || document.hidden || polling || busyAction.value || initialLoading.value)
     return;
   polling = true;
   const results = await Promise.allSettled([
@@ -269,6 +273,7 @@ async function refreshVisible() {
   }
 }
 async function initialize() {
+  if (initialLoading.value) return;
   initialLoading.value = true;
   errorMessage.value = "";
   try {
@@ -463,12 +468,10 @@ const horizonOption = computed(() => ({
   ],
 }));
 async function adminRequest(path: string, method = "GET", body?: unknown) {
-  if (!adminToken.value.trim()) throw new Error("请输入管理员令牌。");
   return receive(
     await request<JsonObject>(path, {
       method,
       body,
-      admin: adminToken.value.trim(),
     }),
   );
 }
@@ -524,10 +527,14 @@ watch([energyKwh, maxEtaMinutes], () => {
 });
 watch(tab, (value) => {
   errorMessage.value = "";
-  if (value !== 'dashboard') dashboardPresentation.value = false;
+  if (value !== 'dashboard' && value !== 'live' && dashboardPresentation.value) void fullscreen.setActive(false);
   if (value !== 'explore') routePreview.close();
-  window.scrollTo({ top: 0, behavior: 'instant' });
-  if (value === "lab") {
+  workspaceRoot.value?.scrollTo?.({ top: 0, behavior: 'auto' });
+  window.scrollTo({ top: 0, behavior: 'auto' });
+  if (value === 'admin') void getAdmin();
+  if (value !== 'live' && value !== 'dashboard' && !boot.value) {
+    void initialize();
+  } else if (value === "lab") {
     refreshModels();
     refreshExperiments();
   }
@@ -538,12 +545,13 @@ watch(
   { flush: "sync" },
 );
 onMounted(() => {
-  initialize();
+  fullscreen.connect();
   pollTimer = window.setInterval(refreshVisible, 2000);
   document.addEventListener("visibilitychange", refreshVisible);
 });
 onBeforeUnmount(() => {
   mounted = false;
+  fullscreen.dispose();
   routePreview.close();
   window.clearInterval(pollTimer);
   window.clearTimeout(toastTimer);
@@ -552,11 +560,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="`workspace-${tab}`">
-    <AutoHideHeader :auto-hide="tab === 'dashboard' && dashboardPresentation">
+  <div ref="workspaceRoot" class="app-shell" :class="[`workspace-${tab}`, { 'operator-embedded': embedded, 'workspace-presentation': dashboardPresentation }]">
+    <nav v-if="embedded" class="operator-tabs" aria-label="智能运营中心分区">
+      <div class="operator-sections"><button v-for="item in tabs" :key="item.id" type="button" :class="{ active: tab === item.id }" :aria-current="tab === item.id ? 'page' : undefined" @click="tab = item.id">{{ item.label }}</button></div>
+      <AdvisorSidebar v-if="tab !== 'live' && !dashboardPresentation" docked @navigate="navigateFromAdvisor" />
+    </nav>
+    <AutoHideHeader v-else :auto-hide="dashboardPresentation">
       <button
         class="brand"
-        @click="tab = 'dashboard'"
+        @click="tab = 'live'"
         aria-label="充能智析首页"
       >
         <span class="brand-mark"><Icon name="bolt" :size="25" /></span
@@ -578,12 +590,13 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <div class="topbar-right">
-        <span class="replay-label"><span class="live-dot"></span>模拟回放</span>
+        <span class="replay-label">{{ tab === 'live' ? 'Qt 当前业务' : '历史模拟数据' }}</span>
       </div>
     </AutoHideHeader>
 
     <main>
-      <div v-if="errorMessage && tab !== 'dashboard'" class="error-banner" role="alert">
+      <div v-if="fullscreenError" class="error-banner" role="alert">{{ fullscreenError }}</div>
+      <div v-if="errorMessage && tab !== 'dashboard' && tab !== 'live'" class="error-banner" role="alert">
         <Icon name="info" :size="18" /><span>{{ errorMessage }}</span
         ><button v-if="!boot" class="text-button" @click="initialize">
           重新连接</button
@@ -592,14 +605,16 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <AnalyticsDashboard v-if="tab === 'dashboard'" :key="dashboardNavigation" v-model:presentation="dashboardPresentation" :initial-section="dashboardInitialSection" :initial-scope="dashboardInitialScope" />
+      <QtLivePanel :active="tab === 'live'" :compact="embedded" :presentation="dashboardPresentation" @update:presentation="fullscreen.setActive" v-show="tab === 'live'" />
+      <p v-if="tab !== 'live' && tab !== 'dashboard'" class="data-boundary" role="note"><strong>{{ tab === 'explore' || tab === 'admin' ? '独立模拟场景' : '历史模型分析' }}</strong>{{ tab === 'explore' || tab === 'admin' ? '历史回放，不关联 Qt 当前预约与交易。' : '基于已发布历史批次，不包含 Qt 当前订单。' }}</p>
+      <AnalyticsDashboard v-if="tab === 'dashboard'" :key="dashboardNavigation" :presentation="dashboardPresentation" :compact="embedded" @update:presentation="fullscreen.setActive" :initial-section="dashboardInitialSection" :initial-scope="dashboardInitialScope" />
       <template v-if="tab === 'explore'">
         <section class="explore-hero">
           <div class="hero-copy">
             <div class="eyebrow light">
               CHARGING NETWORK
             </div>
-            <h1>智能找站</h1>
+            <h1>历史场景 · 智能找站实验</h1>
             <p>
               选择出发点，比较到站空闲、等待与价格。
             </p>
@@ -1184,7 +1199,8 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <div class="table-scroll">
+            <p class="comparison-scroll-hint">窄窗口可横向滚动，查看完整策略指标。</p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="策略指标表，可横向滚动">
               <table class="data-table">
                 <thead>
                   <tr>
@@ -1261,7 +1277,8 @@ onBeforeUnmount(() => {
               </p>
             </div>
           </div>
-          <div class="table-scroll">
+          <p class="comparison-scroll-hint">窄窗口可横向滚动，查看完整服务与资源指标。</p>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="服务与资源对比表，可横向滚动">
             <table class="data-table">
               <thead>
                 <tr>
@@ -1320,32 +1337,7 @@ onBeforeUnmount(() => {
             <h1>模拟控制台</h1>
             <p>调整历史回放时刻，运行最近站与智能推荐的对比实验。</p>
           </div>
-          <span class="simulation-chip"
-            ><Icon name="sliders" :size="16" />运营实验台</span
-          >
-        </section>
-        <section class="card admin-auth">
-          <span class="admin-auth-icon"><Icon name="shield" :size="24" /></span>
-          <div>
-            <h3>管理员身份验证</h3>
-            <p>输入后端配置的管理员令牌，仅保留在当前页面内存中。</p>
-          </div>
-          <div class="admin-token-field">
-            <input
-              v-model="adminToken"
-              type="password"
-              autocomplete="off"
-              aria-label="管理员令牌"
-              placeholder="输入管理员令牌"
-              @keyup.enter="getAdmin"
-            /><button
-              class="button primary"
-              :disabled="adminLoading || !adminToken.trim()"
-              @click="getAdmin"
-            >
-              {{ adminLoading ? "验证中…" : admin ? "刷新状态" : "连接控制台" }}
-            </button>
-          </div>
+          <button class="button secondary" :disabled="adminLoading" @click="getAdmin"><Icon name="refresh" :size="16" />{{ adminLoading ? '正在加载…' : '刷新状态' }}</button>
         </section>
         <div v-if="adminError" class="error-banner" role="alert">
           <Icon name="info" :size="18" />{{ adminError }}
@@ -1466,20 +1458,13 @@ onBeforeUnmount(() => {
               </button>
             </section>
         </div>
-        <section v-else class="admin-locked">
-          <Icon name="shield" :size="43" />
-          <h2>先连接，再调整场景</h2>
-          <p>
-            控制台需要独立的管理员令牌。<br />无需管理员令牌也可使用运营总览、智能找站与模型分析。
-          </p>
-          <div>
-            <span><Icon name="clock" :size="18" />模拟时钟</span
-            ><span><Icon name="chart" :size="18" />配对实验</span>
-          </div>
+        <section v-else class="admin-locked" role="status">
+          <h2>{{ adminLoading ? '正在读取模拟控制台…' : '模拟控制台暂不可用' }}</h2>
+          <p>{{ adminLoading ? '正在加载回放时钟和实验状态。' : '请检查回放服务后点击刷新状态重试。' }}</p>
         </section>
       </template>
     </main>
-    <footer class="footer">
+    <footer v-if="!embedded && !dashboardPresentation" class="footer">
       <div>
         <span class="footer-brand"
           ><Icon name="bolt" :size="16" />充能智析</span
@@ -1490,7 +1475,7 @@ onBeforeUnmount(() => {
         ><span>预测不等于资源预约</span>
       </div>
     </footer>
-    <AdvisorSidebar @navigate="navigateFromAdvisor" />
+    <AdvisorSidebar v-if="!embedded && tab !== 'live' && !dashboardPresentation" @navigate="navigateFromAdvisor" />
     <Transition name="toast"
       ><div v-if="toast" class="toast-message" role="status">
         <Icon name="check" :size="18" />{{ toast }}
@@ -1500,6 +1485,24 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.operator-tabs { position:sticky; top:0; z-index:1000; display:flex; align-items:center; gap:12px; padding:10px 20px; background:#fff; border-bottom:1px solid #e5e7eb; }
+.operator-sections { display:flex; gap:6px; min-width:0; overflow-x:auto; scrollbar-width:thin; }
+.operator-sections>button { flex-shrink:0; padding:9px 14px; border-radius:7px; font-size:13px; color:#667085; }
+.operator-sections>button.active { color:#1d4ed8; background:#edf3ff; font-weight:600; }
+.operator-embedded>main { padding:0 18px 22px; max-width:none; width:100%; min-height:calc(100vh - 58px); }
+.operator-embedded .page-heading,.operator-embedded .explore-hero { padding:18px 0 22px; gap:20px; }
+.operator-embedded .page-heading .eyebrow,.operator-embedded .hero-copy>.eyebrow { display:none; }
+.operator-embedded .page-heading h1,.operator-embedded .hero-copy h1 { font-size:30px; line-height:1.3; letter-spacing:-.8px; margin:0 0 8px; }
+.operator-embedded .page-heading p,.operator-embedded .hero-copy>p { font-size:13px; }
+.operator-embedded .hero-clock { flex-basis:190px; width:190px; padding-left:20px; }
+.operator-embedded .hero-clock>p { display:none; }
+.operator-embedded :deep(.workspace-tabs) { gap:18px; margin-bottom:20px; }
+.operator-embedded :deep(.workspace-tabs>button) { padding-top:13px; padding-bottom:14px; }
+.app-shell:fullscreen { width:100%; height:100%; overflow:auto; background:#f5f7fb; }
+.workspace-presentation>main { max-width:none; width:100%; min-height:calc(100vh - 58px); }
+.data-boundary { display:flex; flex-wrap:wrap; gap:6px 12px; margin:18px 0; padding:12px 16px; background:#f6f8fc; border:1px solid #e4e8ef; border-radius:8px; color:#667085; font-size:12px; }
+.data-boundary strong { color:#344054; }
+@media(max-width:640px) { .operator-tabs { padding:8px 10px; gap:8px; }.operator-embedded>main { padding:0 12px 18px; }.operator-embedded .page-heading h1,.operator-embedded .hero-copy h1 { font-size:26px; }.operator-embedded .hero-clock { flex-basis:auto; width:auto; } }
 .experiment-card {
   scroll-margin-top: 24px;
 }
@@ -1507,4 +1510,6 @@ onBeforeUnmount(() => {
   outline: 2px solid #2563eb;
   outline-offset: 4px;
 }
+.comparison-scroll-hint { display:none; }
+@media(max-width:900px) { .comparison-scroll-hint { display:block; margin:12px 0 8px; color:#667085; font-size:11px; } }
 </style>

@@ -1,4 +1,5 @@
 #include "workflow_management_page.h"
+#include "management_page_widgets.h"
 #include "admin_request_gateway.h"
 #include "admin_option_loader.h"
 #include <QComboBox>
@@ -42,7 +43,9 @@ QTableWidget* makeTable(QWidget* parent, const QStringList& headers, const QStri
     table->verticalHeader()->hide();
     table->verticalHeader()->setDefaultSectionSize(46);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    table->setMinimumHeight(180);
+    configureManagementResponsiveTable(table);
+    table->horizontalHeader()->setMinimumSectionSize(120);
+    table->setWordWrap(false);
     return table;
 }
 }
@@ -52,15 +55,17 @@ WorkflowManagementPage::WorkflowManagementPage(AdminRequestGateway* gateway, QWi
 {
     setObjectName(QStringLiteral("workflowManagementPage"));
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(18, 18, 18, 18);
+    layout->setContentsMargins(0, 0, 0, 4);
     layout->setSpacing(12);
     auto* hint = new QLabel(tr("FIFO 自动叫号 · 60 秒确认 · 维修操作为模拟处理，不控制真实硬件"), this);
     hint->setWordWrap(true);
     hint->setObjectName(QStringLiteral("sectionHintLabel"));
     layout->addWidget(hint);
-    auto* filter = new QHBoxLayout;
+    auto* filter = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls);
     station_ = new QComboBox(this);
     station_->setObjectName(QStringLiteral("workflowStationFilter"));
+    station_->setMinimumWidth(220);
+    configureManagementComboBox(station_);
     filter->addWidget(station_, 1);
     auto* refresh = new QPushButton(tr("刷新"), this);
     refresh->setObjectName(QStringLiteral("secondaryButton"));
@@ -68,6 +73,17 @@ WorkflowManagementPage::WorkflowManagementPage(AdminRequestGateway* gateway, QWi
     layout->addLayout(filter);
     tabs_ = new QTabWidget(this);
     tabs_->setObjectName(QStringLiteral("workflowTabs"));
+    // Style both tab states explicitly: the native macOS tab renderer can
+    // otherwise retain light text from the desktop theme on our light page.
+    tabs_->setStyleSheet(QStringLiteral(
+        "QTabWidget#workflowTabs::pane { background: #ffffff; border: 1px solid #e1e7f0;"
+        " border-radius: 8px; top: -1px; }"
+        "QTabWidget#workflowTabs::tab-bar { left: 0; }"
+        "QTabBar::tab { background: #f2f5f9; color: #34435b; border: 1px solid #dfe6f0;"
+        " padding: 10px 20px; min-width: 100px; font-size: 14px; font-weight: 600; }"
+        "QTabBar::tab:selected { background: #2878f0; color: #ffffff; border-color: #2878f0; }"
+        "QTabBar::tab:!selected:hover { background: #eaf3ff; color: #1d2c46; }"
+        "QTabBar::tab:disabled { background: #f2f5f9; color: #8995a7; }"));
     queueTable_ = makeTable(this, {tr("电站"), tr("电桩"), tr("用户"), tr("状态"), tr("队列位置"), tr("确认截止（UTC）")}, "queueTable");
     tabs_->addTab(queueTable_, tr("实时排队"));
     auto* repairPage = new QWidget(this);
@@ -80,7 +96,6 @@ WorkflowManagementPage::WorkflowManagementPage(AdminRequestGateway* gateway, QWi
     timeline_->setMinimumHeight(120);
     timeline_->setMaximumHeight(220);
     repairLayout->addWidget(timeline_);
-    auto* actions = new QHBoxLayout;
     accept_ = new QPushButton(tr("核实并受理"), repairPage);
     start_ = new QPushButton(tr("开始维修"), repairPage);
     resolve_ = new QPushButton(tr("模拟维修完成"), repairPage);
@@ -88,16 +103,18 @@ WorkflowManagementPage::WorkflowManagementPage(AdminRequestGateway* gateway, QWi
     accept_->setObjectName("acceptRepairButton"); start_->setObjectName("startRepairButton");
     resolve_->setObjectName("resolveRepairButton"); retry_->setObjectName("retryRepairButton");
     for (auto* button : {accept_, start_, resolve_, retry_}) {
-        button->setMinimumHeight(38); actions->addWidget(button);
+        button->setMinimumHeight(38);
     }
-    repairLayout->addLayout(actions);
+    repairLayout->addWidget(createManagementActionGroup({accept_, start_, resolve_, retry_}, repairPage));
     tabs_->addTab(repairPage, tr("报障与维修"));
     layout->addWidget(tabs_, 1);
-    auto* footer = new QHBoxLayout;
+    auto* footer = new ManagementResponsiveLayout(ManagementResponsiveLayout::Mode::Controls);
     previous_ = new QPushButton(tr("上一页"), this);
     next_ = new QPushButton(tr("下一页"), this);
     paging_ = new QLabel(this);
-    footer->addWidget(paging_); footer->addStretch(); footer->addWidget(previous_); footer->addWidget(next_);
+    paging_->setWordWrap(true);
+    footer->addWidget(paging_, 1);
+    footer->addWidget(createManagementActionGroup({previous_, next_}, this));
     layout->addLayout(footer);
     message_ = new QLabel(this);
     message_->setObjectName("workflowMessage"); message_->setWordWrap(true);

@@ -10,7 +10,7 @@ export const advisorDestinations: Record<AdvisorTarget, string> = {
   overview: '查看运营总览', advanced: '查看多维运营分析', models: '查看负荷与空闲预测', anomalies: '查看充电异常筛查',
 };
 export function advisorTarget(value: unknown): value is AdvisorTarget {
-  return typeof value === 'string' && Object.hasOwn(advisorDestinations, value);
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(advisorDestinations, value);
 }
 export interface AdvisorRequest {
   question: string; datasetId: string; publishedBatchId: string;

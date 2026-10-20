@@ -21,7 +21,9 @@ import pandas as pd
 
 DATA_ANALYSIS = Path(__file__).resolve().parents[2]
 DEFAULT_EXPORT = DATA_ANALYSIS / "datasets" / "analytics_full_180d_v1"
-CACHE_ROOT = DATA_ANALYSIS / "outputs" / "ml_cache"
+# Installed review bundles are sealed/read-only; put rebuildable caches in the
+# launcher's private state directory when explicitly configured.
+CACHE_ROOT = Path(os.getenv("CHARGING_ML_CACHE_DIR", str(DATA_ANALYSIS / "outputs" / "ml_cache")))
 
 FEATURES_TABLE = "ml_features_hourly"
 TARGETS_TABLE = "ml_targets_hourly"

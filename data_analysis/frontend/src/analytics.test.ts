@@ -74,6 +74,21 @@ describe('published API integrity', () => {
     stub({}, { datasetId: 'D', publishedBatchId: 'OTHER' });
     await expect(publishedRequest('/intelligence/forecast', {}, { method: 'POST', body: { datasetId: 'D', publishedBatchId: 'B' } })).rejects.toBeInstanceOf(AnalyticsError);
   });
+  it('preserves filters and pageSize in Qt WebEngine without URLSearchParams.size', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+    try {
+      Reflect.deleteProperty(URLSearchParams.prototype, 'size');
+      const fetcher = stub({ items: [] });
+      await publishedRequest('/stations', { datasetId: 'D', publishedBatchId: 'B', pageSize: 100, cityId: 'DL' });
+      const url = fetcher.mock.calls[0][0];
+      expect(url).toBe('/api/v1/stations?datasetId=D&publishedBatchId=B&pageSize=100&cityId=DL');
+      const emptyFetcher = stub({ items: [] });
+      await publishedRequest('/datasets');
+      expect(emptyFetcher.mock.calls[0][0]).toBe('/api/v1/datasets');
+    } finally {
+      if (descriptor) Object.defineProperty(URLSearchParams.prototype, 'size', descriptor);
+    }
+  });
   it('rejects invalid or unavailable service without mock fallback', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>wrong origin</html>')));
     await expect(publishedRequest('/datasets')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });

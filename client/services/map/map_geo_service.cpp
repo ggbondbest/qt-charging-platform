@@ -1,9 +1,10 @@
 // MapGeoService 实现（腾讯地图 WebService 接入批，任务 #17）；类职责与设计
-// 口径（环境唯一密钥源、零打印、代际 id、测试缝）见头文件类注释。
-// 文件结构：错误分类与文案 → 配置读取（仅环境变量）→ 请求发起（startRequest /
+// 口径（本地配置与环境变量、零打印、代际 id、测试缝）见头文件类注释。
+// 文件结构：错误分类与文案 → 配置读取（共享地图配置）→ 请求发起（startRequest /
 // startAddressRequest）→ 单点发送 sendRequest（拼参/签名/超时看门狗/限流退避）
 // → 响应解析（按 Kind 分支回报）→ 签名算法。
 #include "map_geo_service.h"
+#include "map_service_config.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -82,7 +83,7 @@ QString mapErrorMessage(MapError error)
     case MapError::None:
         return QStringLiteral("成功");
     case MapError::NoApiKey:
-        return QStringLiteral("未配置地图密钥");
+        return QStringLiteral("未配置地图密钥，请填写 config/services.local.json 的 tencentMap 后重启客户端。");
     case MapError::Network:
         return QStringLiteral("网络不通");
     case MapError::Timeout:
@@ -105,13 +106,10 @@ MapGeoService::MapGeoService(QObject* parent)
     : QObject(parent), network_(new QNetworkAccessManager(this))
 {
     addressClock_.start();
-    apiKey_ = apiKeyFromEnvironment();
+    const auto config = loadMapServiceConfig();
+    apiKey_ = config.webServiceKey;
+    secretKey_ = config.secretKey;
     endpointBase_ = kDefaultEndpointBase;
-    // SK 仅当控制台开启签名校验时才需要；为空则请求不带 sig。
-    secretKey_ = qEnvironmentVariable("TENCENT_MAP_SECRET_KEY").trimmed();
-    if (secretKey_.isEmpty()) {
-        secretKey_ = qEnvironmentVariable("CHARGING_TENCENT_MAP_SECRET").trimmed();
-    }
     hasKey_ = !apiKey_.isEmpty();
 }
 
@@ -127,21 +125,17 @@ QString MapGeoService::apiKeyFromEnvironment()
 
 bool MapGeoService::environmentKeyAuthoritative()
 {
-    // 兼容旧调用方的环境变量存在性查询；无论结果为何，都不会读取配置文件。
+    // 兼容旧调用方的存在性查询；实际解析按非空环境值优先。
     return qEnvironmentVariableIsSet("TENCENT_MAP_API_KEY")
            || qEnvironmentVariableIsSet("CHARGING_TENCENT_MAP_KEY");
 }
 
 QString MapGeoService::apiKeyFromConfigFile(const QString& configPath)
 {
-    Q_UNUSED(configPath);
-    return {}; // Retained for source compatibility; file-based credentials are disabled.
+    return loadMapServiceConfig(configPath, QProcessEnvironment()).webServiceKey;
 }
 
-// "配置文件"桩函数族（本段四个，含紧邻其上的 apiKeyFromConfigFile）：曾经
-// 支持从入库 JSON 读 key/baseUrl，该机制已被成员提交 e8546fa 回退（凭证不随
-// git 入库、本地文件不得重定向带凭证请求）。函数保留仅为旧调用方源码兼容：
-// 一律不读文件，Key 唯一来源是环境变量。
+// 端点始终固定为腾讯官方地址，文件不能重定向带密钥的请求。
 QString MapGeoService::baseUrlFromConfigFile(const QString& configPath)
 {
     Q_UNUSED(configPath);
@@ -150,8 +144,7 @@ QString MapGeoService::baseUrlFromConfigFile(const QString& configPath)
 
 QString MapGeoService::resolveApiKey(const QString& configPath)
 {
-    Q_UNUSED(configPath);
-    return apiKeyFromEnvironment();
+    return loadMapServiceConfig(configPath).webServiceKey;
 }
 
 QString MapGeoService::resolveBaseUrl(const QString& configPath)

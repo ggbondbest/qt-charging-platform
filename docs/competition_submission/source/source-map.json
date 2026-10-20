@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "materialDate": "2026-10-19",
+  "projectTitle": "充能智析 电动汽车充电平台与智能运营系统",
+  "repository": "https://github.com/ggbondbest/qt-charging-platform",
+  "scope": "引用本轮整合后的本地代码和已完成验证记录；不是远程 master 的能力承诺。相对代码路径从仓库根目录解析。",
+  "facts": [
+    {
+      "topic": "当前 Qt 业务、只读快照、数据来源及隐私投影",
+      "sources": [
+        "data_analysis/delivery/qt_live_adapter.py",
+        "data_analysis/delivery/README.md",
+        "docs/competition_integration.md"
+      ],
+      "qualification": "运行的是 Qt SQLite 模拟业务，支付和电桩状态不是生产支付或真实设备；历史数据不并入当前订单。"
+    },
+    {
+      "topic": "180 天历史模拟数据规模及清洗发布",
+      "sources": [
+        "data_analysis/datasets/analytics_full_180d_v1/README.md"
+      ],
+      "qualification": "2025-12-01 至 2026-05-29；23 张表，原始 5,832,840 行，清洗后 5,830,923 行，121,539 条有效充电会话。不是企业真实经营数据。"
+    },
+    {
+      "topic": "模型任务、真实 CPU 训练、时间和用户隔离、评估边界",
+      "sources": [
+        "data_analysis/ml/README.md",
+        "data_analysis/ml/load/train.py",
+        "data_analysis/chargepilot/ml/train.py"
+      ],
+      "qualification": "不填造准确率或营收增长率；模型在可信历史批次上训练推理，未接入 Qt 当前预约决策。空闲任务与分钟到站任务分别说明。"
+    },
+    {
+      "topic": "TCP 帧协议",
+      "sources": [
+        "common/include/charging/common/protocol/frame_codec.h",
+        "common/include/charging/common/protocol/protocol.h"
+      ],
+      "qualification": "4 字节大端无符号长度、JSON 负载、1 MiB 上限。"
+    },
+    {
+      "topic": "Vue 嵌入、轮询、全屏及 Python 服务托管",
+      "sources": [
+        "data_analysis/frontend/src/components/QtLivePanel.vue",
+        "server/app/dashboard_service_manager.cpp",
+        "scripts/managed_web_service.py",
+        "scripts/launch_demo.py"
+      ],
+      "qualification": "自动托管和统一独立启动器分别管理自身子进程；不自动训练或重置历史数据。"
+    },
+    {
+      "topic": "统一配置按消费者分工和凭据边界",
+      "sources": [
+        "docs/services_configuration.md",
+        "data_analysis/runtime_config.py",
+        "client/services/map/map_service_config.cpp",
+        "client/qml/map_bridge.cpp",
+        "client/pages/station/station_map_panel.cpp"
+      ],
+      "qualification": "客户端消费腾讯地图配置，服务端消费 AI 配置；未读取真实 services.local.json 或私人环境变量。文档未嵌入凭据。"
+    },
+    {
+      "topic": "Qt 基线、Vue、MySQL、模型和原生地图验证",
+      "sources": [
+        "docs/competition_validation.md"
+      ],
+      "qualification": "按验证阶段引用证据。Vue 为 22 文件 235 测试；历史 ML/MySQL 289 项是独立阶段结果，不能叠加宣称本轮全量。Qt 6.2.4 与 Qt 6.12 均有实际验证，但不等同所有外部地图和 AI 网络调用已验证。"
+    },
+    {
+      "topic": "运营中心功能与数据分区图",
+      "sources": [
+        "functional-domains.svg",
+        "data_analysis/delivery/README.md"
+      ],
+      "qualification": "以代码绘制的功能示意图，不是运行截图或经营数据；已撤掉包含旧第三方人物素材的截图。"
+    },
+    {
+      "topic": "竞赛要求、团队和交付平台",
+      "sources": [
+        "主任务已提供的 competition-notice.txt 提取文本",
+        "用户确认及主任务打包检查"
+      ],
+      "qualification": "队伍三带一对（队）、北京理工大学；作品名称经用户确认；完整包目标为 Apple Silicon macOS 15 或更新，本机 15.6。已有项目基础和 AI 辅助如实披露，不宣称比赛从零原创或已分发 Windows/Intel 包。"
+    }
+  ]
+}

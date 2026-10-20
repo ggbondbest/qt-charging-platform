@@ -107,7 +107,7 @@ class HttpWorkflowTests(unittest.TestCase):
         cls.schema = "cp_http_test_"+uuid.uuid4().hex[:16]
         cls.mysql = dict(host=os.getenv("MYSQL_TEST_HOST", "127.0.0.1"), port=int(os.getenv("MYSQL_TEST_PORT", "3306")),
                          user=os.getenv("MYSQL_TEST_USER", "root"), password=os.getenv("MYSQL_TEST_PASSWORD", ""), database=cls.schema)
-        cls.admin = {"X-Admin-Token": "test-only-admin-token-123"}
+        cls.admin = {}
         connection = connect(MySQLSettings(**cls.mysql), database="")
         with connection.cursor() as cursor:
             cursor.execute(f"CREATE DATABASE `{cls.schema}`")
@@ -115,7 +115,7 @@ class HttpWorkflowTests(unittest.TestCase):
         cls.store = ChargePilotStore(cls.mysql)
         cls.predictor = ArrivalPredictor(MODEL_DIR)
         cls.tmp = tempfile.TemporaryDirectory()
-        settings = Settings(mysql=cls.mysql, admin_token=cls.admin["X-Admin-Token"], model_dir=MODEL_DIR,
+        settings = Settings(mysql=cls.mysql, model_dir=MODEL_DIR,
                             load_dir=Path(cls.tmp.name))
         cls.app = create_app(settings, predictor=cls.predictor, store=cls.store)
         cls.client = TestClient(cls.app)
@@ -136,7 +136,10 @@ class HttpWorkflowTests(unittest.TestCase):
 
     def test_auth_validation_safe_errors(self):
         self.assertEqual(self.client.get("/api/v1/chargepilot/me").status_code, 401)
-        self.assertEqual(self.client.get("/api/v1/chargepilot/admin").status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/chargepilot/admin").status_code, 200)
+        self.assertEqual(self.client.get("/api/v1/chargepilot/admin", headers={"X-Admin-Token": "obsolete-wrong-token"}).status_code, 200)
+        clock = self.client.post("/api/v1/chargepilot/admin/clock", json={"action": "configure", "paused": True})
+        self.assertEqual(clock.status_code, 200, clock.text)
         headers = self.session("输入测试")
         response = self.client.post("/api/v1/chargepilot/recommendations", headers=headers,
             json={"cityId":"DL","origin":{"latitude":400,"longitude":121},"energyKwh":20,"awardPoints":1000})
@@ -184,7 +187,7 @@ class HttpWorkflowTests(unittest.TestCase):
         self.assertEqual(response.json()["error"]["code"], "MODEL_NOT_READY")
 
     def test_restart_skips_reinitializing_baseline_and_optional_load_failure(self):
-        settings = Settings(mysql=self.mysql, admin_token=self.admin["X-Admin-Token"], model_dir=MODEL_DIR,
+        settings = Settings(mysql=self.mysql, model_dir=MODEL_DIR,
                             load_dir=Path(self.tmp.name))
         with patch.object(self.predictor, "snapshot", side_effect=AssertionError("Must not reread initial baseline")), \
                 patch("data_analysis.chargepilot.app.LoadAdapter.__init__", side_effect=ValueError("invalid optional artifact")):

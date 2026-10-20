@@ -79,10 +79,9 @@ $env:CHARGEPILOT_MYSQL_PORT="3306"
 $env:CHARGEPILOT_MYSQL_DATABASE="chargepilot_demo"
 $env:CHARGEPILOT_MYSQL_USER="chargepilot_app"
 $env:CHARGEPILOT_MYSQL_PASSWORD="替换为自己的密码"
-$env:CHARGEPILOT_ADMIN_TOKEN="替换为至少16位随机管理员令牌"
 ```
 
-Linux对应 `export CHARGEPILOT_MYSQL_HOST=127.0.0.1` 等。全部变量参考 [.env.example](.env.example)；程序**不会自动读取这个示例文件**。管理员令牌仅在运营控制台手动输入，前端不内置令牌；不设置则管理员接口明确禁用。公共演示昵称不是生产账号认证，请只用于可信局域网/本机，不直接部署到公网。
+Linux对应 `export CHARGEPILOT_MYSQL_HOST=127.0.0.1` 等。全部变量参考 [.env.example](.env.example)；程序**不会自动读取这个示例文件**。模拟控制台直接进入，无需管理员令牌；原 `CHARGEPILOT_ADMIN_TOKEN` 环境变量不再使用。推荐、路线和个人业务仍使用用户会话身份。公共演示昵称不是生产账号认证，请只用于可信局域网/本机，不直接部署到公网。
 
 ### 3.3 构建网页并启动
 
@@ -101,7 +100,7 @@ python -m data_analysis.chargepilot.cli serve
 
 不填Key也能展示/演示：OSM地图正常联网时显示真实地理底图（电站位置仍为模拟）；底图网络异常明确切换本地地理示意，起点可点选。默认ETA是“直线距离×1.3、28km/h及2分钟准备”的情景估计，路线是明确标注的演示连线，**不是道路导航**。
 
-有腾讯WebService Key时，在后端进程环境设置 `TENCENT_MAP_API_KEY`，启用签名校验时另设 `TENCENT_MAP_SECRET_KEY`。密钥不进入Vue、不提交Git。服务端调用一对多距离矩阵及路线规划，区分矩阵的秒与路线的分钟、WGS84/GCJ02转换；超时只做一次有界尝试并冷却30秒，不无限重试。腾讯返回的是**当前**交通路线，不能描述成2026年5月历史路况。[腾讯路线接口说明](https://github.com/TencentLBS/tencentmap-webservice-skill/blob/main/references/api-direction.md)
+统一的 `config/services.local.json` 中 `tencentMap` 仅供Qt用户客户端使用；服务端AI只读取 `ai`，历史找站默认使用情景估计，详见 [统一密钥配置](../../docs/services_configuration.md)。独立部署仍兼容显式设置后端进程的 `TENCENT_MAP_API_KEY` 和 `TENCENT_MAP_SECRET_KEY`，但不会读取或复用统一文件里的客户端地图Key。只有显式启用此旧入口时，服务端才调用一对多距离矩阵及路线规划，区分矩阵的秒与路线的分钟、WGS84/GCJ02转换；超时只做一次有界尝试并冷却30秒，不无限重试。腾讯返回的是**当前**交通路线，不能描述成2026年5月历史路况。[腾讯路线接口说明](https://github.com/TencentLBS/tencentmap-webservice-skill/blob/main/references/api-direction.md)
 
 本次没有使用有效外部Key做真实计费接口验收；已验证模拟响应、单位、缓存、降级和坐标转换，现场配置后可补测真实路线。
 

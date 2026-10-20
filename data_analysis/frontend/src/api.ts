@@ -10,7 +10,7 @@ export class ApiError extends Error {
 }
 const businessErrors: Record<string, string> = {
   UNAUTHORIZED: "演示访问已失效，请重新推荐。",
-  FORBIDDEN: "管理员令牌无效，请检查后重试。",
+  FORBIDDEN: "当前操作不可用，请检查请求后重试。",
   RECOMMENDATION_EXPIRED: "这次推荐已过期，请刷新推荐后重新选择。",
   RECOMMENDATION_NOT_FOUND: "这次推荐已不可用，请重新计算推荐。",
   INELIGIBLE_STATION: "此电站不属于当前有效推荐，请重新推荐。",
@@ -27,7 +27,6 @@ export async function request<T>(
     method?: string;
     body?: unknown;
     token?: string;
-    admin?: string;
     signal?: AbortSignal;
   } = {},
 ): Promise<Envelope<T>> {
@@ -45,7 +44,6 @@ export async function request<T>(
     "Content-Type": "application/json",
   };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
-  if (options.admin) headers["X-Admin-Token"] = options.admin;
   try {
     const response = await fetch(`/api/v1/chargepilot${path}`, {
       method: options.method || "GET",

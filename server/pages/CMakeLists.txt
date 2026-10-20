@@ -18,6 +18,8 @@ add_library(charging_server_pages STATIC
     dashboard_visual_widgets.h
     delivery_dashboard_widgets.cpp
     delivery_dashboard_widgets.h
+    intelligence_center_page.cpp
+    intelligence_center_page.h
     main_window.cpp
     main_window.h
     management_page_widgets.cpp
@@ -30,6 +32,11 @@ add_library(charging_server_pages STATIC
     user_management_page.cpp
     user_management_page.h
 )
+
+if(CHARGING_EMBED_WEB_DASHBOARD)
+    target_link_libraries(charging_server_pages PRIVATE Qt6::WebEngineWidgets)
+    target_compile_definitions(charging_server_pages PRIVATE CHARGING_EMBED_WEB_DASHBOARD=1)
+endif()
 add_library(ChargingPlatform::ServerPages ALIAS charging_server_pages)
 
 target_include_directories(charging_server_pages PUBLIC
@@ -38,6 +45,7 @@ target_include_directories(charging_server_pages PUBLIC
 target_link_libraries(charging_server_pages
     PUBLIC
         ChargingPlatform::ServerCore
+        ChargingPlatform::DashboardService
         ChargingPlatform::ProjectOptions
         Qt6::Widgets
         Qt6::Charts

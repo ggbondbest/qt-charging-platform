@@ -1,3 +1,4 @@
+import assistantIcon from './assets/charging-assistant.svg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRenderer, h, nextTick } from 'vue';
 import * as Vue from 'vue';
@@ -87,9 +88,9 @@ function panel() { return find(node => node.props.role === 'dialog'); }
 function advisor() { return find(node => node.kind === 'advisor-stub'); }
 async function settle() { await nextTick(); await nextTick(); }
 async function click(node: TestNode) { node.props.onClick({}); await settle(); }
-async function mount() {
+async function mount(docked = false) {
   root = new TestNode('root');
-  app = renderer.createApp({ setup: () => () => h(component, { onNavigate: navigate }) });
+  app = renderer.createApp({ setup: () => () => h(component, { docked, onNavigate: navigate }) });
   app.provide(Vue.ssrContextKey, {});
   app.mount(root);
   await settle();
@@ -98,7 +99,18 @@ beforeEach(() => { child.mounts = 0; child.unmounts = 0; focused = undefined; na
 afterEach(() => { app?.unmount(); app = undefined; });
 
 describe('global advisor companion shell', () => {
-  it('starts as an accessible whale-girl launcher without mounting the advisor', async () => {
+  it('supports a compact navigation entry without losing conversation access or Escape focus', async () => {
+    await mount(true);
+    expect(find(node => String(node.props.class).includes('advisor-companion')).props.class).toContain('is-docked');
+    expect(control('打开运营参谋对话').textContent).toContain('AI 参谋');
+    expect(control('打开运营参谋对话').textContent).not.toContain('问问运营参谋');
+    await click(control('打开运营参谋对话'));
+    expect(advisor().props.active).toBe(true);
+    panel().props.onKeydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} }); await settle();
+    expect(panel().style.display).toBe('none');
+    expect(focused).toBe(control('打开运营参谋对话'));
+  });
+  it('starts as an accessible charging-assistant launcher without mounting the advisor', async () => {
     await mount();
     const launcher = control('打开运营参谋对话');
     expect(launcher.kind).toBe('button');
@@ -106,8 +118,8 @@ describe('global advisor companion shell', () => {
     expect(launcher.props['aria-expanded']).toBe(false);
     expect(launcher.props['aria-controls']).toBeUndefined();
     const image = nodes(launcher).find(node => node.kind === 'img')!;
-    expect(image.props.src).toContain('whale-girl.png');
-    expect(image.props.alt).toBe('蓝发小助手');
+    expect(image.props.src).toBe(assistantIcon);
+    expect(image.props.alt).toBe('充电小助手');
     expect(child.mounts).toBe(0);
     expect(nodes().some(node => node.props.role === 'dialog')).toBe(false);
     expect(navigate).not.toHaveBeenCalled();

@@ -67,7 +67,7 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence++; contro
 <template>
   <section class="card intelligence-section intelligence-workspace forecast-workspace">
     <div class="intelligence-header">
-      <div><h2>站点预测</h2><p>了解未来的用电负荷与电桩供给。</p></div>
+      <div><h2>历史模拟数据预测</h2><p>使用历史电站目录与模型，预测模拟时间窗口的负荷与空闲电桩。</p></div>
       <span class="model-readiness" :class="{ ready: capability?.status === 'READY' }"><i aria-hidden="true"/>{{ preparing ? '检查模型…' : capability?.status === 'READY' ? '模型已就绪' : '等待模型产物' }}</span>
     </div>
     <form class="intelligence-form forecast-controls" @submit.prevent="predict">
@@ -77,7 +77,8 @@ onMounted(initialize); onBeforeUnmount(() => { alive = false; sequence++; contro
       <label class="reference-field">起点 · 北京时间<input v-model="reference" type="datetime-local" step="3600" aria-label="预测起点"/></label>
       <button class="button primary" :disabled="loading || preparing || !selectedModel || !stationId"><Icon name="play" :size="15"/>{{ loading ? '模型推理中…' : '运行预测' }}</button>
     </form>
-    <p class="forecast-context">{{ target === 'load' ? '预测未来小时平均功率（kW），不是用电量。' : '预测目标小时末 hh:55 的空闲桩数，不是 ETA 到站可用概率。' }} 请使用数据集历史范围内的起点。</p>
+    <p class="forecast-context">{{ target === 'load' ? '预测未来小时平均功率（kW），不是用电量。' : '预测目标小时末 hh:55 的空闲桩数，不是 ETA 到站可用概率。' }} 请使用数据集历史范围内的起点。不覆盖 Qt 当前业务电站。</p>
+    <p v-if="dataset" class="forecast-context">数据源：已发布历史模拟批次 {{ dataset.publishedBatchId }} · {{ dataset.startDate }} 至 {{ dataset.endDate }}（不含结束日）<template v-if="selectedModel"> · 模型 {{ selectedModel.modelId }}</template></p>
     <div v-if="error" role="alert" class="intelligence-inline-error">{{ error }} <button class="text-button" @click="initialize">重新检查模型</button></div>
     <div v-if="result" class="intelligence-output" aria-live="polite">
       <div class="forecast-chart"><div class="forecast-result-heading"><h3>{{ target === 'load' ? '负荷功率趋势' : '空闲电桩趋势' }}</h3><span>未来 {{ horizon }} 小时</span></div><Chart :option="chartOption" :label="`${target === 'load' ? '负荷功率' : '空闲电桩'}模型预测曲线`"/></div>

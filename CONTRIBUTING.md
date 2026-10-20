@@ -1,5 +1,7 @@
 # 贡献指南
 
+> 2026-10-19 赛事交付更新：按项目负责人要求，Ubuntu CI 已移除，仅保留现有 Windows 数据与 API 检查。下文 Qt 6.2.4 / C++17 源码兼容基线继续适用，涉及 Ubuntu CI 的历史强制条件不再是本次交付门槛。本次可运行包为 macOS 15+ Apple Silicon，已单独验证。
+
 本项目由五人协作开发。所有成员在开始编码前都应阅读：
 
 - [角色与协作流程](docs/team/roles_and_workflow.md)

@@ -46,17 +46,14 @@ INSERT OR IGNORE INTO recharge_records (
 );
 
 INSERT OR IGNORE INTO stations (
-    id, code, name, address, latitude, longitude,
+    id, code, name, address, city, district, latitude, longitude,
     price_cents_per_kwh, status, created_at, updated_at
 ) VALUES
-    (1, 'STA-DEMO-001', '高新园区示范充电站', '大连市高新园区软件园路示范点',
-     38.884700, 121.526900, 120, 'ACTIVE',
+    (1, 'STA-DEMO-001', '高新园区示范充电站', '大连市高新园区软件园路示范点', '大连市', '高新园区', 38.884700, 121.526900, 120, 'ACTIVE',
      '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'),
-    (2, 'STA-DEMO-002', '海创中心示范充电站', '大连市高新园区黄浦路示范点',
-     38.866800, 121.533200, 98, 'ACTIVE',
+    (2, 'STA-DEMO-002', '海创中心示范充电站', '大连市高新园区黄浦路示范点', '大连市', '高新园区', 38.866800, 121.533200, 98, 'ACTIVE',
      '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'),
-    (3, 'STA-DEMO-003', '生态科技城示范充电站', '大连市甘井子区生态科技城示范点',
-     39.010900, 121.505500, 150, 'ACTIVE',
+    (3, 'STA-DEMO-003', '生态科技城示范充电站', '大连市甘井子区生态科技城示范点', '大连市', '甘井子区', 39.010900, 121.505500, 150, 'ACTIVE',
      '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z');
 
 INSERT OR IGNORE INTO chargers (

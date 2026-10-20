@@ -2,6 +2,8 @@
 #include "map_bridge.h"
 
 #include <QSignalSpy>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QtTest>
 
 using charging::qml::MapBridge;
@@ -11,9 +13,11 @@ using namespace charging::client::services::map;
 class QmlMapBridgeTest final : public QObject
 {
     Q_OBJECT
+    QTemporaryDir isolatedConfig_;
 private slots:
     void init()
     {
+        qputenv("CHARGING_SERVICES_CONFIG", isolatedConfig_.filePath("missing.json").toUtf8());
         qputenv("TENCENT_MAP_API_KEY", "");
         qputenv("CHARGING_TENCENT_MAP_KEY", "");
         qputenv("TENCENT_MAP_JS_KEY", "");
@@ -21,6 +25,25 @@ private slots:
         qputenv("CHARGING_TENCENT_MAP_SECRET", "");
     }
     void cleanup() { init(); }
+
+    void sharedFileLoadsJavaScriptKeyWithoutConsumingAi()
+    {
+        QTemporaryDir directory;
+        QFile config(directory.filePath("services.local.json"));
+        QVERIFY(config.open(QIODevice::WriteOnly));
+        config.write(R"({"version":1,"ai":{"apiKey":42,"enabled":"not-a-boolean"},
+                       "tencentMap":{"webServiceKey":"file-api","jsKey":"file-js","secretKey":"file-sk"}})");
+        config.close();
+        qputenv("CHARGING_SERVICES_CONFIG", config.fileName().toUtf8());
+        MapBridge bridge;
+        const QString html = bridge.mapHtml({});
+        QVERIFY(html.contains("key=file-js"));
+        QVERIFY(!html.contains("file-api"));
+        QVERIFY(!html.contains("file-sk"));
+        QVERIFY(!bridge.hasLocation());
+        qputenv("TENCENT_MAP_JS_KEY", "env-js");
+        QVERIFY(bridge.mapHtml({}).contains("key=env-js"));
+    }
 
     void requiresExplicitOriginAndNeverInventsRoute()
     {
