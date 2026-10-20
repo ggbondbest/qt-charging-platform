@@ -16,8 +16,9 @@ from scripts import launch_client, launch_demo
 class ClientLauncherTests(unittest.TestCase):
     def test_main_forwards_arguments_literally_and_returns_client_exit_status(self):
         environment = {"TENCENT_MAP_API_KEY": "map-only", "PATH": "inherited"}
+        binary = Path("/build/charging-client")
         with patch.object(launch_demo, "configured_client_environment", return_value=environment) as config, \
-             patch.object(launch_client, "find_client", return_value=Path("/build/charging-client")) as find, \
+             patch.object(launch_client, "find_client", return_value=binary) as find, \
              patch.object(launch_client, "run_client", return_value=7) as run:
             code = launch_client.main(["--services-config", "private.json", "--build-dir", "build-here",
                                        "--host", "127.0.0.1", "--port", "9600", "--",
@@ -25,7 +26,7 @@ class ClientLauncherTests(unittest.TestCase):
         self.assertEqual(code, 7)
         config.assert_called_once_with(Path("private.json"))
         find.assert_called_once_with(Path("build-here"))
-        run.assert_called_once_with(["/build/charging-client", "--host", "127.0.0.1", "--port", "9600",
+        run.assert_called_once_with([str(binary), "--host", "127.0.0.1", "--port", "9600",
                                      "--mock", "literal;$(not-executed)"], environment)
 
     def test_shared_json_configures_maps_without_sending_ai_key_to_client(self):
@@ -69,11 +70,12 @@ class ClientLauncherTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[1]["TENCENT_MAP_API_KEY"], "map-api")
 
     def test_optional_host_and_port_preserve_original_client_environment(self):
+        binary = Path("/build/client")
         with patch.object(launch_demo, "configured_client_environment", return_value={}), \
-             patch.object(launch_client, "find_client", return_value=Path("/build/client")), \
+             patch.object(launch_client, "find_client", return_value=binary), \
              patch.object(launch_client, "run_client", return_value=0) as run:
             self.assertEqual(launch_client.main([]), 0)
-        run.assert_called_once_with(["/build/client"], {})
+        run.assert_called_once_with([str(binary)], {})
 
     def test_default_build_discovery_prefers_current_creator_then_delivery(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(launch_client, "ROOT", Path(directory)):
